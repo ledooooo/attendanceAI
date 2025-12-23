@@ -374,15 +374,15 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   };
 
   const handleExcelAttendance = async (data: any[]) => {
-    // Check if employee_ids exist in current employees list to prevent FK errors
     const validIds = new Set(employees.map(e => e.employee_id));
-    const formatted = [];
-    const invalidRows = [];
+    const processedData: any[] = [];
+    const invalidIds: string[] = [];
 
-    for (const row of data) {
+    // Format all records from excel
+    data.forEach(row => {
       const eid = String(row.employee_id || row['رقم الموظف'] || '');
       if (validIds.has(eid)) {
-        formatted.push({
+        processedData.push({
           employee_id: eid,
           date: row.date || row['التاريخ'] || new Date().toISOString().split('T')[0],
           check_in: row.check_in || row['وقت الحضور'] || null,
@@ -392,20 +392,52 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
           notes: row.notes || row['ملاحظات'] || ''
         });
       } else {
-        invalidRows.push(eid);
+        invalidIds.push(eid);
       }
+    });
+
+    if (processedData.length === 0) {
+      alert("لم يتم العثور على بيانات صالحة للموظفين المسجلين في الملف.");
+      return;
     }
 
-    if (invalidRows.length > 0) {
-      alert(`تحذير: تم استبعاد ${invalidRows.length} سجل لأن أرقام الموظفين التالية غير مسجلة: ${invalidRows.join(', ')}`);
+    // --- Deduplication Strategy ---
+    // 1. Get unique dates from the excel data
+    const uniqueDates = Array.from(new Set(processedData.map(d => d.date)));
+    
+    // 2. Fetch existing records for these dates to check duplicates
+    const { data: existingRecords, error: fetchError } = await supabase
+      .from('attendance')
+      .select('employee_id, date')
+      .in('date', uniqueDates);
+
+    if (fetchError) {
+      alert("خطأ أثناء فحص البيانات المكررة: " + fetchError.message);
+      return;
     }
 
-    if (formatted.length > 0) {
-      const { error } = await supabase.from('attendance').insert(formatted);
-      if(error) alert(error.message); 
-      else { alert(`تم رفع ${formatted.length} سجل حضور بنجاح`); onRefresh(); }
-    } else if (invalidRows.length > 0) {
-      alert("لم يتم رفع أي بيانات لعدم وجود مطابقة لأرقام الموظفين.");
+    // Create a key set for existing records: "eid-date"
+    const existingKeys = new Set(existingRecords?.map(r => `${r.employee_id}-${r.date}`));
+    
+    // 3. Filter only records that DO NOT exist in the DB
+    const finalDataToInsert = processedData.filter(item => {
+      const key = `${item.employee_id}-${item.date}`;
+      return !existingKeys.has(key);
+    });
+
+    const duplicateCount = processedData.length - finalDataToInsert.length;
+
+    if (finalDataToInsert.length > 0) {
+      const { error } = await supabase.from('attendance').insert(finalDataToInsert);
+      if(error) alert("خطأ أثناء الحفظ: " + error.message); 
+      else {
+        alert(`تم رفع ${finalDataToInsert.length} سجل بنجاح.
+تم تجاهل ${duplicateCount} سجل مكرر (موجود مسبقاً).
+${invalidIds.length > 0 ? `تم استبعاد ${invalidIds.length} كود غير مسجل.` : ''}`);
+        onRefresh();
+      }
+    } else {
+      alert(`كافة السجلات الموجودة في الملف مضافة مسبقاً بالنظام (${duplicateCount} سجل مكرر).`);
     }
   };
 
@@ -413,12 +445,22 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
     <div className="space-y-8">
       <div className="flex justify-between items-center border-b pb-4">
         <h2 className="text-2xl font-bold">بيانات الحضور والانصراف</h2>
-        <ExcelUploadButton onData={handleExcelAttendance} label="رفع إكسيل بصمة" />
+        <div className="flex gap-2">
+          <ExcelUploadButton onData={handleExcelAttendance} label="رفع ملف البصمة اليومي" />
+        </div>
       </div>
+      
+      <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start gap-3 mb-4">
+        <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+        <p className="text-xs text-blue-800 leading-relaxed">
+          <strong>نصيحة للإدارة:</strong> عند رفع ملف البصمة، سيقوم النظام تلقائياً بمقارنة السجلات وتجاهل البيانات التي تم رفعها مسبقاً لنفس اليوم ونفس الموظف، مما يضمن عدم تكرار البيانات حتى لو تم رفع نفس الملف مرتين.
+        </p>
+      </div>
+
       <ExcelInfo 
         fields={['employee_id', 'date', 'check_in', 'check_out', 'check_in_status', 'check_out_status', 'notes']} 
-        sampleData={[{employee_id: '1001', date: '2023-10-25', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'دخول بموعد'}]}
-        fileName="attendance_sample"
+        sampleData={[{employee_id: '1001', date: '2023-10-25', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'سجل يومي'}]}
+        fileName="attendance_daily_template"
       />
       
       <div className="bg-gray-50 p-6 rounded-xl border grid grid-cols-1 md:grid-cols-2 gap-4">
