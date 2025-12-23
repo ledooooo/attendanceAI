@@ -32,7 +32,6 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* Footer */}
       <footer className="mt-12 py-6 text-center text-gray-400 text-sm border-t bg-white">
         &copy; {new Date().getFullYear()} نظام إدارة المركز الطبي - جميع الحقوق محفوظة
       </footer>
