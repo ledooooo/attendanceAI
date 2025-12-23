@@ -1,0 +1,8 @@
+{
+  "name": "Medical Center Attendance System",
+  "description": "نظام متكامل لإدارة الحضور والانصراف، الطلبات، والتقييمات للعاملين بالمراكز الطبية مع لوحة تحكم إدارية متطورة.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
