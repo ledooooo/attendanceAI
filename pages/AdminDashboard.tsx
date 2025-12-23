@@ -8,16 +8,30 @@ import {
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage } from '../types';
 import * as XLSX from 'xlsx';
 
-// --- Date Helper for Import/Export ---
+// --- Date Helpers for Excel ---
+
+// Convert DD/MM/YYYY (Excel) to YYYY-MM-DD (DB)
 const formatDateForDB = (val: any) => {
   if (!val) return null;
   const str = String(val).trim();
-  // Check for DD/MM/YYYY format
-  const dmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  // Match DD/MM/YYYY or DD-MM-YYYY
+  const dmy = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (dmy) {
     return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   }
-  return str; // Return as is for YYYY-MM-DD
+  // If already YYYY-MM-DD
+  if (str.match(/^\d{4}-\d{2}-\d{2}$/)) return str;
+  return str;
+};
+
+// Convert YYYY-MM-DD (DB) to DD/MM/YYYY (Excel Display)
+const formatDateForExcelDisplay = (dateStr: string) => {
+  if (!dateStr) return "";
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+  }
+  return dateStr;
 };
 
 // --- Generic UI Helpers ---
@@ -168,7 +182,7 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
         <div className="flex flex-wrap gap-2">
           {(settings.holidays || []).map(date => (
             <span key={date} className="bg-gray-100 px-3 py-1 rounded-full text-sm border flex items-center gap-2">
-              {date}
+              {formatDateForExcelDisplay(date)}
               <button onClick={() => removeHoliday(date)} className="text-red-500 hover:text-red-700"><X className="w-3.5 h-3.5"/></button>
             </span>
           ))}
@@ -235,7 +249,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
       </div>
       <ExcelInfo 
         fields={['employee_id', 'name', 'national_id', 'specialty', 'phone', 'email', 'gender', 'grade', 'leave_annual_balance', 'leave_casual_balance', 'join_date']} 
-        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', phone: '0123456789', email: 'ahmed@mail.com', gender: 'ذكر', grade: 'أخصائي', leave_annual_balance: 21, leave_casual_balance: 7, join_date: '01/10/2023'}]}
+        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', phone: '0123456789', email: 'ahmed@mail.com', gender: 'ذكر', grade: 'أخصائي', leave_annual_balance: 21, leave_casual_balance: 7, join_date: '02/08/2025'}]}
         fileName="employees_sample"
       />
       
@@ -312,7 +326,7 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
       </div>
       <ExcelInfo 
         fields={['employee_id', 'type', 'start_date', 'end_date', 'backup_person', 'status', 'notes']} 
-        sampleData={[{employee_id: '1001', type: 'اعتيادي', start_date: '01/11/2023', end_date: '05/11/2023', backup_person: 'د. محمد علي', status: 'مقبول', notes: 'سفر عائلي'}]}
+        sampleData={[{employee_id: '1001', type: 'اعتيادي', start_date: '02/08/2025', end_date: '05/08/2025', backup_person: 'د. محمد علي', status: 'مقبول', notes: 'سفر عائلي'}]}
         fileName="leaves_sample"
       />
       <div className="space-y-4">
@@ -324,7 +338,7 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
                 <span className="font-bold text-lg">{req.employee_name}</span>
                 <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{req.type}</span>
               </div>
-              <p className="text-sm text-gray-500">الفترة: {req.start_date} إلى {req.end_date}</p>
+              <p className="text-sm text-gray-500">الفترة: {formatDateForExcelDisplay(req.start_date)} إلى {formatDateForExcelDisplay(req.end_date)}</p>
               {req.notes && <p className="text-xs text-gray-400 mt-1 italic">ملاحظة: {req.notes}</p>}
             </div>
             <div className="flex gap-2">
@@ -357,7 +371,7 @@ function EveningScheduleTab() {
       </div>
       <ExcelInfo 
         fields={['date', 'specs', 'doctors']} 
-        sampleData={[{date: '30/10/2023', specs: 'باطنة,أطفال,جراحة', doctors: 'د.أحمد,د.سارة,د.خالد'}]}
+        sampleData={[{date: '02/08/2025', specs: 'باطنة,أطفال,جراحة', doctors: 'د.أحمد,د.سارة,د.خالد'}]}
         fileName="evening_sample"
       />
       <div className="border-2 border-dashed p-12 text-center rounded-2xl bg-gray-50">
@@ -462,13 +476,13 @@ ${invalidIds.length > 0 ? `تم استبعاد ${invalidIds.length} كود غي�
       <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start gap-3 mb-4">
         <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
         <p className="text-xs text-blue-800 leading-relaxed">
-          <strong>نصيحة للإدارة:</strong> عند رفع ملف البصمة، سيقوم النظام تلقائياً بمقارنة السجلات وتجاهل البيانات التي تم رفعها مسبقاً لنفس اليوم ونفس الموظف، مما يضمن عدم تكرار البيانات حتى لو تم رفع نفس الملف مرتين.
+          <strong>نصيحة للإدارة:</strong> عند رفع ملف البصمة، سيقوم النظام تلقائياً بمقارنة السجلات وتجاهل البيانات التي تم رفعها مسبقاً لنفس اليوم ونفس الموظف، مما يضمن عدم تكرار البيانات حتى لو تم رفع نفس الملف مرتين. استخدم صيغة التاريخ <strong>02/08/2025</strong>.
         </p>
       </div>
 
       <ExcelInfo 
         fields={['employee_id', 'date', 'check_in', 'check_out', 'check_in_status', 'check_out_status', 'notes']} 
-        sampleData={[{employee_id: '1001', date: '25/12/2025', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'سجل يومي'}]}
+        sampleData={[{employee_id: '1001', date: '02/08/2025', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'سجل يومي'}]}
         fileName="attendance_daily_template"
       />
       
@@ -505,10 +519,21 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
   };
 
   const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(reportData);
+    // Format dates before exporting to Excel
+    const formattedData = reportData.map(row => ({
+      'رقم الموظف': row.employee_id,
+      'التاريخ': formatDateForExcelDisplay(row.date),
+      'وقت الحضور': row.check_in || '--:--',
+      'حالة الحضور': row.check_in_status,
+      'وقت الانصراف': row.check_out || '--:--',
+      'حالة الانصراف': row.check_out_status,
+      'الملاحظات': row.notes || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(formattedData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, "MedicalCenter_FullReport.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "AttendanceReport");
+    XLSX.writeFile(wb, "MedicalCenter_Attendance_Report.xlsx");
   };
 
   return (
@@ -535,7 +560,7 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
             {reportData.map((r,i) => (
               <tr key={i} className="border-b hover:bg-gray-50">
                 <td className="p-3 font-mono">{r.employee_id}</td>
-                <td className="p-3">{r.date}</td>
+                <td className="p-3">{formatDateForExcelDisplay(r.date)}</td>
                 <td className="p-3 text-emerald-600 font-bold">{r.check_in || '--'}</td>
                 <td className="p-3 text-red-500 font-bold">{r.check_out || '--'}</td>
                 <td className="p-3 text-xs">{r.check_in_status} / {r.check_out_status}</td>
