@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, Settings, Users, FileText, Calendar, 
-  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, Send, FileSpreadsheet
+  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, Send, FileSpreadsheet, Info
 } from 'lucide-react';
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage } from '../types';
 import * as XLSX from 'xlsx';
@@ -35,6 +35,20 @@ function Select({ label, options, value, onChange }: any) {
       >
         {options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
       </select>
+    </div>
+  );
+}
+
+function ExcelInfo({ fields }: { fields: string[] }) {
+  return (
+    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg mb-4 flex items-start gap-3">
+      <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+      <div>
+        <p className="text-xs text-amber-800 font-bold mb-1">أعمدة ملف الإكسيل المطلوبة:</p>
+        <div className="flex flex-wrap gap-2">
+          {fields.map(f => <span key={f} className="bg-white px-2 py-0.5 rounded border border-amber-300 text-[10px] text-amber-700">{f}</span>)}
+        </div>
+      </div>
     </div>
   );
 }
@@ -86,6 +100,7 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
         <h2 className="text-2xl font-bold">الإعدادات العامة للمركز</h2>
         <ExcelUploadButton label="تحديث من إكسيل" onData={(data: any) => setSettings({...settings, ...data[0]})} />
       </div>
+      <ExcelInfo fields={['center_name', 'admin_name', 'phone', 'address', 'password', 'location_url']} />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Input label="اسم المركز" value={settings.center_name} onChange={(v:any) => setSettings({...settings, center_name: v})} />
         <Input label="اسم الإدارة" value={settings.admin_name} onChange={(v:any) => setSettings({...settings, admin_name: v})} />
@@ -141,7 +156,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center border-b pb-4">
         <h2 className="text-2xl font-bold">إعدادات الأطباء والعاملين</h2>
         <div className="flex gap-2">
           <ExcelUploadButton onData={handleExcelImport} label="استيراد موظفين" />
@@ -150,6 +165,8 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
           </button>
         </div>
       </div>
+      <ExcelInfo fields={['رقم الموظف', 'الاسم', 'الرقم القومي', 'التخصص', 'الهاتف', 'الايميل', 'النوع', 'الدرجة', 'leave_annual_balance']} />
+      
       {showForm && (
         <div className="bg-gray-50 p-6 rounded-xl border-2 border-dashed grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input label="رقم الموظف" value={formData.employee_id || ''} onChange={(v:any) => setFormData({...formData, employee_id: v})} />
@@ -214,6 +231,7 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
         <h2 className="text-2xl font-bold">الطلبات والإجازات</h2>
         <ExcelUploadButton onData={handleExcelImport} label="رفع أرشيف إجازات" />
       </div>
+      <ExcelInfo fields={['رقم الموظف', 'نوع الإجازة', 'من تاريخ', 'إلى تاريخ', 'القائم بالعمل']} />
       <div className="space-y-4">
         {requests.length === 0 && <p className="text-center text-gray-400 py-10">لا توجد طلبات معلقة</p>}
         {requests.map(req => (
@@ -253,6 +271,7 @@ function EveningScheduleTab() {
         <h2 className="text-2xl font-bold">جدول المسائي</h2>
         <ExcelUploadButton onData={handleExcelSchedule} label="رفع جدول المسائي" />
       </div>
+      <ExcelInfo fields={['التاريخ', 'التخصصات (مفصولة بفاصلة)', 'الأطباء (مفصولة بفاصلة)']} />
       <div className="border-2 border-dashed p-12 text-center rounded-2xl bg-gray-50">
          <Calendar className="w-12 h-12 mx-auto mb-4 text-blue-500" />
          <h3 className="text-xl font-bold mb-2">إدارة الجدول المسائي</h3>
@@ -290,6 +309,8 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         <h2 className="text-2xl font-bold">بيانات الحضور والانصراف</h2>
         <ExcelUploadButton onData={handleExcelAttendance} label="رفع إكسيل بصمة" />
       </div>
+      <ExcelInfo fields={['رقم الموظف', 'التاريخ', 'وقت الحضور', 'وقت الانصراف', 'حالة الحضور', 'حالة الانصراف']} />
+      
       <div className="bg-gray-50 p-6 rounded-xl border grid grid-cols-1 md:grid-cols-2 gap-4">
         <Select label="الموظف" options={['-- اختر --', ...employees.map(e => e.employee_id)]} value={formData.employee_id} onChange={(v:any) => setFormData({...formData, employee_id: v})} />
         <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any) => setFormData({...formData, date: v})} />
