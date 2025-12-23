@@ -97,7 +97,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
            <StaffNav active={activeTab === 'attendance'} icon={<Clock />} label="تقارير الحضور" onClick={() => setActiveTab('attendance')} />
            <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="تقديم طلب إجازة" onClick={() => setActiveTab('leave')} />
            <StaffNav active={activeTab === 'eval'} icon={<ClipboardCheck />} label="تقييمي الشهري" onClick={() => setActiveTab('eval')} />
-           <StaffNav active={activeTab === 'messages'} icon={<MessageCircle />} label="الرسائل (" + messages.length + ")" onClick={() => setActiveTab('messages')} />
+           {/* Fixed invalid label syntax: using curly braces for expression */}
+           <StaffNav active={activeTab === 'messages'} icon={<MessageCircle />} label={`الرسائل (${messages.length})`} onClick={() => setActiveTab('messages')} />
         </div>
 
         <div className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-sm border min-h-[500px]">

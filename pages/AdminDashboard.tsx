@@ -7,10 +7,408 @@ import {
 } from 'lucide-react';
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, EveningSchedule } from '../types';
 
+// Generic UI helpers defined first or as functions to be available
+function Input({ label, type = 'text', value, onChange, placeholder }: any) {
+  return (
+    <div>
+      <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
+      <input 
+        type={type} 
+        value={value} 
+        onChange={e => onChange(e.target.value)}
+        className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all outline-none"
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function Select({ label, options, value, onChange }: any) {
+  return (
+    <div>
+      <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
+      <select 
+        value={value} 
+        onChange={e => onChange(e.target.value)}
+        className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all outline-none"
+      >
+        {options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function NavButton({ active, icon, label, onClick }: any) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`w-full flex items-center p-4 rounded-xl transition-all font-semibold ${
+        active ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'
+      }`}
+    >
+      <span className="ml-3">{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+// Sub-components
+function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
+  const [settings, setSettings] = useState(center);
+  const handleSave = async () => {
+    const { error } = await supabase.from('general_settings').update(settings).eq('id', center.id);
+    if (error) alert('خطأ في الحفظ');
+    else alert('تم الحفظ بنجاح');
+  };
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold border-b pb-2">الإعدادات العامة للمركز</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Input label="اسم المركز" value={settings.center_name} onChange={(v:any) => setSettings({...settings, center_name: v})} />
+        <Input label="اسم الإدارة" value={settings.admin_name} onChange={(v:any) => setSettings({...settings, admin_name: v})} />
+        <Input label="تليفون المركز" value={settings.phone} onChange={(v:any) => setSettings({...settings, phone: v})} />
+        <Input label="عنوان المركز" value={settings.address} onChange={(v:any) => setSettings({...settings, address: v})} />
+        <Input label="رابط اللوكيشن" value={settings.location_url} onChange={(v:any) => setSettings({...settings, location_url: v})} />
+        <Input label="باسورد المركز" type="password" value={settings.password} onChange={(v:any) => setSettings({...settings, password: v})} />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-t pt-4">
+        <Input label="حضور الصباحي" type="time" value={settings.shift_morning_in} onChange={(v:any) => setSettings({...settings, shift_morning_in: v})} />
+        <Input label="انصراف الصباحي" type="time" value={settings.shift_morning_out} onChange={(v:any) => setSettings({...settings, shift_morning_out: v})} />
+        <Input label="حضور المسائي" type="time" value={settings.shift_evening_in} onChange={(v:any) => setSettings({...settings, shift_evening_in: v})} />
+        <Input label="انصراف المسائي" type="time" value={settings.shift_evening_out} onChange={(v:any) => setSettings({...settings, shift_evening_out: v})} />
+        <Input label="حضور السهر" type="time" value={settings.shift_night_in} onChange={(v:any) => setSettings({...settings, shift_night_in: v})} />
+        <Input label="انصراف السهر" type="time" value={settings.shift_night_out} onChange={(v:any) => setSettings({...settings, shift_night_out: v})} />
+      </div>
+      <button onClick={handleSave} className="bg-emerald-600 text-white px-8 py-3 rounded-lg hover:bg-emerald-700 font-bold">حفظ التغييرات</button>
+    </div>
+  );
+}
+
+function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState<Partial<Employee>>({ gender: 'ذكر', status: 'نشط', center_id: centerId });
+
+  const handleAdd = async () => {
+    const { error } = await supabase.from('employees').insert([formData]);
+    if (error) alert('خطأ في الإضافة: ' + error.message);
+    else {
+      setShowForm(false);
+      onRefresh();
+    }
+  };
+
+  const handleExcelUpload = (e: any) => {
+    alert('تم محاكاة رفع ملف Excel بنجاح. في الإنتاج سيتم معالجة البيانات وإضافتها.');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">إعدادات الأطباء والعاملين</h2>
+        <div className="flex gap-2">
+           <button onClick={() => setShowForm(!showForm)} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-semibold">
+            {showForm ? 'إلغاء' : <><Plus className="w-4 h-4 ml-2" /> إضافة يدوي</>}
+          </button>
+          <label className="flex items-center bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 cursor-pointer font-semibold">
+            <Upload className="w-4 h-4 ml-2" /> رفع إكسيل
+            <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} />
+          </label>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="bg-gray-50 p-6 rounded-xl border-2 border-dashed grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input label="رقم الموظف" value={formData.employee_id || ''} onChange={(v:any) => setFormData({...formData, employee_id: v})} />
+          <Input label="اسم الموظف" value={formData.name || ''} onChange={(v:any) => setFormData({...formData, name: v})} />
+          <Input label="الرقم القومي" value={formData.national_id || ''} onChange={(v:any) => setFormData({...formData, national_id: v})} />
+          <Input label="التخصص" value={formData.specialty || ''} onChange={(v:any) => setFormData({...formData, specialty: v})} />
+          <Input label="رقم الهاتف" value={formData.phone || ''} onChange={(v:any) => setFormData({...formData, phone: v})} />
+          <Input label="البريد الإلكتروني" value={formData.email || ''} onChange={(v:any) => setFormData({...formData, email: v})} />
+          <Select label="النوع" options={['ذكر', 'أنثى']} value={formData.gender} onChange={(v:any) => setFormData({...formData, gender: v as any})} />
+          <Input label="الدرجة الوظيفية" value={formData.grade || ''} onChange={(v:any) => setFormData({...formData, grade: v})} />
+          <Input label="رصيد اعتيادي" type="number" value={formData.leave_annual_balance?.toString() || ''} onChange={(v:any) => setFormData({...formData, leave_annual_balance: parseInt(v)})} />
+          <Input label="رصيد عارضة" type="number" value={formData.leave_casual_balance?.toString() || ''} onChange={(v:any) => setFormData({...formData, leave_casual_balance: parseInt(v)})} />
+          <div className="md:col-span-3">
+             <button onClick={handleAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">تأكيد الإضافة</button>
+          </div>
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-right">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-3">رقم</th>
+              <th className="p-3">الاسم</th>
+              <th className="p-3">التخصص</th>
+              <th className="p-3">الرقم القومي</th>
+              <th className="p-3">الحالة</th>
+              <th className="p-3">إجراء</th>
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map(emp => (
+              <tr key={emp.id} className="border-b hover:bg-gray-50">
+                <td className="p-3 font-mono">{emp.employee_id}</td>
+                <td className="p-3 font-bold">{emp.name}</td>
+                <td className="p-3 text-gray-600">{emp.specialty}</td>
+                <td className="p-3 text-gray-600">{emp.national_id}</td>
+                <td className="p-3">
+                  <span className={`px-2 py-1 rounded text-xs ${emp.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {emp.status}
+                  </span>
+                </td>
+                <td className="p-3">
+                  <button onClick={async () => {
+                    if(confirm('هل أنت متأكد؟')) {
+                      await supabase.from('employees').delete().eq('id', emp.id);
+                      onRefresh();
+                    }
+                  }} className="text-red-500 hover:text-red-700">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefresh: () => void }) {
+  const handleStatus = async (id: string, status: 'مقبول' | 'مرفوض') => {
+    const { error } = await supabase.from('leave_requests').update({ status }).eq('id', id);
+    if (error) alert('خطأ');
+    else onRefresh();
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">طلبات الإجازات والعوارض</h2>
+      <div className="space-y-4">
+        {requests.length === 0 && <p className="text-center text-gray-400 py-10">لا توجد طلبات معلقة</p>}
+        {requests.map(req => (
+          <div key={req.id} className="p-4 border rounded-xl flex justify-between items-center hover:shadow-md transition-shadow">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <span className="font-bold text-lg">{req.employee_name}</span>
+                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{req.type}</span>
+              </div>
+              <p className="text-sm text-gray-500">الفترة: {req.start_date} إلى {req.end_date}</p>
+              <p className="text-sm text-gray-600 mt-1">القائم بالعمل: {req.backup_person}</p>
+              {req.notes && <p className="text-xs italic mt-1 text-gray-400">ملاحظة: {req.notes}</p>}
+            </div>
+            
+            <div className="flex flex-col items-end gap-2">
+              <span className={`text-xs px-2 py-1 rounded font-bold ${
+                req.status === 'مقبول' ? 'text-green-600 bg-green-50' : 
+                req.status === 'مرفوض' ? 'text-red-600 bg-red-50' : 'text-amber-600 bg-amber-50'
+              }`}>
+                {req.status}
+              </span>
+              {req.status === 'معلق' && (
+                <div className="flex gap-2">
+                  <button onClick={() => handleStatus(req.id, 'مقبول')} className="p-2 bg-green-50 text-green-600 rounded-full hover:bg-green-100">
+                    <CheckCircle className="w-6 h-6" />
+                  </button>
+                  <button onClick={() => handleStatus(req.id, 'مرفوض')} className="p-2 bg-red-50 text-red-600 rounded-full hover:bg-red-100">
+                    <XCircle className="w-6 h-6" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EveningScheduleTab({ centerId }: { centerId: string }) {
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">إعدادات جدول المسائي</h2>
+      <p className="text-gray-500">يمكن إضافة الجدول عبر رفع ملف إكسيل يحتوي على التخصصات والأطباء المناوبين يومياً.</p>
+      <div className="border-2 border-dashed p-12 text-center rounded-2xl bg-gray-50">
+         <Upload className="w-12 h-12 mx-auto mb-4 text-blue-500" />
+         <h3 className="text-xl font-bold mb-2">رفع ملف الجدول</h3>
+         <p className="text-sm text-gray-400 mb-6">صيغ الملفات المدعومة: .xlsx, .xls</p>
+         <button className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700">اختيار ملف</button>
+      </div>
+    </div>
+  );
+}
+
+function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefresh: () => void }) {
+  const [formData, setFormData] = useState<Partial<AttendanceRecord>>({
+    date: new Date().toISOString().split('T')[0],
+    check_in_status: 'حاضر',
+    check_out_status: 'منصرف'
+  });
+
+  const handleAdd = async () => {
+    if(!formData.employee_id) return alert('اختر الموظف');
+    const { error } = await supabase.from('attendance').insert([formData]);
+    if (error) alert('خطأ: ' + error.message);
+    else {
+      alert('تم التسجيل');
+      onRefresh();
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">تسجيل حضور وانصراف يدوي</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-xl border">
+        <div>
+          <label className="block text-sm font-semibold mb-1">الموظف</label>
+          <select 
+            className="w-full p-3 border rounded-lg bg-white"
+            onChange={e => setFormData({...formData, employee_id: e.target.value})}
+          >
+            <option value="">-- اختر موظف --</option>
+            {employees.map(emp => <option key={emp.id} value={emp.employee_id}>{emp.name} ({emp.employee_id})</option>)}
+          </select>
+        </div>
+        <Input label="التاريخ" type="date" value={formData.date || ''} onChange={(v:any) => setFormData({...formData, date: v})} />
+        <Input label="وقت الحضور" type="time" value={formData.check_in || ''} onChange={(v:any) => setFormData({...formData, check_in: v})} />
+        <Select label="حالة الحضور" options={['حاضر', 'متأخر', 'غائب']} value={formData.check_in_status || ''} onChange={(v:any) => setFormData({...formData, check_in_status: v})} />
+        <Input label="وقت الانصراف" type="time" value={formData.check_out || ''} onChange={(v:any) => setFormData({...formData, check_out: v})} />
+        <Select label="حالة الانصراف" options={['منصرف', 'خروج مبكر', 'مستمر']} value={formData.check_out_status || ''} onChange={(v:any) => setFormData({...formData, check_out_status: v})} />
+        <div className="md:col-span-2">
+          <button onClick={handleAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">حفظ السجل</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReportsTab({ employees, centerId }: { employees: Employee[], centerId: string }) {
+  const [reportType, setReportType] = useState('single');
+  const [selectedEmp, setSelectedEmp] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [results, setResults] = useState<AttendanceRecord[]>([]);
+
+  const fetchReport = async () => {
+    let query = supabase.from('attendance').select('*').gte('date', dateFrom).lte('date', dateTo);
+    if(reportType === 'single') query = query.eq('employee_id', selectedEmp);
+    
+    const { data } = await query;
+    if(data) setResults(data);
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">التقارير والإحصائيات</h2>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div>
+          <label className="block text-sm font-semibold mb-1">نوع التقرير</label>
+          <select className="w-full p-2 border rounded-lg" value={reportType} onChange={e => setReportType(e.target.value)}>
+            <option value="single">موظف واحد</option>
+            <option value="all">كل الموظفين</option>
+          </select>
+        </div>
+        {reportType === 'single' && (
+          <div>
+            <label className="block text-sm font-semibold mb-1">الموظف</label>
+            <select className="w-full p-2 border rounded-lg" value={selectedEmp} onChange={e => setSelectedEmp(e.target.value)}>
+              <option value="">-- اختر --</option>
+              {employees.map(emp => <option key={emp.id} value={emp.employee_id}>{emp.name}</option>)}
+            </select>
+          </div>
+        )}
+        <Input label="من" type="date" value={dateFrom} onChange={setDateFrom} />
+        <Input label="إلى" type="date" value={dateTo} onChange={setDateTo} />
+        <div className="md:col-span-4">
+           <button onClick={fetchReport} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold w-full md:w-auto">عرض التقرير</button>
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <h3 className="font-bold mb-4">نتائج التقرير ({results.length})</h3>
+        <div className="overflow-x-auto border rounded-lg">
+          <table className="w-full text-right text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="p-2 border">التاريخ</th>
+                <th className="p-2 border">الموظف</th>
+                <th className="p-2 border">الحضور</th>
+                <th className="p-2 border">الانصراف</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map(r => (
+                <tr key={r.id}>
+                  <td className="p-2 border">{r.date}</td>
+                  <td className="p-2 border font-mono">{r.employee_id}</td>
+                  <td className="p-2 border text-green-600">{r.check_in || '--:--'} ({r.check_in_status})</td>
+                  <td className="p-2 border text-red-600">{r.check_out || '--:--'} ({r.check_out_status})</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AlertsTab({ employees, sender }: { employees: Employee[], sender: string }) {
+  const [recipient, setRecipient] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const sendMsg = async () => {
+    if(!recipient || !msg) return alert('أكمل البيانات');
+    const { error } = await supabase.from('messages').insert([{
+      from_user: sender,
+      to_user: recipient,
+      content: msg
+    }]);
+    if(error) alert('خطأ');
+    else {
+      alert('تم الإرسال');
+      setMsg('');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">الرسائل والتنبيهات الداخلية</h2>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-semibold mb-1">إلى</label>
+          <select className="w-full p-3 border rounded-lg" value={recipient} onChange={e => setRecipient(e.target.value)}>
+            <option value="">-- اختر المستلم --</option>
+            <option value="all">الكل</option>
+            {employees.map(e => <option key={e.id} value={e.employee_id}>{e.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-semibold mb-1">نص الرسالة</label>
+          <textarea 
+            className="w-full p-3 border rounded-lg min-h-[150px]"
+            placeholder="اكتب التنبيه هنا..."
+            value={msg}
+            onChange={e => setMsg(e.target.value)}
+          />
+        </div>
+        <button onClick={sendMsg} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold flex items-center justify-center">
+          <Bell className="w-5 h-5 ml-2" /> إرسال التنبيه
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Define the interface for AdminDashboard props to fix "Cannot find name 'AdminDashboardProps'"
 interface AdminDashboardProps {
   onBack: () => void;
 }
 
+// Main component
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
@@ -21,7 +419,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // General Fetching
   useEffect(() => {
     fetchCenters();
   }, []);
@@ -124,7 +521,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar Nav */}
         <div className="lg:col-span-1 space-y-2">
           <NavButton active={activeTab === 'settings'} icon={<Settings />} label="الإعدادات العامة" onClick={() => setActiveTab('settings')} />
           <NavButton active={activeTab === 'doctors'} icon={<Users />} label="إعدادات الأطباء" onClick={() => setActiveTab('doctors')} />
@@ -135,9 +531,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           <NavButton active={activeTab === 'alerts'} icon={<Bell />} label="التنبيهات" onClick={() => setActiveTab('alerts')} />
         </div>
 
-        {/* Content Area */}
         <div className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-sm border min-h-[600px]">
-          {activeTab === 'settings' && <GeneralSettingsTab center={selectedCenter!} />}
+          {activeTab === 'settings' && selectedCenter && <GeneralSettingsTab center={selectedCenter} />}
           {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchDashboardData} centerId={selectedCenter!.id} />}
           {activeTab === 'leaves' && <LeavesTab requests={leaveRequests} onRefresh={fetchDashboardData} />}
           {activeTab === 'evening' && <EveningScheduleTab centerId={selectedCenter!.id} />}
@@ -149,396 +544,5 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
     </div>
   );
 };
-
-// Sub-components for Admin
-const NavButton = ({ active, icon, label, onClick }: any) => (
-  <button 
-    onClick={onClick}
-    className={`w-full flex items-center p-4 rounded-xl transition-all font-semibold ${
-      active ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'
-    }`}
-  >
-    <span className="ml-3">{icon}</span>
-    {label}
-  </button>
-);
-
-const GeneralSettingsTab = ({ center }: { center: GeneralSettings }) => {
-  const [settings, setSettings] = useState(center);
-  const handleSave = async () => {
-    const { error } = await supabase.from('general_settings').update(settings).eq('id', center.id);
-    if (error) alert('خطأ في الحفظ');
-    else alert('تم الحفظ بنجاح');
-  };
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold border-b pb-2">الإعدادات العامة للمركز</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Input label="اسم المركز" value={settings.center_name} onChange={v => setSettings({...settings, center_name: v})} />
-        <Input label="اسم الإدارة" value={settings.admin_name} onChange={v => setSettings({...settings, admin_name: v})} />
-        <Input label="تليفون المركز" value={settings.phone} onChange={v => setSettings({...settings, phone: v})} />
-        <Input label="عنوان المركز" value={settings.address} onChange={v => setSettings({...settings, address: v})} />
-        <Input label="رابط اللوكيشن" value={settings.location_url} onChange={v => setSettings({...settings, location_url: v})} />
-        <Input label="باسورد المركز" type="password" value={settings.password} onChange={v => setSettings({...settings, password: v})} />
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-t pt-4">
-        <Input label="حضور الصباحي" type="time" value={settings.shift_morning_in} onChange={v => setSettings({...settings, shift_morning_in: v})} />
-        <Input label="انصراف الصباحي" type="time" value={settings.shift_morning_out} onChange={v => setSettings({...settings, shift_morning_out: v})} />
-        <Input label="حضور المسائي" type="time" value={settings.shift_evening_in} onChange={v => setSettings({...settings, shift_evening_in: v})} />
-        <Input label="انصراف المسائي" type="time" value={settings.shift_evening_out} onChange={v => setSettings({...settings, shift_evening_out: v})} />
-        <Input label="حضور السهر" type="time" value={settings.shift_night_in} onChange={v => setSettings({...settings, shift_night_in: v})} />
-        <Input label="انصراف السهر" type="time" value={settings.shift_night_out} onChange={v => setSettings({...settings, shift_night_out: v})} />
-      </div>
-      <button onClick={handleSave} className="bg-emerald-600 text-white px-8 py-3 rounded-lg hover:bg-emerald-700 font-bold">حفظ التغييرات</button>
-    </div>
-  );
-};
-
-const DoctorsTab = ({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) => {
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<Partial<Employee>>({ gender: 'ذكر', status: 'نشط', center_id: centerId });
-
-  const handleAdd = async () => {
-    const { error } = await supabase.from('employees').insert([formData]);
-    if (error) alert('خطأ في الإضافة: ' + error.message);
-    else {
-      setShowForm(false);
-      onRefresh();
-    }
-  };
-
-  const handleExcelUpload = (e: any) => {
-    // Simple mock logic for excel upload demo
-    alert('تم محاكاة رفع ملف Excel بنجاح. في الإنتاج سيتم معالجة البيانات وإضافتها.');
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">إعدادات الأطباء والعاملين</h2>
-        <div className="flex gap-2">
-           <button onClick={() => setShowForm(!showForm)} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-semibold">
-            {showForm ? 'إلغاء' : <><Plus className="w-4 h-4 ml-2" /> إضافة يدوي</>}
-          </button>
-          <label className="flex items-center bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 cursor-pointer font-semibold">
-            <Upload className="w-4 h-4 ml-2" /> رفع إكسيل
-            <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} />
-          </label>
-        </div>
-      </div>
-
-      {showForm && (
-        <div className="bg-gray-50 p-6 rounded-xl border-2 border-dashed grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input label="رقم الموظف" value={formData.employee_id || ''} onChange={v => setFormData({...formData, employee_id: v})} />
-          <Input label="اسم الموظف" value={formData.name || ''} onChange={v => setFormData({...formData, name: v})} />
-          <Input label="الرقم القومي" value={formData.national_id || ''} onChange={v => setFormData({...formData, national_id: v})} />
-          <Input label="التخصص" value={formData.specialty || ''} onChange={v => setFormData({...formData, specialty: v})} />
-          <Input label="رقم الهاتف" value={formData.phone || ''} onChange={v => setFormData({...formData, phone: v})} />
-          <Input label="البريد الإلكتروني" value={formData.email || ''} onChange={v => setFormData({...formData, email: v})} />
-          <Select label="النوع" options={['ذكر', 'أنثى']} value={formData.gender} onChange={v => setFormData({...formData, gender: v as any})} />
-          <Input label="الدرجة الوظيفية" value={formData.grade || ''} onChange={v => setFormData({...formData, grade: v})} />
-          <Input label="رصيد اعتيادي" type="number" value={formData.leave_annual_balance?.toString() || ''} onChange={v => setFormData({...formData, leave_annual_balance: parseInt(v)})} />
-          <Input label="رصيد عارضة" type="number" value={formData.leave_casual_balance?.toString() || ''} onChange={v => setFormData({...formData, leave_casual_balance: parseInt(v)})} />
-          <div className="md:col-span-3">
-             <button onClick={handleAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">تأكيد الإضافة</button>
-          </div>
-        </div>
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm text-right">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="p-3">رقم</th>
-              <th className="p-3">الاسم</th>
-              <th className="p-3">التخصص</th>
-              <th className="p-3">الرقم القومي</th>
-              <th className="p-3">الحالة</th>
-              <th className="p-3">إجراء</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map(emp => (
-              <tr key={emp.id} className="border-b hover:bg-gray-50">
-                <td className="p-3 font-mono">{emp.employee_id}</td>
-                <td className="p-3 font-bold">{emp.name}</td>
-                <td className="p-3 text-gray-600">{emp.specialty}</td>
-                <td className="p-3 text-gray-600">{emp.national_id}</td>
-                <td className="p-3">
-                  <span className={`px-2 py-1 rounded text-xs ${emp.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {emp.status}
-                  </span>
-                </td>
-                <td className="p-3">
-                  <button onClick={async () => {
-                    if(confirm('هل أنت متأكد؟')) {
-                      await supabase.from('employees').delete().eq('id', emp.id);
-                      onRefresh();
-                    }
-                  }} className="text-red-500 hover:text-red-700">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-const LeavesTab = ({ requests, onRefresh }: { requests: LeaveRequest[], onRefresh: () => void }) => {
-  const handleStatus = async (id: string, status: 'مقبول' | 'مرفوض') => {
-    const { error } = await supabase.from('leave_requests').update({ status }).eq('id', id);
-    if (error) alert('خطأ');
-    else onRefresh();
-  };
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold">طلبات الإجازات والعوارض</h2>
-      <div className="space-y-4">
-        {requests.length === 0 && <p className="text-center text-gray-400 py-10">لا توجد طلبات معلقة</p>}
-        {requests.map(req => (
-          <div key={req.id} className="p-4 border rounded-xl flex justify-between items-center hover:shadow-md transition-shadow">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <span className="font-bold text-lg">{req.employee_name}</span>
-                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{req.type}</span>
-              </div>
-              <p className="text-sm text-gray-500">الفترة: {req.start_date} إلى {req.end_date}</p>
-              <p className="text-sm text-gray-600 mt-1">القائم بالعمل: {req.backup_person}</p>
-              {req.notes && <p className="text-xs italic mt-1 text-gray-400">ملاحظة: {req.notes}</p>}
-            </div>
-            
-            <div className="flex flex-col items-end gap-2">
-              <span className={`text-xs px-2 py-1 rounded font-bold ${
-                req.status === 'مقبول' ? 'text-green-600 bg-green-50' : 
-                req.status === 'مرفوض' ? 'text-red-600 bg-red-50' : 'text-amber-600 bg-amber-50'
-              }`}>
-                {req.status}
-              </span>
-              {req.status === 'معلق' && (
-                <div className="flex gap-2">
-                  <button onClick={() => handleStatus(req.id, 'مقبول')} className="p-2 bg-green-50 text-green-600 rounded-full hover:bg-green-100">
-                    <CheckCircle className="w-6 h-6" />
-                  </button>
-                  <button onClick={() => handleStatus(req.id, 'مرفوض')} className="p-2 bg-red-50 text-red-600 rounded-full hover:bg-red-100">
-                    <XCircle className="w-6 h-6" />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const EveningScheduleTab = ({ centerId }: { centerId: string }) => {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold">إعدادات جدول المسائي</h2>
-      <p className="text-gray-500">يمكن إضافة الجدول عبر رفع ملف إكسيل يحتوي على التخصصات والأطباء المناوبين يومياً.</p>
-      <div className="border-2 border-dashed p-12 text-center rounded-2xl bg-gray-50">
-         <Upload className="w-12 h-12 mx-auto mb-4 text-blue-500" />
-         <h3 className="text-xl font-bold mb-2">رفع ملف الجدول</h3>
-         <p className="text-sm text-gray-400 mb-6">صيغ الملفات المدعومة: .xlsx, .xls</p>
-         <button className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700">اختيار ملف</button>
-      </div>
-    </div>
-  );
-};
-
-const AttendanceTab = ({ employees, onRefresh }: { employees: Employee[], onRefresh: () => void }) => {
-  const [formData, setFormData] = useState<Partial<AttendanceRecord>>({
-    date: new Date().toISOString().split('T')[0],
-    check_in_status: 'حاضر',
-    check_out_status: 'منصرف'
-  });
-
-  const handleAdd = async () => {
-    if(!formData.employee_id) return alert('اختر الموظف');
-    const { error } = await supabase.from('attendance').insert([formData]);
-    if (error) alert('خطأ: ' + error.message);
-    else {
-      alert('تم التسجيل');
-      onRefresh();
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold">تسجيل حضور وانصراف يدوي</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-xl border">
-        <div>
-          <label className="block text-sm font-semibold mb-1">الموظف</label>
-          <select 
-            className="w-full p-3 border rounded-lg bg-white"
-            onChange={e => setFormData({...formData, employee_id: e.target.value})}
-          >
-            <option value="">-- اختر موظف --</option>
-            {employees.map(emp => <option key={emp.id} value={emp.employee_id}>{emp.name} ({emp.employee_id})</option>)}
-          </select>
-        </div>
-        <Input label="التاريخ" type="date" value={formData.date || ''} onChange={v => setFormData({...formData, date: v})} />
-        <Input label="وقت الحضور" type="time" value={formData.check_in || ''} onChange={v => setFormData({...formData, check_in: v})} />
-        <Select label="حالة الحضور" options={['حاضر', 'متأخر', 'غائب']} value={formData.check_in_status || ''} onChange={v => setFormData({...formData, check_in_status: v})} />
-        <Input label="وقت الانصراف" type="time" value={formData.check_out || ''} onChange={v => setFormData({...formData, check_out: v})} />
-        <Select label="حالة الانصراف" options={['منصرف', 'خروج مبكر', 'مستمر']} value={formData.check_out_status || ''} onChange={v => setFormData({...formData, check_out_status: v})} />
-        <div className="md:col-span-2">
-          <button onClick={handleAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">حفظ السجل</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const ReportsTab = ({ employees, centerId }: { employees: Employee[], centerId: string }) => {
-  const [reportType, setReportType] = useState('single');
-  const [selectedEmp, setSelectedEmp] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [results, setResults] = useState<AttendanceRecord[]>([]);
-
-  const fetchReport = async () => {
-    let query = supabase.from('attendance').select('*').gte('date', dateFrom).lte('date', dateTo);
-    if(reportType === 'single') query = query.eq('employee_id', selectedEmp);
-    
-    const { data } = await query;
-    if(data) setResults(data);
-  };
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold">التقارير والإحصائيات</h2>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-        <div>
-          <label className="block text-sm font-semibold mb-1">نوع التقرير</label>
-          <select className="w-full p-2 border rounded-lg" value={reportType} onChange={e => setReportType(e.target.value)}>
-            <option value="single">موظف واحد</option>
-            <option value="all">كل الموظفين</option>
-          </select>
-        </div>
-        {reportType === 'single' && (
-          <div>
-            <label className="block text-sm font-semibold mb-1">الموظف</label>
-            <select className="w-full p-2 border rounded-lg" value={selectedEmp} onChange={e => setSelectedEmp(e.target.value)}>
-              <option value="">-- اختر --</option>
-              {employees.map(emp => <option key={emp.id} value={emp.employee_id}>{emp.name}</option>)}
-            </select>
-          </div>
-        )}
-        <Input label="من" type="date" value={dateFrom} onChange={setDateFrom} />
-        <Input label="إلى" type="date" value={dateTo} onChange={setDateTo} />
-        <div className="md:col-span-4">
-           <button onClick={fetchReport} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold w-full md:w-auto">عرض التقرير</button>
-        </div>
-      </div>
-
-      <div className="mt-8">
-        <h3 className="font-bold mb-4">نتائج التقرير ({results.length})</h3>
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-right text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="p-2 border">التاريخ</th>
-                <th className="p-2 border">الموظف</th>
-                <th className="p-2 border">الحضور</th>
-                <th className="p-2 border">الانصراف</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map(r => (
-                <tr key={r.id}>
-                  <td className="p-2 border">{r.date}</td>
-                  <td className="p-2 border font-mono">{r.employee_id}</td>
-                  <td className="p-2 border text-green-600">{r.check_in || '--:--'} ({r.check_in_status})</td>
-                  <td className="p-2 border text-red-600">{r.check_out || '--:--'} ({r.check_out_status})</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const AlertsTab = ({ employees, sender }: { employees: Employee[], sender: string }) => {
-  const [recipient, setRecipient] = useState('');
-  const [msg, setMsg] = useState('');
-
-  const sendMsg = async () => {
-    if(!recipient || !msg) return alert('أكمل البيانات');
-    const { error } = await supabase.from('messages').insert([{
-      from_user: sender,
-      to_user: recipient,
-      content: msg
-    }]);
-    if(error) alert('خطأ');
-    else {
-      alert('تم الإرسال');
-      setMsg('');
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold">الرسائل والتنبيهات الداخلية</h2>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-semibold mb-1">إلى</label>
-          <select className="w-full p-3 border rounded-lg" value={recipient} onChange={e => setRecipient(e.target.value)}>
-            <option value="">-- اختر المستلم --</option>
-            <option value="all">الكل</option>
-            {employees.map(e => <option key={e.id} value={e.employee_id}>{e.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-semibold mb-1">نص الرسالة</label>
-          <textarea 
-            className="w-full p-3 border rounded-lg min-h-[150px]"
-            placeholder="اكتب التنبيه هنا..."
-            value={msg}
-            onChange={e => setMsg(e.target.value)}
-          />
-        </div>
-        <button onClick={sendMsg} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold flex items-center justify-center">
-          <Bell className="w-5 h-5 ml-2" /> إرسال التنبيه
-        </button>
-      </div>
-    </div>
-  );
-};
-
-// Generic UI helpers
-const Input = ({ label, type = 'text', value, onChange, placeholder }: any) => (
-  <div>
-    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
-    <input 
-      type={type} 
-      value={value} 
-      onChange={e => onChange(e.target.value)}
-      className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all outline-none"
-      placeholder={placeholder}
-    />
-  </div>
-);
-
-const Select = ({ label, options, value, onChange }: any) => (
-  <div>
-    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
-    <select 
-      value={value} 
-      onChange={e => onChange(e.target.value)}
-      className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all outline-none"
-    >
-      {options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
-    </select>
-  </div>
-);
 
 export default AdminDashboard;
