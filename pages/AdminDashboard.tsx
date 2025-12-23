@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, Settings, Users, FileText, Calendar, 
-  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, Send, FileSpreadsheet, Info, Download
+  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, Send, FileSpreadsheet, Info, Download, X
 } from 'lucide-react';
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage } from '../types';
 import * as XLSX from 'xlsx';
@@ -110,11 +110,25 @@ function ExcelUploadButton({ onData, label = "رفع إكسيل", icon = <Upload
 
 function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
   const [settings, setSettings] = useState(center);
+  const [newHoliday, setNewHoliday] = useState('');
+
   const handleSave = async () => {
     const { error } = await supabase.from('general_settings').update(settings).eq('id', center.id);
     if (error) alert('خطأ في الحفظ');
     else alert('تم الحفظ بنجاح');
   };
+
+  const addHoliday = () => {
+    if (!newHoliday) return;
+    if (settings.holidays.includes(newHoliday)) return alert('التاريخ موجود بالفعل');
+    setSettings({...settings, holidays: [...settings.holidays, newHoliday]});
+    setNewHoliday('');
+  };
+
+  const removeHoliday = (date: string) => {
+    setSettings({...settings, holidays: settings.holidays.filter(d => d !== date)});
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
@@ -128,6 +142,24 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
         <Input label="رابط اللوكيشن" value={settings.location_url} onChange={(v:any) => setSettings({...settings, location_url: v})} />
         <Input label="باسورد المركز" type="password" value={settings.password} onChange={(v:any) => setSettings({...settings, password: v})} />
       </div>
+      
+      <div className="border-t pt-4">
+        <h3 className="font-bold text-gray-700 mb-3 flex items-center"><Calendar className="w-4 h-4 ml-2"/> إدارة العطلات الرسمية (الأعياد والمناسبات)</h3>
+        <div className="flex gap-2 mb-4">
+          <input type="date" value={newHoliday} onChange={e => setNewHoliday(e.target.value)} className="p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+          <button onClick={addHoliday} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center"><Plus className="w-4 h-4 ml-1"/> إضافة عطلة</button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {settings.holidays.map(date => (
+            <span key={date} className="bg-gray-100 px-3 py-1 rounded-full text-sm border flex items-center gap-2">
+              {date}
+              <button onClick={() => removeHoliday(date)} className="text-red-500 hover:text-red-700"><X className="w-3.5 h-3.5"/></button>
+            </span>
+          ))}
+          {settings.holidays.length === 0 && <p className="text-xs text-gray-400">لا توجد عطلات مضافة بعد.</p>}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-t pt-4">
         <Input label="حضور الصباحي" type="time" value={settings.shift_morning_in} onChange={(v:any) => setSettings({...settings, shift_morning_in: v})} />
         <Input label="انصراف الصباحي" type="time" value={settings.shift_morning_out} onChange={(v:any) => setSettings({...settings, shift_morning_out: v})} />

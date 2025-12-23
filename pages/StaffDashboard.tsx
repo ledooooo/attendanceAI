@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
-  ArrowRight, User, Calendar, FilePlus, ClipboardCheck, MessageCircle, Send, LogOut, Clock, Search
+  ArrowRight, User, Calendar, FilePlus, ClipboardCheck, MessageCircle, Send, LogOut, Clock, Search, TrendingUp, AlertTriangle, CheckCircle, List
 } from 'lucide-react';
 import { Employee, LeaveRequest, AttendanceRecord, InternalMessage, GeneralSettings } from '../types';
 
@@ -18,6 +18,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [messages, setMessages] = useState<InternalMessage[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [allMyRequests, setAllMyRequests] = useState<LeaveRequest[]>([]);
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
@@ -40,16 +41,18 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   };
 
   const fetchStaffData = async (empId: string) => {
-    const [attRes, msgRes, leaveRes, setRes] = await Promise.all([
+    const [attRes, msgRes, leaveRes, setRes, myReqRes] = await Promise.all([
       supabase.from('attendance').select('*').eq('employee_id', empId),
       supabase.from('messages').select('*').or(`to_user.eq.${empId},to_user.eq.all`).order('created_at', { ascending: false }),
       supabase.from('leave_requests').select('*').eq('employee_id', empId).eq('status', 'مقبول'),
-      supabase.from('general_settings').select('*').limit(1).single()
+      supabase.from('general_settings').select('*').limit(1).single(),
+      supabase.from('leave_requests').select('*').eq('employee_id', empId).order('created_at', { ascending: false })
     ]);
     if (attRes.data) setAttendance(attRes.data);
     if (msgRes.data) setMessages(msgRes.data);
     if (leaveRes.data) setLeaves(leaveRes.data);
     if (setRes.data) setSettings(setRes.data);
+    if (myReqRes.data) setAllMyRequests(myReqRes.data);
   };
 
   useEffect(() => {
@@ -80,6 +83,35 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     );
   }
 
+  // Statistics Calculation
+  const calculateStats = () => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const filteredAtt = attendance.filter(a => a.date.startsWith(selectedMonth));
+    const totalAttend = filteredAtt.length;
+    const totalLate = filteredAtt.filter(a => a.check_in_status === 'متأخر').length;
+    
+    let totalHours = 0;
+    filteredAtt.forEach(a => {
+      totalHours += parseFloat(calculateHours(a.check_in, a.check_out));
+    });
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    let absentCount = 0;
+    for(let d=1; d<=daysInMonth; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const hasAtt = filteredAtt.some(a => a.date === dateStr);
+      const isLeave = leaves.some((l: any) => dateStr >= l.start_date && dateStr <= l.end_date);
+      const isHoliday = settings?.holidays.includes(dateStr) || new Date(dateStr).getDay() === 5;
+      if (!hasAtt && !isLeave && !isHoliday) absentCount++;
+    }
+
+    const monthLeaves = leaves.filter((l: any) => l.start_date.startsWith(selectedMonth)).length;
+
+    return { totalAttend, totalLate, totalHours: totalHours.toFixed(1), absentCount, monthLeaves };
+  };
+
+  const stats = calculateStats();
+
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8">
       <div className="bg-white p-6 rounded-2xl shadow-sm border mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
@@ -91,8 +123,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
             <h1 className="text-2xl font-bold text-gray-800">{employee.name}</h1>
             <p className="text-gray-500">{employee.specialty} | كود: {employee.employee_id}</p>
             <div className="mt-2 flex gap-2">
-              <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-xs font-bold">اعتيادي: {employee.remaining_annual}</span>
-              <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded text-xs font-bold">عارضة: {employee.remaining_casual}</span>
+              <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded text-xs font-bold">رصيد اعتيادي: {employee.remaining_annual}</span>
+              <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded text-xs font-bold">رصيد عارضة: {employee.remaining_casual}</span>
             </div>
           </div>
         </div>
@@ -101,10 +133,19 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
         </button>
       </div>
 
+      {/* Quick Stats Dashboard */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <StatCard label="ساعات العمل" value={stats.totalHours} icon={<Clock className="text-blue-500"/>} />
+        <StatCard label="أيام الحضور" value={stats.totalAttend} icon={<CheckCircle className="text-emerald-500"/>} />
+        <StatCard label="أيام الغياب" value={stats.absentCount} icon={<AlertTriangle className="text-red-500"/>} />
+        <StatCard label="مرات التأخير" value={stats.totalLate} icon={<TrendingUp className="text-amber-500"/>} />
+        <StatCard label="إجمالي الإجازات" value={stats.monthLeaves} icon={<Calendar className="text-purple-500"/>} />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1 flex flex-col gap-2">
            <StaffNav active={activeTab === 'attendance'} icon={<Clock />} label="تقارير الحضور الشهرية" onClick={() => setActiveTab('attendance')} />
-           <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="تقديم طلب إجازة" onClick={() => setActiveTab('leave')} />
+           <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="تقديم الطلبات" onClick={() => setActiveTab('leave')} />
            <StaffNav active={activeTab === 'eval'} icon={<ClipboardCheck />} label="تقييمي الشهري" onClick={() => setActiveTab('eval')} />
            <StaffNav active={activeTab === 'messages'} icon={<MessageCircle />} label={`الرسائل (${messages.length})`} onClick={() => setActiveTab('messages')} />
         </div>
@@ -119,7 +160,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
               setSelectedMonth={setSelectedMonth}
             />
           )}
-          {activeTab === 'leave' && <StaffLeaveForm employee={employee} />}
+          {activeTab === 'leave' && <StaffLeaveForm employee={employee} requests={allMyRequests} refresh={() => fetchStaffData(employee.employee_id)} />}
           {activeTab === 'eval' && <StaffEval employee={employee} />}
           {activeTab === 'messages' && <StaffMessages messages={messages} employeeId={employee.employee_id} />}
         </div>
@@ -127,6 +168,17 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     </div>
   );
 };
+
+// Helper components
+const StatCard = ({ label, value, icon }: any) => (
+  <div className="bg-white p-4 rounded-xl shadow-sm border flex items-center gap-3">
+    <div className="p-2 bg-gray-50 rounded-lg">{icon}</div>
+    <div>
+      <p className="text-[10px] text-gray-400 font-bold uppercase">{label}</p>
+      <p className="text-lg font-bold text-gray-800">{value}</p>
+    </div>
+  </div>
+);
 
 // Helper to calculate hours
 const calculateHours = (inTime: string | null, outTime: string | null) => {
@@ -136,12 +188,11 @@ const calculateHours = (inTime: string | null, outTime: string | null) => {
   const date1 = new Date(0, 0, 0, h1, m1);
   const date2 = new Date(0, 0, 0, h2, m2);
   let diff = (date2.getTime() - date1.getTime()) / 1000 / 60 / 60;
-  if (diff < 0) diff += 24; // Handle overnight shifts
+  if (diff < 0) diff += 24; 
   return diff.toFixed(1);
 };
 
 const StaffAttendance = ({ records, leaves, holidays, selectedMonth, setSelectedMonth }: any) => {
-  // Generate days for the selected month
   const [year, month] = selectedMonth.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   const daysArray = Array.from({ length: daysInMonth }, (_, i) => {
@@ -172,6 +223,7 @@ const StaffAttendance = ({ records, leaves, holidays, selectedMonth, setSelected
               <th className="p-3 text-center">توقيت الحضور</th>
               <th className="p-3 text-center">حالة الحضور</th>
               <th className="p-3 text-center">توقيت الانصراف</th>
+              <th className="p-3 text-center">ساعة الانصراف</th>
               <th className="p-3 text-center">ساعات العمل</th>
             </tr>
           </thead>
@@ -179,7 +231,7 @@ const StaffAttendance = ({ records, leaves, holidays, selectedMonth, setSelected
             {daysArray.map(date => {
               const record = records.find((r: any) => r.date === date);
               const isLeave = leaves.some((l: any) => date >= l.start_date && date <= l.end_date);
-              const isHoliday = holidays.includes(date);
+              const isHoliday = holidays.includes(date) || new Date(date).getDay() === 5; // الجمعة
               
               let statusText = "";
               let rowClass = "border-b hover:bg-gray-50 transition-colors";
@@ -211,6 +263,7 @@ const StaffAttendance = ({ records, leaves, holidays, selectedMonth, setSelected
                     </span>
                   </td>
                   <td className="p-3 text-center font-mono">{record?.check_out || '--:--'}</td>
+                  <td className="p-3 text-center font-mono">{record?.check_out || '--:--'}</td>
                   <td className="p-3 text-center font-bold text-gray-700">
                     {record ? `${calculateHours(record.check_in, record.check_out)} ساعة` : '--'}
                   </td>
@@ -224,54 +277,97 @@ const StaffAttendance = ({ records, leaves, holidays, selectedMonth, setSelected
   );
 };
 
-const StaffLeaveForm = ({ employee }: { employee: Employee }) => {
+const StaffLeaveForm = ({ employee, requests, refresh }: { employee: Employee, requests: LeaveRequest[], refresh: () => void }) => {
   const [formData, setFormData] = useState({ type: 'اعتيادي', start: '', end: '', backup: '', notes: '' });
 
   const submit = async () => {
     if (!formData.start || !formData.end) return alert('برجاء تحديد التواريخ');
     const { error } = await supabase.from('leave_requests').insert([{
       employee_id: employee.employee_id,
-      ...formData,
+      type: formData.type,
+      start_date: formData.start,
+      end_date: formData.end,
+      backup_person: formData.backup,
+      notes: formData.notes,
       status: 'معلق'
     }]);
-    if (error) alert('خطأ في الإرسال');
-    else {
+    if (error) {
+        console.error(error);
+        alert('خطأ في الإرسال: ' + error.message);
+    } else {
       alert('تم تقديم الطلب بنجاح وهو قيد المراجعة');
       setFormData({ type: 'اعتيادي', start: '', end: '', backup: '', notes: '' });
+      refresh();
     }
   };
 
   return (
-    <div className="space-y-6">
-      <h3 className="text-xl font-bold mb-4">تقديم طلب إجازة أو عارضة</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-semibold mb-1">نوع الطلب</label>
-          <select className="w-full p-3 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
-            <option value="اعتيادي">إجازة اعتيادية</option>
-            <option value="عارضة">إجازة عارضة</option>
-            <option value="مرضي">إجازة مرضية</option>
-            <option value="مأمورية">مأمورية عمل</option>
-          </select>
+    <div className="space-y-10">
+      <div>
+        <h3 className="text-xl font-bold mb-4 flex items-center"><FilePlus className="ml-2 w-5 h-5 text-emerald-600"/> تقديم طلب إجازة أو عارضة</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-2xl border">
+          <div>
+            <label className="block text-sm font-semibold mb-1">نوع الطلب</label>
+            <select className="w-full p-3 border rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+              <option value="اعتيادي">إجازة اعتيادية</option>
+              <option value="عارضة">إجازة عارضة</option>
+              <option value="مرضي">إجازة مرضية</option>
+              <option value="مأمورية">مأمورية عمل</option>
+            </select>
+          </div>
+          <div>
+             <label className="block text-sm font-semibold mb-1">تاريخ البداية</label>
+             <input type="date" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.start} onChange={e => setFormData({...formData, start: e.target.value})} />
+          </div>
+          <div>
+             <label className="block text-sm font-semibold mb-1">تاريخ النهاية</label>
+             <input type="date" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.end} onChange={e => setFormData({...formData, end: e.target.value})} />
+          </div>
+          <div>
+             <label className="block text-sm font-semibold mb-1">القائم بالعمل (البديل)</label>
+             <input type="text" placeholder="اسم الزميل البديل" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.backup} onChange={e => setFormData({...formData, backup: e.target.value})} />
+          </div>
+          <div className="md:col-span-2">
+             <label className="block text-sm font-semibold mb-1">ملاحظات إضافية</label>
+             <textarea className="w-full p-3 border rounded-lg min-h-[80px] focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="اكتب سبب الطلب أو أي تفاصيل أخرى..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
+          </div>
+          <div className="md:col-span-2">
+            <button onClick={submit} className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-md">إرسال الطلب للمدير</button>
+          </div>
         </div>
-        <div>
-           <label className="block text-sm font-semibold mb-1">تاريخ البداية</label>
-           <input type="date" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.start} onChange={e => setFormData({...formData, start: e.target.value})} />
-        </div>
-        <div>
-           <label className="block text-sm font-semibold mb-1">تاريخ النهاية</label>
-           <input type="date" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.end} onChange={e => setFormData({...formData, end: e.target.value})} />
-        </div>
-        <div>
-           <label className="block text-sm font-semibold mb-1">القائم بالعمل (البديل)</label>
-           <input type="text" placeholder="اسم الزميل البديل" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" value={formData.backup} onChange={e => setFormData({...formData, backup: e.target.value})} />
-        </div>
-        <div className="md:col-span-2">
-           <label className="block text-sm font-semibold mb-1">ملاحظات إضافية</label>
-           <textarea className="w-full p-3 border rounded-lg min-h-[100px] focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="اكتب سبب الطلب أو أي تفاصيل أخرى..." value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} />
-        </div>
-        <div className="md:col-span-2">
-          <button onClick={submit} className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold hover:bg-emerald-700 transition-colors shadow-md">إرسال الطلب للمدير</button>
+      </div>
+
+      <div>
+        <h3 className="text-xl font-bold mb-4 flex items-center"><List className="ml-2 w-5 h-5 text-blue-600"/> تاريخ طلباتي</h3>
+        <div className="overflow-x-auto rounded-xl border bg-white">
+          <table className="w-full text-sm text-right">
+            <thead className="bg-gray-50 text-gray-600">
+              <tr>
+                <th className="p-3">تاريخ التقديم</th>
+                <th className="p-3">النوع</th>
+                <th className="p-3">الفترة</th>
+                <th className="p-3">الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map(req => (
+                <tr key={req.id} className="border-b">
+                  <td className="p-3 text-gray-500 text-xs">{new Date(req.created_at).toLocaleDateString('ar-EG')}</td>
+                  <td className="p-3 font-bold">{req.type}</td>
+                  <td className="p-3 text-xs">{req.start_date} إلى {req.end_date}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      req.status === 'مقبول' ? 'bg-emerald-100 text-emerald-700' : 
+                      req.status === 'مرفوض' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {req.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {requests.length === 0 && <tr><td colSpan={4} className="text-center p-6 text-gray-400">لم تقم بتقديم أي طلبات بعد.</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
