@@ -1,9 +1,9 @@
 
 import React from 'react';
-import { ShieldCheck, Users, Info, Activity } from 'lucide-react';
+import { ShieldCheck, Users, Activity } from 'lucide-react';
 
 interface HomeProps {
-  onNavigate: (page: 'home' | 'admin' | 'staff' | 'instructions') => void;
+  onNavigate: (page: 'home' | 'admin' | 'staff') => void;
 }
 
 const Home: React.FC<HomeProps> = ({ onNavigate }) => {
@@ -17,7 +17,7 @@ const Home: React.FC<HomeProps> = ({ onNavigate }) => {
         <p className="text-gray-500">نظام إدارة الحضور والانصراف والطلبات</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
         <HomeCard 
           icon={<ShieldCheck className="w-12 h-12 text-blue-600" />}
           title="صفحة الإدارة"
@@ -31,13 +31,6 @@ const Home: React.FC<HomeProps> = ({ onNavigate }) => {
           description="تسجيل الحضور، تقديم الطلبات وعرض التقارير"
           onClick={() => onNavigate('staff')}
           color="hover:border-emerald-500"
-        />
-        <HomeCard 
-          icon={<Info className="w-12 h-12 text-amber-600" />}
-          title="التعليمات"
-          description="دليل الاستخدام وإعداد قاعدة البيانات"
-          onClick={() => onNavigate('instructions')}
-          color="hover:border-amber-500"
         />
       </div>
     </div>

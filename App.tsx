@@ -3,13 +3,11 @@ import React, { useState } from 'react';
 import Home from './pages/Home';
 import AdminDashboard from './pages/AdminDashboard';
 import StaffDashboard from './pages/StaffDashboard';
-import Instructions from './pages/Instructions';
 
-type Page = 'home' | 'admin' | 'staff' | 'instructions';
+type Page = 'home' | 'admin' | 'staff';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<Page>('home');
-  const [selectedCenterId, setSelectedCenterId] = useState<string | null>(null);
   const [currentEmployee, setCurrentEmployee] = useState<any>(null);
 
   const navigateTo = (page: Page) => setCurrentPage(page);
@@ -31,11 +29,6 @@ const App: React.FC = () => {
           onBack={() => navigateTo('home')}
           employee={currentEmployee}
           setEmployee={setCurrentEmployee}
-        />
-      )}
-      {currentPage === 'instructions' && (
-        <Instructions 
-          onBack={() => navigateTo('home')} 
         />
       )}
 
