@@ -8,6 +8,18 @@ import {
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage } from '../types';
 import * as XLSX from 'xlsx';
 
+// --- Date Helper for Import/Export ---
+const formatDateForDB = (val: any) => {
+  if (!val) return null;
+  const str = String(val).trim();
+  // Check for DD/MM/YYYY format
+  const dmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+  return str; // Return as is for YYYY-MM-DD
+};
+
 // --- Generic UI Helpers ---
 function Input({ label, type = 'text', value, onChange, placeholder }: any) {
   return (
@@ -202,7 +214,8 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
       leave_annual_balance: row.leave_annual_balance || 21,
       leave_casual_balance: row.leave_casual_balance || 7,
       remaining_annual: row.remaining_annual || row.leave_annual_balance || 21,
-      remaining_casual: row.remaining_casual || row.leave_casual_balance || 7
+      remaining_casual: row.remaining_casual || row.leave_casual_balance || 7,
+      join_date: formatDateForDB(row.join_date || row['تاريخ التعيين'])
     }));
     const { error } = await supabase.from('employees').insert(formatted);
     if (error) alert("خطأ في الرفع: " + error.message);
@@ -221,8 +234,8 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
         </div>
       </div>
       <ExcelInfo 
-        fields={['employee_id', 'name', 'national_id', 'specialty', 'phone', 'email', 'gender', 'grade', 'leave_annual_balance', 'leave_casual_balance']} 
-        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', phone: '0123456789', email: 'ahmed@mail.com', gender: 'ذكر', grade: 'أخصائي', leave_annual_balance: 21, leave_casual_balance: 7}]}
+        fields={['employee_id', 'name', 'national_id', 'specialty', 'phone', 'email', 'gender', 'grade', 'leave_annual_balance', 'leave_casual_balance', 'join_date']} 
+        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', phone: '0123456789', email: 'ahmed@mail.com', gender: 'ذكر', grade: 'أخصائي', leave_annual_balance: 21, leave_casual_balance: 7, join_date: '01/10/2023'}]}
         fileName="employees_sample"
       />
       
@@ -281,8 +294,8 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
     const formatted = data.map(row => ({
       employee_id: String(row.employee_id || row['رقم الموظف']),
       type: row.type || row['نوع الإجازة'],
-      start_date: row.start_date || row['من تاريخ'],
-      end_date: row.end_date || row['إلى تاريخ'],
+      start_date: formatDateForDB(row.start_date || row['من تاريخ']),
+      end_date: formatDateForDB(row.end_date || row['إلى تاريخ']),
       status: row.status || 'مقبول',
       backup_person: row.backup_person || row['القائم بالعمل'] || '',
       notes: row.notes || ''
@@ -299,7 +312,7 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
       </div>
       <ExcelInfo 
         fields={['employee_id', 'type', 'start_date', 'end_date', 'backup_person', 'status', 'notes']} 
-        sampleData={[{employee_id: '1001', type: 'اعتيادي', start_date: '2023-11-01', end_date: '2023-11-05', backup_person: 'د. محمد علي', status: 'مقبول', notes: 'سفر عائلي'}]}
+        sampleData={[{employee_id: '1001', type: 'اعتيادي', start_date: '01/11/2023', end_date: '05/11/2023', backup_person: 'د. محمد علي', status: 'مقبول', notes: 'سفر عائلي'}]}
         fileName="leaves_sample"
       />
       <div className="space-y-4">
@@ -328,7 +341,7 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
 function EveningScheduleTab() {
   const handleExcelSchedule = async (data: any[]) => {
     const formatted = data.map(row => ({
-      date: row.date || row['التاريخ'],
+      date: formatDateForDB(row.date || row['التاريخ']),
       specs: Array.isArray(row.specs) ? row.specs : (row.specs || row['التخصصات'])?.split(',') || [],
       doctors: Array.isArray(row.doctors) ? row.doctors : (row.doctors || row['الأطباء'])?.split(',') || []
     }));
@@ -344,7 +357,7 @@ function EveningScheduleTab() {
       </div>
       <ExcelInfo 
         fields={['date', 'specs', 'doctors']} 
-        sampleData={[{date: '2023-10-30', specs: 'باطنة,أطفال,جراحة', doctors: 'د.أحمد,د.سارة,د.خالد'}]}
+        sampleData={[{date: '30/10/2023', specs: 'باطنة,أطفال,جراحة', doctors: 'د.أحمد,د.سارة,د.خالد'}]}
         fileName="evening_sample"
       />
       <div className="border-2 border-dashed p-12 text-center rounded-2xl bg-gray-50">
@@ -384,7 +397,7 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
       if (validIds.has(eid)) {
         processedData.push({
           employee_id: eid,
-          date: row.date || row['التاريخ'] || new Date().toISOString().split('T')[0],
+          date: formatDateForDB(row.date || row['التاريخ'] || new Date().toISOString().split('T')[0]),
           check_in: row.check_in || row['وقت الحضور'] || null,
           check_out: row.check_out || row['وقت الانصراف'] || null,
           check_in_status: row.check_in_status || row['حالة الحضور'] || 'حاضر',
@@ -402,10 +415,8 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
     }
 
     // --- Deduplication Strategy ---
-    // 1. Get unique dates from the excel data
     const uniqueDates = Array.from(new Set(processedData.map(d => d.date)));
     
-    // 2. Fetch existing records for these dates to check duplicates
     const { data: existingRecords, error: fetchError } = await supabase
       .from('attendance')
       .select('employee_id, date')
@@ -416,10 +427,8 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
       return;
     }
 
-    // Create a key set for existing records: "eid-date"
     const existingKeys = new Set(existingRecords?.map(r => `${r.employee_id}-${r.date}`));
     
-    // 3. Filter only records that DO NOT exist in the DB
     const finalDataToInsert = processedData.filter(item => {
       const key = `${item.employee_id}-${item.date}`;
       return !existingKeys.has(key);
@@ -459,7 +468,7 @@ ${invalidIds.length > 0 ? `تم استبعاد ${invalidIds.length} كود غي�
 
       <ExcelInfo 
         fields={['employee_id', 'date', 'check_in', 'check_out', 'check_in_status', 'check_out_status', 'notes']} 
-        sampleData={[{employee_id: '1001', date: '2023-10-25', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'سجل يومي'}]}
+        sampleData={[{employee_id: '1001', date: '25/12/2025', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'سجل يومي'}]}
         fileName="attendance_daily_template"
       />
       
