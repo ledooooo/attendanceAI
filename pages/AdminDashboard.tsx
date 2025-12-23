@@ -8,33 +8,80 @@ import {
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage } from '../types';
 import * as XLSX from 'xlsx';
 
-// --- Date Helpers for Excel ---
+// --- المساعدات الذكية للتواريخ (حل مشكلة 45871) ---
 
-// Convert DD/MM/YYYY (Excel) to YYYY-MM-DD (DB)
-const formatDateForDB = (val: any) => {
-  if (!val) return null;
+const MONTH_MAP: { [key: string]: string } = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+  january: '01', february: '02', march: '03', april: '04', june: '06',
+  july: '07', august: '08', september: '09', october: '10', november: '11', december: '12'
+};
+
+/**
+ * دالة جذرية لتحويل أي قيمة قادمة من إكسيل إلى صيغة YYYY-MM-DD المقبولة في قاعدة البيانات
+ */
+const formatDateForDB = (val: any): string | null => {
+  if (val === undefined || val === null || val === '') return null;
+
+  // 1. إذا كان كائن تاريخ JS (عند استخدام cellDates: true في مكتبة xlsx)
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    return val.toISOString().split('T')[0];
+  }
+
+  // 2. إذا كان رقم تسلسلي من إكسيل (مثل 45871)
+  const num = Number(val);
+  if (!isNaN(num) && num > 30000 && num < 60000) { 
+    // إكسيل يبدأ من 30 ديسمبر 1899. الفرق مع JS هو 25569 يوم.
+    const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+    return date.toISOString().split('T')[0];
+  }
+
   const str = String(val).trim();
-  // Match DD/MM/YYYY or DD-MM-YYYY
+  
+  // 3. مطابقة الصيغة المطلوبة "Aug 2, 2025"
+  const matchFancy = str.match(/^([a-zA-Z]{3,9})\s+(\d{1,2}),\s+(\d{4})$/);
+  if (matchFancy) {
+    const monthName = matchFancy[1].toLowerCase().substring(0, 3);
+    const day = matchFancy[2].padStart(2, '0');
+    const year = matchFancy[3];
+    const monthNum = MONTH_MAP[monthName];
+    if (monthNum) return `${year}-${monthNum}-${day}`;
+  }
+
+  // 4. مطابقة الصيغة القياسية YYYY-MM-DD
+  if (str.match(/^\d{4}-\d{2}-\d{2}$/)) return str;
+  
+  // 5. مطابقة الصيغة DD/MM/YYYY
   const dmy = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (dmy) {
     return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   }
-  // If already YYYY-MM-DD
-  if (str.match(/^\d{4}-\d{2}-\d{2}$/)) return str;
-  return str;
+
+  return str; // نتركها كما هي لعل قاعدة البيانات تقبلها أو تعطي خطأ واضحاً
 };
 
-// Convert YYYY-MM-DD (DB) to DD/MM/YYYY (Excel Display)
-const formatDateForExcelDisplay = (dateStr: string) => {
+/**
+ * عرض التاريخ بصيغة "Aug 2, 2025" للمستخدم
+ */
+const formatDateForExcelDisplay = (dateStr: string | null | undefined) => {
   if (!dateStr) return "";
-  const parts = dateStr.split('-');
-  if (parts.length === 3) {
-    return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return dateStr;
   }
-  return dateStr;
 };
 
-// --- Generic UI Helpers ---
+// --- مكونات واجهة المستخدم ---
+
 function Input({ label, type = 'text', value, onChange, placeholder }: any) {
   return (
     <div>
@@ -92,7 +139,7 @@ function ExcelInfo({ fields, sampleData, fileName }: { fields: string[], sampleD
           onClick={downloadSample}
           className="flex items-center text-xs font-bold text-amber-700 hover:text-amber-900 bg-amber-100/50 w-fit px-3 py-1.5 rounded-md border border-amber-200 transition-colors"
         >
-          <Download className="w-3.5 h-3.5 ml-1.5" /> تحميل نموذج إكسيل جاهز (.xlsx)
+          <Download className="w-3.5 h-3.5 ml-1.5" /> تحميل نموذج إكسيل جاهز بصيغة (Aug 2, 2025)
         </button>
       )}
     </div>
@@ -110,7 +157,8 @@ function ExcelUploadButton({ onData, label = "رفع إكسيل", icon = <Upload
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        // تفعيل cellDates: true لضمان قراءة التواريخ كأجسام برمجية إن أمكن
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws);
         onData(data);
@@ -118,7 +166,7 @@ function ExcelUploadButton({ onData, label = "رفع إكسيل", icon = <Upload
         alert("خطأ في قراءة ملف الإكسيل");
       } finally {
         setLoading(false);
-        e.target.value = ''; // Reset input
+        e.target.value = ''; 
       }
     };
     reader.readAsBinaryString(file);
@@ -132,13 +180,10 @@ function ExcelUploadButton({ onData, label = "رفع إكسيل", icon = <Upload
   );
 }
 
-// --- Sub-Components for Tabs ---
+// --- الأقسام المختلفة في لوحة التحكم ---
 
 function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
-  const [settings, setSettings] = useState<GeneralSettings>({
-    ...center,
-    holidays: center.holidays || []
-  });
+  const [settings, setSettings] = useState<GeneralSettings>({ ...center, holidays: center.holidays || [] });
   const [newHoliday, setNewHoliday] = useState('');
 
   const handleSave = async () => {
@@ -155,15 +200,9 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
     setNewHoliday('');
   };
 
-  const removeHoliday = (date: string) => {
-    setSettings({...settings, holidays: (settings.holidays || []).filter(d => d !== date)});
-  };
-
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-bold">الإعدادات العامة للمركز</h2>
-      </div>
+    <div className="space-y-6 text-right">
+      <h2 className="text-2xl font-bold border-b pb-4">الإعدادات العامة للمركز</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Input label="اسم المركز" value={settings.center_name} onChange={(v:any) => setSettings({...settings, center_name: v})} />
         <Input label="اسم الإدارة" value={settings.admin_name} onChange={(v:any) => setSettings({...settings, admin_name: v})} />
@@ -172,24 +211,21 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
         <Input label="رابط اللوكيشن" value={settings.location_url} onChange={(v:any) => setSettings({...settings, location_url: v})} />
         <Input label="باسورد المركز" type="password" value={settings.password} onChange={(v:any) => setSettings({...settings, password: v})} />
       </div>
-      
       <div className="border-t pt-4">
-        <h3 className="font-bold text-gray-700 mb-3 flex items-center"><Calendar className="w-4 h-4 ml-2"/> إدارة العطلات الرسمية (الأعياد والمناسبات)</h3>
+        <h3 className="font-bold text-gray-700 mb-3 flex items-center"><Calendar className="w-4 h-4 ml-2"/> إدارة العطلات الرسمية</h3>
         <div className="flex gap-2 mb-4">
           <input type="date" value={newHoliday} onChange={e => setNewHoliday(e.target.value)} className="p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-          <button onClick={addHoliday} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center"><Plus className="w-4 h-4 ml-1"/> إضافة عطلة</button>
+          <button onClick={addHoliday} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold"><Plus className="w-4 h-4"/></button>
         </div>
         <div className="flex flex-wrap gap-2">
           {(settings.holidays || []).map(date => (
-            <span key={date} className="bg-gray-100 px-3 py-1 rounded-full text-sm border flex items-center gap-2">
+            <span key={date} className="bg-gray-100 px-3 py-1 rounded-full text-xs border flex items-center gap-2">
               {formatDateForExcelDisplay(date)}
-              <button onClick={() => removeHoliday(date)} className="text-red-500 hover:text-red-700"><X className="w-3.5 h-3.5"/></button>
+              <button onClick={() => setSettings({...settings, holidays: (settings.holidays || []).filter(d => d !== date)})} className="text-red-500"><X className="w-3.5 h-3.5"/></button>
             </span>
           ))}
-          {(!settings.holidays || settings.holidays.length === 0) && <p className="text-xs text-gray-400">لا توجد عطلات مضافة بعد.</p>}
         </div>
       </div>
-
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 border-t pt-4">
         <Input label="حضور الصباحي" type="time" value={settings.shift_morning_in} onChange={(v:any) => setSettings({...settings, shift_morning_in: v})} />
         <Input label="انصراف الصباحي" type="time" value={settings.shift_morning_out} onChange={(v:any) => setSettings({...settings, shift_morning_out: v})} />
@@ -198,7 +234,7 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
         <Input label="حضور السهر" type="time" value={settings.shift_night_in} onChange={(v:any) => setSettings({...settings, shift_night_in: v})} />
         <Input label="انصراف السهر" type="time" value={settings.shift_night_out} onChange={(v:any) => setSettings({...settings, shift_night_out: v})} />
       </div>
-      <button onClick={handleSave} className="bg-emerald-600 text-white px-8 py-3 rounded-lg hover:bg-emerald-700 font-bold">حفظ التغييرات</button>
+      <button onClick={handleSave} className="bg-emerald-600 text-white px-8 py-3 rounded-lg hover:bg-emerald-700 font-bold">حفظ الإعدادات</button>
     </div>
   );
 }
@@ -209,11 +245,11 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
 
   const handleAdd = async () => {
     const { error } = await supabase.from('employees').insert([formData]);
-    if (error) alert('خطأ في الإضافة: ' + error.message);
+    if (error) alert('خطأ: ' + error.message);
     else { setShowForm(false); onRefresh(); }
   };
 
-  const handleExcelImport = async (data: any[]) => {
+  const handleImport = async (data: any[]) => {
     const formatted = data.map(row => ({
       employee_id: String(row.employee_id || row['رقم الموظف']),
       name: row.name || row['الاسم'],
@@ -227,58 +263,49 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
       center_id: centerId,
       leave_annual_balance: row.leave_annual_balance || 21,
       leave_casual_balance: row.leave_casual_balance || 7,
-      remaining_annual: row.remaining_annual || row.leave_annual_balance || 21,
-      remaining_casual: row.remaining_casual || row.leave_casual_balance || 7,
+      remaining_annual: row.leave_annual_balance || 21,
+      remaining_casual: row.leave_casual_balance || 7,
       join_date: formatDateForDB(row.join_date || row['تاريخ التعيين'])
     }));
     const { error } = await supabase.from('employees').insert(formatted);
-    if (error) alert("خطأ في الرفع: " + error.message);
-    else { alert("تم رفع الموظفين بنجاح"); onRefresh(); }
+    if (error) alert("خطأ: " + error.message);
+    else { alert("تم رفع البيانات بنجاح"); onRefresh(); }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-right">
       <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-bold">إعدادات الأطباء والعاملين</h2>
+        <h2 className="text-2xl font-bold">إعدادات الأطباء</h2>
         <div className="flex gap-2">
-          <ExcelUploadButton onData={handleExcelImport} label="استيراد موظفين" />
+          <ExcelUploadButton onData={handleImport} label="استيراد موظفين" />
           <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center">
-            {showForm ? 'إلغاء' : <><Plus className="w-4 h-4 ml-2" /> إضافة يدوي</>}
+            {showForm ? 'إلغاء' : <><Plus className="w-4 h-4 ml-2" /> إضافة موظف</>}
           </button>
         </div>
       </div>
       <ExcelInfo 
-        fields={['employee_id', 'name', 'national_id', 'specialty', 'phone', 'email', 'gender', 'grade', 'leave_annual_balance', 'leave_casual_balance', 'join_date']} 
-        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', phone: '0123456789', email: 'ahmed@mail.com', gender: 'ذكر', grade: 'أخصائي', leave_annual_balance: 21, leave_casual_balance: 7, join_date: '02/08/2025'}]}
-        fileName="employees_sample"
+        fields={['employee_id', 'name', 'national_id', 'specialty', 'join_date']} 
+        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', join_date: 'Aug 2, 2025'}]}
+        fileName="employees_template"
       />
-      
       {showForm && (
         <div className="bg-gray-50 p-6 rounded-xl border-2 border-dashed grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input label="رقم الموظف" value={formData.employee_id || ''} onChange={(v:any) => setFormData({...formData, employee_id: v})} />
-          <Input label="اسم الموظف" value={formData.name || ''} onChange={(v:any) => setFormData({...formData, name: v})} />
+          <Input label="الاسم" value={formData.name || ''} onChange={(v:any) => setFormData({...formData, name: v})} />
           <Input label="الرقم القومي" value={formData.national_id || ''} onChange={(v:any) => setFormData({...formData, national_id: v})} />
           <Input label="التخصص" value={formData.specialty || ''} onChange={(v:any) => setFormData({...formData, specialty: v})} />
-          <Input label="رقم الهاتف" value={formData.phone || ''} onChange={(v:any) => setFormData({...formData, phone: v})} />
-          <Input label="البريد الإلكتروني" value={formData.email || ''} onChange={(v:any) => setFormData({...formData, email: v})} />
-          <Select label="النوع" options={['ذكر', 'أنثى']} value={formData.gender} onChange={(v:any) => setFormData({...formData, gender: v as any})} />
-          <Input label="الدرجة الوظيفية" value={formData.grade || ''} onChange={(v:any) => setFormData({...formData, grade: v})} />
-          <Input label="رصيد سنوي" type="number" value={formData.leave_annual_balance || 21} onChange={(v:any) => setFormData({...formData, leave_annual_balance: parseInt(v)})} />
-          <Input label="رصيد عارضة" type="number" value={formData.leave_casual_balance || 7} onChange={(v:any) => setFormData({...formData, leave_casual_balance: parseInt(v)})} />
-          <Select label="الحالة" options={['نشط', 'موقوف', 'إجازة']} value={formData.status} onChange={(v:any) => setFormData({...formData, status: v as any})} />
-          <div className="md:col-span-3">
-             <button onClick={handleAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">تأكيد الإضافة</button>
-          </div>
+          <Select label="الحالة" options={['نشط', 'موقوف']} value={formData.status} onChange={(v:any) => setFormData({...formData, status: v})} />
+          <button onClick={handleAdd} className="md:col-span-3 bg-blue-600 text-white py-3 rounded-lg font-bold">تأكيد الإضافة</button>
         </div>
       )}
       <div className="overflow-x-auto border rounded-xl">
         <table className="w-full text-sm text-right">
           <thead className="bg-gray-100">
             <tr>
-              <th className="p-3">رقم</th>
+              <th className="p-3">رقم الموظف</th>
               <th className="p-3">الاسم</th>
               <th className="p-3">التخصص</th>
-              <th className="p-3">الحالة</th>
+              <th className="p-3">تاريخ التعيين</th>
               <th className="p-3">إجراء</th>
             </tr>
           </thead>
@@ -287,12 +314,8 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
               <tr key={emp.id} className="border-b hover:bg-gray-50">
                 <td className="p-3 font-mono">{emp.employee_id}</td>
                 <td className="p-3 font-bold">{emp.name}</td>
-                <td className="p-3 text-gray-600">{emp.specialty}</td>
-                <td className="p-3">
-                  <span className={`px-2 py-1 rounded text-xs ${emp.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {emp.status}
-                  </span>
-                </td>
+                <td className="p-3">{emp.specialty}</td>
+                <td className="p-3">{formatDateForExcelDisplay(emp.join_date)}</td>
                 <td className="p-3"><button onClick={async () => { if(confirm('حذف؟')) { await supabase.from('employees').delete().eq('id', emp.id); onRefresh(); } }} className="text-red-500"><Trash2 className="w-4 h-4"/></button></td>
               </tr>
             ))}
@@ -304,7 +327,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
 }
 
 function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefresh: () => void }) {
-  const handleExcelImport = async (data: any[]) => {
+  const handleImport = async (data: any[]) => {
     const formatted = data.map(row => ({
       employee_id: String(row.employee_id || row['رقم الموظف']),
       type: row.type || row['نوع الإجازة'],
@@ -319,34 +342,25 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-right">
       <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-bold">الطلبات والإجازات</h2>
-        <ExcelUploadButton onData={handleExcelImport} label="رفع أرشيف إجازات" />
+        <h2 className="text-2xl font-bold">طلبات الإجازات</h2>
+        <ExcelUploadButton onData={handleImport} label="رفع أرشيف إجازات" />
       </div>
-      <ExcelInfo 
-        fields={['employee_id', 'type', 'start_date', 'end_date', 'backup_person', 'status', 'notes']} 
-        sampleData={[{employee_id: '1001', type: 'اعتيادي', start_date: '02/08/2025', end_date: '05/08/2025', backup_person: 'د. محمد علي', status: 'مقبول', notes: 'سفر عائلي'}]}
-        fileName="leaves_sample"
-      />
       <div className="space-y-4">
-        {requests.length === 0 && <p className="text-center text-gray-400 py-10">لا توجد طلبات معلقة</p>}
         {requests.map(req => (
-          <div key={req.id} className="p-4 border rounded-xl flex justify-between items-center hover:shadow-md transition-shadow">
+          <div key={req.id} className="p-4 border rounded-xl flex justify-between items-center">
             <div>
-              <div className="flex items-center gap-3 mb-2">
-                <span className="font-bold text-lg">{req.employee_name}</span>
-                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{req.type}</span>
-              </div>
-              <p className="text-sm text-gray-500">الفترة: {formatDateForExcelDisplay(req.start_date)} إلى {formatDateForExcelDisplay(req.end_date)}</p>
-              {req.notes && <p className="text-xs text-gray-400 mt-1 italic">ملاحظة: {req.notes}</p>}
+              <p className="font-bold">{req.employee_name} - {req.type}</p>
+              <p className="text-sm text-gray-500">{formatDateForExcelDisplay(req.start_date)} إلى {formatDateForExcelDisplay(req.end_date)}</p>
             </div>
             <div className="flex gap-2">
-              <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مقبول'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-green-50 text-green-600 rounded-full hover:bg-green-100"><CheckCircle/></button>
-              <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مرفوض'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-red-50 text-red-600 rounded-full hover:bg-red-100"><XCircle/></button>
+              <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مقبول'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-green-100 text-green-600 rounded-full"><CheckCircle/></button>
+              <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مرفوض'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-red-100 text-red-600 rounded-full"><XCircle/></button>
             </div>
           </div>
         ))}
+        {requests.length === 0 && <p className="text-center text-gray-400 py-10">لا توجد طلبات معلقة</p>}
       </div>
     </div>
   );
@@ -356,29 +370,22 @@ function EveningScheduleTab() {
   const handleExcelSchedule = async (data: any[]) => {
     const formatted = data.map(row => ({
       date: formatDateForDB(row.date || row['التاريخ']),
-      specs: Array.isArray(row.specs) ? row.specs : (row.specs || row['التخصصات'])?.split(',') || [],
-      doctors: Array.isArray(row.doctors) ? row.doctors : (row.doctors || row['الأطباء'])?.split(',') || []
+      specs: (row.specs || row['التخصصات'])?.split(',') || [],
+      doctors: (row.doctors || row['الأطباء'])?.split(',') || []
     }));
     const { error } = await supabase.from('evening_schedule').insert(formatted);
     if(error) alert(error.message); else alert("تم رفع الجدول بنجاح");
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-bold">جدول المسائي</h2>
-        <ExcelUploadButton onData={handleExcelSchedule} label="رفع جدول المسائي" />
-      </div>
+    <div className="space-y-6 text-right">
+      <h2 className="text-2xl font-bold border-b pb-4">الجدول المسائي</h2>
+      <ExcelUploadButton onData={handleExcelSchedule} label="رفع جدول المسائي" />
       <ExcelInfo 
         fields={['date', 'specs', 'doctors']} 
-        sampleData={[{date: '02/08/2025', specs: 'باطنة,أطفال,جراحة', doctors: 'د.أحمد,د.سارة,د.خالد'}]}
+        sampleData={[{date: 'Aug 2, 2025', specs: 'باطنة,أطفال', doctors: 'د.أحمد,د.سارة'}]}
         fileName="evening_sample"
       />
-      <div className="border-2 border-dashed p-12 text-center rounded-2xl bg-gray-50">
-         <Calendar className="w-12 h-12 mx-auto mb-4 text-blue-500" />
-         <h3 className="text-xl font-bold mb-2">إدارة الجدول المسائي</h3>
-         <p className="text-sm text-gray-400 mb-6">يمكنك رفع ملف إكسيل يحتوي على التاريخ، قائمة التخصصات، وقائمة الأطباء.</p>
-      </div>
     </div>
   );
 }
@@ -387,131 +394,72 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ 
     date: new Date().toISOString().split('T')[0], 
     check_in_status: 'حاضر', 
-    check_out_status: 'منصرف',
-    notes: ''
+    check_out_status: 'منصرف'
   });
 
-  const handleManualAdd = async () => {
-    if(!formData.employee_id) return alert('اختر الموظف');
-    const { error } = await supabase.from('attendance').insert([formData]);
-    if (error) {
-      if (error.code === '23503') alert('خطأ: رقم الموظف غير مسجل في النظام. تأكد من إضافة الموظف أولاً.');
-      else alert(error.message);
-    } else { alert('تم تسجيل الحضور بنجاح'); onRefresh(); }
-  };
-
-  const handleExcelAttendance = async (data: any[]) => {
+  const handleImportAttendance = async (data: any[]) => {
     const validIds = new Set(employees.map(e => e.employee_id));
     const processedData: any[] = [];
-    const invalidIds: string[] = [];
 
-    // Format all records from excel
     data.forEach(row => {
       const eid = String(row.employee_id || row['رقم الموظف'] || '');
-      if (validIds.has(eid)) {
+      // معالجة التاريخ بشكل جذري هنا قبل الفحص أو الإرسال
+      const dbDate = formatDateForDB(row.date || row['التاريخ']);
+      
+      if (validIds.has(eid) && dbDate) {
         processedData.push({
           employee_id: eid,
-          date: formatDateForDB(row.date || row['التاريخ'] || new Date().toISOString().split('T')[0]),
+          date: dbDate,
           check_in: row.check_in || row['وقت الحضور'] || null,
           check_out: row.check_out || row['وقت الانصراف'] || null,
           check_in_status: row.check_in_status || row['حالة الحضور'] || 'حاضر',
           check_out_status: row.check_out_status || row['حالة الانصراف'] || 'منصرف',
           notes: row.notes || row['ملاحظات'] || ''
         });
-      } else {
-        invalidIds.push(eid);
       }
     });
 
-    if (processedData.length === 0) {
-      alert("لم يتم العثور على بيانات صالحة للموظفين المسجلين في الملف.");
-      return;
-    }
+    if (processedData.length === 0) return alert("لا توجد بيانات صالحة للرفع. تأكد من أرقام الموظفين والتواريخ.");
 
-    // --- Deduplication Strategy ---
     const uniqueDates = Array.from(new Set(processedData.map(d => d.date)));
-    
-    const { data: existingRecords, error: fetchError } = await supabase
-      .from('attendance')
-      .select('employee_id, date')
-      .in('date', uniqueDates);
+    const { data: existing, error: fetchErr } = await supabase.from('attendance').select('employee_id, date').in('date', uniqueDates);
+    if (fetchErr) return alert(fetchErr.message);
 
-    if (fetchError) {
-      alert("خطأ أثناء فحص البيانات المكررة: " + fetchError.message);
-      return;
-    }
+    const existingKeys = new Set(existing?.map(r => `${r.employee_id}-${r.date}`));
+    const finalToInsert = processedData.filter(item => !existingKeys.has(`${item.employee_id}-${item.date}`));
 
-    const existingKeys = new Set(existingRecords?.map(r => `${r.employee_id}-${r.date}`));
-    
-    const finalDataToInsert = processedData.filter(item => {
-      const key = `${item.employee_id}-${item.date}`;
-      return !existingKeys.has(key);
-    });
-
-    const duplicateCount = processedData.length - finalDataToInsert.length;
-
-    if (finalDataToInsert.length > 0) {
-      const { error } = await supabase.from('attendance').insert(finalDataToInsert);
-      if(error) alert("خطأ أثناء الحفظ: " + error.message); 
-      else {
-        alert(`تم رفع ${finalDataToInsert.length} سجل بنجاح.
-تم تجاهل ${duplicateCount} سجل مكرر (موجود مسبقاً).
-${invalidIds.length > 0 ? `تم استبعاد ${invalidIds.length} كود غير مسجل.` : ''}`);
-        onRefresh();
-      }
+    if (finalToInsert.length > 0) {
+      const { error } = await supabase.from('attendance').insert(finalToInsert);
+      if (error) alert("خطأ: " + error.message);
+      else { alert(`تم رفع ${finalToInsert.length} سجل بنجاح.`); onRefresh(); }
     } else {
-      alert(`كافة السجلات الموجودة في الملف مضافة مسبقاً بالنظام (${duplicateCount} سجل مكرر).`);
+      alert("كل السجلات مكررة وموجودة مسبقاً.");
     }
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 text-right">
       <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-bold">بيانات الحضور والانصراف</h2>
-        <div className="flex gap-2">
-          <ExcelUploadButton onData={handleExcelAttendance} label="رفع ملف البصمة اليومي" />
-        </div>
+        <h2 className="text-2xl font-bold">الحضور والانصراف</h2>
+        <ExcelUploadButton onData={handleImportAttendance} label="رفع ملف البصمة" />
       </div>
-      
-      <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start gap-3 mb-4">
-        <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
-        <p className="text-xs text-blue-800 leading-relaxed">
-          <strong>نصيحة للإدارة:</strong> عند رفع ملف البصمة، سيقوم النظام تلقائياً بمقارنة السجلات وتجاهل البيانات التي تم رفعها مسبقاً لنفس اليوم ونفس الموظف، مما يضمن عدم تكرار البيانات حتى لو تم رفع نفس الملف مرتين. استخدم صيغة التاريخ <strong>02/08/2025</strong>.
-        </p>
-      </div>
-
       <ExcelInfo 
-        fields={['employee_id', 'date', 'check_in', 'check_out', 'check_in_status', 'check_out_status', 'notes']} 
-        sampleData={[{employee_id: '1001', date: '02/08/2025', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'سجل يومي'}]}
+        fields={['employee_id', 'date', 'check_in', 'check_out', 'check_in_status']} 
+        sampleData={[{employee_id: '1001', date: 'Aug 2, 2025', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر'}]}
         fileName="attendance_daily_template"
       />
-      
       <div className="bg-gray-50 p-6 rounded-xl border grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Select 
-          label="الموظف" 
-          options={[{value: '', label: '-- اختر موظف --'}, ...employees.map(e => ({value: e.employee_id, label: `${e.name} (${e.employee_id})`}))]} 
-          value={formData.employee_id} 
-          onChange={(v:any) => setFormData({...formData, employee_id: v})} 
-        />
+        <Select label="الموظف" options={[{value: '', label: '-- اختر --'}, ...employees.map(e => ({value: e.employee_id, label: e.name}))]} value={formData.employee_id} onChange={(v:any) => setFormData({...formData, employee_id: v})} />
         <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any) => setFormData({...formData, date: v})} />
-        <Input label="وقت الحضور" type="time" value={formData.check_in || ''} onChange={(v:any) => setFormData({...formData, check_in: v})} />
-        <Select label="حالة الحضور" options={['حاضر', 'متأخر', 'غائب', 'مأمورية']} value={formData.check_in_status} onChange={(v:any) => setFormData({...formData, check_in_status: v})} />
-        <Input label="وقت الانصراف" type="time" value={formData.check_out || ''} onChange={(v:any) => setFormData({...formData, check_out: v})} />
-        <Select label="حالة الانصراف" options={['منصرف', 'خروج مبكر', 'مأمورية', 'مستمر']} value={formData.check_out_status} onChange={(v:any) => setFormData({...formData, check_out_status: v})} />
-        <div className="md:col-span-2">
-          <Input label="ملاحظات الحضور" value={formData.notes} onChange={(v:any) => setFormData({...formData, notes: v})} placeholder="اكتب أي ملاحظات تتعلق بهذا اليوم..." />
-        </div>
-        <div className="md:col-span-2">
-          <button onClick={handleManualAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors flex items-center justify-center">
-            <Plus className="w-5 h-5 ml-2" /> حفظ سجل الحضور يدوياً
-          </button>
-        </div>
+        <Input label="حضور" type="time" value={formData.check_in || ''} onChange={(v:any) => setFormData({...formData, check_in: v})} />
+        <Input label="انصراف" type="time" value={formData.check_out || ''} onChange={(v:any) => setFormData({...formData, check_out: v})} />
+        <button onClick={async () => { await supabase.from('attendance').insert([formData]); onRefresh(); alert('تم الحفظ يدوياً'); }} className="md:col-span-2 bg-blue-600 text-white py-3 rounded-lg font-bold">إضافة سجل يدوي</button>
       </div>
     </div>
   );
 }
 
-function ReportsTab({ employees }: { employees: Employee[] }) {
+function ReportsTab() {
   const [reportData, setReportData] = useState<any[]>([]);
   const fetchReport = async () => {
     const { data } = await supabase.from('attendance').select('*').limit(100).order('date', {ascending: false});
@@ -519,33 +467,27 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
   };
 
   const exportExcel = () => {
-    // Format dates before exporting to Excel
-    const formattedData = reportData.map(row => ({
+    const formatted = reportData.map(row => ({
       'رقم الموظف': row.employee_id,
       'التاريخ': formatDateForExcelDisplay(row.date),
-      'وقت الحضور': row.check_in || '--:--',
-      'حالة الحضور': row.check_in_status,
-      'وقت الانصراف': row.check_out || '--:--',
-      'حالة الانصراف': row.check_out_status,
-      'الملاحظات': row.notes || ''
+      'الحضور': row.check_in,
+      'الانصراف': row.check_out,
+      'الحالة': row.check_in_status
     }));
-
-    const ws = XLSX.utils.json_to_sheet(formattedData);
+    const ws = XLSX.utils.json_to_sheet(formatted);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "AttendanceReport");
-    XLSX.writeFile(wb, "MedicalCenter_Attendance_Report.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, "MedicalCenter_Report.xlsx");
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-right">
       <div className="flex justify-between items-center border-b pb-4">
         <h2 className="text-2xl font-bold">التقارير والإحصاء</h2>
-        <button onClick={exportExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center font-bold transition-all hover:bg-emerald-700">
-          <FileSpreadsheet className="w-4 h-4 ml-2" /> تصدير التقرير الكامل
-        </button>
+        <button onClick={exportExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center"><FileSpreadsheet className="w-4 h-4 ml-2" /> تصدير إكسيل</button>
       </div>
-      <button onClick={fetchReport} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-bold">توليد تقرير أحدث 100 سجل</button>
-      <div className="overflow-x-auto border rounded-xl shadow-sm">
+      <button onClick={fetchReport} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold">توليد تقرير أحدث 100 سجل</button>
+      <div className="overflow-x-auto border rounded-xl">
         <table className="w-full text-sm text-right">
           <thead className="bg-gray-100">
             <tr>
@@ -558,15 +500,15 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
           </thead>
           <tbody>
             {reportData.map((r,i) => (
-              <tr key={i} className="border-b hover:bg-gray-50">
+              <tr key={i} className="border-b">
                 <td className="p-3 font-mono">{r.employee_id}</td>
                 <td className="p-3">{formatDateForExcelDisplay(r.date)}</td>
-                <td className="p-3 text-emerald-600 font-bold">{r.check_in || '--'}</td>
-                <td className="p-3 text-red-500 font-bold">{r.check_out || '--'}</td>
-                <td className="p-3 text-xs">{r.check_in_status} / {r.check_out_status}</td>
+                <td className="p-3">{r.check_in || '--'}</td>
+                <td className="p-3">{r.check_out || '--'}</td>
+                <td className="p-3 text-xs">{r.check_in_status}</td>
               </tr>
             ))}
-            {reportData.length === 0 && <tr><td colSpan={5} className="text-center p-10 text-gray-400">انقر على الزر لتوليد التقرير</td></tr>}
+            {reportData.length === 0 && <tr><td colSpan={5} className="text-center p-10 text-gray-400">انقر لتوليد التقرير</td></tr>}
           </tbody>
         </table>
       </div>
@@ -577,52 +519,22 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
 function AlertsTab({ employees, sender }: { employees: Employee[], sender: string }) {
   const [recipient, setRecipient] = useState('');
   const [msg, setMsg] = useState('');
-  const [history, setHistory] = useState<InternalMessage[]>([]);
-
-  const fetchHistory = async () => {
-    const { data } = await supabase.from('messages').select('*').eq('from_user', sender).order('created_at', { ascending: false });
-    if (data) setHistory(data);
-  };
-
-  const sendMsg = async () => {
+  const send = async () => {
     if(!recipient || !msg) return alert('أكمل البيانات');
     const { error } = await supabase.from('messages').insert([{ from_user: sender, to_user: recipient, content: msg }]);
-    if(!error) { alert('تم الإرسال'); setMsg(''); fetchHistory(); }
+    if(!error) { alert('تم الإرسال'); setMsg(''); }
   };
-
-  useEffect(() => { fetchHistory(); }, []);
-
   return (
-    <div className="space-y-8">
-      <h2 className="text-2xl font-bold border-b pb-4">الرسائل والتنبيهات الصادرة</h2>
-      <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 space-y-4">
-        <Select 
-          label="المستلم" 
-          options={[{value: '', label: '-- اختر المستلم --'}, {value: 'all', label: 'إرسال للجميع'}, ...employees.map(e => ({value: e.employee_id, label: e.name}))]} 
-          value={recipient} 
-          onChange={(v:any) => setRecipient(v)} 
-        />
-        <textarea className="w-full p-3 border rounded-lg min-h-[120px] focus:ring-2 focus:ring-blue-400 outline-none" placeholder="اكتب نص التنبيه أو التعليمات هنا..." value={msg} onChange={e => setMsg(e.target.value)} />
-        <button onClick={sendMsg} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold flex items-center justify-center hover:bg-blue-700 transition-colors"><Bell className="ml-2 w-5 h-5"/> إرسال التنبيه الآن</button>
-      </div>
-      <div className="space-y-3">
-        <h3 className="font-bold text-gray-700 flex items-center"><Mail className="w-4 h-4 ml-2" /> سجل الرسائل السابقة</h3>
-        {history.map(item => (
-          <div key={item.id} className="p-4 bg-white border rounded-xl shadow-sm hover:border-blue-200 transition-all">
-            <div className="flex justify-between text-[10px] text-gray-400 mb-1">
-              <span className="font-bold text-blue-600">إلى: {item.to_user === 'all' ? 'الكل' : item.to_user}</span>
-              <span>{new Date(item.created_at).toLocaleString('ar-EG')}</span>
-            </div>
-            <p className="text-sm text-gray-700 leading-relaxed">{item.content}</p>
-          </div>
-        ))}
-        {history.length === 0 && <p className="text-center text-gray-400 py-10">لا يوجد سجل رسائل</p>}
-      </div>
+    <div className="space-y-6 text-right">
+      <h2 className="text-2xl font-bold border-b pb-4">الرسائل والتنبيهات</h2>
+      <Select label="المستلم" options={[{value: '', label: '-- اختر --'}, {value: 'all', label: 'الكل'}, ...employees.map(e => ({value: e.employee_id, label: e.name}))]} value={recipient} onChange={setRecipient} />
+      <textarea className="w-full p-3 border rounded-lg min-h-[120px] focus:ring-2 focus:ring-blue-500 outline-none" placeholder="اكتب التنبيه هنا..." value={msg} onChange={e => setMsg(e.target.value)} />
+      <button onClick={send} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">إرسال التنبيه</button>
     </div>
   );
 }
 
-// --- Main Dashboard Component ---
+// --- المكون الرئيسي للوحة التحكم ---
 
 interface AdminDashboardProps { onBack: () => void; }
 
@@ -635,20 +547,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
 
-  useEffect(() => { fetchCenters(); }, []);
-
-  const fetchCenters = async () => {
-    const { data } = await supabase.from('general_settings').select('*');
-    if (data) setCenters(data);
-  };
-
-  const handleAdminLogin = async () => {
-    if (!selectedCenter) return alert('اختر المركز');
-    if (adminPassword === selectedCenter.password) {
-      setIsAdminLoggedIn(true);
-      fetchDashboardData();
-    } else alert('كلمة مرور خاطئة');
-  };
+  useEffect(() => {
+    supabase.from('general_settings').select('*').then(({data}) => { if(data) setCenters(data); });
+  }, []);
 
   const fetchDashboardData = async () => {
     if (!selectedCenter) return;
@@ -657,24 +558,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
       supabase.from('leave_requests').select(`*, employees(name)`).eq('status', 'معلق').order('created_at', { ascending: false })
     ]);
     if (empRes.data) setEmployees(empRes.data);
-    if (leaveRes.data) {
-        setLeaveRequests((leaveRes.data as any[]).map(l => ({...l, employee_name: l.employees?.name})));
-    }
+    if (leaveRes.data) setLeaveRequests((leaveRes.data as any[]).map(l => ({...l, employee_name: l.employees?.name})));
   };
 
   if (!isAdminLoggedIn) {
     return (
-      <div className="flex items-center justify-center min-h-[80vh] p-6">
+      <div className="flex items-center justify-center min-h-[80vh] p-6 text-right">
         <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md border">
           <button onClick={onBack} className="flex items-center text-blue-600 mb-6 hover:underline"><ArrowRight className="ml-1" /> رجوع</button>
           <h2 className="text-2xl font-bold mb-6 text-center">دخول الإدارة</h2>
           <div className="space-y-4">
-            <select className="w-full p-3 border rounded-lg" onChange={(e) => setSelectedCenter(centers.find(c => c.id === e.target.value) || null)}>
+            <select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" onChange={(e) => setSelectedCenter(centers.find(c => c.id === e.target.value) || null)}>
               <option value="">-- اختر مركز --</option>
               {centers.map(c => <option key={c.id} value={c.id}>{c.center_name}</option>)}
             </select>
-            <input type="password" className="w-full p-3 border rounded-lg" placeholder="الباسورد" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
-            <button onClick={handleAdminLogin} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">دخول</button>
+            <input type="password" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="الباسورد" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+            <button onClick={() => { if(selectedCenter && adminPassword === selectedCenter.password) { setIsAdminLoggedIn(true); fetchDashboardData(); } else alert('خطأ في البيانات'); }} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">دخول</button>
           </div>
         </div>
       </div>
@@ -682,26 +581,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8">
+    <div className="max-w-7xl mx-auto p-4 md:p-8 text-right">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800">لوحة تحكم: {selectedCenter?.center_name}</h1>
-          <p className="text-gray-500">مرحباً بك في نظام الإدارة الرئيسي</p>
+          <h1 className="text-3xl font-bold text-gray-800">إدارة: {selectedCenter?.center_name}</h1>
+          <p className="text-gray-500">نظام الإدارة المتكامل للمركز الطبي</p>
         </div>
-        <button onClick={onBack} className="bg-gray-200 px-6 py-2 rounded-lg font-semibold flex items-center hover:bg-gray-300 transition-all shadow-sm">
-          <ArrowRight className="ml-2 w-5 h-5" /> تسجيل خروج
-        </button>
+        <button onClick={onBack} className="bg-gray-200 px-6 py-2 rounded-lg font-semibold flex items-center hover:bg-gray-300">تسجيل خروج <ArrowRight className="mr-2"/></button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1 space-y-2">
-          <SidebarBtn active={activeTab === 'settings'} icon={<Settings/>} label="الإعدادات العامة" onClick={() => setActiveTab('settings')} />
-          <SidebarBtn active={activeTab === 'doctors'} icon={<Users/>} label="إعدادات الأطباء" onClick={() => setActiveTab('doctors')} />
-          <SidebarBtn active={activeTab === 'leaves'} icon={<FileText/>} label="الطلبات والإجازات" onClick={() => setActiveTab('leaves')} />
-          <SidebarBtn active={activeTab === 'evening'} icon={<Calendar/>} label="جدول المسائي" onClick={() => setActiveTab('evening')} />
-          <SidebarBtn active={activeTab === 'attendance'} icon={<Clock/>} label="بيانات الحضور" onClick={() => setActiveTab('attendance')} />
-          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3/>} label="التقارير والإحصاء" onClick={() => setActiveTab('reports')} />
-          <SidebarBtn active={activeTab === 'alerts'} icon={<Bell/>} label="الرسائل والتنبيهات" onClick={() => setActiveTab('alerts')} />
+          <SidebarBtn active={activeTab === 'settings'} icon={<Settings/>} label="الإعدادات" onClick={() => setActiveTab('settings')} />
+          <SidebarBtn active={activeTab === 'doctors'} icon={<Users/>} label="الأطباء" onClick={() => setActiveTab('doctors')} />
+          <SidebarBtn active={activeTab === 'leaves'} icon={<FileText/>} label="الإجازات" onClick={() => setActiveTab('leaves')} />
+          <SidebarBtn active={activeTab === 'evening'} icon={<Calendar/>} label="الجدول المسائي" onClick={() => setActiveTab('evening')} />
+          <SidebarBtn active={activeTab === 'attendance'} icon={<Clock/>} label="الحضور" onClick={() => setActiveTab('attendance')} />
+          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3/>} label="التقارير" onClick={() => setActiveTab('reports')} />
+          <SidebarBtn active={activeTab === 'alerts'} icon={<Bell/>} label="التنبيهات" onClick={() => setActiveTab('alerts')} />
         </div>
         <div className="lg:col-span-3 bg-white p-6 rounded-2xl shadow-sm border min-h-[600px]">
           {activeTab === 'settings' && selectedCenter && <GeneralSettingsTab center={selectedCenter} />}
@@ -709,7 +606,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           {activeTab === 'leaves' && <LeavesTab requests={leaveRequests} onRefresh={fetchDashboardData} />}
           {activeTab === 'evening' && <EveningScheduleTab />}
           {activeTab === 'attendance' && <AttendanceTab employees={employees} onRefresh={fetchDashboardData} />}
-          {activeTab === 'reports' && <ReportsTab employees={employees} />}
+          {activeTab === 'reports' && <ReportsTab />}
           {activeTab === 'alerts' && <AlertsTab employees={employees} sender="admin" />}
         </div>
       </div>
@@ -718,7 +615,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
 };
 
 const SidebarBtn = ({ active, icon, label, onClick }: any) => (
-  <button onClick={onClick} className={`w-full flex items-center p-4 rounded-xl transition-all font-semibold ${active ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'}`}>
+  <button onClick={onClick} className={`w-full flex items-center p-4 rounded-xl transition-all font-semibold ${active ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border'}`}>
     <span className="ml-3">{icon}</span>{label}
   </button>
 );
