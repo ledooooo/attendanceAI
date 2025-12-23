@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, User, Calendar, FilePlus, ClipboardCheck, MessageCircle, Send, LogOut, Clock, Search, TrendingUp, AlertTriangle, CheckCircle, List
@@ -21,43 +21,86 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   const [allMyRequests, setAllMyRequests] = useState<LeaveRequest[]>([]);
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const handleLogin = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('employees')
-      .select('*')
-      .eq('employee_id', loginData.id)
-      .eq('national_id', loginData.natId)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase.from('employees')
+        .select('*')
+        .eq('employee_id', loginData.id)
+        .eq('national_id', loginData.natId)
+        .maybeSingle();
 
-    if (data) {
-      setEmployee(data);
-      fetchStaffData(data.employee_id);
-    } else {
-      alert('بيانات الدخول غير صحيحة');
+      if (data) {
+        setEmployee(data);
+        fetchStaffData(data.employee_id);
+      } else {
+        alert('بيانات الدخول غير صحيحة');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('حدث خطأ أثناء تسجيل الدخول');
     }
     setLoading(false);
   };
 
   const fetchStaffData = async (empId: string) => {
-    const [attRes, msgRes, leaveRes, setRes, myReqRes] = await Promise.all([
-      supabase.from('attendance').select('*').eq('employee_id', empId),
-      supabase.from('messages').select('*').or(`to_user.eq.${empId},to_user.eq.all`).order('created_at', { ascending: false }),
-      supabase.from('leave_requests').select('*').eq('employee_id', empId).eq('status', 'مقبول'),
-      supabase.from('general_settings').select('*').limit(1).single(),
-      supabase.from('leave_requests').select('*').eq('employee_id', empId).order('created_at', { ascending: false })
-    ]);
-    if (attRes.data) setAttendance(attRes.data);
-    if (msgRes.data) setMessages(msgRes.data);
-    if (leaveRes.data) setLeaves(leaveRes.data);
-    if (setRes.data) setSettings(setRes.data);
-    if (myReqRes.data) setAllMyRequests(myReqRes.data);
+    try {
+      const [attRes, msgRes, leaveRes, setRes, myReqRes] = await Promise.all([
+        supabase.from('attendance').select('*').eq('employee_id', empId),
+        supabase.from('messages').select('*').or(`to_user.eq.${empId},to_user.eq.all`).order('created_at', { ascending: false }),
+        supabase.from('leave_requests').select('*').eq('employee_id', empId).eq('status', 'مقبول'),
+        supabase.from('general_settings').select('*').limit(1).single(),
+        supabase.from('leave_requests').select('*').eq('employee_id', empId).order('created_at', { ascending: false })
+      ]);
+      if (attRes.data) setAttendance(attRes.data);
+      if (msgRes.data) setMessages(msgRes.data);
+      if (leaveRes.data) setLeaves(leaveRes.data);
+      if (setRes.data) setSettings(setRes.data);
+      if (myReqRes.data) setAllMyRequests(myReqRes.data);
+    } catch (err) {
+      console.error('Error fetching staff data:', err);
+    }
   };
 
   useEffect(() => {
     if (employee) fetchStaffData(employee.employee_id);
-  }, [selectedMonth]);
+  }, [employee, selectedMonth]);
+
+  // Defensive Statistics Calculation using useMemo to prevent unnecessary crashes
+  const stats = useMemo(() => {
+    if (!selectedMonth) return { totalAttend: 0, totalLate: 0, totalHours: '0.0', absentCount: 0, monthLeaves: 0 };
+    
+    const [year, month] = selectedMonth.split('-').map(Number);
+    if (!year || !month) return { totalAttend: 0, totalLate: 0, totalHours: '0.0', absentCount: 0, monthLeaves: 0 };
+
+    const filteredAtt = attendance.filter(a => a.date && a.date.startsWith(selectedMonth));
+    const totalAttend = filteredAtt.length;
+    const totalLate = filteredAtt.filter(a => a.check_in_status === 'متأخر').length;
+    
+    let totalHours = 0;
+    filteredAtt.forEach(a => {
+      const h = parseFloat(calculateHours(a.check_in, a.check_out));
+      if (!isNaN(h)) totalHours += h;
+    });
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const holidaysList = settings?.holidays || [];
+    let absentCount = 0;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const hasAtt = filteredAtt.some(a => a.date === dateStr);
+      const isLeave = leaves.some((l: any) => dateStr >= l.start_date && dateStr <= l.end_date);
+      const isHoliday = holidaysList.includes(dateStr) || new Date(dateStr).getDay() === 5;
+      if (!hasAtt && !isLeave && !isHoliday) absentCount++;
+    }
+
+    const monthLeaves = leaves.filter((l: any) => l.start_date && l.start_date.startsWith(selectedMonth)).length;
+
+    return { totalAttend, totalLate, totalHours: totalHours.toFixed(1), absentCount, monthLeaves };
+  }, [attendance, leaves, settings, selectedMonth]);
 
   if (!employee) {
     return (
@@ -83,35 +126,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     );
   }
 
-  // Statistics Calculation
-  const calculateStats = () => {
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const filteredAtt = attendance.filter(a => a.date.startsWith(selectedMonth));
-    const totalAttend = filteredAtt.length;
-    const totalLate = filteredAtt.filter(a => a.check_in_status === 'متأخر').length;
-    
-    let totalHours = 0;
-    filteredAtt.forEach(a => {
-      totalHours += parseFloat(calculateHours(a.check_in, a.check_out));
-    });
-
-    const daysInMonth = new Date(year, month, 0).getDate();
-    let absentCount = 0;
-    for(let d=1; d<=daysInMonth; d++) {
-      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const hasAtt = filteredAtt.some(a => a.date === dateStr);
-      const isLeave = leaves.some((l: any) => dateStr >= l.start_date && dateStr <= l.end_date);
-      const isHoliday = settings?.holidays.includes(dateStr) || new Date(dateStr).getDay() === 5;
-      if (!hasAtt && !isLeave && !isHoliday) absentCount++;
-    }
-
-    const monthLeaves = leaves.filter((l: any) => l.start_date.startsWith(selectedMonth)).length;
-
-    return { totalAttend, totalLate, totalHours: totalHours.toFixed(1), absentCount, monthLeaves };
-  };
-
-  const stats = calculateStats();
-
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8">
       <div className="bg-white p-6 rounded-2xl shadow-sm border mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
@@ -133,7 +147,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
         </button>
       </div>
 
-      {/* Quick Stats Dashboard */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <StatCard label="ساعات العمل" value={stats.totalHours} icon={<Clock className="text-blue-500"/>} />
         <StatCard label="أيام الحضور" value={stats.totalAttend} icon={<CheckCircle className="text-emerald-500"/>} />
@@ -169,7 +182,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   );
 };
 
-// Helper components
 const StatCard = ({ label, value, icon }: any) => (
   <div className="bg-white p-4 rounded-xl shadow-sm border flex items-center gap-3">
     <div className="p-2 bg-gray-50 rounded-lg">{icon}</div>
@@ -180,25 +192,31 @@ const StatCard = ({ label, value, icon }: any) => (
   </div>
 );
 
-// Helper to calculate hours
 const calculateHours = (inTime: string | null, outTime: string | null) => {
-  if (!inTime || !outTime) return '0';
-  const [h1, m1] = inTime.split(':').map(Number);
-  const [h2, m2] = outTime.split(':').map(Number);
-  const date1 = new Date(0, 0, 0, h1, m1);
-  const date2 = new Date(0, 0, 0, h2, m2);
-  let diff = (date2.getTime() - date1.getTime()) / 1000 / 60 / 60;
-  if (diff < 0) diff += 24; 
-  return diff.toFixed(1);
+  if (!inTime || !outTime) return '0.0';
+  try {
+    const [h1, m1] = inTime.split(':').map(Number);
+    const [h2, m2] = outTime.split(':').map(Number);
+    const date1 = new Date(0, 0, 0, h1, m1);
+    const date2 = new Date(0, 0, 0, h2, m2);
+    let diff = (date2.getTime() - date1.getTime()) / 1000 / 60 / 60;
+    if (diff < 0) diff += 24; 
+    return diff.toFixed(1);
+  } catch (e) {
+    return '0.0';
+  }
 };
 
 const StaffAttendance = ({ records, leaves, holidays, selectedMonth, setSelectedMonth }: any) => {
-  const [year, month] = selectedMonth.split('-').map(Number);
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const daysArray = Array.from({ length: daysInMonth }, (_, i) => {
-    const day = i + 1;
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  });
+  const daysArray = useMemo(() => {
+    if (!selectedMonth) return [];
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1;
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    });
+  }, [selectedMonth]);
 
   return (
     <div className="space-y-6">
@@ -231,7 +249,7 @@ const StaffAttendance = ({ records, leaves, holidays, selectedMonth, setSelected
             {daysArray.map(date => {
               const record = records.find((r: any) => r.date === date);
               const isLeave = leaves.some((l: any) => date >= l.start_date && date <= l.end_date);
-              const isHoliday = holidays.includes(date) || new Date(date).getDay() === 5; // الجمعة
+              const isHoliday = holidays.includes(date) || new Date(date).getDay() === 5;
               
               let statusText = "";
               let rowClass = "border-b hover:bg-gray-50 transition-colors";
@@ -282,22 +300,25 @@ const StaffLeaveForm = ({ employee, requests, refresh }: { employee: Employee, r
 
   const submit = async () => {
     if (!formData.start || !formData.end) return alert('برجاء تحديد التواريخ');
-    const { error } = await supabase.from('leave_requests').insert([{
-      employee_id: employee.employee_id,
-      type: formData.type,
-      start_date: formData.start,
-      end_date: formData.end,
-      backup_person: formData.backup,
-      notes: formData.notes,
-      status: 'معلق'
-    }]);
-    if (error) {
-        console.error(error);
-        alert('خطأ في الإرسال: ' + error.message);
-    } else {
-      alert('تم تقديم الطلب بنجاح وهو قيد المراجعة');
-      setFormData({ type: 'اعتيادي', start: '', end: '', backup: '', notes: '' });
-      refresh();
+    try {
+      const { error } = await supabase.from('leave_requests').insert([{
+        employee_id: employee.employee_id,
+        type: formData.type,
+        start_date: formData.start,
+        end_date: formData.end,
+        backup_person: formData.backup,
+        notes: formData.notes,
+        status: 'معلق'
+      }]);
+      if (error) {
+          alert('خطأ في الإرسال: ' + error.message);
+      } else {
+        alert('تم تقديم الطلب بنجاح وهو قيد المراجعة');
+        setFormData({ type: 'اعتيادي', start: '', end: '', backup: '', notes: '' });
+        refresh();
+      }
+    } catch (err) {
+      alert('حدث خطأ غير متوقع أثناء الإرسال');
     }
   };
 
@@ -392,16 +413,20 @@ const StaffMessages = ({ messages, employeeId }: { messages: InternalMessage[], 
 
   const send = async () => {
     if(!content) return;
-    const { error } = await supabase.from('messages').insert([{
-      from_user: employeeId,
-      to_user: recipient,
-      content
-    }]);
-    if(error) alert('خطأ في الإرسال');
-    else {
-      alert('تم إرسال الرسالة بنجاح');
-      setContent('');
-      setShowCompose(false);
+    try {
+      const { error } = await supabase.from('messages').insert([{
+        from_user: employeeId,
+        to_user: recipient,
+        content
+      }]);
+      if(error) alert('خطأ في الإرسال');
+      else {
+        alert('تم إرسال الرسالة بنجاح');
+        setContent('');
+        setShowCompose(false);
+      }
+    } catch (e) {
+      alert('حدث خطأ أثناء الإرسال');
     }
   };
 

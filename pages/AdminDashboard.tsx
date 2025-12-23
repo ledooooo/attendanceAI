@@ -109,7 +109,10 @@ function ExcelUploadButton({ onData, label = "رفع إكسيل", icon = <Upload
 // --- Sub-Components for Tabs ---
 
 function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
-  const [settings, setSettings] = useState(center);
+  const [settings, setSettings] = useState<GeneralSettings>({
+    ...center,
+    holidays: center.holidays || []
+  });
   const [newHoliday, setNewHoliday] = useState('');
 
   const handleSave = async () => {
@@ -120,13 +123,14 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
 
   const addHoliday = () => {
     if (!newHoliday) return;
-    if (settings.holidays.includes(newHoliday)) return alert('التاريخ موجود بالفعل');
-    setSettings({...settings, holidays: [...settings.holidays, newHoliday]});
+    const currentHolidays = settings.holidays || [];
+    if (currentHolidays.includes(newHoliday)) return alert('التاريخ موجود بالفعل');
+    setSettings({...settings, holidays: [...currentHolidays, newHoliday]});
     setNewHoliday('');
   };
 
   const removeHoliday = (date: string) => {
-    setSettings({...settings, holidays: settings.holidays.filter(d => d !== date)});
+    setSettings({...settings, holidays: (settings.holidays || []).filter(d => d !== date)});
   };
 
   return (
@@ -150,13 +154,13 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
           <button onClick={addHoliday} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center"><Plus className="w-4 h-4 ml-1"/> إضافة عطلة</button>
         </div>
         <div className="flex flex-wrap gap-2">
-          {settings.holidays.map(date => (
+          {(settings.holidays || []).map(date => (
             <span key={date} className="bg-gray-100 px-3 py-1 rounded-full text-sm border flex items-center gap-2">
               {date}
               <button onClick={() => removeHoliday(date)} className="text-red-500 hover:text-red-700"><X className="w-3.5 h-3.5"/></button>
             </span>
           ))}
-          {settings.holidays.length === 0 && <p className="text-xs text-gray-400">لا توجد عطلات مضافة بعد.</p>}
+          {(!settings.holidays || settings.holidays.length === 0) && <p className="text-xs text-gray-400">لا توجد عطلات مضافة بعد.</p>}
         </div>
       </div>
 
