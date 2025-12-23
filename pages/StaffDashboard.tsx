@@ -54,10 +54,10 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
           </button>
           <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">دخول العاملين</h2>
           <div className="space-y-4">
-            <StaffInput label="رقم الموظف" value={loginData.id} onChange={v => setLoginData({...loginData, id: v})} />
-            <StaffInput label="الرقم القومي" value={loginData.natId} onChange={v => setLoginData({...loginData, natId: v})} />
-            <StaffInput label="رقم الهاتف" value={loginData.phone} onChange={v => setLoginData({...loginData, phone: v})} />
-            <StaffInput label="البريد الإلكتروني" value={loginData.email} onChange={v => setLoginData({...loginData, email: v})} />
+            <StaffInput label="رقم الموظف" value={loginData.id} onChange={(v: string) => setLoginData({...loginData, id: v})} />
+            <StaffInput label="الرقم القومي" value={loginData.natId} onChange={(v: string) => setLoginData({...loginData, natId: v})} />
+            <StaffInput label="رقم الهاتف" value={loginData.phone} onChange={(v: string) => setLoginData({...loginData, phone: v})} />
+            <StaffInput label="البريد الإلكتروني" value={loginData.email} onChange={(v: string) => setLoginData({...loginData, email: v})} />
             <button 
               onClick={handleLogin}
               disabled={loading}
@@ -97,7 +97,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
            <StaffNav active={activeTab === 'attendance'} icon={<Clock />} label="تقارير الحضور" onClick={() => setActiveTab('attendance')} />
            <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="تقديم طلب إجازة" onClick={() => setActiveTab('leave')} />
            <StaffNav active={activeTab === 'eval'} icon={<ClipboardCheck />} label="تقييمي الشهري" onClick={() => setActiveTab('eval')} />
-           {/* Fixed invalid label syntax: using curly braces for expression */}
            <StaffNav active={activeTab === 'messages'} icon={<MessageCircle />} label={`الرسائل (${messages.length})`} onClick={() => setActiveTab('messages')} />
         </div>
 
@@ -113,10 +112,16 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
 };
 
 // Staff components
-const StaffInput = ({ label, ...props }: any) => (
+// Updated StaffInput to correctly handle the onChange event and pass the value string back
+const StaffInput = ({ label, onChange, value, ...props }: any) => (
   <div>
     <label className="block text-sm font-semibold mb-1">{label}</label>
-    <input className="w-full p-2.5 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-emerald-500 outline-none" {...props} />
+    <input 
+      className="w-full p-2.5 border rounded-lg bg-gray-50 focus:ring-2 focus:ring-emerald-500 outline-none" 
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      {...props} 
+    />
   </div>
 );
 
@@ -255,7 +260,6 @@ const StaffMessages = ({ messages, employeeId }: { messages: InternalMessage[], 
         <div className="p-6 border rounded-xl bg-blue-50 space-y-4 mb-6 animate-in slide-in-from-top">
           <select className="w-full p-2 rounded border" value={recipient} onChange={e => setRecipient(e.target.value)}>
              <option value="admin">إدارة المركز</option>
-             {/* Note: Can fetch list of employees here if needed */}
           </select>
           <textarea className="w-full p-3 rounded border min-h-[100px]" placeholder="محتوى الرسالة..." value={content} onChange={e => setContent(e.target.value)} />
           <button onClick={send} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold">إرسال</button>
