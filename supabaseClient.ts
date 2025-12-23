@@ -1,7 +1,11 @@
-
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://dyrolfnfuaifzguaxtgs.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5cm9sZm5mdWFpZnpndWF4dGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0NDk0MTEsImV4cCI6MjA4MjAyNTQxMX0.THEBAHRH-2CN4sk6dqG3rB_XkS2_EAahoUc-t6h5lg4';
+// استخدام import.meta.env بدلاً من كتابة الروابط مباشرة
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Missing Supabase Environment Variables');
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
