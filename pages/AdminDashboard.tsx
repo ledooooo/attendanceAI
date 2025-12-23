@@ -10,28 +10,56 @@ import * as XLSX from 'xlsx';
 
 // --- Date Helpers for Excel ---
 
-// Convert DD/MM/YYYY (Excel) to YYYY-MM-DD (DB)
+const MONTH_MAP: { [key: string]: string } = {
+  jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+  jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+};
+
+// Convert "Aug 2, 2025" (Excel String) to YYYY-MM-DD (DB)
 const formatDateForDB = (val: any) => {
   if (!val) return null;
   const str = String(val).trim();
-  // Match DD/MM/YYYY or DD-MM-YYYY
+  
+  // Try to match "Aug 2, 2025" or "August 2, 2025"
+  const match = str.match(/^([a-zA-Z]{3,9})\s+(\d{1,2}),\s+(\d{4})$/);
+  if (match) {
+    const monthName = match[1].toLowerCase().substring(0, 3);
+    const day = match[2].padStart(2, '0');
+    const year = match[3];
+    const monthNum = MONTH_MAP[monthName];
+    if (monthNum) {
+      return `${year}-${monthNum}-${day}`;
+    }
+  }
+
+  // Handle standard YYYY-MM-DD
+  if (str.match(/^\d{4}-\d{2}-\d{2}$/)) return str;
+  
+  // Handle old DD/MM/YYYY just in case
   const dmy = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (dmy) {
     return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   }
-  // If already YYYY-MM-DD
-  if (str.match(/^\d{4}-\d{2}-\d{2}$/)) return str;
+
   return str;
 };
 
-// Convert YYYY-MM-DD (DB) to DD/MM/YYYY (Excel Display)
+// Convert YYYY-MM-DD (DB) to "Aug 2, 2025" (Excel Display)
 const formatDateForExcelDisplay = (dateStr: string) => {
   if (!dateStr) return "";
-  const parts = dateStr.split('-');
-  if (parts.length === 3) {
-    return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    
+    // We want "Aug 2, 2025"
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return dateStr;
   }
-  return dateStr;
 };
 
 // --- Generic UI Helpers ---
@@ -249,7 +277,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
       </div>
       <ExcelInfo 
         fields={['employee_id', 'name', 'national_id', 'specialty', 'phone', 'email', 'gender', 'grade', 'leave_annual_balance', 'leave_casual_balance', 'join_date']} 
-        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', phone: '0123456789', email: 'ahmed@mail.com', gender: 'ذكر', grade: 'أخصائي', leave_annual_balance: 21, leave_casual_balance: 7, join_date: '02/08/2025'}]}
+        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', phone: '0123456789', email: 'ahmed@mail.com', gender: 'ذكر', grade: 'أخصائي', leave_annual_balance: 21, leave_casual_balance: 7, join_date: 'Aug 2, 2025'}]}
         fileName="employees_sample"
       />
       
@@ -326,7 +354,7 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
       </div>
       <ExcelInfo 
         fields={['employee_id', 'type', 'start_date', 'end_date', 'backup_person', 'status', 'notes']} 
-        sampleData={[{employee_id: '1001', type: 'اعتيادي', start_date: '02/08/2025', end_date: '05/08/2025', backup_person: 'د. محمد علي', status: 'مقبول', notes: 'سفر عائلي'}]}
+        sampleData={[{employee_id: '1001', type: 'اعتيادي', start_date: 'Aug 2, 2025', end_date: 'Aug 5, 2025', backup_person: 'د. محمد علي', status: 'مقبول', notes: 'سفر عائلي'}]}
         fileName="leaves_sample"
       />
       <div className="space-y-4">
@@ -371,7 +399,7 @@ function EveningScheduleTab() {
       </div>
       <ExcelInfo 
         fields={['date', 'specs', 'doctors']} 
-        sampleData={[{date: '02/08/2025', specs: 'باطنة,أطفال,جراحة', doctors: 'د.أحمد,د.سارة,د.خالد'}]}
+        sampleData={[{date: 'Aug 2, 2025', specs: 'باطنة,أطفال,جراحة', doctors: 'د.أحمد,د.سارة,د.خالد'}]}
         fileName="evening_sample"
       />
       <div className="border-2 border-dashed p-12 text-center rounded-2xl bg-gray-50">
@@ -476,13 +504,13 @@ ${invalidIds.length > 0 ? `تم استبعاد ${invalidIds.length} كود غي�
       <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start gap-3 mb-4">
         <Info className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
         <p className="text-xs text-blue-800 leading-relaxed">
-          <strong>نصيحة للإدارة:</strong> عند رفع ملف البصمة، سيقوم النظام تلقائياً بمقارنة السجلات وتجاهل البيانات التي تم رفعها مسبقاً لنفس اليوم ونفس الموظف، مما يضمن عدم تكرار البيانات حتى لو تم رفع نفس الملف مرتين. استخدم صيغة التاريخ <strong>02/08/2025</strong>.
+          <strong>نصيحة للإدارة:</strong> عند رفع ملف البصمة، سيقوم النظام تلقائياً بمقارنة السجلات وتجاهل البيانات التي تم رفعها مسبقاً لنفس اليوم ونفس الموظف، مما يضمن عدم تكرار البيانات حتى لو تم رفع نفس الملف مرتين. استخدم صيغة التاريخ <strong>Aug 2, 2025</strong>.
         </p>
       </div>
 
       <ExcelInfo 
         fields={['employee_id', 'date', 'check_in', 'check_out', 'check_in_status', 'check_out_status', 'notes']} 
-        sampleData={[{employee_id: '1001', date: '02/08/2025', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'سجل يومي'}]}
+        sampleData={[{employee_id: '1001', date: 'Aug 2, 2025', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'سجل يومي'}]}
         fileName="attendance_daily_template"
       />
       
