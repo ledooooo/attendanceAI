@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, Settings, Users, FileText, Calendar, 
-  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, Send, FileSpreadsheet, Info
+  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, Send, FileSpreadsheet, Info, Download
 } from 'lucide-react';
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage } from '../types';
 import * as XLSX from 'xlsx';
@@ -33,22 +33,42 @@ function Select({ label, options, value, onChange }: any) {
         onChange={e => onChange(e.target.value)}
         className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition-all outline-none"
       >
-        {options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+        {options.map((opt: any) => (
+          typeof opt === 'string' ? <option key={opt} value={opt}>{opt}</option> : <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
       </select>
     </div>
   );
 }
 
-function ExcelInfo({ fields }: { fields: string[] }) {
+function ExcelInfo({ fields, sampleData, fileName }: { fields: string[], sampleData?: any[], fileName?: string }) {
+  const downloadSample = () => {
+    if (!sampleData) return;
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sample");
+    XLSX.writeFile(wb, `${fileName || 'sample'}.xlsx`);
+  };
+
   return (
-    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg mb-4 flex items-start gap-3">
-      <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-      <div>
-        <p className="text-xs text-amber-800 font-bold mb-1">أعمدة ملف الإكسيل المطلوبة:</p>
-        <div className="flex flex-wrap gap-2">
-          {fields.map(f => <span key={f} className="bg-white px-2 py-0.5 rounded border border-amber-300 text-[10px] text-amber-700">{f}</span>)}
+    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg mb-4 flex flex-col gap-3">
+      <div className="flex items-start gap-3">
+        <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-xs text-amber-800 font-bold mb-1">أعمدة ملف الإكسيل المطلوبة:</p>
+          <div className="flex flex-wrap gap-2">
+            {fields.map(f => <span key={f} className="bg-white px-2 py-0.5 rounded border border-amber-300 text-[10px] text-amber-700">{f}</span>)}
+          </div>
         </div>
       </div>
+      {sampleData && (
+        <button 
+          onClick={downloadSample}
+          className="flex items-center text-xs font-bold text-amber-700 hover:text-amber-900 bg-amber-100/50 w-fit px-3 py-1.5 rounded-md border border-amber-200 transition-colors"
+        >
+          <Download className="w-3.5 h-3.5 ml-1.5" /> تحميل نموذج إكسيل جاهز (.xlsx)
+        </button>
+      )}
     </div>
   );
 }
@@ -72,6 +92,7 @@ function ExcelUploadButton({ onData, label = "رفع إكسيل", icon = <Upload
         alert("خطأ في قراءة ملف الإكسيل");
       } finally {
         setLoading(false);
+        e.target.value = ''; // Reset input
       }
     };
     reader.readAsBinaryString(file);
@@ -98,9 +119,7 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
         <h2 className="text-2xl font-bold">الإعدادات العامة للمركز</h2>
-        <ExcelUploadButton label="تحديث من إكسيل" onData={(data: any) => setSettings({...settings, ...data[0]})} />
       </div>
-      <ExcelInfo fields={['center_name', 'admin_name', 'phone', 'address', 'password', 'location_url']} />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Input label="اسم المركز" value={settings.center_name} onChange={(v:any) => setSettings({...settings, center_name: v})} />
         <Input label="اسم الإدارة" value={settings.admin_name} onChange={(v:any) => setSettings({...settings, admin_name: v})} />
@@ -124,7 +143,7 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
 
 function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<Partial<Employee>>({ gender: 'ذكر', status: 'نشط', center_id: centerId });
+  const [formData, setFormData] = useState<Partial<Employee>>({ gender: 'ذكر', status: 'نشط', center_id: centerId, leave_annual_balance: 21, leave_casual_balance: 7 });
 
   const handleAdd = async () => {
     const { error } = await supabase.from('employees').insert([formData]);
@@ -142,12 +161,12 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
       email: row.email || row['الايميل'] || '',
       gender: row.gender || row['النوع'] || 'ذكر',
       grade: row.grade || row['الدرجة'] || '',
-      status: 'نشط',
+      status: row.status || 'نشط',
       center_id: centerId,
       leave_annual_balance: row.leave_annual_balance || 21,
       leave_casual_balance: row.leave_casual_balance || 7,
-      remaining_annual: row.leave_annual_balance || 21,
-      remaining_casual: row.leave_casual_balance || 7
+      remaining_annual: row.remaining_annual || row.leave_annual_balance || 21,
+      remaining_casual: row.remaining_casual || row.leave_casual_balance || 7
     }));
     const { error } = await supabase.from('employees').insert(formatted);
     if (error) alert("خطأ في الرفع: " + error.message);
@@ -165,7 +184,11 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
           </button>
         </div>
       </div>
-      <ExcelInfo fields={['رقم الموظف', 'الاسم', 'الرقم القومي', 'التخصص', 'الهاتف', 'الايميل', 'النوع', 'الدرجة', 'leave_annual_balance']} />
+      <ExcelInfo 
+        fields={['employee_id', 'name', 'national_id', 'specialty', 'phone', 'email', 'gender', 'grade', 'leave_annual_balance', 'leave_casual_balance']} 
+        sampleData={[{employee_id: '1001', name: 'أحمد محمد', national_id: '12345678901234', specialty: 'باطنة', phone: '0123456789', email: 'ahmed@mail.com', gender: 'ذكر', grade: 'أخصائي', leave_annual_balance: 21, leave_casual_balance: 7}]}
+        fileName="employees_sample"
+      />
       
       {showForm && (
         <div className="bg-gray-50 p-6 rounded-xl border-2 border-dashed grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -178,6 +201,8 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
           <Select label="النوع" options={['ذكر', 'أنثى']} value={formData.gender} onChange={(v:any) => setFormData({...formData, gender: v as any})} />
           <Input label="الدرجة الوظيفية" value={formData.grade || ''} onChange={(v:any) => setFormData({...formData, grade: v})} />
           <Input label="رصيد سنوي" type="number" value={formData.leave_annual_balance || 21} onChange={(v:any) => setFormData({...formData, leave_annual_balance: parseInt(v)})} />
+          <Input label="رصيد عارضة" type="number" value={formData.leave_casual_balance || 7} onChange={(v:any) => setFormData({...formData, leave_casual_balance: parseInt(v)})} />
+          <Select label="الحالة" options={['نشط', 'موقوف', 'إجازة']} value={formData.status} onChange={(v:any) => setFormData({...formData, status: v as any})} />
           <div className="md:col-span-3">
              <button onClick={handleAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">تأكيد الإضافة</button>
           </div>
@@ -200,7 +225,11 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
                 <td className="p-3 font-mono">{emp.employee_id}</td>
                 <td className="p-3 font-bold">{emp.name}</td>
                 <td className="p-3 text-gray-600">{emp.specialty}</td>
-                <td className="p-3"><span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs">{emp.status}</span></td>
+                <td className="p-3">
+                  <span className={`px-2 py-1 rounded text-xs ${emp.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {emp.status}
+                  </span>
+                </td>
                 <td className="p-3"><button onClick={async () => { if(confirm('حذف؟')) { await supabase.from('employees').delete().eq('id', emp.id); onRefresh(); } }} className="text-red-500"><Trash2 className="w-4 h-4"/></button></td>
               </tr>
             ))}
@@ -219,7 +248,8 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
       start_date: row.start_date || row['من تاريخ'],
       end_date: row.end_date || row['إلى تاريخ'],
       status: row.status || 'مقبول',
-      backup_person: row.backup_person || row['القائم بالعمل'] || ''
+      backup_person: row.backup_person || row['القائم بالعمل'] || '',
+      notes: row.notes || ''
     }));
     const { error } = await supabase.from('leave_requests').insert(formatted);
     if (error) alert(error.message); else { alert("تم استيراد الطلبات"); onRefresh(); }
@@ -231,7 +261,11 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
         <h2 className="text-2xl font-bold">الطلبات والإجازات</h2>
         <ExcelUploadButton onData={handleExcelImport} label="رفع أرشيف إجازات" />
       </div>
-      <ExcelInfo fields={['رقم الموظف', 'نوع الإجازة', 'من تاريخ', 'إلى تاريخ', 'القائم بالعمل']} />
+      <ExcelInfo 
+        fields={['employee_id', 'type', 'start_date', 'end_date', 'backup_person', 'status', 'notes']} 
+        sampleData={[{employee_id: '1001', type: 'اعتيادي', start_date: '2023-11-01', end_date: '2023-11-05', backup_person: 'د. محمد علي', status: 'مقبول', notes: 'سفر عائلي'}]}
+        fileName="leaves_sample"
+      />
       <div className="space-y-4">
         {requests.length === 0 && <p className="text-center text-gray-400 py-10">لا توجد طلبات معلقة</p>}
         {requests.map(req => (
@@ -242,6 +276,7 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
                 <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{req.type}</span>
               </div>
               <p className="text-sm text-gray-500">الفترة: {req.start_date} إلى {req.end_date}</p>
+              {req.notes && <p className="text-xs text-gray-400 mt-1 italic">ملاحظة: {req.notes}</p>}
             </div>
             <div className="flex gap-2">
               <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مقبول'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-green-50 text-green-600 rounded-full hover:bg-green-100"><CheckCircle/></button>
@@ -271,7 +306,11 @@ function EveningScheduleTab() {
         <h2 className="text-2xl font-bold">جدول المسائي</h2>
         <ExcelUploadButton onData={handleExcelSchedule} label="رفع جدول المسائي" />
       </div>
-      <ExcelInfo fields={['التاريخ', 'التخصصات (مفصولة بفاصلة)', 'الأطباء (مفصولة بفاصلة)']} />
+      <ExcelInfo 
+        fields={['date', 'specs', 'doctors']} 
+        sampleData={[{date: '2023-10-30', specs: 'باطنة,أطفال,جراحة', doctors: 'د.أحمد,د.سارة,د.خالد'}]}
+        fileName="evening_sample"
+      />
       <div className="border-2 border-dashed p-12 text-center rounded-2xl bg-gray-50">
          <Calendar className="w-12 h-12 mx-auto mb-4 text-blue-500" />
          <h3 className="text-xl font-bold mb-2">إدارة الجدول المسائي</h3>
@@ -282,25 +321,56 @@ function EveningScheduleTab() {
 }
 
 function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefresh: () => void }) {
-  const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], check_in_status: 'حاضر', check_out_status: 'منصرف' });
+  const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ 
+    date: new Date().toISOString().split('T')[0], 
+    check_in_status: 'حاضر', 
+    check_out_status: 'منصرف',
+    notes: ''
+  });
 
   const handleManualAdd = async () => {
     if(!formData.employee_id) return alert('اختر الموظف');
     const { error } = await supabase.from('attendance').insert([formData]);
-    if (error) alert(error.message); else { alert('تم التسجيل'); onRefresh(); }
+    if (error) {
+      if (error.code === '23503') alert('خطأ: رقم الموظف غير مسجل في النظام. تأكد من إضافة الموظف أولاً.');
+      else alert(error.message);
+    } else { alert('تم تسجيل الحضور بنجاح'); onRefresh(); }
   };
 
   const handleExcelAttendance = async (data: any[]) => {
-    const formatted = data.map(row => ({
-      employee_id: String(row.employee_id || row['رقم الموظف']),
-      date: row.date || row['التاريخ'],
-      check_in: row.check_in || row['وقت الحضور'],
-      check_out: row.check_out || row['وقت الانصراف'],
-      check_in_status: row.check_in_status || row['حالة الحضور'] || 'حاضر',
-      check_out_status: row.check_out_status || row['حالة الانصراف'] || 'منصرف'
-    }));
-    const { error } = await supabase.from('attendance').insert(formatted);
-    if(error) alert(error.message); else { alert("تم رفع سجلات الحضور"); onRefresh(); }
+    // Check if employee_ids exist in current employees list to prevent FK errors
+    const validIds = new Set(employees.map(e => e.employee_id));
+    const formatted = [];
+    const invalidRows = [];
+
+    for (const row of data) {
+      const eid = String(row.employee_id || row['رقم الموظف'] || '');
+      if (validIds.has(eid)) {
+        formatted.push({
+          employee_id: eid,
+          date: row.date || row['التاريخ'] || new Date().toISOString().split('T')[0],
+          check_in: row.check_in || row['وقت الحضور'] || null,
+          check_out: row.check_out || row['وقت الانصراف'] || null,
+          check_in_status: row.check_in_status || row['حالة الحضور'] || 'حاضر',
+          check_out_status: row.check_out_status || row['حالة الانصراف'] || 'منصرف',
+          notes: row.notes || row['ملاحظات'] || ''
+        });
+      } else {
+        invalidRows.push(eid);
+      }
+    }
+
+    if (invalidRows.length > 0) {
+      alert(`تحذير: تم استبعاد ${invalidRows.length} سجل لأن أرقام الموظفين التالية غير مسجلة: ${invalidRows.join(', ')}`);
+    }
+
+    if (formatted.length > 0) {
+      const { error } = await supabase.from('attendance').insert(formatted);
+      if(error) alert(error.message); 
+      else { alert(`تم رفع ${formatted.length} سجل حضور بنجاح`); onRefresh(); }
+    } else if (invalidRows.length > 0) {
+      alert("لم يتم رفع أي بيانات لعدم وجود مطابقة لأرقام الموظفين.");
+    }
   };
 
   return (
@@ -309,14 +379,32 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         <h2 className="text-2xl font-bold">بيانات الحضور والانصراف</h2>
         <ExcelUploadButton onData={handleExcelAttendance} label="رفع إكسيل بصمة" />
       </div>
-      <ExcelInfo fields={['رقم الموظف', 'التاريخ', 'وقت الحضور', 'وقت الانصراف', 'حالة الحضور', 'حالة الانصراف']} />
+      <ExcelInfo 
+        fields={['employee_id', 'date', 'check_in', 'check_out', 'check_in_status', 'check_out_status', 'notes']} 
+        sampleData={[{employee_id: '1001', date: '2023-10-25', check_in: '08:30', check_out: '14:30', check_in_status: 'حاضر', check_out_status: 'منصرف', notes: 'دخول بموعد'}]}
+        fileName="attendance_sample"
+      />
       
       <div className="bg-gray-50 p-6 rounded-xl border grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Select label="الموظف" options={['-- اختر --', ...employees.map(e => e.employee_id)]} value={formData.employee_id} onChange={(v:any) => setFormData({...formData, employee_id: v})} />
+        <Select 
+          label="الموظف" 
+          options={[{value: '', label: '-- اختر موظف --'}, ...employees.map(e => ({value: e.employee_id, label: `${e.name} (${e.employee_id})`}))]} 
+          value={formData.employee_id} 
+          onChange={(v:any) => setFormData({...formData, employee_id: v})} 
+        />
         <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any) => setFormData({...formData, date: v})} />
         <Input label="وقت الحضور" type="time" value={formData.check_in || ''} onChange={(v:any) => setFormData({...formData, check_in: v})} />
-        <Select label="حالة الحضور" options={['حاضر', 'متأخر', 'غائب']} value={formData.check_in_status} onChange={(v:any) => setFormData({...formData, check_in_status: v})} />
-        <div className="md:col-span-2"><button onClick={handleManualAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold">حفظ يدوي</button></div>
+        <Select label="حالة الحضور" options={['حاضر', 'متأخر', 'غائب', 'مأمورية']} value={formData.check_in_status} onChange={(v:any) => setFormData({...formData, check_in_status: v})} />
+        <Input label="وقت الانصراف" type="time" value={formData.check_out || ''} onChange={(v:any) => setFormData({...formData, check_out: v})} />
+        <Select label="حالة الانصراف" options={['منصرف', 'خروج مبكر', 'مأمورية', 'مستمر']} value={formData.check_out_status} onChange={(v:any) => setFormData({...formData, check_out_status: v})} />
+        <div className="md:col-span-2">
+          <Input label="ملاحظات الحضور" value={formData.notes} onChange={(v:any) => setFormData({...formData, notes: v})} placeholder="اكتب أي ملاحظات تتعلق بهذا اليوم..." />
+        </div>
+        <div className="md:col-span-2">
+          <button onClick={handleManualAdd} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors flex items-center justify-center">
+            <Plus className="w-5 h-5 ml-2" /> حفظ سجل الحضور يدوياً
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -325,7 +413,7 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
 function ReportsTab({ employees }: { employees: Employee[] }) {
   const [reportData, setReportData] = useState<any[]>([]);
   const fetchReport = async () => {
-    const { data } = await supabase.from('attendance').select('*').limit(50);
+    const { data } = await supabase.from('attendance').select('*').limit(100).order('date', {ascending: false});
     if(data) setReportData(data);
   };
 
@@ -333,23 +421,40 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
     const ws = XLSX.utils.json_to_sheet(reportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, "MedicalCenter_Report.xlsx");
+    XLSX.writeFile(wb, "MedicalCenter_FullReport.xlsx");
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
         <h2 className="text-2xl font-bold">التقارير والإحصاء</h2>
-        <button onClick={exportExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center font-bold">
-          <FileSpreadsheet className="w-4 h-4 ml-2" /> تصدير إكسيل
+        <button onClick={exportExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center font-bold transition-all hover:bg-emerald-700">
+          <FileSpreadsheet className="w-4 h-4 ml-2" /> تصدير التقرير الكامل
         </button>
       </div>
-      <button onClick={fetchReport} className="bg-blue-600 text-white px-6 py-2 rounded-lg">توليد تقرير سريع</button>
-      <div className="overflow-x-auto border rounded-xl">
+      <button onClick={fetchReport} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-bold">توليد تقرير أحدث 100 سجل</button>
+      <div className="overflow-x-auto border rounded-xl shadow-sm">
         <table className="w-full text-sm text-right">
-          <thead className="bg-gray-100"><tr><th className="p-2">الموظف</th><th className="p-2">التاريخ</th><th className="p-2">الحضور</th><th className="p-2">الحالة</th></tr></thead>
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-3">رقم الموظف</th>
+              <th className="p-3">التاريخ</th>
+              <th className="p-3">حضور</th>
+              <th className="p-3">انصراف</th>
+              <th className="p-3">الحالة</th>
+            </tr>
+          </thead>
           <tbody>
-            {reportData.map((r,i) => <tr key={i} className="border-b"><td className="p-2">{r.employee_id}</td><td className="p-2">{r.date}</td><td className="p-2">{r.check_in}</td><td className="p-2">{r.check_in_status}</td></tr>)}
+            {reportData.map((r,i) => (
+              <tr key={i} className="border-b hover:bg-gray-50">
+                <td className="p-3 font-mono">{r.employee_id}</td>
+                <td className="p-3">{r.date}</td>
+                <td className="p-3 text-emerald-600 font-bold">{r.check_in || '--'}</td>
+                <td className="p-3 text-red-500 font-bold">{r.check_out || '--'}</td>
+                <td className="p-3 text-xs">{r.check_in_status} / {r.check_out_status}</td>
+              </tr>
+            ))}
+            {reportData.length === 0 && <tr><td colSpan={5} className="text-center p-10 text-gray-400">انقر على الزر لتوليد التقرير</td></tr>}
           </tbody>
         </table>
       </div>
@@ -379,21 +484,27 @@ function AlertsTab({ employees, sender }: { employees: Employee[], sender: strin
     <div className="space-y-8">
       <h2 className="text-2xl font-bold border-b pb-4">الرسائل والتنبيهات الصادرة</h2>
       <div className="bg-blue-50 p-6 rounded-xl border border-blue-100 space-y-4">
-        <select className="w-full p-3 border rounded-lg" value={recipient} onChange={e => setRecipient(e.target.value)}>
-          <option value="">-- اختر المستلم --</option>
-          <option value="all">الكل</option>
-          {employees.map(e => <option key={e.id} value={e.employee_id}>{e.name}</option>)}
-        </select>
-        <textarea className="w-full p-3 border rounded-lg min-h-[120px]" placeholder="نص التنبيه..." value={msg} onChange={e => setMsg(e.target.value)} />
-        <button onClick={sendMsg} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold flex items-center justify-center"><Bell className="ml-2"/> إرسال التنبيه</button>
+        <Select 
+          label="المستلم" 
+          options={[{value: '', label: '-- اختر المستلم --'}, {value: 'all', label: 'إرسال للجميع'}, ...employees.map(e => ({value: e.employee_id, label: e.name}))]} 
+          value={recipient} 
+          onChange={(v:any) => setRecipient(v)} 
+        />
+        <textarea className="w-full p-3 border rounded-lg min-h-[120px] focus:ring-2 focus:ring-blue-400 outline-none" placeholder="اكتب نص التنبيه أو التعليمات هنا..." value={msg} onChange={e => setMsg(e.target.value)} />
+        <button onClick={sendMsg} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold flex items-center justify-center hover:bg-blue-700 transition-colors"><Bell className="ml-2 w-5 h-5"/> إرسال التنبيه الآن</button>
       </div>
       <div className="space-y-3">
+        <h3 className="font-bold text-gray-700 flex items-center"><Mail className="w-4 h-4 ml-2" /> سجل الرسائل السابقة</h3>
         {history.map(item => (
-          <div key={item.id} className="p-4 bg-white border rounded-xl shadow-sm">
-            <div className="flex justify-between text-[10px] text-gray-400 mb-1"><span>إلى: {item.to_user}</span><span>{new Date(item.created_at).toLocaleString('ar-EG')}</span></div>
-            <p className="text-sm text-gray-700">{item.content}</p>
+          <div key={item.id} className="p-4 bg-white border rounded-xl shadow-sm hover:border-blue-200 transition-all">
+            <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+              <span className="font-bold text-blue-600">إلى: {item.to_user === 'all' ? 'الكل' : item.to_user}</span>
+              <span>{new Date(item.created_at).toLocaleString('ar-EG')}</span>
+            </div>
+            <p className="text-sm text-gray-700 leading-relaxed">{item.content}</p>
           </div>
         ))}
+        {history.length === 0 && <p className="text-center text-gray-400 py-10">لا يوجد سجل رسائل</p>}
       </div>
     </div>
   );
@@ -461,8 +572,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">لوحة تحكم: {selectedCenter?.center_name}</h1>
-        <button onClick={onBack} className="bg-gray-200 px-6 py-2 rounded-lg font-semibold flex items-center"><ArrowRight className="ml-2" /> خروج</button>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-800">لوحة تحكم: {selectedCenter?.center_name}</h1>
+          <p className="text-gray-500">مرحباً بك في نظام الإدارة الرئيسي</p>
+        </div>
+        <button onClick={onBack} className="bg-gray-200 px-6 py-2 rounded-lg font-semibold flex items-center hover:bg-gray-300 transition-all shadow-sm">
+          <ArrowRight className="ml-2 w-5 h-5" /> تسجيل خروج
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
