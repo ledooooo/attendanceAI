@@ -269,15 +269,22 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
       <h2 className="text-2xl font-bold border-b pb-4 flex items-center gap-2"><FileText className="w-6 h-6 text-blue-600"/> طلبات الإجازات المعلقة</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {requests.map(req => (
-          <div key={req.id} className="p-4 border bg-white rounded-xl shadow-sm flex justify-between items-center border-r-4 border-r-blue-500">
-            <div>
-              <p className="font-bold">{req.employee_name} ({req.employee_id})</p>
-              <p className="text-sm text-blue-600 font-bold">{req.type}</p>
-              <p className="text-xs text-gray-400">{req.start_date} إلى {req.end_date}</p>
+          <div key={req.id} className="p-4 border bg-white rounded-xl shadow-sm flex flex-col border-r-4 border-r-blue-500">
+            <div className="flex justify-between items-start mb-2">
+                <div>
+                    <p className="font-bold">{req.employee_name} ({req.employee_id})</p>
+                    <p className="text-sm text-blue-600 font-bold">{req.type}</p>
+                </div>
+                <div className="flex gap-2">
+                    <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مقبول'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100"><CheckCircle/></button>
+                    <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مرفوض'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"><XCircle/></button>
+                </div>
             </div>
-            <div className="flex gap-2">
-              <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مقبول'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100"><CheckCircle/></button>
-              <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مرفوض'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"><XCircle/></button>
+            <div className="text-xs text-gray-500 space-y-1 bg-gray-50 p-2 rounded">
+                <p>الفترة: {req.start_date} إلى {req.end_date}</p>
+                <p className="text-blue-600 font-bold">تاريخ العودة: {req.back_date}</p>
+                <p>البديل: {req.backup_person}</p>
+                {req.notes && <p className="italic text-gray-400">الملاحظات: {req.notes}</p>}
             </div>
           </div>
         ))}

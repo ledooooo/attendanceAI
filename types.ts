@@ -54,6 +54,7 @@ export interface LeaveRequest {
   type: string;
   start_date: string;
   end_date: string;
+  back_date: string; // الحقل الجديد
   backup_person: string;
   status: 'معلق' | 'مقبول' | 'مرفوض';
   notes: string;
@@ -65,7 +66,7 @@ export interface AttendanceRecord {
   id: string;
   employee_id: string;
   date: string;
-  times: string; // الحقل الجديد لتخزين البصمات (مثال: "08:22 13:47")
+  times: string; 
 }
 
 export interface EveningSchedule {

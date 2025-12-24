@@ -12,9 +12,11 @@ interface StaffDashboardProps {
   setEmployee: (emp: Employee | null) => void;
 }
 
-const Input = ({ label, type = 'text', value, onChange, placeholder }: any) => (
+const Input = ({ label, type = 'text', value, onChange, placeholder, required = false }: any) => (
   <div className="text-right">
-    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
+    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">
+      {label} {required && <span className="text-red-500">*</span>}
+    </label>
     <input 
       type={type} 
       value={value} 
@@ -25,9 +27,11 @@ const Input = ({ label, type = 'text', value, onChange, placeholder }: any) => (
   </div>
 );
 
-const Select = ({ label, options, value, onChange }: any) => (
+const Select = ({ label, options, value, onChange, required = false }: any) => (
   <div className="text-right">
-    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
+    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">
+      {label} {required && <span className="text-red-500">*</span>}
+    </label>
     <select 
       value={value} 
       onChange={e => onChange(e.target.value)} 
@@ -67,7 +71,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     if (employee) fetchStaffData(employee.employee_id);
   }, [employee]);
 
-  // دالة لحساب فرق الساعات
   const calculateHours = (inT: string, outT: string) => {
     if (!inT || !outT) return 0;
     const [h1, m1] = inT.split(':').map(Number);
@@ -91,12 +94,9 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     let leaveDays = 0;
     let lateDays = 0;
 
-    // حساب الساعات الأسبوعية (من السبت للخميس للأسبوع الحالي)
     let weeklyHours = 0;
     const today = new Date();
-    const currentDay = today.getDay(); // 0: Sun, 1: Mon, ..., 5: Fri, 6: Sat
-    // السبت هو 6، الجمعة هو 5
-    // نجلب بداية الأسبوع (السبت الماضي)
+    const currentDay = today.getDay();
     const diffToSat = (currentDay === 6 ? 0 : currentDay + 1);
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - diffToSat);
@@ -111,14 +111,11 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
         attendDays++;
         const times = att.times.split(/\s+/).filter(t => t.includes(':'));
         if (times.length >= 1) {
-          // فحص التأخير (مقارنة مع shift_morning_in)
           if (settings?.shift_morning_in && times[0] > settings.shift_morning_in) lateDays++;
           
           if (times.length >= 2) {
             const h = calculateHours(times[0], times[times.length - 1]);
             monthlyHours += h;
-            
-            // إضافة للساعات الأسبوعية إذا كان التاريخ ضمن الأسبوع الحالي
             const dDate = new Date(dateStr);
             if (dDate >= startOfWeek && dDate <= today && dDate.getDay() !== 5) {
                 weeklyHours += h;
@@ -290,30 +287,88 @@ const StatCard = ({ label, value, icon }: any) => (
 );
 
 const StaffLeaveForm = ({ employee, requests, refresh }: any) => {
-  const [formData, setFormData] = useState({ type: 'اعتيادي', start: '', end: '', backup: '', notes: '' });
+  const [formData, setFormData] = useState({ 
+    type: 'اعتيادي', 
+    start: '', 
+    end: '', 
+    back: '', 
+    backup: '', 
+    notes: '' 
+  });
+
   const submit = async () => {
-    if(!formData.start || !formData.end) return alert('حدد التواريخ');
-    const { error } = await supabase.from('leave_requests').insert([{ employee_id: employee.employee_id, ...formData, status: 'معلق' }]);
-    if(!error) { alert('تم الطلب'); refresh(); } else alert('خطأ');
+    // التحقق من الخانات الإجبارية
+    if(!formData.start || !formData.end || !formData.back || !formData.backup) {
+        return alert('برجاء إكمال جميع البيانات الإجبارية المميزة بنجمة (*)');
+    }
+
+    const { error } = await supabase.from('leave_requests').insert([{ 
+        employee_id: employee.employee_id, 
+        type: formData.type,
+        start_date: formData.start,
+        end_date: formData.end,
+        back_date: formData.back,
+        backup_person: formData.backup,
+        notes: formData.notes,
+        status: 'معلق' 
+    }]);
+
+    if(!error) { 
+        alert('تم إرسال طلب الإجازة بنجاح'); 
+        setFormData({ type: 'اعتيادي', start: '', end: '', back: '', backup: '', notes: '' });
+        refresh(); 
+    } else {
+        alert('حدث خطأ أثناء إرسال الطلب: ' + error.message);
+    }
   };
+
   return (
     <div className="space-y-8">
-      <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><FilePlus className="text-emerald-600"/> تقديم طلب إجازة</h3>
+      <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><FilePlus className="text-emerald-600"/> تقديم طلب إجازة جديد</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-2xl border">
-        <Select label="النوع" options={['اعتيادي', 'عارضة', 'مرضي']} value={formData.type} onChange={(v:any)=>setFormData({...formData, type: v})} />
-        <Input label="من تاريخ" type="date" value={formData.start} onChange={(v:any)=>setFormData({...formData, start: v})} />
-        <Input label="إلى تاريخ" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, end: v})} />
-        <Input label="القائم بالعمل" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} />
-        <button onClick={submit} className="md:col-span-2 bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md hover:bg-emerald-700 transition-all">إرسال الطلب</button>
+        <Select label="نوع الطلب" options={['اعتيادي', 'عارضة', 'مرضي']} value={formData.type} onChange={(v:any)=>setFormData({...formData, type: v})} required />
+        <Input label="تاريخ البداية" type="date" value={formData.start} onChange={(v:any)=>setFormData({...formData, start: v})} required />
+        <Input label="تاريخ النهاية" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, end: v})} required />
+        <Input label="تاريخ العودة للعمل" type="date" value={formData.back} onChange={(v:any)=>setFormData({...formData, back: v})} required />
+        <Input label="القائم بالعمل (البديل)" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} required placeholder="اسم الزميل البديل" />
+        <div className="md:col-span-2">
+            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">الملاحظات (اختياري)</label>
+            <textarea 
+                className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                rows={3}
+                value={formData.notes}
+                onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                placeholder="أي ملاحظات إضافية..."
+            ></textarea>
+        </div>
+        <button onClick={submit} className="md:col-span-2 bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md hover:bg-emerald-700 transition-all">إرسال طلب الإجازة</button>
       </div>
-      <h3 className="text-xl font-bold flex items-center gap-2"><List className="text-blue-600"/> تاريخ طلباتي</h3>
-      <div className="overflow-x-auto rounded-2xl border shadow-inner">
+      
+      <h3 className="text-xl font-bold flex items-center gap-2 mt-10"><List className="text-blue-600"/> سجل طلباتي السابقة</h3>
+      <div className="overflow-x-auto rounded-2xl border shadow-inner bg-white">
         <table className="w-full text-sm text-right">
-          <thead className="bg-gray-50"><tr><th className="p-3">النوع</th><th className="p-3">الفترة</th><th className="p-3">الحالة</th></tr></thead>
+          <thead className="bg-gray-50">
+            <tr>
+                <th className="p-4 border-b">النوع</th>
+                <th className="p-4 border-b">الفترة</th>
+                <th className="p-4 border-b">العودة للعمل</th>
+                <th className="p-4 border-b">الحالة</th>
+            </tr>
+          </thead>
           <tbody>
             {requests.map((r:any) => (
-              <tr key={r.id} className="border-b"><td className="p-3 font-bold">{r.type}</td><td className="p-3 text-xs">{r.start_date} - {r.end_date}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.status === 'مقبول' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100'}`}>{r.status}</span></td></tr>
+              <tr key={r.id} className="border-b hover:bg-gray-50 transition-colors">
+                <td className="p-4 font-bold">{r.type}</td>
+                <td className="p-4 text-xs font-semibold">{r.start_date} إلى {r.end_date}</td>
+                <td className="p-4 text-xs">{r.back_date || '--'}</td>
+                <td className="p-4">
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold ${r.status === 'مقبول' ? 'bg-emerald-100 text-emerald-700' : r.status === 'مرفوض' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {r.status}
+                    </span>
+                </td>
+              </tr>
             ))}
+            {requests.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-gray-400">لا يوجد سجل طلبات حالياً</td></tr>}
           </tbody>
         </table>
       </div>
