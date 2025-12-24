@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
-  ArrowRight, User, Calendar, FilePlus, ClipboardCheck, MessageCircle, Send, LogOut, Clock, AlertTriangle, CheckCircle, List
+  ArrowRight, User, Calendar, FilePlus, ClipboardCheck, MessageCircle, Send, LogOut, Clock, AlertTriangle, CheckCircle, List, BarChart
 } from 'lucide-react';
 import { Employee, LeaveRequest, AttendanceRecord, InternalMessage, GeneralSettings } from '../types';
 
@@ -12,7 +12,6 @@ interface StaffDashboardProps {
   setEmployee: (emp: Employee | null) => void;
 }
 
-// Added Input component to fix missing reference error
 const Input = ({ label, type = 'text', value, onChange, placeholder }: any) => (
   <div className="text-right">
     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
@@ -26,7 +25,6 @@ const Input = ({ label, type = 'text', value, onChange, placeholder }: any) => (
   </div>
 );
 
-// Added Select component to fix missing reference error
 const Select = ({ label, options, value, onChange }: any) => (
   <div className="text-right">
     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
@@ -44,7 +42,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   const [loginData, setLoginData] = useState({ id: '', natId: '' });
   const [activeTab, setActiveTab] = useState('attendance');
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [messages, setMessages] = useState<InternalMessage[]>([]);
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [allMyRequests, setAllMyRequests] = useState<LeaveRequest[]>([]);
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
@@ -53,15 +50,13 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
 
   const fetchStaffData = async (empId: string) => {
     try {
-      const [attRes, msgRes, leaveRes, setRes, myReqRes] = await Promise.all([
+      const [attRes, leaveRes, setRes, myReqRes] = await Promise.all([
         supabase.from('attendance').select('*').eq('employee_id', empId),
-        supabase.from('messages').select('*').or(`to_user.eq.${empId},to_user.eq.all`).order('created_at', { ascending: false }),
         supabase.from('leave_requests').select('*').eq('employee_id', empId).eq('status', 'مقبول'),
         supabase.from('general_settings').select('*').limit(1).single(),
         supabase.from('leave_requests').select('*').eq('employee_id', empId).order('created_at', { ascending: false })
       ]);
       if (attRes.data) setAttendance(attRes.data);
-      if (msgRes.data) setMessages(msgRes.data);
       if (leaveRes.data) setLeaves(leaveRes.data);
       if (setRes.data) setSettings(setRes.data);
       if (myReqRes.data) setAllMyRequests(myReqRes.data);
@@ -72,32 +67,78 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     if (employee) fetchStaffData(employee.employee_id);
   }, [employee]);
 
+  // دالة لحساب فرق الساعات
+  const calculateHours = (inT: string, outT: string) => {
+    if (!inT || !outT) return 0;
+    const [h1, m1] = inT.split(':').map(Number);
+    const [h2, m2] = outT.split(':').map(Number);
+    let diff = (new Date(0,0,0,h2,m2).getTime() - new Date(0,0,0,h1,m1).getTime()) / 3600000;
+    if (diff < 0) diff += 24;
+    return diff;
+  };
+
+  const isFriday = (dateStr: string) => new Date(dateStr).getDay() === 5;
+  const isHoliday = (dateStr: string) => settings?.holidays?.includes(dateStr) || isFriday(dateStr);
+  const getLeaveOnDate = (dateStr: string) => leaves.find(l => dateStr >= l.start_date && dateStr <= l.end_date);
+
   const stats = useMemo(() => {
     const [year, month] = selectedMonth.split('-').map(Number);
-    const filteredAtt = attendance.filter(a => a.date.startsWith(selectedMonth));
-    const totalAttend = filteredAtt.length;
-    
-    let totalHours = 0;
-    filteredAtt.forEach(a => {
-      const times = a.times.split(/\s+/).filter(t => t.includes(':'));
-      if (times.length >= 2) {
-        const h = calculateHours(times[0], times[times.length-1]);
-        totalHours += parseFloat(h);
-      }
-    });
-
     const daysInMonth = new Date(year, month, 0).getDate();
-    let absentCount = 0;
+    
+    let monthlyHours = 0;
+    let attendDays = 0;
+    let absentDays = 0;
+    let leaveDays = 0;
+    let lateDays = 0;
+
+    // حساب الساعات الأسبوعية (من السبت للخميس للأسبوع الحالي)
+    let weeklyHours = 0;
+    const today = new Date();
+    const currentDay = today.getDay(); // 0: Sun, 1: Mon, ..., 5: Fri, 6: Sat
+    // السبت هو 6، الجمعة هو 5
+    // نجلب بداية الأسبوع (السبت الماضي)
+    const diffToSat = (currentDay === 6 ? 0 : currentDay + 1);
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - diffToSat);
+    
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const isWeekend = new Date(dateStr).getDay() === 5;
-      const isHoliday = settings?.holidays?.includes(dateStr) || isWeekend;
-      const hasAtt = filteredAtt.some(a => a.date === dateStr);
-      const hasLeave = leaves.some(l => dateStr >= l.start_date && dateStr <= l.end_date);
-      if (!hasAtt && !hasLeave && !isHoliday) absentCount++;
+      const att = attendance.find(a => a.date === dateStr);
+      const leave = getLeaveOnDate(dateStr);
+      const holiday = isHoliday(dateStr);
+
+      if (att) {
+        attendDays++;
+        const times = att.times.split(/\s+/).filter(t => t.includes(':'));
+        if (times.length >= 1) {
+          // فحص التأخير (مقارنة مع shift_morning_in)
+          if (settings?.shift_morning_in && times[0] > settings.shift_morning_in) lateDays++;
+          
+          if (times.length >= 2) {
+            const h = calculateHours(times[0], times[times.length - 1]);
+            monthlyHours += h;
+            
+            // إضافة للساعات الأسبوعية إذا كان التاريخ ضمن الأسبوع الحالي
+            const dDate = new Date(dateStr);
+            if (dDate >= startOfWeek && dDate <= today && dDate.getDay() !== 5) {
+                weeklyHours += h;
+            }
+          }
+        }
+      } else {
+        if (!holiday && !leave) absentDays++;
+        if (leave) leaveDays++;
+      }
     }
 
-    return { totalAttend, totalHours: totalHours.toFixed(1), absentCount };
+    return { 
+      monthlyHours: monthlyHours.toFixed(1), 
+      weeklyHours: weeklyHours.toFixed(1),
+      attendDays, 
+      absentDays, 
+      leaveDays, 
+      lateDays 
+    };
   }, [attendance, leaves, settings, selectedMonth]);
 
   if (!employee) {
@@ -134,42 +175,76 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
         <button onClick={() => setEmployee(null)} className="flex items-center text-red-500 hover:text-red-700 font-bold bg-red-50 px-6 py-2 rounded-xl transition-all shadow-sm">تسجيل خروج <LogOut className="mr-3 w-5 h-5"/></button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <StatCard label="ساعات العمل" value={stats.totalHours} icon={<Clock className="text-blue-500"/>} />
-        <StatCard label="أيام الحضور" value={stats.totalAttend} icon={<CheckCircle className="text-emerald-500"/>} />
-        <StatCard label="أيام الغياب" value={stats.absentCount} icon={<AlertTriangle className="text-red-500"/>} />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        <StatCard label="ساعات الشهر" value={stats.monthlyHours} icon={<Clock className="text-blue-500"/>} />
+        <StatCard label="ساعات الأسبوع" value={stats.weeklyHours} icon={<BarChart className="text-purple-500"/>} />
+        <StatCard label="أيام الحضور" value={stats.attendDays} icon={<CheckCircle className="text-emerald-500"/>} />
+        <StatCard label="أيام الغياب" value={stats.absentDays} icon={<AlertTriangle className="text-red-500"/>} />
+        <StatCard label="إجمالي الإجازات" value={stats.leaveDays} icon={<Calendar className="text-amber-500"/>} />
+        <StatCard label="أيام التأخير" value={stats.lateDays} icon={<Clock className="text-orange-500"/>} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-1 flex flex-col gap-3">
            <StaffNav active={activeTab === 'attendance'} icon={<Clock />} label="تقرير الحضور" onClick={() => setActiveTab('attendance')} />
            <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="طلب إجازة" onClick={() => setActiveTab('leave')} />
-           <StaffNav active={activeTab === 'messages'} icon={<MessageCircle />} label="الرسائل" onClick={() => setActiveTab('messages')} />
+           <StaffNav active={activeTab === 'profile'} icon={<User />} label="ملفي الشخصي" onClick={() => setActiveTab('profile')} />
         </div>
         <div className="lg:col-span-3 bg-white p-8 rounded-3xl shadow-sm border min-h-[500px]">
           {activeTab === 'attendance' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold">سجل الحضور اليومي</h3>
+                <h3 className="text-xl font-bold">تقرير الحضور والانصراف التفصيلي</h3>
                 <input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="p-2 border rounded-xl outline-none font-bold bg-gray-50" />
               </div>
               <div className="overflow-x-auto border rounded-2xl bg-white shadow-inner">
                 <table className="w-full text-sm text-right">
                   <thead className="bg-gray-100 text-gray-700">
-                    <tr><th className="p-4">التاريخ</th><th className="p-4">الحضور</th><th className="p-4">الانصراف</th><th className="p-4">الحالة</th></tr>
+                    <tr>
+                      <th className="p-4 border-b">التاريخ</th>
+                      <th className="p-4 border-b">الحضور</th>
+                      <th className="p-4 border-b">حالة الحضور</th>
+                      <th className="p-4 border-b">الانصراف</th>
+                      <th className="p-4 border-b">حالة الانصراف</th>
+                      <th className="p-4 border-b">ساعات العمل</th>
+                    </tr>
                   </thead>
                   <tbody>
-                    {attendance.filter(a=>a.date.startsWith(selectedMonth)).map(a => {
-                      const times = a.times.split(/\s+/).filter(t=>t.includes(':'));
-                      const cin = times[0] || '--';
-                      const cout = times.length > 1 ? times[times.length-1] : '--';
-                      const status = times.length === 1 ? 'ترك عمل' : 'حاضر';
+                    {Array.from({ length: new Date(Number(selectedMonth.split('-')[0]), Number(selectedMonth.split('-')[1]), 0).getDate() }, (_, i) => {
+                      const day = i + 1;
+                      const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
+                      const att = attendance.find(a => a.date === dateStr);
+                      const holiday = isHoliday(dateStr);
+                      const leave = getLeaveOnDate(dateStr);
+                      
+                      const times = att?.times.split(/\s+/).filter(t => t.includes(':')) || [];
+                      const cin = times[0] || null;
+                      const cout = times.length > 1 ? times[times.length - 1] : null;
+                      const workHours = (cin && cout) ? calculateHours(cin, cout).toFixed(1) : (att ? '0.0' : '--');
+
+                      let rowClass = "border-b hover:bg-gray-50 transition-colors";
+                      let statusIn = cin ? (settings?.shift_morning_in && cin > settings.shift_morning_in ? "متأخر" : "منتظم") : (holiday ? "عطلة" : (leave ? "إجازة" : "غياب"));
+                      let statusOut = cout ? "انصراف" : (cin ? "ترك عمل" : "--");
+
+                      if (holiday) rowClass += " bg-gray-50 text-gray-400";
+                      if (leave) rowClass += " bg-blue-50";
+
                       return (
-                        <tr key={a.id} className="border-b hover:bg-emerald-50 transition-colors">
-                          <td className="p-4 font-bold">{a.date}</td>
-                          <td className="p-4 text-emerald-600 font-bold">{cin}</td>
-                          <td className="p-4 text-red-500 font-bold">{cout}</td>
-                          <td className="p-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${status === 'حاضر' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{status}</span></td>
+                        <tr key={dateStr} className={rowClass}>
+                          <td className="p-4 font-bold">{dateStr} {isFriday(dateStr) && <span className="text-[10px] text-blue-500">(جمعة)</span>}</td>
+                          <td className="p-4 text-emerald-600 font-bold">{cin || '--'}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${statusIn === 'منتظم' ? 'bg-emerald-100 text-emerald-700' : statusIn === 'متأخر' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100'}`}>
+                              {statusIn}
+                            </span>
+                          </td>
+                          <td className="p-4 text-red-500 font-bold">{cout || '--'}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${statusOut === 'انصراف' ? 'bg-blue-100 text-blue-700' : statusOut === 'ترك عمل' ? 'bg-red-100 text-red-700' : 'bg-gray-100'}`}>
+                              {statusOut}
+                            </span>
+                          </td>
+                          <td className="p-4 font-mono font-bold text-gray-700">{workHours} ساعة</td>
                         </tr>
                       );
                     })}
@@ -179,7 +254,17 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
             </div>
           )}
           {activeTab === 'leave' && <StaffLeaveForm employee={employee} requests={allMyRequests} refresh={() => fetchStaffData(employee.employee_id)} />}
-          {activeTab === 'messages' && <div className="text-center py-20 text-gray-400">لا توجد رسائل جديدة</div>}
+          {activeTab === 'profile' && (
+            <div className="space-y-6">
+               <h3 className="text-xl font-bold border-b pb-4">معلومات الموظف الأساسية</h3>
+               <div className="grid grid-cols-2 gap-6">
+                  <div><label className="text-gray-400 text-xs">رقم الموظف</label><p className="font-bold">{employee.employee_id}</p></div>
+                  <div><label className="text-gray-400 text-xs">الاسم</label><p className="font-bold">{employee.name}</p></div>
+                  <div><label className="text-gray-400 text-xs">التخصص</label><p className="font-bold">{employee.specialty}</p></div>
+                  <div><label className="text-gray-400 text-xs">الرقم القومي</label><p className="font-bold">{employee.national_id}</p></div>
+               </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -198,19 +283,11 @@ const StaffNav = ({ active, icon, label, onClick }: any) => (
 );
 
 const StatCard = ({ label, value, icon }: any) => (
-  <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4">
-    <div className="p-3 bg-gray-50 rounded-xl">{icon}</div>
-    <div><p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{label}</p><p className="text-2xl font-black text-gray-800">{value}</p></div>
+  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-2 items-center text-center">
+    <div className="p-2 bg-gray-50 rounded-xl">{icon}</div>
+    <div><p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">{label}</p><p className="text-xl font-black text-gray-800">{value}</p></div>
   </div>
 );
-
-const calculateHours = (inT: string, outT: string) => {
-  const [h1, m1] = inT.split(':').map(Number);
-  const [h2, m2] = outT.split(':').map(Number);
-  let diff = (new Date(0,0,0,h2,m2).getTime() - new Date(0,0,0,h1,m1).getTime()) / 3600000;
-  if (diff < 0) diff += 24;
-  return diff.toFixed(1);
-};
 
 const StaffLeaveForm = ({ employee, requests, refresh }: any) => {
   const [formData, setFormData] = useState({ type: 'اعتيادي', start: '', end: '', backup: '', notes: '' });

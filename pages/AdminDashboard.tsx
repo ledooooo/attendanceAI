@@ -26,11 +26,13 @@ const formatDateForDB = (val: any): string | null => {
   } catch { return null; }
 };
 
-const parseTimes = (timesStr: string) => {
-  const times = (timesStr || "").trim().split(/\s+/).filter(t => t.includes(':'));
-  if (times.length === 0) return { in: null, out: null, status: 'غياب' };
-  if (times.length === 1) return { in: times[0], out: null, status: 'ترك عمل' };
-  return { in: times[0], out: times[times.length - 1], status: 'حاضر' };
+const calculateHours = (inT: string, outT: string) => {
+    if (!inT || !outT) return 0;
+    const [h1, m1] = inT.split(':').map(Number);
+    const [h2, m2] = outT.split(':').map(Number);
+    let diff = (new Date(0,0,0,h2,m2).getTime() - new Date(0,0,0,h1,m1).getTime()) / 3600000;
+    if (diff < 0) diff += 24;
+    return diff;
 };
 
 // --- المكونات العامة ---
@@ -114,15 +116,18 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
   };
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold border-b pb-4 text-gray-800 flex items-center gap-2"><Settings className="w-6 h-6 text-blue-600" /> إعدادات المركز</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Input label="center_name" value={settings.center_name} onChange={(v:any)=>setSettings({...settings, center_name: v})} />
-        <Input label="admin_name" value={settings.admin_name} onChange={(v:any)=>setSettings({...settings, admin_name: v})} />
-        <Input label="password" type="password" value={settings.password} onChange={(v:any)=>setSettings({...settings, password: v})} />
-        <Input label="phone" value={settings.phone} onChange={(v:any)=>setSettings({...settings, phone: v})} />
+      <h2 className="text-2xl font-bold border-b pb-4 text-gray-800 flex items-center gap-2"><Settings className="w-6 h-6 text-blue-600" /> إعدادات المركز العامة</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Input label="اسم المركز" value={settings.center_name} onChange={(v:any)=>setSettings({...settings, center_name: v})} />
+        <Input label="اسم المدير" value={settings.admin_name} onChange={(v:any)=>setSettings({...settings, admin_name: v})} />
+        <Input label="كلمة مرور الإدارة" type="password" value={settings.password} onChange={(v:any)=>setSettings({...settings, password: v})} />
+        <Input label="تليفون التواصل" value={settings.phone} onChange={(v:any)=>setSettings({...settings, phone: v})} />
+        <Input label="الموعد الرسمي للحضور (صباحاً)" type="time" value={settings.shift_morning_in} onChange={(v:any)=>setSettings({...settings, shift_morning_in: v})} />
+        <Input label="الموعد الرسمي للانصراف (صباحاً)" type="time" value={settings.shift_morning_out} onChange={(v:any)=>setSettings({...settings, shift_morning_out: v})} />
       </div>
       <div className="border-t pt-4">
-        <h3 className="font-bold text-gray-700 mb-3 flex items-center"><Calendar className="w-4 h-4 ml-2 text-blue-500"/> العطلات الرسمية</h3>
+        <h3 className="font-bold text-gray-700 mb-3 flex items-center"><Calendar className="w-4 h-4 ml-2 text-blue-500"/> العطلات الرسمية المضافة</h3>
+        <p className="text-xs text-gray-400 mb-3">* ملاحظة: أيام الجمعة تعتبر عطلة تلقائية في النظام.</p>
         <div className="flex gap-2 mb-4">
           <input type="date" value={newHoliday} onChange={e => setNewHoliday(e.target.value)} className="p-2 border rounded-lg" />
           <button onClick={() => { if(newHoliday) setSettings({...settings, holidays: [...(settings.holidays||[]), newHoliday]}); setNewHoliday(''); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg"><Plus/></button>
@@ -135,7 +140,7 @@ function GeneralSettingsTab({ center }: { center: GeneralSettings }) {
           ))}
         </div>
       </div>
-      <button onClick={handleSave} className="bg-emerald-600 text-white px-8 py-3 rounded-lg font-bold shadow-md">حفظ كافة الإعدادات</button>
+      <button onClick={handleSave} className="bg-emerald-600 text-white px-8 py-3 rounded-lg font-bold shadow-md">حفظ الإعدادات</button>
     </div>
   );
 }
@@ -261,7 +266,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
 function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefresh: () => void }) {
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold border-b pb-4 flex items-center gap-2"><FileText className="w-6 h-6 text-blue-600"/> طلبات الإجازات</h2>
+      <h2 className="text-2xl font-bold border-b pb-4 flex items-center gap-2"><FileText className="w-6 h-6 text-blue-600"/> طلبات الإجازات المعلقة</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {requests.map(req => (
           <div key={req.id} className="p-4 border bg-white rounded-xl shadow-sm flex justify-between items-center border-r-4 border-r-blue-500">
@@ -285,6 +290,11 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
 function ReportsTab({ employees }: { employees: Employee[] }) {
   const [reportData, setReportData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [settings, setSettings] = useState<GeneralSettings | null>(null);
+
+  useEffect(() => {
+    supabase.from('general_settings').select('*').limit(1).single().then(({data}) => setSettings(data));
+  }, []);
 
   const fetchFullReport = async () => {
     setLoading(true);
@@ -295,44 +305,64 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
 
   const exportExcel = () => {
     const formatted = reportData.map(r => {
-      const p = parseTimes(r.times);
+      const times = r.times.split(/\s+/).filter((t:string) => t.includes(':'));
+      const cin = times[0] || null;
+      const cout = times.length > 1 ? times[times.length - 1] : null;
+      const hours = (cin && cout) ? calculateHours(cin, cout).toFixed(1) : '0.0';
+      const statusIn = cin ? (settings?.shift_morning_in && cin > settings.shift_morning_in ? "متأخر" : "منتظم") : "غائب";
+      const statusOut = cout ? "انصراف" : (cin ? "ترك عمل" : "--");
+
       return {
-        employee_id: r.employee_id,
-        date: r.date,
-        check_in: p.in || '--',
-        check_out: p.out || '--',
-        status: p.status,
-        all_times: r.times
+        'رقم الموظف': r.employee_id,
+        'التاريخ': r.date,
+        'وقت الحضور': cin || '--',
+        'حالة الحضور': statusIn,
+        'وقت الانصراف': cout || '--',
+        'حالة الانصراف': statusOut,
+        'ساعات العمل': hours
       };
     });
     const ws = XLSX.utils.json_to_sheet(formatted);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "AttendanceReport");
-    XLSX.writeFile(wb, "MedicalCenter_Attendance.xlsx");
+    XLSX.writeFile(wb, "MedicalCenter_FullReport.xlsx");
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart3 className="w-6 h-6 text-emerald-600"/> تقارير الحضور</h2>
+        <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart3 className="w-6 h-6 text-emerald-600"/> تقارير الحضور الشاملة</h2>
         <button onClick={exportExcel} disabled={reportData.length === 0} className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center shadow-md disabled:bg-gray-400"><FileSpreadsheet className="w-4 h-4 ml-2" /> تصدير إكسيل</button>
       </div>
       <button onClick={fetchFullReport} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 transition-all">{loading ? 'جاري التحميل...' : 'توليد أحدث تقرير'}</button>
       <div className="overflow-x-auto border rounded-xl shadow-sm bg-white">
         <table className="w-full text-sm text-right">
           <thead className="bg-gray-100">
-            <tr><th className="p-3">الموظف</th><th className="p-3">التاريخ</th><th className="p-3">الحضور</th><th className="p-3">الانصراف</th><th className="p-3">الحالة</th></tr>
+            <tr>
+                <th className="p-3">الموظف</th>
+                <th className="p-3">التاريخ</th>
+                <th className="p-3">حضور</th>
+                <th className="p-3">حالة الحضور</th>
+                <th className="p-3">انصراف</th>
+                <th className="p-3">ساعات</th>
+            </tr>
           </thead>
           <tbody>
             {reportData.map((r,i) => {
-              const p = parseTimes(r.times);
+              const times = r.times.split(/\s+/).filter((t:string) => t.includes(':'));
+              const cin = times[0];
+              const cout = times.length > 1 ? times[times.length - 1] : null;
+              const statusIn = cin ? (settings?.shift_morning_in && cin > settings.shift_morning_in ? "متأخر" : "منتظم") : "غائب";
               return (
                 <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
                   <td className="p-3 font-mono font-bold text-blue-600">{r.employee_id}</td>
                   <td className="p-3 font-bold">{r.date}</td>
-                  <td className="p-3 text-emerald-600 font-bold">{p.in || '--'}</td>
-                  <td className="p-3 text-red-500 font-bold">{p.out || '--'}</td>
-                  <td className="p-3"><span className={`text-[10px] px-2 py-1 rounded font-bold ${p.status === 'ترك عمل' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100'}`}>{p.status}</span></td>
+                  <td className="p-3 text-emerald-600 font-bold">{cin || '--'}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${statusIn === 'منتظم' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{statusIn}</span>
+                  </td>
+                  <td className="p-3 text-red-500 font-bold">{cout || '--'}</td>
+                  <td className="p-3 font-mono font-bold">{(cin && cout) ? calculateHours(cin, cout).toFixed(1) : '0.0'}</td>
                 </tr>
               );
             })}
@@ -384,7 +414,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           <div className="text-center mb-8"><ShieldCheck className="w-12 h-12 text-blue-600 mx-auto mb-2" /><h2 className="text-3xl font-bold">بوابة الإدارة</h2></div>
           <div className="space-y-6">
             <select className="w-full p-4 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" onChange={(e) => setSelectedCenter(centers.find(c => c.id === e.target.value) || null)}>
-              <option value="">-- اختر المركز --</option>
+              <option value="">-- اختر المركز الطبي --</option>
               {centers.map(c => <option key={c.id} value={c.id}>{c.center_name}</option>)}
             </select>
             <input type="password" className="w-full p-4 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" placeholder="كلمة المرور" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
@@ -403,12 +433,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-1 space-y-3">
-          <SidebarBtn active={activeTab === 'settings'} icon={<Settings className="w-5 h-5"/>} label="الإعدادات العامة" onClick={() => setActiveTab('settings')} />
-          <SidebarBtn active={activeTab === 'doctors'} icon={<Users className="w-5 h-5"/>} label="إدارة الموظفين" onClick={() => setActiveTab('doctors')} />
+          <SidebarBtn active={activeTab === 'settings'} icon={<Settings className="w-5 h-5"/>} label="إعدادات المركز" onClick={() => setActiveTab('settings')} />
+          <SidebarBtn active={activeTab === 'doctors'} icon={<Users className="w-5 h-5"/>} label="شؤون الموظفين" onClick={() => setActiveTab('doctors')} />
           <SidebarBtn active={activeTab === 'leaves'} icon={<FileText className="w-5 h-5"/>} label="طلبات الإجازة" onClick={() => setActiveTab('leaves')} />
           <SidebarBtn active={activeTab === 'attendance'} icon={<Clock className="w-5 h-5"/>} label="سجل الحضور" onClick={() => setActiveTab('attendance')} />
-          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="التقارير والإحصائيات" onClick={() => setActiveTab('reports')} />
-          <SidebarBtn active={activeTab === 'alerts'} icon={<Bell className="w-5 h-5"/>} label="التنبيهات الإدارية" onClick={() => setActiveTab('alerts')} />
+          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="التقارير المالية" onClick={() => setActiveTab('reports')} />
+          <SidebarBtn active={activeTab === 'alerts'} icon={<Bell className="w-5 h-5"/>} label="التنبيهات" onClick={() => setActiveTab('alerts')} />
         </div>
         <div className="lg:col-span-3 bg-white p-8 rounded-3xl shadow-sm border border-gray-100 min-h-[600px]">
           {activeTab === 'settings' && selectedCenter && <GeneralSettingsTab center={selectedCenter} />}
@@ -416,7 +446,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           {activeTab === 'leaves' && <LeavesTab requests={leaveRequests} onRefresh={fetchDashboardData} />}
           {activeTab === 'attendance' && <AttendanceTab employees={employees} onRefresh={fetchDashboardData} />}
           {activeTab === 'reports' && <ReportsTab employees={employees} />}
-          {activeTab === 'alerts' && <div className="p-8 text-center text-gray-400">قسم التنبيهات (قيد التطوير)</div>}
+          {activeTab === 'alerts' && <div className="p-8 text-center text-gray-400">قسم التنبيهات (قيد التطوير لربطها بالرسائل)</div>}
         </div>
       </div>
     </div>
