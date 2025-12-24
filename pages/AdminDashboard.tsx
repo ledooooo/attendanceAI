@@ -51,6 +51,7 @@ function Select({ label, options, value, onChange }: any) {
     <div className="text-right">
       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
       <select value={value} onChange={e => onChange(e.target.value)} className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+        <option value="">-- اختر --</option>
         {options.map((opt: any) => typeof opt === 'string' ? <option key={opt} value={opt}>{opt}</option> : <option key={opt.value} value={opt.value}>{opt.label}</option>)}
       </select>
     </div>
@@ -294,6 +295,58 @@ function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefres
   );
 }
 
+function AlertsTab({ employees }: { employees: Employee[] }) {
+    const [target, setTarget] = useState('all');
+    const [msg, setMsg] = useState('');
+    const [sending, setSending] = useState(false);
+
+    const send = async () => {
+        if (!msg.trim()) return;
+        setSending(true);
+        const { error } = await supabase.from('messages').insert([{
+            from_user: 'admin',
+            to_user: target,
+            content: msg.trim()
+        }]);
+        if (!error) {
+            alert('تم إرسال التنبيه بنجاح');
+            setMsg('');
+        } else alert('خطأ في الإرسال');
+        setSending(false);
+    };
+
+    return (
+        <div className="space-y-6">
+            <h2 className="text-2xl font-bold border-b pb-4 flex items-center gap-2"><Bell className="w-6 h-6 text-orange-500" /> إرسال تنبيهات للعاملين</h2>
+            <div className="bg-gray-50 p-6 rounded-2xl border space-y-4">
+                <Select 
+                    label="المستهدف بالتنبيه" 
+                    options={[{value: 'all', label: 'الجميع'}, ...employees.map(e => ({value: e.employee_id, label: e.name}))]} 
+                    value={target} 
+                    onChange={setTarget} 
+                />
+                <div className="text-right">
+                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">نص التنبيه</label>
+                    <textarea 
+                        className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" 
+                        rows={4} 
+                        placeholder="اكتب التنبيه أو الرسالة هنا..."
+                        value={msg}
+                        onChange={(e) => setMsg(e.target.value)}
+                    />
+                </div>
+                <button 
+                    onClick={send}
+                    disabled={sending}
+                    className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
+                >
+                    <Send className="w-4 h-4" /> {sending ? 'جاري الإرسال...' : 'إرسال التنبيه الآن'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function ReportsTab({ employees }: { employees: Employee[] }) {
   const [reportData, setReportData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -453,7 +506,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           {activeTab === 'leaves' && <LeavesTab requests={leaveRequests} onRefresh={fetchDashboardData} />}
           {activeTab === 'attendance' && <AttendanceTab employees={employees} onRefresh={fetchDashboardData} />}
           {activeTab === 'reports' && <ReportsTab employees={employees} />}
-          {activeTab === 'alerts' && <div className="p-8 text-center text-gray-400">قسم التنبيهات (قيد التطوير لربطها بالرسائل)</div>}
+          {activeTab === 'alerts' && <AlertsTab employees={employees} />}
         </div>
       </div>
     </div>
