@@ -58,32 +58,28 @@ export interface LeaveRequest {
   status: 'معلق' | 'مقبول' | 'مرفوض';
   notes: string;
   created_at: string;
-  employee_name?: string; // Joint field
+  employee_name?: string;
 }
 
 export interface AttendanceRecord {
   id: string;
   employee_id: string;
   date: string;
-  check_in: string | null;
-  check_in_status: string;
-  check_out: string | null;
-  check_out_status: string;
-  notes: string;
+  times: string; // الحقل الجديد لتخزين البصمات (مثال: "08:22 13:47")
 }
 
 export interface EveningSchedule {
   id: string;
   date: string;
-  specs: string[]; // 10 specs
-  doctors: string[]; // 10 doctors
+  specs: string[];
+  doctors: string[];
 }
 
 export interface Evaluation {
   id: string;
   month: string;
   employee_id: string;
-  scores: number[]; // 7 scores
+  scores: number[];
   total_score: number;
   notes: string;
 }
