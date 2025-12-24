@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, Settings, Users, FileText, Calendar, 
-  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck, Eye, Award, MessageCircle, User, Filter, CheckSquare, Square, MailCheck
+  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck, Eye, Award, MessageCircle, User, Filter, CheckSquare, Square, MailCheck, Search, List, AlertTriangle
 } from 'lucide-react';
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage, Evaluation } from '../types';
 import * as XLSX from 'xlsx';
@@ -531,14 +531,9 @@ function ReportDispatchTab({ employees }: { employees: Employee[] }) {
         
         // محاكاة عملية الإرسال وتجميع البيانات
         try {
-            // في تطبيق حقيقي، سيقوم هذا الجزء باستدعاء API أو Supabase Edge Function لإرسال رسائل بريدية فعلية
-            // هنا سنقوم بمحاكاة تجميع البيانات
             console.log('Dispatching reports for month:', month);
             console.log('Target employees:', selectedEmployees);
-
-            // تأخير لمحاكاة العملية
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
             alert(`تم بنجاح إرسال عدد ${selectedEmployees.length} تقرير شهري مفصل للعاملين عبر البريد الإلكتروني.`);
             setSelectedEmployees([]);
         } catch (err) {
@@ -600,170 +595,332 @@ function ReportDispatchTab({ employees }: { employees: Employee[] }) {
     );
 }
 
-function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefresh: () => void }) {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold border-b pb-4 flex items-center gap-2"><FileText className="w-6 h-6 text-blue-600"/> طلبات الإجازات المعلقة</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {requests.map(req => (
-          <div key={req.id} className="p-4 border bg-white rounded-xl shadow-sm flex flex-col border-r-4 border-r-blue-500">
-            <div className="flex justify-between items-start mb-2">
-                <div>
-                    <p className="font-bold">{req.employee_name} ({req.employee_id})</p>
-                    <p className="text-sm text-blue-600 font-bold">{req.type}</p>
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مقبول'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100"><CheckCircle/></button>
-                    <button onClick={async () => { await supabase.from('leave_requests').update({status: 'مرفوض'}).eq('id', req.id); onRefresh(); }} className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"><XCircle/></button>
-                </div>
-            </div>
-            <div className="text-xs text-gray-500 space-y-1 bg-gray-50 p-2 rounded">
-                <p>الفترة: {req.start_date} إلى {req.end_date}</p>
-                <p className="text-blue-600 font-bold">تاريخ العودة: {req.back_date}</p>
-                <p>البديل: {req.backup_person}</p>
-                {req.notes && <p className="italic text-gray-400">الملاحظات: {req.notes}</p>}
-            </div>
-          </div>
-        ))}
-        {requests.length === 0 && <div className="md:col-span-2 text-center py-10 text-gray-400 font-bold border-2 border-dashed rounded-xl">لا توجد طلبات معلقة</div>}
-      </div>
-    </div>
-  );
-}
-
-function AlertsTab({ employees }: { employees: Employee[] }) {
-    const [target, setTarget] = useState('all');
-    const [msg, setMsg] = useState('');
-    const [sending, setSending] = useState(false);
-
-    const send = async () => {
-        if (!msg.trim()) return;
-        setSending(true);
-        const { error } = await supabase.from('messages').insert([{
-            from_user: 'admin',
-            to_user: target,
-            content: msg.trim()
-        }]);
-        if (!error) {
-            alert('تم إرسال التنبيه بنجاح');
-            setMsg('');
-        } else alert('خطأ في الإرسال');
-        setSending(false);
-    };
-
-    return (
-        <div className="space-y-6">
-            <h2 className="text-2xl font-bold border-b pb-4 flex items-center gap-2"><Bell className="w-6 h-6 text-orange-500" /> إرسال تنبيهات للعاملين</h2>
-            <div className="bg-gray-50 p-6 rounded-2xl border space-y-4">
-                <Select 
-                    label="المستهدف بالتنبيه" 
-                    options={[{value: 'all', label: 'الجميع'}, ...employees.map(e => ({value: e.employee_id, label: e.name}))]} 
-                    value={target} 
-                    onChange={setTarget} 
-                />
-                <div className="text-right">
-                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">نص التنبيه</label>
-                    <textarea 
-                        className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" 
-                        rows={4} 
-                        placeholder="اكتب التنبيه أو الرسالة هنا..."
-                        value={msg}
-                        onChange={(e) => setMsg(e.target.value)}
-                    />
-                </div>
-                <button 
-                    onClick={send}
-                    disabled={sending}
-                    className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
-                >
-                    <Send className="w-4 h-4" /> {sending ? 'جاري الإرسال...' : 'إرسال التنبيه الآن'}
-                </button>
-            </div>
-        </div>
-    );
-}
-
+// --- تقارير الحضور المحدثة ---
 function ReportsTab({ employees }: { employees: Employee[] }) {
-  const [reportData, setReportData] = useState<any[]>([]);
+  const [activeReportType, setActiveReportType] = useState<'daily' | 'employee' | 'monthly'>('daily');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedStaffId, setSelectedStaffId] = useState('');
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filter, setFilter] = useState<'all' | 'present' | 'absent' | 'leave'>('all');
+  const [allAttendance, setAllAttendance] = useState<AttendanceRecord[]>([]);
+  const [allLeaves, setAllLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
 
   useEffect(() => {
     supabase.from('general_settings').select('*').limit(1).single().then(({data}) => setSettings(data));
+    fetchBasicData();
   }, []);
 
-  const fetchFullReport = async () => {
+  const fetchBasicData = async () => {
     setLoading(true);
-    const { data } = await supabase.from('attendance').select('*').order('date', {ascending: false}).limit(200);
-    if(data) setReportData(data);
+    const [att, leaves] = await Promise.all([
+        supabase.from('attendance').select('*'),
+        supabase.from('leave_requests').select('*').eq('status', 'مقبول')
+    ]);
+    if(att.data) setAllAttendance(att.data);
+    if(leaves.data) setAllLeaves(leaves.data);
     setLoading(false);
   };
 
-  const exportExcel = () => {
-    const formatted = reportData.map(r => {
-      const times = r.times.split(/\s+/).filter((t:string) => t.includes(':'));
-      const cin = times[0] || null;
-      const cout = times.length > 1 ? times[times.length - 1] : null;
-      const hours = (cin && cout) ? calculateHours(cin, cout).toFixed(1) : '0.0';
-      const statusIn = cin ? (settings?.shift_morning_in && cin > settings.shift_morning_in ? "متأخر" : "منتظم") : "غائب";
-      const statusOut = cout ? "انصراف" : (cin ? "ترك عمل" : "--");
+  const isHoliday = (d: string) => settings?.holidays?.includes(d) || new Date(d).getDay() === 5;
 
-      return {
-        'رقم الموظف': r.employee_id,
-        'التاريخ': r.date,
-        'وقت الحضور': cin || '--',
-        'حالة الحضور': statusIn,
-        'وقت الانصراف': cout || '--',
-        'حالة الانصراف': statusOut,
-        'ساعات العمل': hours
-      };
+  const dailyData = useMemo(() => {
+    return employees.map(emp => {
+        const att = allAttendance.find(a => a.employee_id === emp.employee_id && a.date === date);
+        const leave = allLeaves.find(l => l.employee_id === emp.employee_id && date >= l.start_date && date <= l.end_date);
+        
+        const times = att?.times.split(/\s+/).filter(t => t.includes(':')) || [];
+        const cin = times[0] || null;
+        const cout = times.length > 1 ? times[times.length - 1] : null;
+        
+        let status = 'غائب';
+        if (att) status = 'حاضر';
+        else if (leave) status = `إجازة (${leave.type})`;
+        else if (isHoliday(date)) status = 'عطلة';
+
+        return { ...emp, cin, cout, status, rawStatus: att ? 'present' : (leave ? 'leave' : 'absent') };
+    }).filter(item => {
+        if (filter === 'all') return true;
+        if (filter === 'present') return item.rawStatus === 'present';
+        if (filter === 'absent') return item.rawStatus === 'absent';
+        if (filter === 'leave') return item.rawStatus === 'leave';
+        return true;
     });
-    const ws = XLSX.utils.json_to_sheet(formatted);
+  }, [employees, allAttendance, allLeaves, date, filter, settings]);
+
+  const dailySummary = useMemo(() => {
+      const total = employees.length;
+      const present = dailyData.filter(d => d.rawStatus === 'present').length;
+      const leaves = dailyData.filter(d => d.rawStatus === 'leave').length;
+      const absent = total - present - leaves;
+      return { total, present, leaves, absent };
+  }, [dailyData, employees]);
+
+  const exportExcel = (data: any[], name: string) => {
+    const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "AttendanceReport");
-    XLSX.writeFile(wb, "MedicalCenter_FullReport.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `${name}.xlsx`);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart3 className="w-6 h-6 text-emerald-600"/> تقارير الحضور الشاملة</h2>
-        <button onClick={exportExcel} disabled={reportData.length === 0} className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center shadow-md disabled:bg-gray-400"><FileSpreadsheet className="w-4 h-4 ml-2" /> تصدير إكسيل</button>
+        <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart3 className="w-6 h-6 text-emerald-600"/> تقارير الحضور</h2>
+        <div className="flex bg-gray-100 p-1 rounded-xl border">
+            <button onClick={() => setActiveReportType('daily')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeReportType === 'daily' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400'}`}>تقرير يومي</button>
+            <button onClick={() => setActiveReportType('employee')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeReportType === 'employee' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400'}`}>تقرير موظف</button>
+            <button onClick={() => setActiveReportType('monthly')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeReportType === 'monthly' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-400'}`}>تقرير شهري</button>
+        </div>
       </div>
-      <button onClick={fetchFullReport} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow-md hover:bg-blue-700 transition-all">{loading ? 'جاري التحميل...' : 'توليد أحدث تقرير'}</button>
-      <div className="overflow-x-auto border rounded-xl shadow-sm bg-white">
-        <table className="w-full text-sm text-right">
-          <thead className="bg-gray-100">
-            <tr>
-                <th className="p-3">الموظف</th>
-                <th className="p-3">التاريخ</th>
-                <th className="p-3">حضور</th>
-                <th className="p-3">حالة الحضور</th>
-                <th className="p-3">انصراف</th>
-                <th className="p-3">ساعات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {reportData.map((r,i) => {
-              const times = r.times.split(/\s+/).filter((t:string) => t.includes(':'));
-              const cin = times[0];
-              const cout = times.length > 1 ? times[times.length - 1] : null;
-              const statusIn = cin ? (settings?.shift_morning_in && cin > settings.shift_morning_in ? "متأخر" : "منتظم") : "غائب";
-              return (
-                <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
-                  <td className="p-3 font-mono font-bold text-blue-600">{r.employee_id}</td>
-                  <td className="p-3 font-bold">{r.date}</td>
-                  <td className="p-3 text-emerald-600 font-bold">{cin || '--'}</td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${statusIn === 'منتظم' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{statusIn}</span>
-                  </td>
-                  <td className="p-3 text-red-500 font-bold">{cout || '--'}</td>
-                  <td className="p-3 font-mono font-bold">{(cin && cout) ? calculateHours(cin, cout).toFixed(1) : '0.0'}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+
+      {activeReportType === 'daily' && (
+          <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-6 rounded-2xl border">
+                  <Input label="اختر التاريخ" type="date" value={date} onChange={setDate} />
+                  <Select label="فلتر الحالة" options={[{value: 'all', label: 'الكل'}, {value: 'present', label: 'الحاضرين فقط'}, {value: 'absent', label: 'الغائبين فقط'}, {value: 'leave', label: 'الإجازات فقط'}]} value={filter} onChange={setFilter} />
+                  <div className="flex items-end">
+                      <button onClick={() => exportExcel(dailyData, `Daily_Report_${date}`)} className="w-full bg-emerald-600 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-2"><FileSpreadsheet className="w-4 h-4" /> تصدير إكسيل</button>
+                  </div>
+              </div>
+
+              <div className="overflow-x-auto border rounded-xl shadow-sm bg-white">
+                <table className="w-full text-sm text-right">
+                    <thead className="bg-gray-100">
+                        <tr>
+                            <th className="p-3">الكود</th>
+                            <th className="p-3">الاسم</th>
+                            <th className="p-3">الوظيفة</th>
+                            <th className="p-3">الحضور</th>
+                            <th className="p-3">الانصراف</th>
+                            <th className="p-3">الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {dailyData.map(d => (
+                            <tr key={d.employee_id} className="border-b hover:bg-gray-50">
+                                <td className="p-3 font-mono font-bold text-blue-600">{d.employee_id}</td>
+                                <td className="p-3 font-bold">{d.name}</td>
+                                <td className="p-3">{d.specialty}</td>
+                                <td className="p-3 text-emerald-600 font-bold">{d.cin || '--'}</td>
+                                <td className="p-3 text-red-500 font-bold">{d.cout || '--'}</td>
+                                <td className="p-3">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${d.rawStatus === 'present' ? 'bg-green-100 text-green-700' : d.rawStatus === 'leave' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>{d.status}</span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-white p-6 rounded-2xl border shadow-sm">
+                  <div className="text-center">
+                      <p className="text-xs text-gray-400 font-bold">إجمالي الموظفين</p>
+                      <p className="text-2xl font-black">{dailySummary.total}</p>
+                  </div>
+                  <div className="text-center text-emerald-600">
+                      <p className="text-xs text-gray-400 font-bold">الحضور</p>
+                      <p className="text-2xl font-black">{dailySummary.present}</p>
+                  </div>
+                  <div className="text-center text-red-500">
+                      <p className="text-xs text-gray-400 font-bold">الغياب</p>
+                      <p className="text-2xl font-black">{dailySummary.absent}</p>
+                  </div>
+                  <div className="text-center text-blue-600">
+                      <p className="text-xs text-gray-400 font-bold">الإجازات</p>
+                      <p className="text-2xl font-black">{dailySummary.leaves}</p>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {activeReportType === 'employee' && (
+          <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-6 rounded-2xl border">
+                  <Select label="الموظف" options={employees.map(e => ({value: e.employee_id, label: e.name}))} value={selectedStaffId} onChange={setSelectedStaffId} />
+                  <Input label="من تاريخ" type="date" value={startDate} onChange={setStartDate} />
+                  <Input label="إلى تاريخ" type="date" value={endDate} onChange={setEndDate} />
+                  <div className="flex items-end">
+                      <button onClick={() => exportExcel(allAttendance.filter(a => a.employee_id === selectedStaffId && a.date >= startDate && a.date <= endDate), 'Employee_History')} className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-2"><FileSpreadsheet className="w-4 h-4" /> تصدير السجل</button>
+                  </div>
+              </div>
+
+              <div className="overflow-x-auto border rounded-xl shadow-sm bg-white">
+                <table className="w-full text-sm text-right">
+                    <thead className="bg-gray-100">
+                        <tr>
+                            <th className="p-3">التاريخ</th>
+                            <th className="p-3">الحضور</th>
+                            <th className="p-3">الانصراف</th>
+                            <th className="p-3">ساعات العمل</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {allAttendance.filter(a => a.employee_id === selectedStaffId && a.date >= startDate && a.date <= endDate).sort((a,b)=>b.date.localeCompare(a.date)).map(a => {
+                            const times = a.times.split(/\s+/).filter(t => t.includes(':'));
+                            const hours = times.length >= 2 ? calculateHours(times[0], times[times.length-1]).toFixed(1) : '0.0';
+                            return (
+                                <tr key={a.id} className="border-b hover:bg-gray-50">
+                                    <td className="p-3 font-bold">{a.date}</td>
+                                    <td className="p-3 text-emerald-600 font-bold">{times[0] || '--'}</td>
+                                    <td className="p-3 text-red-500 font-bold">{times.length > 1 ? times[times.length-1] : '--'}</td>
+                                    <td className="p-3 font-mono">{hours} ساعة</td>
+                                </tr>
+                            )
+                        })}
+                        {!selectedStaffId && <tr><td colSpan={4} className="p-10 text-center text-gray-400">برجاء اختيار موظف لعرض بياناته</td></tr>}
+                    </tbody>
+                </table>
+              </div>
+          </div>
+      )}
+
+      {activeReportType === 'monthly' && (
+          <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-2xl border">
+                  <Input label="اختر الشهر" type="month" value={month} onChange={setMonth} />
+                  <div className="flex items-end">
+                      <button onClick={() => fetchBasicData()} className="w-full bg-emerald-600 text-white py-2.5 rounded-xl font-bold flex items-center justify-center gap-2"><Clock className="w-4 h-4" /> تحديث البيانات</button>
+                  </div>
+              </div>
+
+              <div className="overflow-x-auto border rounded-xl shadow-sm bg-white">
+                <table className="w-full text-sm text-right">
+                    <thead className="bg-gray-100">
+                        <tr>
+                            <th className="p-3">الموظف</th>
+                            <th className="p-3">الحضور (يوم)</th>
+                            <th className="p-3">الغياب (يوم)</th>
+                            <th className="p-3">الإجازات (يوم)</th>
+                            <th className="p-3">ساعات العمل</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {employees.map(emp => {
+                            const atts = allAttendance.filter(a => a.employee_id === emp.employee_id && a.date.startsWith(month));
+                            const leaves = allLeaves.filter(l => l.employee_id === emp.employee_id && (l.start_date.startsWith(month) || l.end_date.startsWith(month)));
+                            
+                            let totalHours = 0;
+                            atts.forEach(a => {
+                                const t = a.times.split(/\s+/).filter(x => x.includes(':'));
+                                if(t.length >= 2) totalHours += calculateHours(t[0], t[t.length-1]);
+                            });
+
+                            // حساب الغياب التقريبي (أيام الشهر - الحضور - الإجازات - العطلات)
+                            const [y, m] = month.split('-').map(Number);
+                            const days = new Date(y, m, 0).getDate();
+                            let leaveDaysCount = 0;
+                            leaves.forEach(l => {
+                                const start = new Date(l.start_date > month+'-01' ? l.start_date : month+'-01');
+                                const end = new Date(l.end_date < month+'-'+days ? l.end_date : month+'-'+days);
+                                const diff = Math.ceil((end.getTime() - start.getTime()) / (1000*3600*24)) + 1;
+                                leaveDaysCount += diff;
+                            });
+
+                            return (
+                                <tr key={emp.employee_id} className="border-b hover:bg-gray-50">
+                                    <td className="p-3">
+                                        <p className="font-bold">{emp.name}</p>
+                                        <p className="text-[10px] text-gray-400">{emp.specialty}</p>
+                                    </td>
+                                    <td className="p-3 font-bold text-emerald-600">{atts.length}</td>
+                                    <td className="p-3 font-bold text-red-500">{Math.max(0, days - atts.length - leaveDaysCount)}</td>
+                                    <td className="p-3 font-bold text-blue-600">{leaveDaysCount}</td>
+                                    <td className="p-3 font-mono font-bold">{totalHours.toFixed(1)}</td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
+              </div>
+          </div>
+      )}
+    </div>
+  );
+}
+
+// --- تبويب إدارة طلبات الإجازات ---
+function LeavesTab({ requests, onRefresh }: { requests: LeaveRequest[], onRefresh: () => void }) {
+  const handleAction = async (id: string, status: 'مقبول' | 'مرفوض') => {
+    const { error } = await supabase.from('leave_requests').update({ status }).eq('id', id);
+    if (!error) {
+        alert('تم تحديث حالة الطلب بنجاح');
+        onRefresh();
+    } else alert(error.message);
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold flex items-center gap-2"><FileText className="w-6 h-6 text-blue-600"/> طلبات الإجازة المعلقة</h2>
+      <div className="grid gap-4">
+        {requests.map(req => (
+          <div key={req.id} className="p-6 bg-white border rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:shadow-md transition-all">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-1">
+                <span className="font-bold text-lg text-gray-800">{req.employee_name}</span>
+                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold">{req.type}</span>
+              </div>
+              <p className="text-sm text-gray-500">الفترة: <span className="font-bold">{req.start_date}</span> إلى <span className="font-bold">{req.end_date}</span></p>
+              <p className="text-sm text-gray-500">تاريخ العودة: <span className="font-bold">{req.back_date || '--'}</span></p>
+              <p className="text-sm text-gray-500">البديل: <span className="font-bold">{req.backup_person || 'غير محدد'}</span></p>
+              {req.notes && <p className="text-sm italic text-gray-400 mt-2 bg-gray-50 p-2 rounded-lg border">ملاحظة: {req.notes}</p>}
+            </div>
+            <div className="flex gap-2 w-full md:w-auto">
+              <button onClick={() => handleAction(req.id, 'مقبول')} className="flex-1 md:flex-none bg-green-600 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-all"><CheckCircle className="w-4 h-4"/> قبول</button>
+              <button onClick={() => handleAction(req.id, 'مرفوض')} className="flex-1 md:flex-none bg-red-50 text-red-600 px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-all"><XCircle className="w-4 h-4"/> رفض</button>
+            </div>
+          </div>
+        ))}
+        {requests.length === 0 && <div className="text-center py-20 text-gray-400 border-2 border-dashed rounded-3xl">لا توجد طلبات معلقة حالياً</div>}
+      </div>
+    </div>
+  );
+}
+
+// --- تبويب التنبيهات ---
+function AlertsTab({ employees }: { employees: Employee[] }) {
+  const lowBalance = employees.filter(e => e.remaining_annual < 5 || e.remaining_casual < 2);
+  const inactive = employees.filter(e => e.status !== 'نشط');
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold flex items-center gap-2"><Bell className="w-6 h-6 text-orange-500"/> تنبيهات النظام</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-orange-50 p-6 rounded-3xl border border-orange-100">
+            <h3 className="font-bold text-orange-800 mb-4 flex items-center gap-2"><AlertTriangle className="w-5 h-5"/> رصيد إجازات منخفض</h3>
+            <div className="space-y-3">
+                {lowBalance.map(e => (
+                    <div key={e.id} className="bg-white p-3 rounded-xl border border-orange-200 flex justify-between items-center">
+                        <div>
+                            <p className="text-sm font-bold">{e.name}</p>
+                            <p className="text-[10px] text-gray-400">اعتيادي: {e.remaining_annual} | عارضة: {e.remaining_casual}</p>
+                        </div>
+                        <AlertTriangle className="w-4 h-4 text-orange-400" />
+                    </div>
+                ))}
+                {lowBalance.length === 0 && <p className="text-sm text-gray-400 text-center py-4">لا يوجد تنبيهات</p>}
+            </div>
+        </div>
+
+        <div className="bg-red-50 p-6 rounded-3xl border border-red-100">
+            <h3 className="font-bold text-red-800 mb-4 flex items-center gap-2"><User className="w-5 h-5"/> حالات غير نشطة</h3>
+            <div className="space-y-3">
+                {inactive.map(e => (
+                    <div key={e.id} className="bg-white p-3 rounded-xl border border-red-200 flex justify-between items-center">
+                        <div>
+                            <p className="text-sm font-bold">{e.name}</p>
+                            <p className="text-[10px] text-gray-400">{e.specialty}</p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">{e.status}</span>
+                    </div>
+                ))}
+                {inactive.length === 0 && <p className="text-sm text-gray-400 text-center py-4">الجميع نشطون</p>}
+            </div>
+        </div>
       </div>
     </div>
   );
@@ -834,7 +991,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           <SidebarBtn active={activeTab === 'dispatch'} icon={<MailCheck className="w-5 h-5"/>} label="إرسال تقارير" onClick={() => setActiveTab('dispatch')} />
           <SidebarBtn active={activeTab === 'leaves'} icon={<FileText className="w-5 h-5"/>} label="طلبات الإجازة" onClick={() => setActiveTab('leaves')} />
           <SidebarBtn active={activeTab === 'attendance'} icon={<Clock className="w-5 h-5"/>} label="سجل الحضور" onClick={() => setActiveTab('attendance')} />
-          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="التقارير المالية" onClick={() => setActiveTab('reports')} />
+          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="تقارير الحضور" onClick={() => setActiveTab('reports')} />
           <SidebarBtn active={activeTab === 'alerts'} icon={<Bell className="w-5 h-5"/>} label="التنبيهات" onClick={() => setActiveTab('alerts')} />
         </div>
         <div className="lg:col-span-3 bg-white p-8 rounded-3xl shadow-sm border border-gray-100 min-h-[600px]">
