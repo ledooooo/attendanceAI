@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, Settings, Users, FileText, Calendar, 
-  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck
+  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck, Eye, Award, MessageCircle, User
 } from 'lucide-react';
-import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage } from '../types';
+import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage, Evaluation } from '../types';
 import * as XLSX from 'xlsx';
 
 // --- مساعدات معالجة التواريخ والبيانات ---
@@ -57,6 +57,219 @@ function Select({ label, options, value, onChange }: any) {
     </div>
   );
 }
+
+// --- مكون عرض تفاصيل الموظف للمدير ---
+const StaffDetailsView = ({ employee, onBack, centerSettings }: { employee: Employee, onBack: () => void, centerSettings: GeneralSettings | null }) => {
+  const [activeSubTab, setActiveSubTab] = useState('profile');
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [messages, setMessages] = useState<InternalMessage[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const [attRes, leaveRes, evalRes, msgRes] = await Promise.all([
+        supabase.from('attendance').select('*').eq('employee_id', employee.employee_id),
+        supabase.from('leave_requests').select('*').eq('employee_id', employee.employee_id).order('created_at', { ascending: false }),
+        supabase.from('evaluations').select('*').eq('employee_id', employee.employee_id).order('month', { ascending: false }),
+        supabase.from('messages').select('*').or(`from_user.eq.${employee.employee_id},to_user.eq.${employee.employee_id}`).order('created_at', { ascending: false })
+      ]);
+      if (attRes.data) setAttendance(attRes.data);
+      if (leaveRes.data) setLeaves(leaveRes.data);
+      if (evalRes.data) setEvaluations(evalRes.data);
+      if (msgRes.data) setMessages(msgRes.data);
+    };
+    fetchData();
+  }, [employee.employee_id]);
+
+  const stats = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    let monthlyHours = 0;
+    let attendDays = 0;
+    
+    attendance.forEach(att => {
+        if (att.date.startsWith(selectedMonth)) {
+            attendDays++;
+            const times = att.times.split(/\s+/).filter(t => t.includes(':'));
+            if (times.length >= 2) {
+                monthlyHours += calculateHours(times[0], times[times.length - 1]);
+            }
+        }
+    });
+
+    return { monthlyHours: monthlyHours.toFixed(1), attendDays };
+  }, [attendance, selectedMonth]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center border-b pb-4">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full transition-all"><ArrowRight className="w-6 h-6"/></button>
+          <div>
+            <h2 className="text-2xl font-bold">{employee.name}</h2>
+            <p className="text-gray-400 text-sm">كود: {employee.employee_id} | {employee.specialty}</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+            <span className={`px-4 py-1 rounded-full text-xs font-bold ${employee.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{employee.status}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-center">
+            <p className="text-[10px] text-blue-600 font-bold uppercase mb-1">ساعات الشهر المختارة</p>
+            <p className="text-2xl font-black text-blue-800">{stats.monthlyHours}</p>
+        </div>
+        <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 text-center">
+            <p className="text-[10px] text-emerald-600 font-bold uppercase mb-1">أيام الحضور</p>
+            <p className="text-2xl font-black text-emerald-800">{stats.attendDays}</p>
+        </div>
+        <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 text-center">
+            <p className="text-[10px] text-amber-600 font-bold uppercase mb-1">المتبقي اعتيادي</p>
+            <p className="text-2xl font-black text-amber-800">{employee.remaining_annual}</p>
+        </div>
+        <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 text-center">
+            <p className="text-[10px] text-purple-600 font-bold uppercase mb-1">المتبقي عارضة</p>
+            <p className="text-2xl font-black text-purple-800">{employee.remaining_casual}</p>
+        </div>
+      </div>
+
+      <div className="flex border-b overflow-x-auto">
+        <SubTab active={activeSubTab === 'profile'} label="الملف الشخصي" onClick={() => setActiveSubTab('profile')} />
+        <SubTab active={activeSubTab === 'attendance'} label="سجل الحضور" onClick={() => setActiveSubTab('attendance')} />
+        <SubTab active={activeSubTab === 'leaves'} label="الطلبات" onClick={() => setActiveSubTab('leaves')} />
+        <SubTab active={activeSubTab === 'evals'} label="التقييمات" onClick={() => setActiveSubTab('evals')} />
+        <SubTab active={activeSubTab === 'messages'} label="الرسائل" onClick={() => setActiveSubTab('messages')} />
+      </div>
+
+      <div className="p-4">
+        {activeSubTab === 'profile' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <DataField label="الاسم الرباعي" value={employee.name} />
+            <DataField label="الرقم القومي" value={employee.national_id} />
+            <DataField label="التليفون" value={employee.phone} />
+            <DataField label="البريد الإلكتروني" value={employee.email} />
+            <DataField label="الدرجة الوظيفية" value={employee.grade} />
+            <DataField label="تاريخ التعيين" value={employee.join_date} />
+            <DataField label="الجنس" value={employee.gender} />
+            <DataField label="الديانة" value={employee.religion} />
+            <DataField label="مواعيد العمل" value={`${employee.start_time} - ${employee.end_time}`} />
+            <DataField label="أيام العمل" value={employee.work_days?.join('، ') || 'الكل'} />
+            <div className="md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-gray-50 rounded-xl border">
+                    <p className="text-xs text-gray-400 font-bold mb-1">المهام الإدارية</p>
+                    <p className="text-sm font-semibold">{employee.admin_tasks || 'لا يوجد'}</p>
+                </div>
+                <div className="p-4 bg-gray-50 rounded-xl border">
+                    <p className="text-xs text-gray-400 font-bold mb-1">الدورات التدريبية</p>
+                    <p className="text-sm font-semibold">{employee.training_courses || 'لا يوجد'}</p>
+                </div>
+                <div className="p-4 bg-gray-50 rounded-xl border md:col-span-2">
+                    <p className="text-xs text-gray-400 font-bold mb-1">ملاحظات عامة</p>
+                    <p className="text-sm italic">{employee.notes || 'لا يوجد ملاحظات'}</p>
+                </div>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === 'attendance' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+                <h4 className="font-bold">تقرير شهر {selectedMonth}</h4>
+                <input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="p-2 border rounded-lg bg-gray-50" />
+            </div>
+            <div className="overflow-x-auto border rounded-xl">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="p-3 text-right">التاريخ</th>
+                    <th className="p-3 text-right">الحضور</th>
+                    <th className="p-3 text-right">الانصراف</th>
+                    <th className="p-3 text-right">الساعات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendance.filter(a => a.date.startsWith(selectedMonth)).map(a => {
+                    const times = a.times.split(/\s+/).filter(t => t.includes(':'));
+                    return (
+                      <tr key={a.id} className="border-t">
+                        <td className="p-3 font-bold">{a.date}</td>
+                        <td className="p-3 text-emerald-600 font-bold">{times[0] || '--'}</td>
+                        <td className="p-3 text-red-500 font-bold">{times.length > 1 ? times[times.length - 1] : '--'}</td>
+                        <td className="p-3 font-mono">{(times.length >= 2) ? calculateHours(times[0], times[times.length - 1]).toFixed(1) : '0.0'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === 'leaves' && (
+          <div className="space-y-4">
+            {leaves.map(req => (
+              <div key={req.id} className="p-4 border rounded-xl flex justify-between items-center bg-white shadow-sm">
+                <div>
+                  <p className="font-bold text-blue-700">{req.type}</p>
+                  <p className="text-xs text-gray-500">{req.start_date} إلى {req.end_date}</p>
+                  {req.notes && <p className="text-xs italic text-gray-400 mt-1">الملاحظة: {req.notes}</p>}
+                </div>
+                <span className={`px-3 py-1 rounded-full text-[10px] font-bold ${req.status === 'مقبول' ? 'bg-green-100 text-green-700' : req.status === 'مرفوض' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{req.status}</span>
+              </div>
+            ))}
+            {leaves.length === 0 && <div className="text-center py-10 text-gray-400">لا يوجد سجل طلبات</div>}
+          </div>
+        )}
+
+        {activeSubTab === 'evals' && (
+          <div className="space-y-4">
+            {evaluations.map(ev => (
+              <div key={ev.id} className="p-4 border rounded-xl flex justify-between items-center bg-white shadow-sm">
+                <div>
+                  <p className="font-bold">{ev.month}</p>
+                  <p className="text-xs text-gray-500">{ev.notes || 'بدون ملاحظات'}</p>
+                </div>
+                <div className="text-center">
+                    <p className="text-2xl font-black text-emerald-600">{ev.total_score}%</p>
+                </div>
+              </div>
+            ))}
+            {evaluations.length === 0 && <div className="text-center py-10 text-gray-400">لا يوجد تقييمات مسجلة</div>}
+          </div>
+        )}
+
+        {activeSubTab === 'messages' && (
+          <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+            {messages.map(m => (
+              <div key={m.id} className={`p-4 rounded-2xl border ${m.from_user === 'admin' ? 'bg-blue-50 mr-10' : 'bg-gray-50 ml-10'}`}>
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-bold text-gray-400">{m.from_user === 'admin' ? 'الإدارة' : 'الموظف'}</span>
+                    <span className="text-[10px] text-gray-400">{new Date(m.created_at).toLocaleString('ar-EG')}</span>
+                </div>
+                <p className="text-sm">{m.content}</p>
+              </div>
+            ))}
+            {messages.length === 0 && <div className="text-center py-10 text-gray-400">لا توجد رسائل سابقة</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const SubTab = ({ active, label, onClick }: any) => (
+  <button onClick={onClick} className={`px-6 py-3 font-bold transition-all border-b-2 whitespace-nowrap ${active ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>{label}</button>
+);
+
+const DataField = ({ label, value }: any) => (
+  <div className="bg-white p-3 border-b">
+    <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">{label}</label>
+    <p className="font-bold text-gray-800">{value || '--'}</p>
+  </div>
+);
 
 function ExcelInfo({ fields, sampleData, fileName }: { fields: string[], sampleData?: any[], fileName?: string }) {
   const downloadSample = () => {
@@ -207,9 +420,9 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   );
 }
 
-function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
+function DoctorsTab({ employees, onRefresh, centerId, settings }: { employees: Employee[], onRefresh: () => void, centerId: string, settings: GeneralSettings | null }) {
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState<Partial<Employee>>({ gender: 'ذكر', status: 'نشط', center_id: centerId });
+  const [selectedStaff, setSelectedStaff] = useState<Employee | null>(null);
 
   const handleImport = async (data: any[]) => {
     const formatted = data.map(row => ({
@@ -230,10 +443,14 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
     if (error) alert(error.message); else { alert("تم الاستيراد بنجاح"); onRefresh(); }
   };
 
+  if (selectedStaff) {
+    return <StaffDetailsView employee={selectedStaff} onBack={() => setSelectedStaff(null)} centerSettings={settings} />;
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-bold flex items-center gap-2"><Users className="w-6 h-6 text-blue-600"/> الموظفون</h2>
+        <h2 className="text-2xl font-bold flex items-center gap-2"><Users className="w-6 h-6 text-blue-600"/> شئون الموظفين</h2>
         <div className="flex gap-2">
            <ExcelUploadButton onData={handleImport} label="استيراد موظفين" />
            <button onClick={() => setShowForm(!showForm)} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md">
@@ -244,16 +461,28 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
       <div className="overflow-x-auto border rounded-xl bg-white shadow-sm">
         <table className="w-full text-sm text-right">
           <thead className="bg-gray-100">
-            <tr><th className="p-3">الكود</th><th className="p-3">الاسم</th><th className="p-3">التخصص</th><th className="p-3">إجراء</th></tr>
+            <tr>
+                <th className="p-3">الكود</th>
+                <th className="p-3">الاسم</th>
+                <th className="p-3">التخصص</th>
+                <th className="p-3">الحالة</th>
+                <th className="p-3 text-center">إجراء</th>
+            </tr>
           </thead>
           <tbody>
             {employees.map(emp => (
-              <tr key={emp.id} className="border-b hover:bg-gray-50 transition-colors">
+              <tr key={emp.id} className="border-b hover:bg-blue-50/50 transition-colors cursor-pointer" onClick={() => setSelectedStaff(emp)}>
                 <td className="p-3 font-mono font-bold text-blue-600">{emp.employee_id}</td>
                 <td className="p-3 font-bold">{emp.name}</td>
                 <td className="p-3">{emp.specialty}</td>
                 <td className="p-3">
-                  <button onClick={async () => { if(confirm('حذف؟')) { await supabase.from('employees').delete().eq('id', emp.id); onRefresh(); } }} className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-all"><Trash2 className="w-4 h-4"/></button>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${emp.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{emp.status}</span>
+                </td>
+                <td className="p-3">
+                  <div className="flex justify-center gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); setSelectedStaff(emp); }} className="text-blue-500 hover:bg-blue-50 p-2 rounded-full"><Eye className="w-4 h-4"/></button>
+                    <button onClick={async (e) => { e.stopPropagation(); if(confirm('حذف؟')) { await supabase.from('employees').delete().eq('id', emp.id); onRefresh(); } }} className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-all"><Trash2 className="w-4 h-4"/></button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -494,7 +723,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-1 space-y-3">
           <SidebarBtn active={activeTab === 'settings'} icon={<Settings className="w-5 h-5"/>} label="إعدادات المركز" onClick={() => setActiveTab('settings')} />
-          <SidebarBtn active={activeTab === 'doctors'} icon={<Users className="w-5 h-5"/>} label="شؤون الموظفين" onClick={() => setActiveTab('doctors')} />
+          <SidebarBtn active={activeTab === 'doctors'} icon={<Users className="w-5 h-5"/>} label="شئون الموظفين" onClick={() => setActiveTab('doctors')} />
           <SidebarBtn active={activeTab === 'leaves'} icon={<FileText className="w-5 h-5"/>} label="طلبات الإجازة" onClick={() => setActiveTab('leaves')} />
           <SidebarBtn active={activeTab === 'attendance'} icon={<Clock className="w-5 h-5"/>} label="سجل الحضور" onClick={() => setActiveTab('attendance')} />
           <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="التقارير المالية" onClick={() => setActiveTab('reports')} />
@@ -502,7 +731,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
         </div>
         <div className="lg:col-span-3 bg-white p-8 rounded-3xl shadow-sm border border-gray-100 min-h-[600px]">
           {activeTab === 'settings' && selectedCenter && <GeneralSettingsTab center={selectedCenter} />}
-          {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchDashboardData} centerId={selectedCenter!.id} />}
+          {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchDashboardData} centerId={selectedCenter!.id} settings={selectedCenter} />}
           {activeTab === 'leaves' && <LeavesTab requests={leaveRequests} onRefresh={fetchDashboardData} />}
           {activeTab === 'attendance' && <AttendanceTab employees={employees} onRefresh={fetchDashboardData} />}
           {activeTab === 'reports' && <ReportsTab employees={employees} />}
