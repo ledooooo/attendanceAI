@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
-  ArrowRight, User, Calendar, FilePlus, ClipboardCheck, MessageCircle, Send, LogOut, Clock, AlertTriangle, CheckCircle, List, BarChart, Inbox, FileText, Award
+  ArrowRight, User, Calendar, FilePlus, ClipboardCheck, MessageCircle, Send, LogOut, Clock, AlertTriangle, CheckCircle, List, BarChart, Inbox, FileText, Award, Printer, Share2, X
 } from 'lucide-react';
 import { Employee, LeaveRequest, AttendanceRecord, InternalMessage, GeneralSettings, Evaluation } from '../types';
 
@@ -24,6 +24,17 @@ const LEAVE_TYPES = [
   "اذن مسائى",
   "بدل راحة",
   "أخرى"
+];
+
+const PRINT_DOCS = [
+  { id: 'status', title: 'بيان حالة وظيفية', type: 'بيان حالة وظيفية' },
+  { id: 'annual_leave', title: 'طلب إجازة اعتيادية', type: 'إجازة اعتيادية' },
+  { id: 'casual_leave', title: 'طلب إجازة عارضة', type: 'إجازة عارضة' },
+  { id: 'health_insurance', title: 'طلب تأمين صحي', type: 'تأمين صحي' },
+  { id: 'part_time', title: 'طلب نصف وقت', type: 'نصف وقت' },
+  { id: 'training', title: 'طلب دورة تدريبية', type: 'دورة تدريبية' },
+  { id: 'mission', title: 'طلب مأمورية', type: 'مأمورية' },
+  { id: 'route', title: 'طلب خط سير', type: 'خط سير' },
 ];
 
 const Input = ({ label, type = 'text', value, onChange, placeholder, required = false }: any) => (
@@ -68,6 +79,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [printPreview, setPrintPreview] = useState<any>(null);
 
   const fetchStaffData = async (empId: string) => {
     try {
@@ -167,6 +179,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
           <h2 className="text-3xl font-bold mb-8 text-center text-gray-800">بوابة الموظف</h2>
           <div className="space-y-6">
             <StaffInput label="رقم الموظف" value={loginData.id} onChange={(v: string) => setLoginData({...loginData, id: v})} />
+            {/* Corrected: Replaced invalid spread syntax {...natId: v} with proper state update syntax {...loginData, natId: v} */}
             <StaffInput label="الرقم القومي" value={loginData.natId} onChange={(v: string) => setLoginData({...loginData, natId: v})} type="password" />
             <button onClick={async () => {
                setLoading(true);
@@ -180,9 +193,113 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     );
   }
 
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: printPreview.title,
+          text: `طلب مقدم من الموظف: ${employee.name}`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      alert('المشاركة غير مدعومة في متصفحك حالياً');
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-10 text-right">
-      <div className="bg-white p-8 rounded-3xl shadow-sm border mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
+      {/* Print Preview Modal */}
+      {printPreview && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 overflow-y-auto no-print">
+          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[95vh]">
+            <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-3xl">
+              <div className="flex gap-2">
+                <button onClick={handlePrint} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition-all">
+                  <Printer className="w-4 h-4" /> طباعة المستند
+                </button>
+                <button onClick={handleShare} className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-emerald-700 transition-all">
+                  <Share2 className="w-4 h-4" /> مشاركة
+                </button>
+              </div>
+              <button onClick={() => setPrintPreview(null)} className="p-2 hover:bg-red-50 text-red-500 rounded-full transition-all">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 p-8 overflow-y-auto bg-gray-200 flex justify-center">
+              <div id="printable-area" className="bg-white w-[210mm] min-h-[297mm] p-[20mm] shadow-lg text-black print:shadow-none print:m-0" dir="rtl">
+                <style>{`
+                  @media print {
+                    body * { visibility: hidden; }
+                    #printable-area, #printable-area * { visibility: visible; }
+                    #printable-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 15mm; }
+                    .no-print { display: none !important; }
+                  }
+                `}</style>
+                
+                <div className="flex justify-between items-start mb-12 border-b-2 border-black pb-4">
+                  <div className="text-right font-bold text-lg space-y-1">
+                    <p>مديرية الشئون الصحية</p>
+                    <p>إدارة {settings?.center_name || 'المركز الطبي'}</p>
+                    <p>قسم شؤون العاملين</p>
+                  </div>
+                  <div className="text-center">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/Flag_of_Egypt.svg/2000px-Flag_of_Egypt.svg.png" className="w-20 h-12 object-contain mb-2" alt="Logo" />
+                    <p className="text-xs">جمهورية مصر العربية</p>
+                  </div>
+                </div>
+
+                <div className="text-center mb-16">
+                    <h2 className="text-2xl font-black border-2 border-black inline-block px-10 py-3 rounded-lg underline underline-offset-8">
+                        {printPreview.title}
+                    </h2>
+                </div>
+
+                <div className="text-right space-y-8 text-lg leading-relaxed">
+                  <p className="font-bold">السيد الدكتور/ مدير {settings?.center_name || 'المركز'}</p>
+                  <p>تحية طيبة وبعد ،،،</p>
+                  
+                  <div className="pr-4 space-y-6">
+                    <p>أرجو من سيادتكم التكرم بالموافقة على استخراج / قبول طلب : <span className="font-black underline px-2">{printPreview.type}</span></p>
+                    
+                    <p>الخاص بالموظف: <span className="font-bold">{employee.name}</span></p>
+                    <p>كود الموظف: <span className="font-bold">{employee.employee_id}</span></p>
+                    <p>الوظيفة / التخصص: <span className="font-bold">{employee.specialty}</span></p>
+                    
+                    <div className="pt-10 border-t border-gray-100 min-h-[200px]">
+                        <p className="text-gray-400">..........................................................................................................................................................</p>
+                        <p className="text-gray-400">..........................................................................................................................................................</p>
+                    </div>
+                  </div>
+
+                  <p className="text-center font-bold pt-6">وتفضلوا بقبول فائق الاحترام والتقدير ،،،</p>
+                </div>
+
+                <div className="mt-20 flex justify-between items-start text-center">
+                    <div className="space-y-2">
+                        <p className="font-bold underline">يعتمد،،</p>
+                        <p className="pt-10 text-xs text-gray-400">توقيع مدير المركز</p>
+                    </div>
+                    <div className="space-y-4">
+                        <p className="font-bold">مقدم الطلب</p>
+                        <p className="font-bold">{employee.name}</p>
+                        <p className="text-sm">تاريخ اليوم: {new Date().toLocaleDateString('ar-EG')}</p>
+                    </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white p-8 rounded-3xl shadow-sm border mb-8 flex flex-col md:flex-row justify-between items-center gap-6 no-print">
         <div className="flex items-center gap-5">
           <div className="w-20 h-20 bg-emerald-50 rounded-2xl flex items-center justify-center border-2 border-emerald-100">
             {employee.photo_url ? (
@@ -203,7 +320,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
         <button onClick={() => setEmployee(null)} className="flex items-center text-red-500 hover:text-red-700 font-bold bg-red-50 px-6 py-2 rounded-xl transition-all shadow-sm">تسجيل خروج <LogOut className="mr-3 w-5 h-5"/></button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8 no-print">
         <StatCard label="ساعات الشهر" value={stats.monthlyHours} icon={<Clock className="text-blue-500"/>} />
         <StatCard label="ساعات الأسبوع" value={stats.weeklyHours} icon={<BarChart className="text-purple-500"/>} />
         <StatCard label="أيام الحضور" value={stats.attendDays} icon={<CheckCircle className="text-emerald-500"/>} />
@@ -212,10 +329,11 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
         <StatCard label="أيام التأخير" value={stats.lateDays} icon={<Clock className="text-orange-500"/>} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 no-print">
         <div className="lg:col-span-1 flex flex-col gap-3">
            <StaffNav active={activeTab === 'attendance'} icon={<Clock />} label="تقرير الحضور" onClick={() => setActiveTab('attendance')} />
-           <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="طلب إجازة" onClick={() => setActiveTab('leave')} />
+           <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="تقديم طلب إلكتروني" onClick={() => setActiveTab('leave')} />
+           <StaffNav active={activeTab === 'printing'} icon={<Printer />} label="المستندات والطباعة" onClick={() => setActiveTab('printing')} />
            <StaffNav active={activeTab === 'messages'} icon={<Inbox />} label="الرسائل والتواصل" onClick={() => setActiveTab('messages')} />
            <StaffNav active={activeTab === 'evaluations'} icon={<Award />} label="التقييمات الشهرية" onClick={() => setActiveTab('evaluations')} />
            <StaffNav active={activeTab === 'profile'} icon={<User />} label="ملفي الشخصي" onClick={() => setActiveTab('profile')} />
@@ -284,6 +402,30 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
             </div>
           )}
           {activeTab === 'leave' && <StaffLeaveForm employee={employee} requests={allMyRequests} refresh={() => fetchStaffData(employee.employee_id)} />}
+          {activeTab === 'printing' && (
+            <div className="space-y-8">
+              <h3 className="text-xl font-bold flex items-center gap-2"><Printer className="text-blue-600" /> مركز النماذج والمستندات الرسمية</h3>
+              <p className="text-sm text-gray-400">اختر النموذج المطلوب لمعاينته وطباعته أو مشاركته كملف رسمي.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {PRINT_DOCS.map((doc) => (
+                    <button 
+                      key={doc.id}
+                      onClick={() => setPrintPreview(doc)}
+                      className="flex items-center justify-between p-5 border rounded-2xl bg-white hover:border-blue-500 hover:bg-blue-50 transition-all group shadow-sm"
+                    >
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-gray-50 rounded-xl group-hover:bg-blue-100 transition-all">
+                                <FileText className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <span className="font-bold text-gray-700">{doc.title}</span>
+                        </div>
+                        <Printer className="w-4 h-4 text-gray-300 group-hover:text-blue-600" />
+                    </button>
+                ))}
+              </div>
+            </div>
+          )}
           {activeTab === 'messages' && <StaffMessages employee={employee} messages={messages} refresh={() => fetchStaffData(employee.employee_id)} />}
           {activeTab === 'evaluations' && <StaffEvaluations evaluations={evaluations} />}
           {activeTab === 'profile' && <StaffProfile employee={employee} />}
@@ -510,7 +652,7 @@ const StaffLeaveForm = ({ employee, requests, refresh }: any) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-2xl border">
         <Select label="نوع الطلب" options={LEAVE_TYPES} value={formData.type} onChange={(v:any)=>setFormData({...formData, type: v})} required />
         <Input label="تاريخ البداية" type="date" value={formData.start} onChange={(v:any)=>setFormData({...formData, start: v})} required />
-        <Input label="تاريخ النهاية" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, end: v})} required />
+        <Input label="تاريخ النهاية" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, start: formData.start, end: v})} required />
         <Input label="تاريخ العودة للعمل" type="date" value={formData.back} onChange={(v:any)=>setFormData({...formData, back: v})} required />
         <Input label="القائم بالعمل (البديل)" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} required placeholder="اسم الزميل البديل" />
         <div className="md:col-span-2">
