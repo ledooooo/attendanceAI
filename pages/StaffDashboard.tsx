@@ -13,29 +13,33 @@ interface StaffDashboardProps {
 }
 
 const LEAVE_TYPES = [
-  "اعتيادى",
-  "عارضة",
-  "مرضى",
-  "خط سير",
-  "تامين صحى",
-  "مأمورية",
-  "دورة تدريبية",
-  "اذن صباحى",
-  "اذن مسائى",
-  "بدل راحة",
-  "أخرى"
+  "اعتيادى", "عارضة", "مرضى", "خط سير", "تامين صحى", "مأمورية", "دورة تدريبية", "اذن صباحى", "اذن مسائى", "بدل راحة", "أخرى"
 ];
 
-const PRINT_DOCS = [
-  { id: 'status', title: 'بيان حالة وظيفية', type: 'بيان حالة وظيفية' },
-  { id: 'annual_leave', title: 'طلب إجازة اعتيادية', type: 'إجازة اعتيادية' },
-  { id: 'casual_leave', title: 'طلب إجازة عارضة', type: 'إجازة عارضة' },
-  { id: 'health_insurance', title: 'طلب تأمين صحي', type: 'تأمين صحي' },
-  { id: 'part_time', title: 'طلب نصف وقت', type: 'نصف وقت' },
-  { id: 'training', title: 'طلب دورة تدريبية', type: 'دورة تدريبية' },
-  { id: 'mission', title: 'طلب مأمورية', type: 'مأمورية' },
-  { id: 'route', title: 'طلب خط سير', type: 'خط سير' },
-];
+const getCheckInLabel = (time: string): string => {
+  if (!time || time === "--") return '--';
+  if (time >= "06:00" && time <= "08:30") return "حضور رسمى";
+  if (time >= "08:31" && time <= "09:00") return "تاخير";
+  if (time >= "09:01" && time <= "11:00") return "اذن صباحى";
+  if (time >= "11:01" && time <= "13:00") return "حضور غير رسمى";
+  if (time >= "13:01" && time <= "15:00") return "حضور نوبتجية";
+  if (time >= "15:01" && time <= "18:00") return "حضور مسائى";
+  if (time >= "18:01" && time <= "23:59") return "حضور سهر";
+  if (time >= "00:00" && time <= "05:59") return "حضور مبيت";
+  return "حضور";
+};
+
+const getCheckOutLabel = (time: string): string => {
+  if (!time || time === "--") return '--';
+  if (time >= "13:00" && time <= "13:44") return "انصراف مبكر";
+  if (time >= "13:45" && time <= "15:00") return "انصراف رسمى";
+  if (time >= "15:01" && time <= "18:00") return "انصراف نوبتجية";
+  if (time >= "18:01" && time <= "23:59") return "انصراف سهر";
+  if (time >= "00:00" && time <= "07:00") return "انصراف مبيت";
+  if (time >= "07:01" && time <= "11:00") return "انصراف بدون اذن";
+  if (time >= "11:01" && time <= "12:59") return "اذن مسائى";
+  return "انصراف";
+};
 
 const Input = ({ label, type = 'text', value, onChange, placeholder, required = false }: any) => (
   <div className="text-right">
@@ -79,7 +83,6 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [printPreview, setPrintPreview] = useState<any>(null);
 
   const fetchStaffData = async (empId: string) => {
     try {
@@ -120,56 +123,17 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   const stats = useMemo(() => {
     const [year, month] = selectedMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
-    
     let monthlyHours = 0;
     let attendDays = 0;
-    let absentDays = 0;
-    let leaveDays = 0;
-    let lateDays = 0;
-
-    let weeklyHours = 0;
-    const today = new Date();
-    const currentDay = today.getDay();
-    const diffToSat = (currentDay === 6 ? 0 : currentDay + 1);
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - diffToSat);
-    
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const att = attendance.find(a => a.date === dateStr);
-      const leave = getLeaveOnDate(dateStr);
-      const holiday = isHoliday(dateStr);
-
-      if (att) {
-        attendDays++;
-        const times = att.times.split(/\s+/).filter(t => t.includes(':'));
-        if (times.length >= 1) {
-          if (settings?.shift_morning_in && times[0] > settings.shift_morning_in) lateDays++;
-          
-          if (times.length >= 2) {
-            const h = calculateHours(times[0], times[times.length - 1]);
-            monthlyHours += h;
-            const dDate = new Date(dateStr);
-            if (dDate >= startOfWeek && dDate <= today && dDate.getDay() !== 5) {
-                weeklyHours += h;
-            }
-          }
+    attendance.forEach(att => {
+        if (att.date.startsWith(selectedMonth)) {
+            attendDays++;
+            const times = att.times.split(/\s+/).filter(t => t.includes(':'));
+            if (times.length >= 2) monthlyHours += calculateHours(times[0], times[times.length - 1]);
         }
-      } else {
-        if (!holiday && !leave) absentDays++;
-        if (leave) leaveDays++;
-      }
-    }
-
-    return { 
-      monthlyHours: monthlyHours.toFixed(1), 
-      weeklyHours: weeklyHours.toFixed(1),
-      attendDays, 
-      absentDays, 
-      leaveDays, 
-      lateDays 
-    };
-  }, [attendance, leaves, settings, selectedMonth]);
+    });
+    return { monthlyHours: monthlyHours.toFixed(1), attendDays };
+  }, [attendance, selectedMonth]);
 
   if (!employee) {
     return (
@@ -178,9 +142,8 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
           <button onClick={onBack} className="flex items-center text-blue-600 mb-8 hover:underline font-bold"><ArrowRight className="ml-2 w-4 h-4" /> العودة</button>
           <h2 className="text-3xl font-bold mb-8 text-center text-gray-800">بوابة الموظف</h2>
           <div className="space-y-6">
-            <StaffInput label="رقم الموظف" value={loginData.id} onChange={(v: string) => setLoginData({...loginData, id: v})} />
-            {/* Corrected: Replaced invalid spread syntax {...natId: v} with proper state update syntax {...loginData, natId: v} */}
-            <StaffInput label="الرقم القومي" value={loginData.natId} onChange={(v: string) => setLoginData({...loginData, natId: v})} type="password" />
+            <Input label="رقم الموظف" value={loginData.id} onChange={(v:any) => setLoginData({...loginData, id: v})} />
+            <Input label="الرقم القومي" type="password" value={loginData.natId} onChange={(v:any) => setLoginData({...loginData, natId: v})} />
             <button onClick={async () => {
                setLoading(true);
                const { data } = await supabase.from('employees').select('*').eq('employee_id', loginData.id).eq('national_id', loginData.natId).maybeSingle();
@@ -193,113 +156,9 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     );
   }
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: printPreview.title,
-          text: `طلب مقدم من الموظف: ${employee.name}`,
-          url: window.location.href,
-        });
-      } catch (err) {
-        console.error('Error sharing:', err);
-      }
-    } else {
-      alert('المشاركة غير مدعومة في متصفحك حالياً');
-    }
-  };
-
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-10 text-right">
-      {/* Print Preview Modal */}
-      {printPreview && (
-        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 overflow-y-auto no-print">
-          <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[95vh]">
-            <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-3xl">
-              <div className="flex gap-2">
-                <button onClick={handlePrint} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition-all">
-                  <Printer className="w-4 h-4" /> طباعة المستند
-                </button>
-                <button onClick={handleShare} className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-emerald-700 transition-all">
-                  <Share2 className="w-4 h-4" /> مشاركة
-                </button>
-              </div>
-              <button onClick={() => setPrintPreview(null)} className="p-2 hover:bg-red-50 text-red-500 rounded-full transition-all">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            
-            <div className="flex-1 p-8 overflow-y-auto bg-gray-200 flex justify-center">
-              <div id="printable-area" className="bg-white w-[210mm] min-h-[297mm] p-[20mm] shadow-lg text-black print:shadow-none print:m-0" dir="rtl">
-                <style>{`
-                  @media print {
-                    body * { visibility: hidden; }
-                    #printable-area, #printable-area * { visibility: visible; }
-                    #printable-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 15mm; }
-                    .no-print { display: none !important; }
-                  }
-                `}</style>
-                
-                <div className="flex justify-between items-start mb-12 border-b-2 border-black pb-4">
-                  <div className="text-right font-bold text-lg space-y-1">
-                    <p>مديرية الشئون الصحية</p>
-                    <p>إدارة {settings?.center_name || 'المركز الطبي'}</p>
-                    <p>قسم شؤون العاملين</p>
-                  </div>
-                  <div className="text-center">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/f/fe/Flag_of_Egypt.svg/2000px-Flag_of_Egypt.svg.png" className="w-20 h-12 object-contain mb-2" alt="Logo" />
-                    <p className="text-xs">جمهورية مصر العربية</p>
-                  </div>
-                </div>
-
-                <div className="text-center mb-16">
-                    <h2 className="text-2xl font-black border-2 border-black inline-block px-10 py-3 rounded-lg underline underline-offset-8">
-                        {printPreview.title}
-                    </h2>
-                </div>
-
-                <div className="text-right space-y-8 text-lg leading-relaxed">
-                  <p className="font-bold">السيد الدكتور/ مدير {settings?.center_name || 'المركز'}</p>
-                  <p>تحية طيبة وبعد ،،،</p>
-                  
-                  <div className="pr-4 space-y-6">
-                    <p>أرجو من سيادتكم التكرم بالموافقة على استخراج / قبول طلب : <span className="font-black underline px-2">{printPreview.type}</span></p>
-                    
-                    <p>الخاص بالموظف: <span className="font-bold">{employee.name}</span></p>
-                    <p>كود الموظف: <span className="font-bold">{employee.employee_id}</span></p>
-                    <p>الوظيفة / التخصص: <span className="font-bold">{employee.specialty}</span></p>
-                    
-                    <div className="pt-10 border-t border-gray-100 min-h-[200px]">
-                        <p className="text-gray-400">..........................................................................................................................................................</p>
-                        <p className="text-gray-400">..........................................................................................................................................................</p>
-                    </div>
-                  </div>
-
-                  <p className="text-center font-bold pt-6">وتفضلوا بقبول فائق الاحترام والتقدير ،،،</p>
-                </div>
-
-                <div className="mt-20 flex justify-between items-start text-center">
-                    <div className="space-y-2">
-                        <p className="font-bold underline">يعتمد،،</p>
-                        <p className="pt-10 text-xs text-gray-400">توقيع مدير المركز</p>
-                    </div>
-                    <div className="space-y-4">
-                        <p className="font-bold">مقدم الطلب</p>
-                        <p className="font-bold">{employee.name}</p>
-                        <p className="text-sm">تاريخ اليوم: {new Date().toLocaleDateString('ar-EG')}</p>
-                    </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white p-8 rounded-3xl shadow-sm border mb-8 flex flex-col md:flex-row justify-between items-center gap-6 no-print">
+      <div className="bg-white p-8 rounded-3xl shadow-sm border mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
         <div className="flex items-center gap-5">
           <div className="w-20 h-20 bg-emerald-50 rounded-2xl flex items-center justify-center border-2 border-emerald-100">
             {employee.photo_url ? (
@@ -311,88 +170,73 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
           <div>
             <h1 className="text-2xl font-bold text-gray-800">{employee.name}</h1>
             <p className="text-gray-400 font-semibold">{employee.specialty} | كود: {employee.employee_id}</p>
-            <div className="flex gap-2 mt-2">
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${employee.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{employee.status}</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">{employee.grade}</span>
-            </div>
           </div>
         </div>
-        <button onClick={() => setEmployee(null)} className="flex items-center text-red-500 hover:text-red-700 font-bold bg-red-50 px-6 py-2 rounded-xl transition-all shadow-sm">تسجيل خروج <LogOut className="mr-3 w-5 h-5"/></button>
+        <button onClick={() => setEmployee(null)} className="flex items-center text-red-500 hover:text-red-700 font-bold bg-red-50 px-6 py-2 rounded-xl transition-all shadow-sm">خروج <LogOut className="mr-3 w-5 h-5"/></button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8 no-print">
-        <StatCard label="ساعات الشهر" value={stats.monthlyHours} icon={<Clock className="text-blue-500"/>} />
-        <StatCard label="ساعات الأسبوع" value={stats.weeklyHours} icon={<BarChart className="text-purple-500"/>} />
-        <StatCard label="أيام الحضور" value={stats.attendDays} icon={<CheckCircle className="text-emerald-500"/>} />
-        <StatCard label="أيام الغياب" value={stats.absentDays} icon={<AlertTriangle className="text-red-500"/>} />
-        <StatCard label="إجمالي الإجازات" value={stats.leaveDays} icon={<Calendar className="text-amber-500"/>} />
-        <StatCard label="أيام التأخير" value={stats.lateDays} icon={<Clock className="text-orange-500"/>} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border text-center">
+            <p className="text-xs text-gray-400 font-bold uppercase mb-1">ساعات الشهر</p>
+            <p className="text-3xl font-black text-emerald-600">{stats.monthlyHours}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border text-center">
+            <p className="text-xs text-gray-400 font-bold uppercase mb-1">أيام الحضور</p>
+            <p className="text-3xl font-black text-blue-600">{stats.attendDays}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border text-center">
+            <p className="text-xs text-gray-400 font-bold uppercase mb-1">رصيد اعتيادي</p>
+            <p className="text-3xl font-black text-amber-600">{employee.remaining_annual}</p>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border text-center">
+            <p className="text-xs text-gray-400 font-bold uppercase mb-1">رصيد عارضة</p>
+            <p className="text-3xl font-black text-orange-600">{employee.remaining_casual}</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 no-print">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-1 flex flex-col gap-3">
-           <StaffNav active={activeTab === 'attendance'} icon={<Clock />} label="تقرير الحضور" onClick={() => setActiveTab('attendance')} />
-           <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="تقديم طلب إلكتروني" onClick={() => setActiveTab('leave')} />
-           <StaffNav active={activeTab === 'printing'} icon={<Printer />} label="المستندات والطباعة" onClick={() => setActiveTab('printing')} />
-           <StaffNav active={activeTab === 'messages'} icon={<Inbox />} label="الرسائل والتواصل" onClick={() => setActiveTab('messages')} />
-           <StaffNav active={activeTab === 'evaluations'} icon={<Award />} label="التقييمات الشهرية" onClick={() => setActiveTab('evaluations')} />
-           <StaffNav active={activeTab === 'profile'} icon={<User />} label="ملفي الشخصي" onClick={() => setActiveTab('profile')} />
+           <StaffNav active={activeTab === 'attendance'} icon={<Clock />} label="سجل الحضور" onClick={() => setActiveTab('attendance')} />
+           <StaffNav active={activeTab === 'leave'} icon={<FilePlus />} label="تقديم طلب" onClick={() => setActiveTab('leave')} />
+           <StaffNav active={activeTab === 'messages'} icon={<Inbox />} label="الرسائل" onClick={() => setActiveTab('messages')} />
+           <StaffNav active={activeTab === 'profile'} icon={<User />} label="الملف الشخصي" onClick={() => setActiveTab('profile')} />
         </div>
         <div className="lg:col-span-3 bg-white p-8 rounded-3xl shadow-sm border min-h-[500px]">
           {activeTab === 'attendance' && (
             <div className="space-y-6">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold">تقرير الحضور والانصراف التفصيلي</h3>
-                <input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="p-2 border rounded-xl outline-none font-bold bg-gray-50" />
+                <h3 className="text-xl font-bold">تقرير الحضور التفصيلي</h3>
+                <input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="p-2 border rounded-xl font-bold bg-gray-50 outline-none" />
               </div>
-              <div className="overflow-x-auto border rounded-2xl bg-white shadow-inner">
+              <div className="overflow-x-auto border rounded-2xl">
                 <table className="w-full text-sm text-right">
-                  <thead className="bg-gray-100 text-gray-700">
+                  <thead className="bg-gray-100">
                     <tr>
-                      <th className="p-4 border-b">التاريخ</th>
-                      <th className="p-4 border-b">الحضور</th>
-                      <th className="p-4 border-b">حالة الحضور</th>
-                      <th className="p-4 border-b">الانصراف</th>
-                      <th className="p-4 border-b">حالة الانصراف</th>
-                      <th className="p-4 border-b">ساعات العمل</th>
+                      <th className="p-4">التاريخ</th>
+                      <th className="p-4">الحضور</th>
+                      <th className="p-4">حالة الحضور</th>
+                      <th className="p-4">الانصراف</th>
+                      <th className="p-4">حالة الانصراف</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {Array.from({ length: new Date(Number(selectedMonth.split('-')[0]), Number(selectedMonth.split('-')[1]), 0).getDate() }, (_, i) => {
+                    {Array.from({ length: 31 }, (_, i) => {
                       const day = i + 1;
                       const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
                       const att = attendance.find(a => a.date === dateStr);
-                      const holiday = isHoliday(dateStr);
-                      const approvedLeave = getLeaveOnDate(dateStr);
+                      if (!att && day > new Date(Number(selectedMonth.split('-')[0]), Number(selectedMonth.split('-')[1]), 0).getDate()) return null;
                       
                       const times = att?.times.split(/\s+/).filter(t => t.includes(':')) || [];
-                      const cin = times[0] || null;
-                      const cout = times.length > 1 ? times[times.length - 1] : null;
-                      const workHours = (cin && cout) ? calculateHours(cin, cout).toFixed(1) : (att ? '0.0' : '--');
-
-                      let rowClass = "border-b hover:bg-gray-50 transition-colors";
-                      let statusIn = cin ? (settings?.shift_morning_in && cin > settings.shift_morning_in ? "متأخر" : "منتظم") : (holiday ? "عطلة" : (approvedLeave ? approvedLeave.type : "غياب"));
-                      let statusOut = cout ? "انصراف" : (cin ? "ترك عمل" : "--");
-
-                      if (holiday) rowClass += " bg-gray-50 text-gray-400";
-                      if (approvedLeave) rowClass += " bg-blue-50";
+                      const cin = times[0] || '--';
+                      const cout = times.length > 1 ? times[times.length - 1] : '--';
 
                       return (
-                        <tr key={dateStr} className={rowClass}>
-                          <td className="p-4 font-bold">{dateStr} {isFriday(dateStr) && <span className="text-[10px] text-blue-500">(جمعة)</span>}</td>
-                          <td className="p-4 text-emerald-600 font-bold">{cin || '--'}</td>
-                          <td className="p-4">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${statusIn === 'منتظم' ? 'bg-emerald-100 text-emerald-700' : statusIn === 'متأخر' ? 'bg-amber-100 text-amber-700' : approvedLeave ? 'bg-blue-100 text-blue-700' : 'bg-gray-100'}`}>
-                              {statusIn}
-                            </span>
-                          </td>
-                          <td className="p-4 text-red-500 font-bold">{cout || '--'}</td>
-                          <td className="p-4">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${statusOut === 'انصراف' ? 'bg-blue-100 text-blue-700' : statusOut === 'ترك عمل' ? 'bg-red-100 text-red-700' : 'bg-gray-100'}`}>
-                              {statusOut}
-                            </span>
-                          </td>
-                          <td className="p-4 font-mono font-bold text-gray-700">{workHours} ساعة</td>
+                        <tr key={dateStr} className="border-b hover:bg-gray-50 transition-colors">
+                          <td className="p-4 font-bold">{dateStr}</td>
+                          <td className="p-4 text-emerald-600 font-bold">{cin}</td>
+                          <td className="p-4 font-bold">{getCheckInLabel(cin)}</td>
+                          <td className="p-4 text-red-500 font-bold">{cout}</td>
+                          <td className="p-4 font-bold">{getCheckOutLabel(cout)}</td>
                         </tr>
                       );
                     })}
@@ -402,32 +246,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
             </div>
           )}
           {activeTab === 'leave' && <StaffLeaveForm employee={employee} requests={allMyRequests} refresh={() => fetchStaffData(employee.employee_id)} />}
-          {activeTab === 'printing' && (
-            <div className="space-y-8">
-              <h3 className="text-xl font-bold flex items-center gap-2"><Printer className="text-blue-600" /> مركز النماذج والمستندات الرسمية</h3>
-              <p className="text-sm text-gray-400">اختر النموذج المطلوب لمعاينته وطباعته أو مشاركته كملف رسمي.</p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {PRINT_DOCS.map((doc) => (
-                    <button 
-                      key={doc.id}
-                      onClick={() => setPrintPreview(doc)}
-                      className="flex items-center justify-between p-5 border rounded-2xl bg-white hover:border-blue-500 hover:bg-blue-50 transition-all group shadow-sm"
-                    >
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-gray-50 rounded-xl group-hover:bg-blue-100 transition-all">
-                                <FileText className="w-6 h-6 text-blue-600" />
-                            </div>
-                            <span className="font-bold text-gray-700">{doc.title}</span>
-                        </div>
-                        <Printer className="w-4 h-4 text-gray-300 group-hover:text-blue-600" />
-                    </button>
-                ))}
-              </div>
-            </div>
-          )}
           {activeTab === 'messages' && <StaffMessages employee={employee} messages={messages} refresh={() => fetchStaffData(employee.employee_id)} />}
-          {activeTab === 'evaluations' && <StaffEvaluations evaluations={evaluations} />}
           {activeTab === 'profile' && <StaffProfile employee={employee} />}
         </div>
       </div>
@@ -449,7 +268,7 @@ const StaffMessages = ({ employee, messages, refresh }: any) => {
         }]);
         if (!error) {
             setNewMsg('');
-            alert('تم إرسال الرسالة للإدارة بنجاح');
+            alert('تم إرسال الرسالة للإدارة');
             refresh();
         } else alert('فشل الإرسال');
         setSending(false);
@@ -457,72 +276,33 @@ const StaffMessages = ({ employee, messages, refresh }: any) => {
 
     return (
         <div className="space-y-8">
-            <h3 className="text-xl font-bold flex items-center gap-2"><MessageCircle className="text-emerald-600" /> مركز التواصل مع الإدارة</h3>
-            
-            <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
-                <label className="block text-sm font-bold text-emerald-800 mb-2">إرسال رسالة جديدة للإدارة</label>
-                <div className="flex gap-2">
-                    <textarea 
-                        className="flex-1 p-3 border rounded-xl outline-none focus:ring-2 focus:ring-emerald-500"
-                        placeholder="اكتب استفسارك أو رسالتك هنا..."
-                        value={newMsg}
-                        onChange={(e) => setNewMsg(e.target.value)}
-                        rows={2}
-                    />
-                    <button 
-                        onClick={sendMessage}
-                        disabled={sending}
-                        className="bg-emerald-600 text-white px-6 rounded-xl hover:bg-emerald-700 transition-all disabled:bg-gray-400"
-                    >
-                        <Send className="w-5 h-5" />
-                    </button>
-                </div>
+            <h3 className="text-xl font-bold flex items-center gap-2"><MessageCircle className="text-emerald-600" /> التواصل مع الإدارة</h3>
+            <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 flex gap-2">
+                <textarea 
+                    className="flex-1 p-3 border rounded-xl outline-none"
+                    placeholder="اكتب رسالتك هنا..."
+                    value={newMsg}
+                    onChange={(e) => setNewMsg(e.target.value)}
+                    rows={2}
+                />
+                <button 
+                    onClick={sendMessage}
+                    disabled={sending}
+                    className="bg-emerald-600 text-white px-6 rounded-xl hover:bg-emerald-700 disabled:bg-gray-400"
+                >
+                    <Send className="w-5 h-5" />
+                </button>
             </div>
-
             <div className="space-y-4">
-                <h4 className="font-bold text-gray-700 flex items-center gap-2"><Inbox className="w-4 h-4" /> الرسائل الواردة من الإدارة</h4>
-                <div className="grid gap-3">
-                    {messages.map((m: any) => (
-                        <div key={m.id} className={`p-4 rounded-2xl border shadow-sm ${m.from_user === 'admin' ? 'bg-white border-blue-100' : 'bg-gray-50'}`}>
-                            <div className="flex justify-between items-start mb-2">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${m.from_user === 'admin' ? 'bg-blue-600 text-white' : 'bg-gray-400 text-white'}`}>
-                                    {m.from_user === 'admin' ? 'الإدارة' : 'أنا'}
-                                </span>
-                                <span className="text-[10px] text-gray-400">{new Date(m.created_at).toLocaleString('ar-EG')}</span>
-                            </div>
-                            <p className="text-sm leading-relaxed text-gray-800">{m.content}</p>
+                {messages.map((m: any) => (
+                    <div key={m.id} className={`p-4 rounded-2xl border ${m.from_user === 'admin' ? 'bg-white' : 'bg-gray-50'}`}>
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-[10px] font-bold text-gray-400">{m.from_user === 'admin' ? 'الإدارة' : 'أنا'}</span>
+                            <span className="text-[10px] text-gray-400">{new Date(m.created_at).toLocaleString('ar-EG')}</span>
                         </div>
-                    ))}
-                    {messages.length === 0 && <div className="text-center py-10 text-gray-400 border-2 border-dashed rounded-2xl">لا توجد مراسلات سابقة</div>}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const StaffEvaluations = ({ evaluations }: { evaluations: Evaluation[] }) => {
-    return (
-        <div className="space-y-6">
-            <h3 className="text-xl font-bold flex items-center gap-2"><Award className="text-amber-500" /> سجل التقييمات الشهرية</h3>
-            <div className="grid gap-4">
-                {evaluations.map((ev) => (
-                    <div key={ev.id} className="p-6 bg-white border rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-                        <div className="flex-1">
-                            <h4 className="text-lg font-bold text-gray-800">{ev.month}</h4>
-                            <p className="text-sm text-gray-500 mt-1">{ev.notes || 'لا توجد ملاحظات إضافية'}</p>
-                        </div>
-                        <div className="flex items-center gap-6">
-                            <div className="text-center">
-                                <p className="text-[10px] text-gray-400 uppercase font-bold">الدرجة النهائية</p>
-                                <p className="text-3xl font-black text-emerald-600">{ev.total_score}%</p>
-                            </div>
-                            <div className="w-16 h-16 rounded-full border-4 border-emerald-100 flex items-center justify-center font-bold text-emerald-700">
-                                {ev.total_score >= 90 ? 'ممتاز' : ev.total_score >= 80 ? 'جيد جداً' : ev.total_score >= 70 ? 'جيد' : 'مقبول'}
-                            </div>
-                        </div>
+                        <p className="text-sm">{m.content}</p>
                     </div>
                 ))}
-                {evaluations.length === 0 && <div className="text-center py-20 text-gray-400 border-2 border-dashed rounded-2xl">لم يتم رصد تقييمات شهرية لك حتى الآن</div>}
             </div>
         </div>
     );
@@ -530,169 +310,66 @@ const StaffEvaluations = ({ evaluations }: { evaluations: Evaluation[] }) => {
 
 const StaffProfile = ({ employee }: { employee: Employee }) => {
     return (
-        <div className="space-y-8">
-            <div className="flex justify-between items-center border-b pb-4">
-                <h3 className="text-xl font-bold flex items-center gap-2"><User className="text-emerald-600" /> الملف الشخصي الشامل</h3>
-                <span className={`px-4 py-1 rounded-full text-xs font-bold ${employee.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>حالة الحساب: {employee.status}</span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <ProfileItem label="الاسم الكامل" value={employee.name} />
-                <ProfileItem label="الكود الوظيفي" value={employee.employee_id} />
-                <ProfileItem label="الرقم القومي" value={employee.national_id} />
+        <div className="space-y-8 text-right">
+            <h3 className="text-xl font-bold flex items-center gap-2 border-b pb-4"><User className="text-emerald-600" /> الملف الوظيفي</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ProfileItem label="الاسم" value={employee.name} />
                 <ProfileItem label="التخصص" value={employee.specialty} />
-                <ProfileItem label="الدرجة الوظيفية" value={employee.grade} />
+                <ProfileItem label="الدرجة" value={employee.grade} />
                 <ProfileItem label="تاريخ التعيين" value={employee.join_date} />
                 <ProfileItem label="التليفون" value={employee.phone} />
-                <ProfileItem label="البريد الإلكتروني" value={employee.email} />
-                <ProfileItem label="الديانة" value={employee.religion} />
-                <ProfileItem label="الجنس" value={employee.gender} />
-                <ProfileItem label="موعد الحضور الرسمي" value={employee.start_time} />
-                <ProfileItem label="موعد الانصراف الرسمي" value={employee.end_time} />
-            </div>
-
-            <div className="bg-gray-50 p-6 rounded-3xl grid grid-cols-2 md:grid-cols-4 gap-6">
-                <BalanceBox label="رصيد الاعتيادي" value={employee.leave_annual_balance} color="text-blue-600" />
-                <BalanceBox label="المتبقي اعتيادي" value={employee.remaining_annual} color="text-emerald-600" />
-                <BalanceBox label="رصيد العارضة" value={employee.leave_casual_balance} color="text-amber-600" />
-                <BalanceBox label="المتبقي عارضة" value={employee.remaining_casual} color="text-orange-600" />
-            </div>
-
-            <div className="space-y-4">
-                <h4 className="font-bold text-gray-700 border-r-4 border-emerald-500 pr-3">معلومات إضافية</h4>
-                <div className="grid gap-4">
-                    <div className="p-4 bg-white border rounded-2xl">
-                        <p className="text-xs text-gray-400 font-bold mb-1">المهام الإدارية المسندة</p>
-                        <p className="text-sm">{employee.admin_tasks || 'لم يتم إسناد مهام محددة'}</p>
-                    </div>
-                    <div className="p-4 bg-white border rounded-2xl">
-                        <p className="text-xs text-gray-400 font-bold mb-1">الدورات التدريبية الحاصل عليها</p>
-                        <p className="text-sm">{employee.training_courses || 'لا يوجد دورات مسجلة'}</p>
-                    </div>
-                    <div className="p-4 bg-white border rounded-2xl">
-                        <p className="text-xs text-gray-400 font-bold mb-1">ملاحظات الإدارة</p>
-                        <p className="text-sm italic">{employee.notes || 'لا يوجد ملاحظات'}</p>
-                    </div>
-                </div>
+                <ProfileItem label="الحضور الرسمي" value={employee.start_time} />
+                <ProfileItem label="أيام العمل" value={employee.work_days?.join('، ') || 'الكل'} />
             </div>
         </div>
     );
 };
 
 const ProfileItem = ({ label, value }: any) => (
-    <div>
+    <div className="bg-gray-50 p-3 rounded-xl border">
         <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">{label}</label>
-        <p className="text-gray-800 font-bold bg-gray-50 p-2 rounded-lg border border-gray-100">{value || '--'}</p>
+        <p className="text-gray-800 font-bold">{value || '--'}</p>
     </div>
-);
-
-const BalanceBox = ({ label, value, color }: any) => (
-    <div className="text-center p-3 bg-white rounded-2xl shadow-sm border border-gray-100">
-        <p className="text-[9px] text-gray-400 font-bold mb-1 uppercase">{label}</p>
-        <p className={`text-2xl font-black ${color}`}>{value}</p>
-    </div>
-);
-
-const StaffInput = ({ label, onChange, value, type = "text" }: any) => (
-  <div className="text-right">
-    <label className="block text-xs font-bold text-gray-400 mb-2 uppercase">{label}</label>
-    <input type={type} className="w-full p-4 border rounded-2xl bg-gray-50 focus:ring-2 focus:ring-emerald-500 outline-none transition-all" value={value} onChange={(e) => onChange(e.target.value)} />
-  </div>
 );
 
 const StaffNav = ({ active, icon, label, onClick }: any) => (
   <button onClick={onClick} className={`w-full flex items-center p-4 rounded-2xl transition-all font-bold ${active ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white text-gray-500 hover:bg-emerald-50 border'}`}><span className="ml-3">{icon}</span>{label}</button>
 );
 
-const StatCard = ({ label, value, icon }: any) => (
-  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-2 items-center text-center">
-    <div className="p-2 bg-gray-50 rounded-xl">{icon}</div>
-    <div><p className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">{label}</p><p className="text-xl font-black text-gray-800">{value}</p></div>
-  </div>
-);
-
 const StaffLeaveForm = ({ employee, requests, refresh }: any) => {
-  const [formData, setFormData] = useState({ 
-    type: '', 
-    start: '', 
-    end: '', 
-    back: '', 
-    backup: '', 
-    notes: '' 
-  });
-
+  const [formData, setFormData] = useState({ type: '', start: '', end: '', backup: '', notes: '' });
   const submit = async () => {
-    if(!formData.type || !formData.start || !formData.end || !formData.back || !formData.backup) {
-        return alert('برجاء إكمال جميع البيانات الإجبارية المميزة بنجمة (*)');
-    }
-
-    const { error } = await supabase.from('leave_requests').insert([{ 
-        employee_id: employee.employee_id, 
-        type: formData.type,
-        start_date: formData.start,
-        end_date: formData.end,
-        back_date: formData.back,
-        backup_person: formData.backup,
-        notes: formData.notes,
-        status: 'معلق' 
-    }]);
-
-    if(!error) { 
-        alert('تم إرسال طلب الإجازة بنجاح'); 
-        setFormData({ type: '', start: '', end: '', back: '', backup: '', notes: '' });
-        refresh(); 
-    } else {
-        alert('حدث خطأ أثناء إرسال الطلب: ' + error.message);
-    }
+    if(!formData.type || !formData.start || !formData.end) return alert('أكمل البيانات');
+    const { error } = await supabase.from('leave_requests').insert([{ employee_id: employee.employee_id, type: formData.type, start_date: formData.start, end_date: formData.end, backup_person: formData.backup, status: 'معلق' }]);
+    if(!error) { alert('تم الإرسال'); setFormData({ type: '', start: '', end: '', backup: '', notes: '' }); refresh(); }
   };
-
   return (
     <div className="space-y-8">
-      <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><FilePlus className="text-emerald-600"/> تقديم طلب جديد (إجازة/إذن/مأمورية)</h3>
+      <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><FilePlus className="text-emerald-600"/> تقديم طلب جديد</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-2xl border">
-        <Select label="نوع الطلب" options={LEAVE_TYPES} value={formData.type} onChange={(v:any)=>setFormData({...formData, type: v})} required />
-        <Input label="تاريخ البداية" type="date" value={formData.start} onChange={(v:any)=>setFormData({...formData, start: v})} required />
-        <Input label="تاريخ النهاية" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, start: formData.start, end: v})} required />
-        <Input label="تاريخ العودة للعمل" type="date" value={formData.back} onChange={(v:any)=>setFormData({...formData, back: v})} required />
-        <Input label="القائم بالعمل (البديل)" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} required placeholder="اسم الزميل البديل" />
-        <div className="md:col-span-2">
-            <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">الملاحظات (اختياري)</label>
-            <textarea 
-                className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                rows={3}
-                value={formData.notes}
-                onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                placeholder="أي ملاحظات إضافية أو تفاصيل..."
-            ></textarea>
-        </div>
-        <button onClick={submit} className="md:col-span-2 bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md hover:bg-emerald-700 transition-all">إرسال الطلب للإدارة</button>
+        <Select label="نوع الطلب" options={LEAVE_TYPES} value={formData.type} onChange={(v:any)=>setFormData({...formData, type: v})} />
+        <Input label="من تاريخ" type="date" value={formData.start} onChange={(v:any)=>setFormData({...formData, start: v})} />
+        <Input label="إلى تاريخ" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, end: v})} />
+        <Input label="البديل" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} />
+        <button onClick={submit} className="md:col-span-2 bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md hover:bg-emerald-700">إرسال الطلب</button>
       </div>
-      
-      <h3 className="text-xl font-bold flex items-center gap-2 mt-10"><List className="text-blue-600"/> سجل طلباتي السابق</h3>
-      <div className="overflow-x-auto rounded-2xl border shadow-inner bg-white">
+      <div className="overflow-x-auto rounded-2xl border shadow-inner">
         <table className="w-full text-sm text-right">
           <thead className="bg-gray-50">
             <tr>
                 <th className="p-4 border-b">النوع</th>
-                <th className="p-4 border-b">الفترة</th>
-                <th className="p-4 border-b">العودة</th>
+                <th className="p-4 border-b">التاريخ</th>
                 <th className="p-4 border-b">الحالة</th>
             </tr>
           </thead>
           <tbody>
             {requests.map((r:any) => (
               <tr key={r.id} className="border-b hover:bg-gray-50 transition-colors">
-                <td className="p-4 font-bold text-blue-700">{r.type}</td>
-                <td className="p-4 text-xs font-semibold">{r.start_date} - {r.end_date}</td>
-                <td className="p-4 text-xs">{r.back_date || '--'}</td>
-                <td className="p-4">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold ${r.status === 'مقبول' ? 'bg-emerald-100 text-emerald-700' : r.status === 'مرفوض' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {r.status}
-                    </span>
-                </td>
+                <td className="p-4 font-bold">{r.type}</td>
+                <td className="p-4 text-xs">{r.start_date} إلى {r.end_date}</td>
+                <td className="p-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.status === 'مقبول' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{r.status}</span></td>
               </tr>
             ))}
-            {requests.length === 0 && <tr><td colSpan={4} className="p-10 text-center text-gray-400">لا يوجد سجل طلبات حالياً</td></tr>}
           </tbody>
         </table>
       </div>
