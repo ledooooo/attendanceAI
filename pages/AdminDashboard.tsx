@@ -1,19 +1,17 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, Settings, Users, FileText, Calendar, 
-  Clock, BarChart3, Bell, Upload, CheckCircle, XCircle, 
-  Download, LogOut, ShieldCheck, Eye, 
-  Award, User, Printer, MapPin, 
-  CalendarDays, PieChart, TrendingUp, Baby, Stethoscope, Send
+  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck, Eye, Award, MessageCircle, User, Filter, CheckSquare, Square, MailCheck, Search, List, Edit3, Save, ChevronDown, AlertTriangle, Printer, MapPin, Phone, Hash, Briefcase, CalendarDays, PieChart, ArrowUpDown
 } from 'lucide-react';
-import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage, Evaluation, EveningSchedule } from '../types';
+import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage, Evaluation } from '../types';
 import * as XLSX from 'xlsx';
 
-// --- مساعدات البيانات ---
+// --- مساعدات ومعالجات البيانات ---
 
-// دالة لتنسيق التاريخ لقاعدة البيانات
+const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
@@ -30,62 +28,43 @@ const formatDateForDB = (val: any): string | null => {
   } catch { return null; }
 };
 
-// دالة لتحميل نماذج الإكسل
-const downloadSample = (type: 'staff' | 'attendance' | 'schedule') => {
-    let data = [];
-    let filename = "";
-    if (type === 'staff') {
-        data = [{
-            'employee_id': '80',
-            'name': 'موظف عينة 80',
-            'national_id': '29001011234567',
-            'specialty': 'تمريض',
-            'grade': 'ثالثة',
-            'gender': 'أنثى',
-            'maternity': 'نعم',
-            'join_date': '2023-01-01'
-        }];
-        filename = "Sample_Staff_80.xlsx";
-    } else if (type === 'attendance') {
-        data = [{ 'employee_id': '80', 'date': '2024-01-01', 'times': '08:00 14:00' }];
-        filename = "Sample_Attendance_80.xlsx";
-    } else {
-        data = [{ 'date': '2024-01-01', 'doctors': '80, 101, 105', 'notes': 'نوبتجية مسائية' }];
-        filename = "Sample_Schedule.xlsx";
-    }
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sample");
-    XLSX.writeFile(wb, filename);
+const calculateHours = (inT: string, outT: string) => {
+    if (!inT || !outT || inT === '--' || outT === '--') return 0;
+    const [h1, m1] = inT.split(':').map(Number);
+    const [h2, m2] = outT.split(':').map(Number);
+    let diff = (new Date(0,0,0,h2,m2).getTime() - new Date(0,0,0,h1,m1).getTime()) / 3600000;
+    if (diff < 0) diff += 24;
+    return diff;
 };
 
 // --- المكونات العامة ---
 
-// مكون الإدخال
-function Input({ label, type = 'text', value, onChange, placeholder }: any) {
+function Input({ label, type = 'text', value, onChange, placeholder, required = false, max }: any) {
   return (
     <div className="text-right">
-      <label className="block text-[10px] font-black text-gray-400 mb-1 uppercase tracking-widest">{label}</label>
+      <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
       <input 
         type={type} 
         value={value || ''} 
         onChange={e => onChange(e.target.value)} 
-        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm font-bold" 
+        max={max}
+        className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
         placeholder={placeholder} 
       />
     </div>
   );
 }
 
-// مكون الاختيار
 function Select({ label, options, value, onChange }: any) {
   return (
     <div className="text-right">
-      <label className="block text-[10px] font-black text-gray-400 mb-1 uppercase tracking-widest">{label}</label>
+      <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
       <select 
         value={value || ''} 
         onChange={e => onChange(e.target.value)} 
-        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+        className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
       >
         <option value="">-- اختر --</option>
         {options.map((opt: any) => typeof opt === 'string' ? <option key={opt} value={opt}>{opt}</option> : <option key={opt.value} value={opt.value}>{opt.label}</option>)}
@@ -94,142 +73,608 @@ function Select({ label, options, value, onChange }: any) {
   );
 }
 
-// أزرار القائمة الجانبية
-function SidebarBtn({ active, icon, label, onClick }: any) {
+function ExcelUploadButton({ onData, label = "رفع إكسيل" }: any) {
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        onData(XLSX.utils.sheet_to_json(ws));
+      } catch { alert("خطأ في قراءة ملف الإكسيل"); }
+      finally { e.target.value = ''; }
+    };
+    reader.readAsBinaryString(file);
+  };
   return (
-    <button onClick={onClick} className={`w-full flex items-center p-4 rounded-2xl transition-all font-black group ${active ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-gray-400 hover:bg-blue-50 hover:text-blue-600 border border-transparent'}`}>
-      <span className={`ml-3 p-2 rounded-xl ${active ? 'bg-blue-500 text-white' : 'bg-gray-50 text-gray-400 group-hover:bg-white group-hover:text-blue-600'}`}>{icon}</span>
-      {label}
-    </button>
+    <label className="flex items-center bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 cursor-pointer font-semibold shadow-md transition-all">
+      <Upload className="w-4 h-4 ml-2" /> {label}
+      <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFile} />
+    </label>
   );
 }
 
-// --- أقسام لوحة التحكم ---
+const SidebarBtn = ({ active, icon, label, onClick }: any) => (
+  <button onClick={onClick} className={`w-full flex items-center p-4 rounded-2xl transition-all font-bold ${active ? 'bg-blue-600 text-white shadow-xl' : 'bg-white text-gray-500 hover:bg-blue-50 border border-transparent'}`}>
+    <span className="ml-3">{icon}</span>{label}
+  </button>
+);
 
-// 1. إعدادات المنشأة
-function SettingsTab({ center, onRefresh }: { center: GeneralSettings, onRefresh: () => void }) {
-  const [data, setData] = useState<GeneralSettings>({ ...center });
+// --- الأقسام ---
+
+function GeneralSettingsTab({ center, onRefresh }: { center: GeneralSettings, onRefresh: () => void }) {
+  const [settings, setSettings] = useState<GeneralSettings>({ ...center, holidays: center.holidays || [], specialties: center.specialties || [], leave_types: center.leave_types || [] });
   const handleSave = async () => {
-    const { error } = await supabase.from('general_settings').update(data).eq('id', center.id);
-    if (!error) { alert('تم الحفظ'); onRefresh(); }
+    const { error } = await supabase.from('general_settings').update(settings).eq('id', center.id);
+    if (!error) { alert('تم حفظ كافة الإعدادات بنجاح'); onRefresh(); } else alert(error.message);
   };
+
   return (
-    <div className="space-y-8 animate-in fade-in">
-        <h2 className="text-2xl font-black flex items-center gap-3"><Settings className="w-8 h-8 text-blue-600"/> إعدادات المنشأة</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-gray-50/50 p-8 rounded-[40px] border shadow-inner">
-            <Input label="اسم المركز" value={data.center_name} onChange={(v:any)=>setData({...data, center_name: v})} />
-            <Input label="اسم المدير" value={data.admin_name} onChange={(v:any)=>setData({...data, admin_name: v})} />
-            <Input label="رقم الهاتف" value={data.phone} onChange={(v:any)=>setData({...data, phone: v})} />
-            <Input label="العنوان" value={data.address} onChange={(v:any)=>setData({...data, address: v})} />
-            <Input label="كلمة السر" type="password" value={data.password} onChange={(v:any)=>setData({...data, password: v})} />
-            <div className="md:col-span-3">
-                <label className="block text-[10px] font-black text-gray-400 mb-1">أنواع الإجازات (مفصولة بفاصلة)</label>
-                <textarea className="w-full p-4 border rounded-2xl font-bold bg-white" value={data.leave_types?.join(', ')} onChange={e=>setData({...data, leave_types: e.target.value.split(',').map(s=>s.trim())})} rows={3} />
-            </div>
-            <button onClick={handleSave} className="md:col-span-3 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl hover:bg-blue-700 transition-all">حفظ الإعدادات</button>
-        </div>
+    <div className="space-y-8">
+      <h2 className="text-2xl font-black border-b pb-4 flex items-center gap-2 text-gray-800"><Settings className="w-7 h-7 text-blue-600" /> إعدادات النظام والقواعد</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <Input label="اسم المركز الطبي" value={settings.center_name} onChange={(v:any)=>setSettings({...settings, center_name: v})} />
+        <Input label="رقم تليفون الإدارة" value={settings.phone} onChange={(v:any)=>setSettings({...settings, phone: v})} />
+        <Input label="كلمة مرور بوابة الإدارة" type="password" value={settings.password} onChange={(v:any)=>setSettings({...settings, password: v})} />
+      </div>
+      <button onClick={handleSave} className="bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black shadow-xl hover:bg-emerald-700 transition-all">حفظ الإعدادات</button>
     </div>
   );
 }
 
-// 2. إدارة العاملين
-function StaffTab() {
-    const [staff, setStaff] = useState<Employee[]>([]);
-    useEffect(() => { fetchStaff(); }, []);
-    const fetchStaff = async () => {
-        const { data } = await supabase.from('employees').select('*');
-        if (data) setStaff(data);
+// --- عرض تفصيلي للموظف ---
+function EmployeeDetailView({ employee, onBack, onRefresh }: { employee: Employee, onBack: () => void, onRefresh: () => void }) {
+    const [subTab, setSubTab] = useState<'data' | 'requests' | 'attendance' | 'stats' | 'message'>('data');
+    const [editData, setEditData] = useState<Employee>({ ...employee });
+    const [staffRequests, setStaffRequests] = useState<LeaveRequest[]>([]);
+    const [staffAttendance, setStaffAttendance] = useState<AttendanceRecord[]>([]);
+    const [msg, setMsg] = useState('');
+    const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+
+    useEffect(() => {
+        supabase.from('leave_requests').select('*').eq('employee_id', employee.employee_id).then(({data})=> data && setStaffRequests(data));
+        supabase.from('attendance').select('*').eq('employee_id', employee.employee_id).then(({data})=> data && setStaffAttendance(data));
+    }, [employee]);
+
+    const stats = useMemo(() => {
+        const monthAtts = staffAttendance.filter(a => a.date.startsWith(selectedMonth));
+        let totalHours = 0;
+        monthAtts.forEach(a => {
+            const t = a.times.split(/\s+/).filter(x => x.includes(':'));
+            if(t.length >= 2) totalHours += calculateHours(t[0], t[t.length-1]);
+        });
+        const leavesCount = staffRequests.filter(r => r.status === 'مقبول' && (r.start_date.startsWith(selectedMonth) || r.end_date.startsWith(selectedMonth))).length;
+        const workDaysCount = 26; 
+        return { 
+            presence: monthAtts.length, 
+            hours: totalHours.toFixed(1), 
+            leaves: leavesCount, 
+            absent: Math.max(0, workDaysCount - monthAtts.length - leavesCount) 
+        };
+    }, [staffAttendance, staffRequests, selectedMonth]);
+
+    const handleUpdate = async () => {
+        const { error } = await supabase.from('employees').update(editData).eq('id', employee.id);
+        if (!error) { alert('تم تحديث البيانات'); onRefresh(); }
     };
+
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-black flex items-center gap-3"><Users className="w-8 h-8 text-blue-600"/> إدارة العاملين</h2>
-                <button onClick={() => downloadSample('staff')} className="text-blue-600 font-bold flex items-center gap-2"><Download className="w-4 h-4"/> تحميل نموذج Excel</button>
+            <button onClick={onBack} className="flex items-center text-blue-600 font-bold mb-4"><ArrowRight className="ml-2 w-4 h-4"/> عودة للقائمة</button>
+            <div className="flex bg-gray-50 p-6 rounded-3xl border items-center gap-6">
+                <div className="w-20 h-20 bg-white rounded-2xl border flex items-center justify-center overflow-hidden">
+                    {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover" /> : <User className="text-blue-100 w-10 h-10"/>}
+                </div>
+                <div>
+                    <h2 className="text-2xl font-black">{employee.name}</h2>
+                    <p className="text-blue-600 font-bold">{employee.specialty} • {employee.employee_id}</p>
+                </div>
             </div>
-            <div className="bg-white border rounded-[30px] overflow-hidden shadow-sm">
-                <table className="w-full text-right">
-                    <thead className="bg-gray-50 border-b">
-                        <tr>
-                            <th className="p-4 font-black text-sm">كود</th>
-                            <th className="p-4 font-black text-sm">الاسم</th>
-                            <th className="p-4 font-black text-sm">التخصص</th>
-                            <th className="p-4 font-black text-sm">الحالة</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {staff.map(s => (
-                            <tr key={s.id} className="border-b hover:bg-gray-50">
-                                <td className="p-4 font-bold">{s.employee_id}</td>
-                                <td className="p-4 font-bold">{s.name}</td>
-                                <td className="p-4 text-gray-500 font-bold">{s.specialty}</td>
-                                <td className="p-4">
-                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black ${s.status === 'نشط' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{s.status}</span>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+
+            <div className="flex bg-gray-100 p-1 rounded-2xl border no-print overflow-x-auto">
+                <button onClick={()=>setSubTab('data')} className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 ${subTab==='data'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>البيانات</button>
+                <button onClick={()=>setSubTab('requests')} className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 ${subTab==='requests'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الطلبات</button>
+                <button onClick={()=>setSubTab('attendance')} className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 ${subTab==='attendance'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الحضور</button>
+                <button onClick={()=>setSubTab('stats')} className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 ${subTab==='stats'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الإحصائيات</button>
+                <button onClick={()=>setSubTab('message')} className={`px-4 py-2 rounded-xl text-xs font-black shrink-0 ${subTab==='message'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>مراسلة</button>
+            </div>
+
+            <div className="min-h-[400px]">
+                {subTab === 'data' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-4">
+                        <Input label="الاسم الكامل" value={editData.name} onChange={(v:any)=>setEditData({...editData, name: v})} />
+                        <Input label="الرقم القومي" value={editData.national_id} onChange={(v:any)=>setEditData({...editData, national_id: v})} />
+                        <Input label="التخصص" value={editData.specialty} onChange={(v:any)=>setEditData({...editData, specialty: v})} />
+                        <Input label="الهاتف" value={editData.phone} onChange={(v:any)=>setEditData({...editData, phone: v})} />
+                        <Input label="تاريخ التعيين" type="date" value={editData.join_date} onChange={(v:any)=>setEditData({...editData, join_date: v})} />
+                        <Select label="الحالة" options={['نشط', 'موقوف', 'إجازة']} value={editData.status} onChange={(v:any)=>setEditData({...editData, status: v})} />
+                        <div className="md:col-span-3 flex justify-end mt-4"><button onClick={handleUpdate} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg">حفظ التعديلات</button></div>
+                    </div>
+                )}
+                {subTab === 'stats' && (
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-3 no-print">
+                            <label className="text-xs font-black text-gray-400">إحصائيات شهر:</label>
+                            <input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="p-2 border rounded-xl" />
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="p-6 bg-blue-600 text-white rounded-[30px] shadow-lg shadow-blue-100">
+                                <p className="text-[10px] font-black opacity-80 uppercase mb-1">أيام الحضور</p>
+                                <h4 className="text-3xl font-black">{stats.presence}</h4>
+                            </div>
+                            <div className="p-6 bg-emerald-600 text-white rounded-[30px] shadow-lg shadow-emerald-100">
+                                <p className="text-[10px] font-black opacity-80 uppercase mb-1">ساعات العمل</p>
+                                <h4 className="text-3xl font-black">{stats.hours}</h4>
+                            </div>
+                            <div className="p-6 bg-red-600 text-white rounded-[30px] shadow-lg shadow-red-100">
+                                <p className="text-[10px] font-black opacity-80 uppercase mb-1">أيام الغياب</p>
+                                <h4 className="text-3xl font-black">{stats.absent}</h4>
+                            </div>
+                            <div className="p-6 bg-amber-600 text-white rounded-[30px] shadow-lg shadow-amber-100">
+                                <p className="text-[10px] font-black opacity-80 uppercase mb-1">إجمالي الإجازات</p>
+                                <h4 className="text-3xl font-black">{stats.leaves}</h4>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {subTab === 'message' && (
+                    <div className="bg-gray-50 p-6 rounded-3xl border space-y-4">
+                        <textarea className="w-full p-4 border rounded-2xl outline-none" rows={4} placeholder="اكتب رسالة للموظف..." value={msg} onChange={e=>setMsg(e.target.value)} />
+                        <button onClick={async ()=>{ await supabase.from('messages').insert([{from_user:'admin', to_user:employee.employee_id, content:msg}]); alert('تم الإرسال'); setMsg(''); }} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black w-full flex justify-center gap-2"><Send className="w-4 h-4"/> إرسال الآن</button>
+                    </div>
+                )}
+                {subTab === 'attendance' && (
+                     <div className="overflow-x-auto border rounded-2xl bg-white shadow-sm">
+                         <table className="w-full text-sm text-right">
+                             <thead className="bg-gray-50 border-b">
+                                 <tr><th className="p-4">التاريخ</th><th className="p-4">البصمات</th><th className="p-4">ساعات اليوم</th></tr>
+                             </thead>
+                             <tbody>
+                                 {staffAttendance.filter(a => a.date.startsWith(selectedMonth)).map(a => {
+                                     const t = a.times.split(/\s+/).filter(x=>x.includes(':'));
+                                     return (
+                                         <tr key={a.id} className="border-b">
+                                             <td className="p-4 font-bold">{a.date}</td>
+                                             <td className="p-4 font-mono">{a.times}</td>
+                                             <td className="p-4 font-black">{calculateHours(t[0], t[t.length-1]).toFixed(1)}</td>
+                                         </tr>
+                                     )
+                                 })}
+                             </tbody>
+                         </table>
+                     </div>
+                )}
+                {subTab === 'requests' && (
+                     <div className="grid gap-4">
+                         {staffRequests.map(r => (
+                             <div key={r.id} className="p-4 bg-white border rounded-2xl flex justify-between items-center shadow-sm">
+                                 <div>
+                                     <p className="font-black text-blue-600">{r.type}</p>
+                                     <p className="text-xs text-gray-500">من {r.start_date} إلى {r.end_date}</p>
+                                 </div>
+                                 <span className={`px-3 py-1 rounded-lg text-[10px] font-black ${r.status==='مقبول'?'bg-green-100 text-green-700':r.status==='مرفوض'?'bg-red-100 text-red-700':'bg-amber-100 text-amber-700'}`}>{r.status}</span>
+                             </div>
+                         ))}
+                     </div>
+                )}
             </div>
         </div>
     );
 }
 
-// المكون الرئيسي للوحة الإدارة
-export default function AdminDashboard({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState('settings');
-  const [center, setCenter] = useState<GeneralSettings | null>(null);
-  const [loading, setLoading] = useState(true);
+// --- شئون الموظفين (جدول وفلاتر) ---
+function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
+  const [selectedStaff, setSelectedStaff] = useState<Employee | null>(null);
+  const [fName, setFName] = useState('');
+  const [fId, setFId] = useState('');
+  const [fSpec, setFSpec] = useState('all');
+  const [fStatus, setFStatus] = useState('all');
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  const fetchSettings = async () => {
-    const { data } = await supabase.from('general_settings').select('*').limit(1).single();
-    if (data) setCenter(data);
-    setLoading(false);
-  };
-
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center font-black text-blue-600">
-      جاري التحميل...
-    </div>
+  const filtered = employees.filter(e => 
+    (e.name.includes(fName)) && 
+    (e.employee_id.includes(fId)) && 
+    (fSpec === 'all' || e.specialty === fSpec) &&
+    (fStatus === 'all' || e.status === fStatus)
   );
 
+  if (selectedStaff) return <EmployeeDetailView employee={selectedStaff} onBack={()=>setSelectedStaff(null)} onRefresh={onRefresh} />;
+
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-10 text-right">
-      <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6 bg-white p-8 rounded-[40px] shadow-sm border">
-        <div className="flex items-center gap-6">
-          <div className="p-4 bg-blue-600 text-white rounded-[25px] shadow-lg">
-            <ShieldCheck className="w-8 h-8" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-black text-gray-800">{center?.center_name || 'لوحة الإدارة'}</h1>
-            <p className="text-gray-400 font-bold">مرحباً بك في نظام الإدارة الذكي</p>
-          </div>
-        </div>
-        <button onClick={onBack} className="flex items-center gap-3 text-gray-400 font-black bg-gray-50 px-8 py-4 rounded-[25px] hover:bg-red-50 hover:text-red-600 transition-all">
-          تسجيل خروج <LogOut className="w-5 h-5" />
-        </button>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center border-b pb-4">
+        <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
+        <ExcelUploadButton onData={async (data: any[]) => {
+            const formatted = data.map(row => ({
+                employee_id: String(row.employee_id || row['الكود'] || ''),
+                name: String(row.name || row['الاسم'] || ''),
+                national_id: String(row.national_id || row['الرقم القومي'] || ''),
+                specialty: String(row.specialty || row['التخصص'] || ''),
+                join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']),
+                center_id: centerId,
+                status: 'نشط',
+                leave_annual_balance: 21,
+                leave_casual_balance: 7,
+                remaining_annual: 21,
+                remaining_casual: 7
+            })).filter(r => r.employee_id && r.name);
+            const { error } = await supabase.from('employees').upsert(formatted, { onConflict: 'employee_id' });
+            if (!error) { alert(`تم استيراد ${formatted.length} موظف`); onRefresh(); }
+        }} label="استيراد موظفين" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-10">
-        <div className="lg:col-span-1 space-y-3 bg-white p-6 rounded-[40px] border shadow-sm h-fit">
-          <SidebarBtn active={activeTab === 'settings'} icon={<Settings className="w-5 h-5"/>} label="إعدادات المركز" onClick={() => setActiveTab('settings')} />
-          <SidebarBtn active={activeTab === 'staff'} icon={<Users className="w-5 h-5"/>} label="إدارة الموظفين" onClick={() => setActiveTab('staff')} />
-          <SidebarBtn active={activeTab === 'attendance'} icon={<Clock className="w-5 h-5"/>} label="سجل الحضور" onClick={() => setActiveTab('attendance')} />
-          <SidebarBtn active={activeTab === 'requests'} icon={<Bell className="w-5 h-5"/>} label="طلبات الإجازات" onClick={() => setActiveTab('requests')} />
-          <SidebarBtn active={activeTab === 'evaluations'} icon={<Award className="w-5 h-5"/>} label="التقييمات" onClick={() => setActiveTab('evaluations')} />
-        </div>
-
-        <div className="lg:col-span-3 bg-white p-10 rounded-[50px] border shadow-sm min-h-[600px]">
-          {activeTab === 'settings' && center && <SettingsTab center={center} onRefresh={fetchSettings} />}
-          {activeTab === 'staff' && <StaffTab />}
-          {activeTab === 'attendance' && <div className="p-10 text-center text-gray-400 font-bold">قسم الحضور قيد التطوير</div>}
-          {activeTab === 'requests' && <div className="p-10 text-center text-gray-400 font-bold">قسم الطلبات قيد التطوير</div>}
-          {activeTab === 'evaluations' && <div className="p-10 text-center text-gray-400 font-black">قسم التقييمات قيد التطوير</div>}
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-3xl border border-gray-100 shadow-inner">
+          <Input label="بحث بالاسم" value={fName} onChange={setFName} placeholder="اسم الموظف..." />
+          <Input label="بحث بالكود" value={fId} onChange={setFId} placeholder="كود الموظف..." />
+          <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e=>e.specialty)))]} value={fSpec} onChange={setFSpec} />
+          <Select label="الحالة" options={['all', 'نشط', 'موقوف', 'إجازة']} value={fStatus} onChange={setFStatus} />
+      </div>
+      
+      <div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm">
+          <table className="w-full text-sm text-right">
+              <thead className="bg-gray-100 font-black border-b">
+                  <tr><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">التخصص</th><th className="p-4">الحالة</th><th className="p-4">الإجراءات</th></tr>
+              </thead>
+              <tbody>
+                  {filtered.map(emp => (
+                      <tr key={emp.id} className="border-b hover:bg-blue-50/50 transition-all group">
+                          <td className="p-4 font-mono font-bold text-blue-600">{emp.employee_id}</td>
+                          <td className="p-4 font-black">{emp.name}</td>
+                          <td className="p-4 text-xs font-bold text-gray-500">{emp.specialty}</td>
+                          <td className="p-4"><span className={`px-3 py-1 rounded-lg text-[10px] font-black ${emp.status==='نشط'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{emp.status}</span></td>
+                          <td className="p-4"><button onClick={()=>setSelectedStaff(emp)} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all"><Eye className="w-4 h-4"/></button></td>
+                      </tr>
+                  ))}
+              </tbody>
+          </table>
       </div>
     </div>
   );
 }
+
+// --- نظام التقييمات ---
+function EvaluationsTab({ employees }: { employees: Employee[] }) {
+    const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+    const [evalData, setEvalData] = useState({ employee_id: '', scores: { s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, s6: 0, s7: 0 }, notes: '' });
+    const total = useMemo(() => Object.values(evalData.scores).reduce((a,b)=>Number(a)+Number(b), 0), [evalData.scores]);
+
+    const handleSave = async () => {
+        if(!evalData.employee_id) return alert('برجاء اختيار موظف');
+        const { error } = await supabase.from('evaluations').insert([{
+            employee_id: evalData.employee_id, month, score_appearance: evalData.scores.s1, score_attendance: evalData.scores.s2, score_quality: evalData.scores.s3, score_infection: evalData.scores.s4, score_training: evalData.scores.s5, score_records: evalData.scores.s6, score_tasks: evalData.scores.s7, total_score: total, notes: evalData.notes
+        }]);
+        if(!error) { alert('تم حفظ التقييم'); setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' }); }
+    };
+
+    return (
+        <div className="space-y-8">
+            <div className="flex justify-between items-center border-b pb-4">
+                <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Award className="w-7 h-7 text-purple-600"/> التقييمات الطبية (100 درجة)</h2>
+                <ExcelUploadButton onData={()=>{}} label="رفع تقييمات إكسيل" />
+            </div>
+            <div className="bg-gray-50 p-8 rounded-[40px] border shadow-inner space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Select label="اختر الموظف" options={employees.map(e=>({value:e.employee_id, label:e.name}))} value={evalData.employee_id} onChange={(v:any)=>setEvalData({...evalData, employee_id:v})} />
+                    <Input label="شهر التقييم" type="month" value={month} onChange={setMonth} />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                    <Input label="المظهر (10)" type="number" value={evalData.scores.s1} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s1:v}})} />
+                    <Input label="الحضور (20)" type="number" value={evalData.scores.s2} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s2:v}})} />
+                    <Input label="الجودة (10)" type="number" value={evalData.scores.s3} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s3:v}})} />
+                    <Input label="العدوى (10)" type="number" value={evalData.scores.s4} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s4:v}})} />
+                    <Input label="التدريب (20)" type="number" value={evalData.scores.s5} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s5:v}})} />
+                    {/* Fixed typo: setEditData changed to setEvalData */}
+                    <Input label="الملفات (20)" type="number" value={evalData.scores.s6} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s6:v}})} />
+                    <Input label="المهام (10)" type="number" value={evalData.scores.s7} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s7:v}})} />
+                </div>
+                <div className="bg-white p-6 rounded-3xl border flex justify-between items-center">
+                    <div className="text-2xl font-black text-purple-600">الإجمالي: {total} / 100</div>
+                    <button onClick={handleSave} className="bg-blue-600 text-white px-10 py-3 rounded-2xl font-black shadow-lg">حفظ التقييم</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- نظام المسائي ---
+function EveningSchedulesTab({ employees }: { employees: Employee[] }) {
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedDoctors, setSelectedDoctors] = useState<string[]>([]);
+    const [history, setHistory] = useState<any[]>([]);
+
+    const fetchHistory = async () => {
+        const { data } = await supabase.from('evening_schedules').select('*').order('date', { ascending: false }).limit(20);
+        if (data) setHistory(data);
+    };
+    useEffect(() => { fetchHistory(); }, []);
+
+    const handleSave = async () => {
+        const { error } = await supabase.from('evening_schedules').insert([{ date, doctors: selectedDoctors }]);
+        if(!error) { fetchHistory(); setSelectedDoctors([]); }
+    };
+
+    return (
+        <div className="space-y-8">
+            <h2 className="text-2xl font-black border-b pb-4"><Calendar className="inline-block ml-2 text-indigo-600"/> جداول النوبتجيات المسائية</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="md:col-span-1 bg-gray-50 p-6 rounded-3xl border space-y-4 shadow-inner">
+                    <Input label="تاريخ النوبتجية" type="date" value={date} onChange={setDate} />
+                    <div className="max-h-60 overflow-y-auto border rounded-2xl bg-white p-4 space-y-1">
+                        {employees.filter(e=>e.specialty.includes('طبيب')).map(doc => (
+                            <label key={doc.employee_id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-xl cursor-pointer">
+                                <input type="checkbox" checked={selectedDoctors.includes(doc.name)} onChange={()=>setSelectedDoctors(prev => prev.includes(doc.name) ? prev.filter(n=>n!==doc.name) : [...prev, doc.name])} className="w-4 h-4 rounded text-indigo-600" />
+                                <span className="text-sm font-bold">{doc.name}</span>
+                            </label>
+                        ))}
+                    </div>
+                    <button onClick={handleSave} className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black">حفظ الجدول</button>
+                </div>
+                <div className="md:col-span-2 grid gap-4">
+                    {history.map(sch => (
+                        <div key={sch.id} className="p-4 bg-white border rounded-2xl shadow-sm flex justify-between items-center">
+                            <div><p className="font-black text-indigo-600">{sch.date}</p><p className="text-xs text-gray-500 font-bold">{sch.doctors?.join(' - ')}</p></div>
+                            <button onClick={async ()=>{ await supabase.from('evening_schedules').delete().eq('id', sch.id); fetchHistory(); }} className="text-red-400"><Trash2 className="w-4 h-4"/></button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- استعادة تبويب الإجازات ---
+function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [filter, setFilter] = useState<'all' | 'معلق' | 'مقبول' | 'مرفوض'>('all');
+
+  const fetchLeaves = async () => {
+    const { data } = await supabase.from('leave_requests').select(`*, employees(name, remaining_annual, remaining_casual)`).order('created_at', { ascending: false });
+    if (data) setRequests(data.map((r:any) => ({ ...r, employee_name: r.employees?.name })));
+  };
+  useEffect(() => { fetchLeaves(); }, []);
+
+  const handleAction = async (req: any, status: 'مقبول' | 'مرفوض') => {
+    if (status === 'مقبول') {
+        const emp = req.employees;
+        const duration = Math.ceil((new Date(req.end_date).getTime() - new Date(req.start_date).getTime()) / (1000 * 3600 * 24)) + 1;
+        let updates: any = {};
+        if (req.type.includes('اعتياد')) updates.remaining_annual = Math.max(0, (emp.remaining_annual || 0) - duration);
+        else if (req.type.includes('عارضة')) updates.remaining_casual = Math.max(0, (emp.remaining_casual || 0) - duration);
+        if (Object.keys(updates).length > 0) await supabase.from('employees').update(updates).eq('employee_id', req.employee_id);
+    }
+    await supabase.from('leave_requests').update({ status }).eq('id', req.id);
+    fetchLeaves(); onRefresh();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center border-b pb-4">
+        <h2 className="text-2xl font-black text-gray-800"><FileText className="inline-block ml-2 text-blue-600"/> طلبات الإجازات</h2>
+        <div className="flex bg-gray-100 p-1 rounded-xl">
+            {['all', 'معلق', 'مقبول', 'مرفوض'].map(f => (
+                <button key={f} onClick={()=>setFilter(f as any)} className={`px-4 py-1.5 rounded-lg text-xs font-bold ${filter===f?'bg-white text-blue-600 shadow-sm':'text-gray-400'}`}>{f==='all'?'الكل':f}</button>
+            ))}
+        </div>
+      </div>
+      <div className="grid gap-4">
+        {requests.filter(r => filter==='all' || r.status === filter).map(req => (
+          <div key={req.id} className="p-5 bg-white border rounded-[30px] flex justify-between items-center shadow-sm">
+            <div><p className="font-black text-lg text-gray-800">{req.employee_name}</p><p className="text-sm font-bold text-blue-600">{req.type}</p><p className="text-xs text-gray-500">من {req.start_date} إلى {req.end_date}</p></div>
+            <div className="flex items-center gap-3">
+              <span className={`px-3 py-1 rounded-xl text-[10px] font-black ${req.status==='مقبول'?'bg-green-100 text-green-700':req.status==='مرفوض'?'bg-red-100 text-red-700':'bg-amber-100 text-amber-700'}`}>{req.status}</span>
+              {req.status === 'معلق' && <div className="flex gap-2"><button onClick={() => handleAction(req, 'مقبول')} className="bg-emerald-600 text-white p-2 rounded-xl"><CheckCircle/></button><button onClick={() => handleAction(req, 'مرفوض')} className="bg-red-600 text-white p-2 rounded-xl"><XCircle/></button></div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// --- استعادة تبويب البصمات ---
+function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefresh: () => void }) {
+  const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
+
+  const handleImport = async (data: any[]) => {
+    const validIds = new Set(employees.map(e => e.employee_id));
+    const processed = data.map(row => {
+      const eid = String(row.employee_id || row['الكود'] || '');
+      if (!validIds.has(eid)) return null;
+      return { employee_id: eid, date: formatDateForDB(row.date || row['التاريخ']), times: String(row.times || row['البصمات'] || '').trim() };
+    }).filter(r => r && r.employee_id && r.date);
+    const { error } = await supabase.from('attendance').insert(processed);
+    if (!error) { alert(`تم رفع ${processed.length} بصمة`); onRefresh(); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center border-b pb-4">
+        <h2 className="text-2xl font-black text-gray-800"><Clock className="inline-block ml-2 text-blue-600"/> سجل البصمات</h2>
+        <ExcelUploadButton onData={handleImport} label="رفع ملف البصمات" />
+      </div>
+      <div className="bg-gray-50 p-8 rounded-[40px] border grid grid-cols-1 md:grid-cols-2 gap-6 shadow-inner">
+        <Select label="الموظف" options={employees.map(e => ({value: e.employee_id, label: e.name}))} value={formData.employee_id} onChange={(v:any)=>setFormData({...formData, employee_id: v})} />
+        <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any)=>setFormData({...formData, date: v})} />
+        <div className="md:col-span-2"><Input label="التوقيتات (مفصولة بمسافات)" value={formData.times} onChange={(v:any)=>setFormData({...formData, times: v})} placeholder="مثال: 08:30 14:15 16:00" /></div>
+        <button onClick={async () => { await supabase.from('attendance').insert([formData]); alert('تم الحفظ'); onRefresh(); }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
+      </div>
+    </div>
+  );
+}
+
+// --- استعادة التقارير الذكية ---
+function ReportsTab({ employees }: { employees: Employee[] }) {
+  const [type, setType] = useState<'daily' | 'monthly' | 'employee_month'>('daily');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [targetId, setTargetId] = useState('');
+  const [attData, setAttData] = useState<AttendanceRecord[]>([]);
+  const [leaveData, setLeaveData] = useState<LeaveRequest[]>([]);
+
+  useEffect(() => {
+    supabase.from('attendance').select('*').then(({data}) => data && setAttData(data));
+    supabase.from('leave_requests').select('*').eq('status', 'مقبول').then(({data}) => data && setLeaveData(data));
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4 no-print">
+        <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><BarChart3 className="w-7 h-7 text-emerald-600"/> التقارير الذكية</h2>
+        <div className="flex bg-gray-100 p-1 rounded-xl border">
+            <button onClick={()=>setType('daily')} className={`px-4 py-2 rounded-lg text-xs font-bold ${type==='daily'?'bg-white text-emerald-600 shadow-sm':'text-gray-400'}`}>يومي</button>
+            <button onClick={()=>setType('monthly')} className={`px-4 py-2 rounded-lg text-xs font-bold ${type==='monthly'?'bg-white text-emerald-600 shadow-sm':'text-gray-400'}`}>تقرير فترة</button>
+            <button onClick={()=>setType('employee_month')} className={`px-4 py-2 rounded-lg text-xs font-bold ${type==='employee_month'?'bg-white text-emerald-600 shadow-sm':'text-gray-400'}`}>موظف مخصص</button>
+        </div>
+      </div>
+      <div className="bg-white p-6 rounded-[30px] border shadow-sm space-y-4 no-print">
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+             {type === 'daily' && <Input label="تاريخ التقرير" type="date" value={date} onChange={setDate} />}
+             {(type === 'monthly' || type === 'employee_month') && (
+                 <>
+                    {type === 'employee_month' && <Select label="الموظف" options={employees.map(e=>({value:e.employee_id, label:e.name}))} value={targetId} onChange={setTargetId} />}
+                    <Input label="من تاريخ" type="date" value={startDate} onChange={setStartDate} />
+                    <Input label="إلى تاريخ" type="date" value={endDate} onChange={setEndDate} />
+                 </>
+             )}
+         </div>
+         <div className="flex justify-end pt-4 border-t"><button onClick={()=>window.print()} className="bg-gray-800 text-white px-8 py-2.5 rounded-2xl font-black flex gap-2 shadow-lg"><Printer className="w-5 h-5"/> طباعة التقرير</button></div>
+      </div>
+      <div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm min-h-[400px]">
+        <table className="w-full text-sm text-right">
+            <thead className="bg-gray-100 font-bold">
+                {type === 'daily' && <tr><th className="p-4">الكود</th><th className="p-4">الموظف</th><th className="p-4">الحضور</th><th className="p-4">الانصراف</th><th className="p-4">الحالة</th></tr>}
+                {type === 'monthly' && <tr><th className="p-4">الموظف</th><th className="p-4">التخصص</th><th className="p-4 text-emerald-600">أيام حضور</th><th className="p-4 text-amber-500">أيام إجازة</th><th className="p-4">ساعات العمل</th></tr>}
+                {type === 'employee_month' && <tr><th className="p-4">التاريخ</th><th className="p-4">اليوم</th><th className="p-4">الحضور</th><th className="p-4">الانصراف</th><th className="p-4">ساعات</th></tr>}
+            </thead>
+            <tbody>
+                {type === 'daily' && employees.map(emp => {
+                    const att = attData.find(a => a.employee_id === emp.employee_id && a.date === date);
+                    const leave = leaveData.find(l => l.employee_id === emp.employee_id && date >= l.start_date && date <= l.end_date);
+                    const t = att?.times.split(/\s+/).filter(x=>x.includes(':')) || [];
+                    return (
+                        <tr key={emp.id} className="border-b">
+                            <td className="p-4 font-mono font-bold text-blue-600">{emp.employee_id}</td>
+                            <td className="p-4 font-black">{emp.name}</td>
+                            <td className="p-4 text-emerald-600 font-black">{t[0] || '--'}</td>
+                            <td className="p-4 text-red-500 font-black">{t[t.length-1] || '--'}</td>
+                            <td className={`p-4 font-bold ${att ? 'text-emerald-600' : 'text-red-400'}`}>{att ? 'حاضر' : (leave ? `إجازة (${leave.type})` : 'غائب')}</td>
+                        </tr>
+                    )
+                })}
+            </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// --- استعادة التنبيهات ---
+function AlertsTab({ employees }: { employees: Employee[] }) {
+    const [target, setTarget] = useState('all'); 
+    const [msg, setMsg] = useState('');
+    const [history, setHistory] = useState<InternalMessage[]>([]);
+    useEffect(() => { supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(20).then(({data})=>data && setHistory(data)); }, []);
+    return (
+        <div className="space-y-8">
+            <h2 className="text-2xl font-black border-b pb-4 flex items-center gap-2 text-gray-800"><Bell className="w-7 h-7 text-orange-500" /> تنبيهات العاملين</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-gray-50 p-8 rounded-[40px] border space-y-4 shadow-inner">
+                    <Select label="المستهدف" options={[{value:'all', label:'الجميع'}, ...employees.map(e=>({value:e.employee_id, label:e.name}))]} value={target} onChange={setTarget} />
+                    <textarea className="w-full p-4 border rounded-2xl outline-none" rows={5} value={msg} onChange={e=>setMsg(e.target.value)} placeholder="نص التنبيه..." />
+                    <button onClick={async ()=>{ await supabase.from('messages').insert([{from_user:'admin', to_user:target, content:msg}]); alert('تم الإرسال'); setMsg(''); }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl flex justify-center items-center gap-2"><Send className="w-5 h-5"/> إرسال الآن</button>
+                </div>
+                <div className="space-y-4">
+                    <h3 className="font-black text-gray-700">سجل التنبيهات</h3>
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                        {history.map(m => (
+                            <div key={m.id} className="p-4 bg-white border rounded-2xl shadow-sm">
+                                <div className="flex justify-between text-[10px] text-gray-400 mb-1 font-black"><span>{m.to_user==='all'?'إعلان عام':`إلى: ${m.to_user}`}</span><span>{new Date(m.created_at).toLocaleString('ar-EG')}</span></div>
+                                <p className="text-sm text-gray-700">{m.content}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- المكون الرئيسي للمسؤول ---
+const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [centers, setCenters] = useState<GeneralSettings[]>([]);
+  const [selectedCenter, setSelectedCenter] = useState<GeneralSettings | null>(null);
+  const [activeTab, setActiveTab] = useState('settings');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+
+  const fetchCenters = async () => {
+    const { data } = await supabase.from('general_settings').select('*');
+    if (data) setCenters(data);
+  };
+  useEffect(() => { fetchCenters(); }, []);
+
+  const fetchEmployees = async () => {
+    if (!selectedCenter) return;
+    const { data } = await supabase.from('employees').select('*').eq('center_id', selectedCenter.id).order('name');
+    if (data) setEmployees(data);
+  };
+  useEffect(() => { if (isAdminLoggedIn) fetchEmployees(); }, [isAdminLoggedIn, selectedCenter]);
+
+  if (!isAdminLoggedIn) {
+    return (
+      <div className="flex items-center justify-center min-h-[85vh] p-6 text-right">
+        <div className="bg-white p-12 rounded-[40px] shadow-2xl w-full max-w-md border border-gray-100">
+          <button onClick={onBack} className="flex items-center text-blue-600 mb-8 font-black"><ArrowRight className="ml-2 w-4 h-4" /> العودة للرئيسية</button>
+          <div className="text-center mb-10">
+            <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-blue-100 shadow-inner"><ShieldCheck className="w-10 h-10 text-blue-600" /></div>
+            <h2 className="text-3xl font-black text-gray-800">بوابة الإدارة</h2>
+          </div>
+          <div className="space-y-6">
+            <select className="w-full p-4 border rounded-2xl font-black focus:ring-2 focus:ring-blue-500" onChange={(e) => setSelectedCenter(centers.find(c => c.id === e.target.value) || null)}>
+              <option value="">-- اختر المركز الطبي --</option>
+              {centers.map(c => <option key={c.id} value={c.id}>{c.center_name}</option>)}
+            </select>
+            <input type="password" className="w-full p-4 border rounded-2xl text-center font-black focus:ring-2 focus:ring-blue-500" placeholder="كلمة المرور" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+            <button onClick={() => { if(selectedCenter && adminPassword === selectedCenter.password) setIsAdminLoggedIn(true); else alert('خطأ'); }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl active:scale-95">دخول</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto p-4 md:p-10 text-right">
+      <div className="flex justify-between items-center mb-10 bg-white p-8 rounded-[35px] shadow-sm border no-print">
+        <div><h1 className="text-3xl font-black text-gray-800 tracking-tighter">إدارة: {selectedCenter?.center_name}</h1><p className="text-gray-400 text-sm font-bold flex items-center gap-2 mt-1"><MapPin className="w-3 h-3"/> {selectedCenter?.address}</p></div>
+        <button onClick={() => setIsAdminLoggedIn(false)} className="bg-red-50 text-red-600 px-8 py-3 rounded-2xl font-black flex items-center hover:bg-red-100 transition-all">خروج <LogOut className="ml-3 w-5 h-5"/></button>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="lg:col-span-1 space-y-3 no-print">
+          <SidebarBtn active={activeTab === 'settings'} icon={<Settings className="w-5 h-5"/>} label="الإعدادات" onClick={() => setActiveTab('settings')} />
+          <SidebarBtn active={activeTab === 'doctors'} icon={<Users className="w-5 h-5"/>} label="شئون الموظفين" onClick={() => setActiveTab('doctors')} />
+          <SidebarBtn active={activeTab === 'evaluations'} icon={<Award className="w-5 h-5"/>} label="التقييمات الطبية" onClick={() => setActiveTab('evaluations')} />
+          <SidebarBtn active={activeTab === 'evening'} icon={<Calendar className="w-5 h-5"/>} label="جداول المسائي" onClick={() => setActiveTab('evening')} />
+          <SidebarBtn active={activeTab === 'leaves'} icon={<FileText className="w-5 h-5"/>} label="طلبات الإجازات" onClick={() => setActiveTab('leaves')} />
+          <SidebarBtn active={activeTab === 'attendance'} icon={<Clock className="w-5 h-5"/>} label="سجل البصمات" onClick={() => setActiveTab('attendance')} />
+          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="تقارير ذكية" onClick={() => setActiveTab('reports')} />
+          <SidebarBtn active={activeTab === 'alerts'} icon={<Bell className="w-5 h-5"/>} label="تنبيهات العاملين" onClick={() => setActiveTab('alerts')} />
+        </div>
+        <div className="lg:col-span-3 bg-white p-10 rounded-[40px] shadow-sm border min-h-[600px] animate-in slide-in-from-left duration-500">
+          {activeTab === 'settings' && selectedCenter && <GeneralSettingsTab center={selectedCenter} onRefresh={fetchCenters} />}
+          {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={selectedCenter!.id} />}
+          {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
+          {activeTab === 'evening' && <EveningSchedulesTab employees={employees} />}
+          {activeTab === 'leaves' && <LeavesTab onRefresh={fetchEmployees} />}
+          {activeTab === 'attendance' && <AttendanceTab employees={employees} onRefresh={fetchEmployees} />}
+          {activeTab === 'reports' && <ReportsTab employees={employees} />}
+          {activeTab === 'alerts' && <AlertsTab employees={employees} />}
+        </div>
+      </div>
+    </div>
+  );
+};
+export default AdminDashboard;
