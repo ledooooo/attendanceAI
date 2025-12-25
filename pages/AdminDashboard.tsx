@@ -64,7 +64,7 @@ const getCheckOutLabel = (time: string): string => {
 
 // --- المكونات العامة ---
 
-function Input({ label, type = 'text', value, onChange, placeholder, required = false }: any) {
+function Input({ label, type = 'text', value, onChange, placeholder, required = false, max }: any) {
   return (
     <div className="text-right">
       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">
@@ -74,6 +74,7 @@ function Input({ label, type = 'text', value, onChange, placeholder, required = 
         type={type} 
         value={value || ''} 
         onChange={e => onChange(e.target.value)} 
+        max={max}
         className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
         placeholder={placeholder} 
       />
@@ -355,12 +356,18 @@ function StatCard({ label, value, color, icon }: any) {
     );
 }
 
-// --- تبويب شئون الموظفين (القائمة الرئيسية) ---
+// --- تبويب شئون الموظفين المطور ---
 function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
   const [selectedStaff, setSelectedStaff] = useState<Employee | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchId, setSearchId] = useState('');
+  const [searchSpecialty, setSearchSpecialty] = useState('');
 
-  const filtered = employees.filter(e => e.name.includes(searchTerm) || e.employee_id.includes(searchTerm));
+  const filtered = employees.filter(e => 
+    (e.name.includes(searchTerm)) && 
+    (e.employee_id.includes(searchId)) && 
+    (e.specialty.includes(searchSpecialty))
+  );
 
   const handleImport = async (data: any[]) => {
     const formatted = data.map(row => ({
@@ -387,28 +394,222 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="p-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 w-full md:w-64" />
-          <ExcelUploadButton onData={handleImport} label="استيراد موظفين" />
-        </div>
+        <ExcelUploadButton onData={handleImport} label="استيراد موظفين" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-2xl border">
+          <Input label="بحث بالاسم" value={searchTerm} onChange={setSearchTerm} placeholder="أدخل اسم الموظف..." />
+          <Input label="بحث بالكود" value={searchId} onChange={setSearchId} placeholder="أدخل الكود الوظيفي..." />
+          <Input label="بحث بالتخصص" value={searchSpecialty} onChange={setSearchSpecialty} placeholder="أدخل التخصص..." />
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map(emp => (
-          <div key={emp.id} onClick={()=>setSelectedStaff(emp)} className="p-6 bg-white border rounded-[30px] hover:shadow-xl transition-all cursor-pointer group flex items-center gap-4 border-gray-100 hover:border-blue-200">
-             <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-300 group-hover:scale-110 transition-transform">
-                <User className="w-8 h-8"/>
-             </div>
-             <div className="flex-1">
-                <h4 className="font-black text-gray-800 truncate">{emp.name}</h4>
-                <p className="text-xs font-bold text-blue-600">{emp.specialty} • {emp.employee_id}</p>
-             </div>
-             <ChevronDown className="-rotate-90 w-4 h-4 text-gray-300"/>
-          </div>
-        ))}
+      <div className="overflow-x-auto border rounded-3xl bg-white shadow-sm">
+          <table className="w-full text-sm text-right">
+              <thead className="bg-gray-50 font-black border-b">
+                  <tr>
+                      <th className="p-4">الكود</th>
+                      <th className="p-4">الاسم</th>
+                      <th className="p-4">التخصص</th>
+                      <th className="p-4">الحالة</th>
+                      <th className="p-4">الإجراءات</th>
+                  </tr>
+              </thead>
+              <tbody>
+                  {filtered.map(emp => (
+                      <tr key={emp.id} className="border-b hover:bg-blue-50/30 transition-colors">
+                          <td className="p-4 font-mono font-bold text-blue-600">{emp.employee_id}</td>
+                          <td className="p-4 font-black">{emp.name}</td>
+                          <td className="p-4 font-bold text-gray-500">{emp.specialty}</td>
+                          <td className="p-4">
+                              <span className={`px-3 py-1 rounded-lg text-[10px] font-black ${emp.status==='نشط'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{emp.status}</span>
+                          </td>
+                          <td className="p-4">
+                              <button onClick={()=>setSelectedStaff(emp)} className="text-blue-600 hover:bg-blue-100 p-2 rounded-xl transition-all"><Eye className="w-5 h-5"/></button>
+                          </td>
+                      </tr>
+                  ))}
+              </tbody>
+          </table>
+          {filtered.length === 0 && <div className="p-20 text-center text-gray-400 font-bold">لا توجد نتائج بحث مطابقة</div>}
       </div>
     </div>
   );
+}
+
+// --- تبويب التقييمات الجديد ---
+function EvaluationsTab({ employees }: { employees: Employee[] }) {
+    const [evalData, setEvalData] = useState({
+        employee_id: '',
+        month: new Date().toISOString().slice(0, 7),
+        appearance: 0,
+        attendance: 0,
+        quality: 0,
+        infection: 0,
+        training: 0,
+        records: 0,
+        tasks: 0,
+        notes: ''
+    });
+
+    const total = useMemo(() => (
+        Number(evalData.appearance) + Number(evalData.attendance) + Number(evalData.quality) + 
+        Number(evalData.infection) + Number(evalData.training) + Number(evalData.records) + 
+        Number(evalData.tasks)
+    ), [evalData]);
+
+    const handleSave = async () => {
+        if(!evalData.employee_id) return alert('برجاء اختيار موظف');
+        const { error } = await supabase.from('evaluations').insert([{
+            employee_id: evalData.employee_id,
+            month: evalData.month,
+            score_appearance: evalData.appearance,
+            score_attendance: evalData.attendance,
+            score_quality: evalData.quality,
+            score_infection: evalData.infection,
+            score_training: evalData.training,
+            score_records: evalData.records,
+            score_tasks: evalData.tasks,
+            total_score: total,
+            notes: evalData.notes
+        }]);
+        if(!error) { alert('تم حفظ التقييم بنجاح'); setEvalData({...evalData, notes: '', appearance:0, attendance:0, quality:0, infection:0, training:0, records:0, tasks:0}); }
+        else alert(error.message);
+    };
+
+    const handleImport = async (data: any[]) => {
+        const validIds = new Set(employees.map(e => e.employee_id));
+        const processed = data.map(row => {
+            const eid = String(row.employee_id || row['الكود'] || '');
+            if (!validIds.has(eid)) return null;
+            const s1 = Number(row.appearance || row['المظهر'] || 0);
+            const s2 = Number(row.attendance || row['الحضور'] || 0);
+            const s3 = Number(row.quality || row['الجودة'] || 0);
+            const s4 = Number(row.infection || row['مكافحة العدوى'] || 0);
+            const s5 = Number(row.training || row['التدريب'] || 0);
+            const s6 = Number(row.records || row['الملفات'] || 0);
+            const s7 = Number(row.tasks || row['المهام'] || 0);
+            return {
+                employee_id: eid,
+                month: String(row.month || row['الشهر'] || new Date().toISOString().slice(0, 7)),
+                score_appearance: s1,
+                score_attendance: s2,
+                score_quality: s3,
+                score_infection: s4,
+                score_training: s5,
+                score_records: s6,
+                score_tasks: s7,
+                total_score: s1+s2+s3+s4+s5+s6+s7,
+                notes: row.notes || row['ملاحظات'] || ''
+            };
+        }).filter(r => r);
+        const { error } = await supabase.from('evaluations').insert(processed);
+        if(!error) alert(`تم استيراد ${processed.length} تقييم`);
+    };
+
+    return (
+        <div className="space-y-8">
+            <div className="flex justify-between items-center border-b pb-4">
+                <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Award className="w-7 h-7 text-purple-600"/> تقييمات الموظفين</h2>
+                <ExcelUploadButton onData={handleImport} label="رفع تقييمات إكسيل" />
+            </div>
+
+            <div className="bg-gray-50 p-8 rounded-[40px] border shadow-inner space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Select label="اختر الموظف" options={employees.map(e=>({value:e.employee_id, label:e.name}))} value={evalData.employee_id} onChange={(v:any)=>setEvalData({...evalData, employee_id:v})} />
+                    <Input label="شهر التقييم" type="month" value={evalData.month} onChange={(v:any)=>setEvalData({...evalData, month:v})} />
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                    <Input label="المظهر (10)" type="number" max={10} value={evalData.appearance} onChange={(v:any)=>setEvalData({...evalData, appearance:v})} />
+                    <Input label="الحضور (20)" type="number" max={20} value={evalData.attendance} onChange={(v:any)=>setEvalData({...evalData, attendance:v})} />
+                    <Input label="لجان الجودة (10)" type="number" max={10} value={evalData.quality} onChange={(v:any)=>setEvalData({...evalData, quality:v})} />
+                    <Input label="العدوى (10)" type="number" max={10} value={evalData.infection} onChange={(v:any)=>setEvalData({...evalData, infection:v})} />
+                    <Input label="التدريب (20)" type="number" max={20} value={evalData.training} onChange={(v:any)=>setEvalData({...evalData, training:v})} />
+                    <Input label="الملفات (20)" type="number" max={20} value={evalData.records} onChange={(v:any)=>setEvalData({...evalData, records:v})} />
+                    <Input label="المهام (10)" type="number" max={10} value={evalData.tasks} onChange={(v:any)=>setEvalData({...evalData, tasks:v})} />
+                </div>
+
+                <div className="flex justify-between items-center bg-white p-6 rounded-3xl border">
+                    <div className="text-2xl font-black text-purple-600">الإجمالي: {total} / 100</div>
+                    <button onClick={handleSave} className="bg-blue-600 text-white px-10 py-3 rounded-2xl font-black shadow-lg">حفظ التقييم</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// --- تبويب جداول المسائي الجديد ---
+function EveningScheduleTab({ employees }: { employees: Employee[] }) {
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
+    const [schedules, setSchedules] = useState<any[]>([]);
+
+    const fetchSchedules = async () => {
+        const { data } = await supabase.from('evening_schedules').select('*').order('date', { ascending: false }).limit(20);
+        if (data) setSchedules(data);
+    };
+
+    useEffect(() => { fetchSchedules(); }, []);
+
+    const handleSave = async () => {
+        const { error } = await supabase.from('evening_schedules').insert([{ date, doctors: selectedDocs }]);
+        if(!error) { alert('تم حفظ الجدول'); fetchSchedules(); setSelectedDocs([]); }
+    };
+
+    const handleImport = async (data: any[]) => {
+        const processed = data.map(row => ({
+            date: formatDateForDB(row.date || row['التاريخ']),
+            doctors: String(row.doctors || row['الأطباء'] || '').split(',').map(d => d.trim())
+        })).filter(r => r.date);
+        const { error } = await supabase.from('evening_schedules').insert(processed);
+        if(!error) { alert('تم استيراد الجداول'); fetchSchedules(); }
+    };
+
+    const toggleDoc = (id: string) => {
+        setSelectedDocs(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+    };
+
+    return (
+        <div className="space-y-8">
+            <div className="flex justify-between items-center border-b pb-4">
+                <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Calendar className="w-7 h-7 text-indigo-600"/> جداول النوبتجيات المسائية</h2>
+                <ExcelUploadButton onData={handleImport} label="رفع جداول إكسيل" />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="md:col-span-1 space-y-4 bg-gray-50 p-6 rounded-3xl border">
+                    <Input label="تاريخ النوبتجية" type="date" value={date} onChange={setDate} />
+                    <div className="space-y-2">
+                        <label className="text-xs font-black text-gray-400">اختر الأطباء:</label>
+                        <div className="max-h-60 overflow-y-auto border rounded-xl bg-white p-2">
+                            {employees.filter(e=>e.specialty.includes('طبيب')).map(doc => (
+                                <label key={doc.employee_id} className="flex items-center gap-2 p-2 hover:bg-gray-50 cursor-pointer border-b last:border-0">
+                                    <input type="checkbox" checked={selectedDocs.includes(doc.name)} onChange={()=>toggleDoc(doc.name)} className="w-4 h-4" />
+                                    <span className="text-xs font-bold">{doc.name}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    <button onClick={handleSave} className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black">حفظ الجدول</button>
+                </div>
+
+                <div className="md:col-span-2 space-y-4">
+                    <h3 className="font-black text-gray-700">آخر الجداول المسجلة</h3>
+                    <div className="grid gap-3">
+                        {schedules.map(sch => (
+                            <div key={sch.id} className="p-4 bg-white border rounded-2xl flex justify-between items-center shadow-sm">
+                                <div>
+                                    <p className="font-black text-indigo-600">{sch.date}</p>
+                                    <p className="text-xs text-gray-500 mt-1">الأطباء: {sch.doctors?.join(' - ')}</p>
+                                </div>
+                                <button onClick={async ()=>{ await supabase.from('evening_schedules').delete().eq('id', sch.id); fetchSchedules(); }} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 // --- تبويب الإجازات ---
@@ -504,11 +705,10 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   );
 }
 
-// --- تبويب التقارير (الذكية والمطورة مع الفلاتر ونطاق التاريخ) ---
+// --- تبويب التقارير (المطور مع الفلاتر ونطاق التاريخ) ---
 function ReportsTab({ employees }: { employees: Employee[] }) {
   const [type, setType] = useState<'daily' | 'monthly' | 'employee_month'>('daily');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [targetId, setTargetId] = useState('');
@@ -533,10 +733,8 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
       const matchStatus = filterStatus === 'all' || emp.status === filterStatus;
       return matchSpec && matchStatus;
     });
-
     if (sortBy === 'name') result.sort((a,b) => a.name.localeCompare(b.name));
     else if (sortBy === 'id') result.sort((a,b) => a.employee_id.localeCompare(b.employee_id));
-    
     return result;
   }, [employees, filterSpecialty, filterStatus, sortBy]);
 
@@ -551,7 +749,6 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
         </div>
       </div>
 
-      {/* شريط الفلاتر المطور مع نطاق التاريخ */}
       <div className="bg-white p-6 rounded-[30px] border shadow-sm space-y-4 no-print">
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-end">
              {type === 'daily' && <Input label="تاريخ التقرير" type="date" value={date} onChange={setDate} />}
@@ -568,37 +765,22 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
                     <Input label="إلى تاريخ" type="date" value={endDate} onChange={setEndDate} />
                  </>
              )}
-             
              {type !== 'employee_month' && (
                  <>
-                    <Select 
-                        label="فلترة بالتخصص" 
-                        options={['all', ...(settings?.specialties || [])]} 
-                        value={filterSpecialty} 
-                        onChange={setFilterSpecialty} 
-                    />
-                    <Select 
-                        label="فلترة بالحالة" 
-                        options={['all', 'نشط', 'موقوف', 'إجازة']} 
-                        value={filterStatus} 
-                        onChange={setFilterStatus} 
-                    />
+                    <Select label="فلترة بالتخصص" options={['all', ...(settings?.specialties || [])]} value={filterSpecialty} onChange={setFilterSpecialty} />
+                    <Select label="فلترة بالحالة" options={['all', 'نشط', 'موقوف', 'إجازة']} value={filterStatus} onChange={setFilterStatus} />
                  </>
              )}
          </div>
-         
-         <div className="flex flex-col md:flex-row justify-between items-center pt-4 border-t gap-4">
-             <div className="flex items-center gap-4">
-                 <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-gray-400">الترتيب:</span>
-                    <div className="flex bg-gray-50 p-1 rounded-lg border text-[10px] font-black">
-                        <button onClick={()=>setSortBy('name')} className={`px-3 py-1 rounded ${sortBy==='name'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الاسم</button>
-                        <button onClick={()=>setSortBy('id')} className={`px-3 py-1 rounded ${sortBy==='id'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الكود</button>
-                    </div>
-                 </div>
-                 <div className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg">عدد النتائج: {filteredEmployees.length}</div>
+         <div className="flex justify-between items-center pt-4 border-t gap-4">
+             <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-400">الترتيب:</span>
+                <div className="flex bg-gray-50 p-1 rounded-lg border text-[10px] font-black">
+                    <button onClick={()=>setSortBy('name')} className={`px-3 py-1 rounded ${sortBy==='name'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الاسم</button>
+                    <button onClick={()=>setSortBy('id')} className={`px-3 py-1 rounded ${sortBy==='id'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الكود</button>
+                </div>
              </div>
-             <button onClick={()=>window.print()} className="bg-gray-800 text-white px-8 py-2.5 rounded-2xl font-black flex gap-2 hover:bg-black transition-all shadow-lg active:scale-95"><Printer className="w-5 h-5"/> طباعة التقرير</button>
+             <button onClick={()=>window.print()} className="bg-gray-800 text-white px-8 py-2.5 rounded-2xl font-black flex gap-2"><Printer className="w-5 h-5"/> طباعة التقرير</button>
          </div>
       </div>
 
@@ -606,15 +788,8 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
         <table className="w-full text-sm text-right">
           {type === 'daily' && (
              <>
-                <thead className="bg-gray-100 font-bold text-gray-600 sticky top-0">
-                    <tr>
-                        <th className="p-4">الكود</th>
-                        <th className="p-4">الموظف</th>
-                        <th className="p-4">التخصص</th>
-                        <th className="p-4">الحضور</th>
-                        <th className="p-4">الانصراف</th>
-                        <th className="p-4">الحالة</th>
-                    </tr>
+                <thead className="bg-gray-100 font-bold text-gray-600">
+                    <tr><th className="p-4">الكود</th><th className="p-4">الموظف</th><th className="p-4">التخصص</th><th className="p-4">الحضور</th><th className="p-4">الانصراف</th><th className="p-4">الحالة</th></tr>
                 </thead>
                 <tbody>
                     {filteredEmployees.map(emp => {
@@ -623,12 +798,10 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
                         const t = att?.times.split(/\s+/).filter(x=>x.includes(':')) || [];
                         const cin = t[0] || '--';
                         const cout = t.length > 1 ? t[t.length-1] : '--';
-                        
                         let statusText = att ? 'حاضر' : (leave ? `إجازة (${leave.type})` : 'غائب');
                         if (new Date(date).getDay() === 5) statusText = 'عطلة (الجمعة)';
-
                         return (
-                            <tr key={emp.id} className="border-b hover:bg-gray-50 transition-colors">
+                            <tr key={emp.id} className="border-b">
                                 <td className="p-4 font-mono font-bold text-blue-600">{emp.employee_id}</td>
                                 <td className="p-4 font-black">{emp.name}</td>
                                 <td className="p-4 text-xs font-bold text-gray-500">{emp.specialty}</td>
@@ -643,29 +816,20 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
           )}
           {type === 'monthly' && (
              <>
-                <thead className="bg-gray-100 font-bold text-gray-600 sticky top-0">
-                    <tr>
-                        <th className="p-4">الموظف</th>
-                        <th className="p-4">التخصص</th>
-                        <th className="p-4 text-emerald-600">أيام حضور</th>
-                        <th className="p-4 text-amber-500">أيام إجازة</th>
-                        <th className="p-4 text-red-500">أيام غياب</th>
-                        <th className="p-4">ساعات العمل</th>
-                    </tr>
+                <thead className="bg-gray-100 font-bold text-gray-600">
+                    <tr><th className="p-4">الموظف</th><th className="p-4">التخصص</th><th className="p-4 text-emerald-600">أيام حضور</th><th className="p-4 text-amber-500">أيام إجازة</th><th className="p-4 text-red-500">أيام غياب</th><th className="p-4">ساعات العمل</th></tr>
                 </thead>
                 <tbody>
                     {filteredEmployees.map(emp => {
                         const periodAtts = attData.filter(a => a.employee_id === emp.employee_id && a.date >= startDate && a.date <= endDate);
                         const periodLeaves = leaveData.filter(l => l.employee_id === emp.employee_id && ((l.start_date >= startDate && l.start_date <= endDate) || (l.end_date >= startDate && l.end_date <= endDate)));
-                        
                         let totalHours = 0;
                         periodAtts.forEach(a => {
                             const t = a.times.split(/\s+/).filter(x=>x.includes(':'));
                             if(t.length>=2) totalHours += calculateHours(t[0], t[t.length-1]);
                         });
-                        
                         return (
-                            <tr key={emp.id} className="border-b hover:bg-gray-50 transition-colors">
+                            <tr key={emp.id} className="border-b">
                                 <td className="p-4 font-black">{emp.name}</td>
                                 <td className="p-4 text-xs font-bold text-gray-400">{emp.specialty}</td>
                                 <td className="p-4 text-emerald-600 font-black text-center">{periodAtts.length}</td>
@@ -680,30 +844,20 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
           )}
           {type === 'employee_month' && targetId && (
               <>
-                <thead className="bg-gray-100 font-bold text-gray-600 sticky top-0">
-                    <tr>
-                        <th className="p-4">التاريخ</th>
-                        <th className="p-4">اليوم</th>
-                        <th className="p-4">الحضور</th>
-                        <th className="p-4">حالة الدخول</th>
-                        <th className="p-4">الانصراف</th>
-                        <th className="p-4">حالة الخروج</th>
-                        <th className="p-4">ساعات</th>
-                    </tr>
+                <thead className="bg-gray-100 font-bold text-gray-600">
+                    <tr><th className="p-4">التاريخ</th><th className="p-4">اليوم</th><th className="p-4">الحضور</th><th className="p-4">الانصراف</th><th className="p-4">ساعات</th></tr>
                 </thead>
                 <tbody>
                     {attData.filter(a => a.employee_id === targetId && a.date >= startDate && a.date <= endDate).sort((a,b)=>a.date.localeCompare(b.date)).map(a => {
                         const t = a.times.split(/\s+/).filter(x=>x.includes(':'));
                         const dayName = DAYS_AR[new Date(a.date).getDay()];
                         return (
-                            <tr key={a.id} className="border-b hover:bg-gray-50 transition-colors">
+                            <tr key={a.id} className="border-b">
                                 <td className="p-4 font-bold">{a.date}</td>
                                 <td className="p-4 font-black">{dayName}</td>
                                 <td className="p-4 text-emerald-600 font-black">{t[0] || '--'}</td>
-                                <td className="p-4 text-[10px] font-bold">{getCheckInLabel(t[0])}</td>
                                 <td className="p-4 text-red-500 font-black">{t[t.length-1] || '--'}</td>
-                                <td className="p-4 text-[10px] font-bold">{getCheckOutLabel(t[t.length-1])}</td>
-                                <td className="p-4 font-mono font-bold bg-gray-50 text-center">{calculateHours(t[0], t[t.length-1]).toFixed(1)}</td>
+                                <td className="p-4 font-mono font-bold text-center bg-gray-50">{calculateHours(t[0], t[t.length-1]).toFixed(1)}</td>
                             </tr>
                         );
                     })}
@@ -711,7 +865,6 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
               </>
           )}
         </table>
-        {type === 'employee_month' && !targetId && <div className="p-24 text-center text-gray-400 font-black">يرجى اختيار موظف ونطاق تاريخ لعرض التقرير التفصيلي</div>}
         {filteredEmployees.length === 0 && <div className="p-24 text-center text-gray-400 font-black">لا توجد نتائج تطابق الفلاتر المختارة</div>}
       </div>
     </div>
@@ -723,18 +876,14 @@ function AlertsTab({ employees }: { employees: Employee[] }) {
     const [target, setTarget] = useState('all'); 
     const [msg, setMsg] = useState('');
     const [history, setHistory] = useState<InternalMessage[]>([]);
-
-    useEffect(() => {
-        supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(20).then(({data})=>data && setHistory(data));
-    }, []);
-
+    useEffect(() => { supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(20).then(({data})=>data && setHistory(data)); }, []);
     return (
         <div className="space-y-8">
             <h2 className="text-2xl font-black border-b pb-4 flex items-center gap-2 text-gray-800"><Bell className="w-7 h-7 text-orange-500" /> تنبيهات العاملين</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="bg-gray-50 p-8 rounded-[40px] border space-y-4 shadow-inner">
                     <Select label="المستهدف" options={[{value:'all', label:'الجميع'}, ...employees.map(e=>({value:e.employee_id, label:e.name}))]} value={target} onChange={setTarget} />
-                    <textarea className="w-full p-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" rows={5} value={msg} onChange={e=>setMsg(e.target.value)} placeholder="نص التنبيه..." />
+                    <textarea className="w-full p-4 border rounded-2xl outline-none" rows={5} value={msg} onChange={e=>setMsg(e.target.value)} placeholder="نص التنبيه..." />
                     <button onClick={async ()=>{ await supabase.from('messages').insert([{from_user:'admin', to_user:target, content:msg}]); alert('تم الإرسال'); setMsg(''); }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl flex justify-center items-center gap-2"><Send className="w-5 h-5"/> إرسال الآن</button>
                 </div>
                 <div className="space-y-4">
@@ -769,7 +918,6 @@ const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { data } = await supabase.from('general_settings').select('*');
     if (data) setCenters(data);
   };
-
   useEffect(() => { fetchCenters(); }, []);
 
   const fetchEmployees = async () => {
@@ -777,24 +925,23 @@ const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const { data } = await supabase.from('employees').select('*').eq('center_id', selectedCenter.id).order('name');
     if (data) setEmployees(data);
   };
-
   useEffect(() => { if (isAdminLoggedIn) fetchEmployees(); }, [isAdminLoggedIn, selectedCenter]);
 
   if (!isAdminLoggedIn) {
     return (
       <div className="flex items-center justify-center min-h-[85vh] p-6 text-right">
-        <div className="bg-white p-12 rounded-[40px] shadow-2xl w-full max-w-md border border-gray-100 animate-in fade-in duration-700">
+        <div className="bg-white p-12 rounded-[40px] shadow-2xl w-full max-w-md border border-gray-100">
           <button onClick={onBack} className="flex items-center text-blue-600 mb-8 font-black"><ArrowRight className="ml-2 w-4 h-4" /> العودة للرئيسية</button>
           <div className="text-center mb-10">
             <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-blue-100 shadow-inner"><ShieldCheck className="w-10 h-10 text-blue-600" /></div>
             <h2 className="text-3xl font-black text-gray-800">بوابة الإدارة</h2>
           </div>
           <div className="space-y-6">
-            <select className="w-full p-4 border rounded-2xl font-black focus:ring-2 focus:ring-blue-500 shadow-sm" onChange={(e) => setSelectedCenter(centers.find(c => c.id === e.target.value) || null)}>
+            <select className="w-full p-4 border rounded-2xl font-black focus:ring-2 focus:ring-blue-500" onChange={(e) => setSelectedCenter(centers.find(c => c.id === e.target.value) || null)}>
               <option value="">-- اختر المركز الطبي --</option>
               {centers.map(c => <option key={c.id} value={c.id}>{c.center_name}</option>)}
             </select>
-            <input type="password" className="w-full p-4 border rounded-2xl text-center font-black focus:ring-2 focus:ring-blue-500 shadow-sm" placeholder="كلمة المرور" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+            <input type="password" className="w-full p-4 border rounded-2xl text-center font-black focus:ring-2 focus:ring-blue-500" placeholder="كلمة المرور" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
             <button onClick={() => { if(selectedCenter && adminPassword === selectedCenter.password) setIsAdminLoggedIn(true); else alert('خطأ'); }} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl active:scale-95">دخول</button>
           </div>
         </div>
@@ -809,21 +956,25 @@ const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <h1 className="text-3xl font-black text-gray-800 tracking-tighter">إدارة: {selectedCenter?.center_name}</h1>
             <p className="text-gray-400 text-sm font-bold flex items-center gap-2 mt-1"><MapPin className="w-3 h-3"/> {selectedCenter?.address}</p>
         </div>
-        <button onClick={() => setIsAdminLoggedIn(false)} className="bg-red-50 text-red-600 px-8 py-3 rounded-2xl font-black flex items-center shadow-sm hover:bg-red-100 transition-all">خروج <LogOut className="ml-3 w-5 h-5"/></button>
+        <button onClick={() => setIsAdminLoggedIn(false)} className="bg-red-50 text-red-600 px-8 py-3 rounded-2xl font-black flex items-center hover:bg-red-100 transition-all">خروج <LogOut className="ml-3 w-5 h-5"/></button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <div className="lg:col-span-1 space-y-3 no-print">
           <SidebarBtn active={activeTab === 'settings'} icon={<Settings className="w-5 h-5"/>} label="الإعدادات" onClick={() => setActiveTab('settings')} />
           <SidebarBtn active={activeTab === 'doctors'} icon={<Users className="w-5 h-5"/>} label="شئون الموظفين" onClick={() => setActiveTab('doctors')} />
+          <SidebarBtn active={activeTab === 'evaluations'} icon={<Award className="w-5 h-5"/>} label="التقييمات الطبية" onClick={() => setActiveTab('evaluations')} />
+          <SidebarBtn active={activeTab === 'evening'} icon={<Calendar className="w-5 h-5"/>} label="جداول المسائي" onClick={() => setActiveTab('evening')} />
           <SidebarBtn active={activeTab === 'leaves'} icon={<FileText className="w-5 h-5"/>} label="طلبات الإجازات" onClick={() => setActiveTab('leaves')} />
           <SidebarBtn active={activeTab === 'attendance'} icon={<Clock className="w-5 h-5"/>} label="سجل البصمات" onClick={() => setActiveTab('attendance')} />
-          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="تقارير الحضور الذكية" onClick={() => setActiveTab('reports')} />
+          <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="تقارير ذكية" onClick={() => setActiveTab('reports')} />
           <SidebarBtn active={activeTab === 'alerts'} icon={<Bell className="w-5 h-5"/>} label="تنبيهات العاملين" onClick={() => setActiveTab('alerts')} />
         </div>
         <div className="lg:col-span-3 bg-white p-10 rounded-[40px] shadow-sm border min-h-[600px] animate-in slide-in-from-left duration-500">
           {activeTab === 'settings' && selectedCenter && <GeneralSettingsTab center={selectedCenter} onRefresh={fetchCenters} />}
           {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={selectedCenter!.id} />}
+          {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
+          {activeTab === 'evening' && <EveningScheduleTab employees={employees} />}
           {activeTab === 'leaves' && <LeavesTab onRefresh={fetchEmployees} />}
           {activeTab === 'attendance' && <AttendanceTab employees={employees} onRefresh={fetchEmployees} />}
           {activeTab === 'reports' && <ReportsTab employees={employees} />}
@@ -833,5 +984,4 @@ const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     </div>
   );
 };
-
 export default AdminDashboard;
