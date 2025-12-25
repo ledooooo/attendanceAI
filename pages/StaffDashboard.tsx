@@ -499,23 +499,36 @@ const StaffEvaluations = ({ evals }: { evals: Evaluation[] }) => {
         <div className="space-y-6 animate-in slide-in-from-bottom duration-500 text-right">
             <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800"><Award className="text-emerald-600 w-7 h-7" /> تقييماتي الشهرية</h3>
             <div className="grid gap-6">
-                {evals.map(ev => (
-                    <div key={ev.id} className="p-8 bg-white border rounded-3xl shadow-sm hover:shadow-md transition-all border-emerald-100 border-r-8 border-r-emerald-600">
-                        <div className="flex justify-between items-center mb-6">
-                            <h4 className="font-black text-xl text-emerald-700">شهر: {ev.month}</h4>
-                            <div className="text-3xl font-black text-emerald-600">{ev.total_score} <span className="text-sm text-gray-400">/ 100</span></div>
+                {evals.map(ev => {
+                    // Mapping Evaluation properties to labels for display
+                    const criteria = [
+                        { label: 'المظهر', score: ev.score_appearance, max: 10 },
+                        { label: 'الحضور', score: ev.score_attendance, max: 20 },
+                        { label: 'الجودة', score: ev.score_quality, max: 10 },
+                        { label: 'العدوى', score: ev.score_infection, max: 10 },
+                        { label: 'التدريب', score: ev.score_training, max: 20 },
+                        { label: 'الملفات', score: ev.score_records, max: 20 },
+                        { label: 'المهام', score: ev.score_tasks, max: 10 },
+                    ];
+                    
+                    return (
+                        <div key={ev.id} className="p-8 bg-white border rounded-3xl shadow-sm hover:shadow-md transition-all border-emerald-100 border-r-8 border-r-emerald-600">
+                            <div className="flex justify-between items-center mb-6">
+                                <h4 className="font-black text-xl text-emerald-700">شهر: {ev.month}</h4>
+                                <div className="text-3xl font-black text-emerald-600">{ev.total_score} <span className="text-sm text-gray-400">/ 100</span></div>
+                            </div>
+                            <p className="text-sm text-gray-600 leading-relaxed mb-4"><b>ملاحظات الإدارة:</b> {ev.notes || 'لا توجد ملاحظات إضافية'}</p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mt-4">
+                                {criteria.map((c, i) => (
+                                    <div key={i} className="bg-gray-50 p-2 rounded-xl text-center border">
+                                        <p className="text-[10px] text-gray-400 font-bold mb-1">{c.label} ({c.max})</p>
+                                        <p className="font-bold text-emerald-600">{c.score}</p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                        <p className="text-sm text-gray-600 leading-relaxed mb-4"><b>ملاحظات الإدارة:</b> {ev.notes || 'لا توجد ملاحظات إضافية'}</p>
-                        <div className="grid grid-cols-5 gap-2 mt-4">
-                            {[1,2,3,4,5].map((s,i) => (
-                                <div key={i} className="bg-gray-50 p-2 rounded-xl text-center border">
-                                    <p className="text-[10px] text-gray-400 font-bold mb-1">معيار {s}</p>
-                                    <p className="font-bold text-emerald-600">{ev.scores[i]}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
                 {evals.length === 0 && <div className="text-center py-24 text-gray-400 border-2 border-dashed rounded-3xl font-bold">لم يتم تسجيل تقييمات لك بعد</div>}
             </div>
         </div>

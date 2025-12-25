@@ -54,7 +54,7 @@ export interface LeaveRequest {
   type: string;
   start_date: string;
   end_date: string;
-  back_date: string; // الحقل الجديد
+  back_date: string;
   backup_person: string;
   status: 'معلق' | 'مقبول' | 'مرفوض';
   notes: string;
@@ -72,15 +72,21 @@ export interface AttendanceRecord {
 export interface EveningSchedule {
   id: string;
   date: string;
-  specs: string[];
   doctors: string[];
+  notes?: string;
 }
 
 export interface Evaluation {
   id: string;
-  month: string;
   employee_id: string;
-  scores: number[];
+  month: string;
+  score_appearance: number;
+  score_attendance: number;
+  score_quality: number;
+  score_infection: number;
+  score_training: number;
+  score_records: number;
+  score_tasks: number;
   total_score: number;
   notes: string;
 }
