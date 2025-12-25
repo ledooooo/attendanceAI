@@ -130,7 +130,7 @@ const SidebarBtn = ({ active, icon, label, onClick }: any) => (
 // --- الأقسام ---
 
 function GeneralSettingsTab({ center, onRefresh }: { center: GeneralSettings, onRefresh: () => void }) {
-  const [settings, setSettings] = useState<GeneralSettings>({ ...center, holidays: center.holidays || [] });
+  const [settings, setSettings] = useState<GeneralSettings>({ ...center, holidays: center.holidays || [], specialties: center.specialties || [], leave_types: center.leave_types || [] });
   const [newHoliday, setNewHoliday] = useState('');
   
   const handleSave = async () => {
@@ -154,8 +154,31 @@ function GeneralSettingsTab({ center, onRefresh }: { center: GeneralSettings, on
         <Input label="رابط الموقع الجغرافي (Maps)" value={settings.location_url} onChange={(v:any)=>setSettings({...settings, location_url: v})} />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t pt-6">
+          <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">التخصصات المتاحة (مفصولة بفواصل)</label>
+              <textarea 
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 text-sm"
+                  rows={2}
+                  value={settings.specialties?.join(', ')}
+                  onChange={(e) => setSettings({...settings, specialties: e.target.value.split(',').map(s => s.trim())})}
+                  placeholder="طبيب، ممرض، إداري..."
+              />
+          </div>
+          <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">أنواع الطلبات (مفصولة بفواصل)</label>
+              <textarea 
+                  className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 text-sm"
+                  rows={2}
+                  value={settings.leave_types?.join(', ')}
+                  onChange={(e) => setSettings({...settings, leave_types: e.target.value.split(',').map(s => s.trim())})}
+                  placeholder="إجازة عارضة، مأمورية..."
+              />
+          </div>
+      </div>
+
       <div className="border-t pt-6">
-          <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-blue-500" /> مواعيد الفترات الرسمية (التلقائية)</h3>
+          <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Clock className="w-5 h-5 text-blue-500" /> مواعيد الفترات الرسمية</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-gray-50 p-6 rounded-3xl border">
               <div className="space-y-4">
                   <p className="font-bold text-sm text-blue-600">الفترة الصباحية</p>
@@ -187,7 +210,6 @@ function GeneralSettingsTab({ center, onRefresh }: { center: GeneralSettings, on
               {date} <button onClick={() => setSettings({...settings, holidays: (settings.holidays||[]).filter(d=>d!==date)})}><X className="w-3 h-3 text-red-500"/></button>
             </span>
           ))}
-          {(settings.holidays || []).length === 0 && <p className="text-gray-400 text-sm">لم يتم إضافة عطلات رسمية بعد.</p>}
         </div>
       </div>
 
@@ -243,7 +265,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
       <div className="overflow-x-auto border rounded-3xl bg-white shadow-sm">
         <table className="w-full text-sm text-right">
           <thead className="bg-gray-100 text-gray-600 font-bold">
-            <tr><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">التخصص</th><th className="p-4">الرصيد المتبقي</th><th className="p-4 text-center">إجراء</th></tr>
+            <tr><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">التخصص</th><th className="p-4 text-center">إجراء</th></tr>
           </thead>
           <tbody>
             {sortedEmployees.map(emp => (
@@ -251,9 +273,6 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
                 <td className="p-4 font-mono font-bold text-blue-600">{emp.employee_id}</td>
                 <td className="p-4 font-black">{emp.name}</td>
                 <td className="p-4">{emp.specialty}</td>
-                <td className="p-4 font-bold text-xs">
-                  <span className="text-emerald-600">اعت: {emp.remaining_annual}</span> | <span className="text-blue-600">عار: {emp.remaining_casual}</span>
-                </td>
                 <td className="p-4 text-center">
                    <button className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg"><Edit3 className="w-4 h-4"/></button>
                    <button onClick={async ()=>{if(confirm('حذف؟')) {await supabase.from('employees').delete().eq('id',emp.id); onRefresh();}}} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
@@ -322,10 +341,8 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
                 <button onClick={() => handleAction(req, 'مرفوض')} className="bg-red-50 text-red-600 px-5 py-2.5 rounded-xl font-black hover:bg-red-100 transition-all">رفض</button>
               </div>
             )}
-            <div className="text-gray-300"><ChevronDown className="-rotate-90 w-5 h-5"/></div>
           </div>
         ))}
-        {filtered.length === 0 && <div className="text-center py-24 text-gray-400 font-bold border-2 border-dashed rounded-3xl">لا توجد طلبات تطابق هذا الفلتر.</div>}
       </div>
     </div>
   );
@@ -335,20 +352,39 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
 
   const handleImport = async (data: any[]) => {
-    const processed = data.map(row => ({
-      employee_id: String(row.employee_id || row['الكود'] || ''),
-      date: formatDateForDB(row.date || row['التاريخ']),
-      times: String(row.times || row['البصمات'] || '').trim()
-    })).filter(r => r.employee_id && r.date);
+    // حل مشكلة Foreign Key: نقوم بجلب كافة أكواد الموظفين الموجودين حالياً
+    const validEmployeeIds = new Set(employees.map(e => e.employee_id));
+    
+    const processed = data.map(row => {
+      const eid = String(row.employee_id || row['الكود'] || '');
+      // نتحقق من وجود الكود في قاعدة بيانات الموظفين
+      if (!validEmployeeIds.has(eid)) {
+          console.warn(`Skipping unknown employee ID: ${eid}`);
+          return null;
+      }
+      return {
+          employee_id: eid,
+          date: formatDateForDB(row.date || row['التاريخ']),
+          times: String(row.times || row['البصمات'] || '').trim()
+      };
+    }).filter(r => r && r.employee_id && r.date);
+
+    if (processed.length === 0) {
+        alert('لم يتم العثور على بيانات صالحة للموظفين المسجلين في الملف المرفوع.');
+        return;
+    }
 
     const { error } = await supabase.from('attendance').insert(processed);
-    if (!error) { alert(`تم رفع ${processed.length} سجل بصمة بنجاح`); onRefresh(); } else alert(error.message);
+    if (!error) { 
+        alert(`تم رفع ${processed.length} سجل بصمة بنجاح. ${data.length - processed.length} سجل تم تجاهلهم لعدم وجود أكواد موظفين مطابقة.`); 
+        onRefresh(); 
+    } else alert(error.message);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Clock className="w-7 h-7 text-blue-600"/> سجل البصمات اليدوي</h2>
+        <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Clock className="w-7 h-7 text-blue-600"/> سجل البصمات (إكسيل)</h2>
         <ExcelUploadButton onData={handleImport} label="رفع ملف البصمات" />
       </div>
       <div className="bg-gray-50 p-8 rounded-3xl border grid grid-cols-1 md:grid-cols-2 gap-6 shadow-inner">
@@ -432,10 +468,8 @@ function AlertsTab({ employees }: { employees: Employee[] }) {
                                     <span className="text-[10px] text-gray-400 font-bold">{new Date(m.created_at).toLocaleString('ar-EG')}</span>
                                 </div>
                                 <p className="text-sm text-gray-700 leading-relaxed">{m.content}</p>
-                                <div className="mt-2 text-[10px] text-gray-400 border-t pt-1">إلى: {m.to_user === 'all' ? 'الجميع' : m.to_user}</div>
                             </div>
                         ))}
-                        {history.length === 0 && <p className="text-center py-10 text-gray-400 font-bold border-2 border-dashed rounded-3xl">لا توجد مراسلات سابقة.</p>}
                     </div>
                 </div>
             </div>
@@ -531,7 +565,7 @@ const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   );
 };
 
-// --- تبويب التقارير (من الإصدار السابق مع الحفاظ عليه) ---
+// --- تبويب التقارير ---
 function ReportsTab({ employees }: { employees: Employee[] }) {
   const [activeReportType, setActiveReportType] = useState<'daily' | 'employee' | 'monthly'>('daily');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -602,7 +636,7 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
               <div className="overflow-x-auto border rounded-3xl shadow-sm bg-white">
                 <table className="w-full text-sm text-right">
                   <thead className="bg-gray-100 font-bold text-gray-600">
-                    <tr><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">الحضور</th><th className="p-4">الحالة</th><th className="p-4">الانصراف</th><th className="p-4">حالة الانصراف</th><th className="p-4">الوضع</th></tr>
+                    <tr><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">الحضور</th><th className="p-4">الحالة</th><th className="p-4">الانصراف</th><th className="p-4 text-xs">حالة الانصراف</th><th className="p-4">الوضع</th></tr>
                   </thead>
                   <tbody>
                     {dailyData.map(d => (
@@ -618,72 +652,6 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
                     ))}
                   </tbody>
                 </table>
-              </div>
-          </div>
-      )}
-      {activeReportType === 'employee' && (
-          <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 p-6 rounded-3xl border items-end no-print">
-                  <Select label="اختر الموظف" options={employees.map(e=>({value:e.employee_id, label:e.name}))} value={selectedStaffId} onChange={setSelectedStaffId} />
-                  <Input label="من تاريخ" type="date" value={startDate} onChange={setStartDate} />
-                  <Input label="إلى تاريخ" type="date" value={endDate} onChange={setEndDate} />
-              </div>
-              <div className="overflow-x-auto border rounded-3xl bg-white shadow-sm">
-                  <table className="w-full text-sm text-right">
-                    <thead className="bg-gray-100 font-bold">
-                        <tr><th className="p-4">التاريخ</th><th className="p-4">الحضور</th><th className="p-4">حالة الحضور</th><th className="p-4">الانصراف</th><th className="p-4">حالة الانصراف</th><th className="p-4">ساعات العمل</th></tr>
-                    </thead>
-                    <tbody>
-                        {allAttendance.filter(a => a.employee_id === selectedStaffId && a.date >= startDate && a.date <= endDate).sort((a,b)=>b.date.localeCompare(a.date)).map(a => {
-                            const times = a.times.split(/\s+/).filter(t => t.includes(':'));
-                            const hours = times.length >= 2 ? calculateHours(times[0], times[times.length-1]).toFixed(1) : '0.0';
-                            return (
-                                <tr key={a.id} className="border-b hover:bg-gray-50">
-                                    <td className="p-4 font-bold">{a.date}</td>
-                                    <td className="p-4 text-emerald-600 font-black">{times[0] || '--'}</td>
-                                    <td className="p-4">{getCheckInLabel(times[0])}</td>
-                                    <td className="p-4 text-red-500 font-black">{times[times.length-1] || '--'}</td>
-                                    <td className="p-4">{getCheckOutLabel(times[times.length-1])}</td>
-                                    <td className="p-4 font-mono font-black">{hours} ساعة</td>
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                  </table>
-              </div>
-          </div>
-      )}
-      {activeReportType === 'monthly' && (
-          <div className="space-y-6">
-              <div className="bg-gray-50 p-6 rounded-3xl border max-w-sm no-print">
-                  <Input label="اختر الشهر المراد تحليله" type="month" value={month} onChange={setMonth} />
-              </div>
-              <div className="overflow-x-auto border rounded-3xl bg-white shadow-sm">
-                  <table className="w-full text-sm text-right">
-                    <thead className="bg-gray-100 font-bold">
-                        <tr><th className="p-4">اسم الموظف</th><th className="p-4 text-emerald-600">أيام الحضور</th><th className="p-4 text-red-500">أيام الغياب</th><th className="p-4 text-blue-600">أيام الإجازات</th><th className="p-4">إجمالي الساعات</th></tr>
-                    </thead>
-                    <tbody>
-                        {employees.map(emp => {
-                            const atts = allAttendance.filter(a => a.employee_id === emp.employee_id && a.date.startsWith(month));
-                            const leaves = allLeaves.filter(l => l.employee_id === emp.employee_id && (l.start_date.startsWith(month) || l.end_date.startsWith(month)));
-                            let totalHours = 0; 
-                            atts.forEach(a => { 
-                                const t = a.times.split(/\s+/).filter(x=>x.includes(':')); 
-                                if(t.length>=2) totalHours += calculateHours(t[0], t[t.length-1]); 
-                            });
-                            return (
-                                <tr key={emp.employee_id} className="border-b hover:bg-gray-50">
-                                    <td className="p-4 font-black">{emp.name}</td>
-                                    <td className="p-4 text-emerald-600 font-black">{atts.length} يوم</td>
-                                    <td className="p-4 text-red-500 font-black">{Math.max(0, 26 - atts.length - leaves.length)} يوم</td>
-                                    <td className="p-4 text-blue-600 font-black">{leaves.length} يوم</td>
-                                    <td className="p-4 font-mono font-black">{totalHours.toFixed(1)} ساعة</td>
-                                </tr>
-                            )
-                        })}
-                    </tbody>
-                  </table>
               </div>
           </div>
       )}
