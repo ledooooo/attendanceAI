@@ -46,6 +46,7 @@ export interface Employee {
   center_id: string;
   training_courses: string;
   notes: string;
+  maternity?: boolean; // حقل جديد للموظفة المرضعة
 }
 
 export interface LeaveRequest {
