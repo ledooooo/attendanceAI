@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, Settings, Users, FileText, Calendar, 
-  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck, Eye, Award, MessageCircle, User, Filter, CheckSquare, Square, MailCheck, Search, List, Edit3, Save, ChevronDown, AlertTriangle, Printer, MapPin, Phone, Hash, Briefcase, CalendarDays, PieChart
+  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck, Eye, Award, MessageCircle, User, Filter, CheckSquare, Square, MailCheck, Search, List, Edit3, Save, ChevronDown, AlertTriangle, Printer, MapPin, Phone, Hash, Briefcase, CalendarDays, PieChart, ArrowUpDown
 } from 'lucide-react';
 import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage, Evaluation } from '../types';
 import * as XLSX from 'xlsx';
@@ -504,61 +504,137 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   );
 }
 
-// --- تبويب التقارير (الذكية) ---
+// --- تبويب التقارير (الذكية والمطورة مع الفلاتر ونطاق التاريخ) ---
 function ReportsTab({ employees }: { employees: Employee[] }) {
   const [type, setType] = useState<'daily' | 'monthly' | 'employee_month'>('daily');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [targetId, setTargetId] = useState('');
   const [attData, setAttData] = useState<AttendanceRecord[]>([]);
   const [leaveData, setLeaveData] = useState<LeaveRequest[]>([]);
+  const [settings, setSettings] = useState<GeneralSettings | null>(null);
+
+  // فلاتر إضافية
+  const [filterSpecialty, setFilterSpecialty] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [sortBy, setSortBy] = useState<'name' | 'id' | 'hours'>('name');
 
   useEffect(() => {
     supabase.from('attendance').select('*').then(({data}) => data && setAttData(data));
     supabase.from('leave_requests').select('*').eq('status', 'مقبول').then(({data}) => data && setLeaveData(data));
+    supabase.from('general_settings').select('*').limit(1).single().then(({data}) => setSettings(data));
   }, []);
+
+  const filteredEmployees = useMemo(() => {
+    let result = employees.filter(emp => {
+      const matchSpec = filterSpecialty === 'all' || emp.specialty === filterSpecialty;
+      const matchStatus = filterStatus === 'all' || emp.status === filterStatus;
+      return matchSpec && matchStatus;
+    });
+
+    if (sortBy === 'name') result.sort((a,b) => a.name.localeCompare(b.name));
+    else if (sortBy === 'id') result.sort((a,b) => a.employee_id.localeCompare(b.employee_id));
+    
+    return result;
+  }, [employees, filterSpecialty, filterStatus, sortBy]);
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center border-b pb-4">
+      <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4 no-print">
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><BarChart3 className="w-7 h-7 text-emerald-600"/> التقارير الذكية</h2>
         <div className="flex bg-gray-100 p-1 rounded-xl border">
             <button onClick={()=>setType('daily')} className={`px-4 py-2 rounded-lg text-xs font-bold ${type==='daily'?'bg-white text-emerald-600 shadow-sm':'text-gray-400'}`}>يومي</button>
-            <button onClick={()=>setType('monthly')} className={`px-4 py-2 rounded-lg text-xs font-bold ${type==='monthly'?'bg-white text-emerald-600 shadow-sm':'text-gray-400'}`}>شهري (عام)</button>
+            <button onClick={()=>setType('monthly')} className={`px-4 py-2 rounded-lg text-xs font-bold ${type==='monthly'?'bg-white text-emerald-600 shadow-sm':'text-gray-400'}`}>تقرير فترة</button>
             <button onClick={()=>setType('employee_month')} className={`px-4 py-2 rounded-lg text-xs font-bold ${type==='employee_month'?'bg-white text-emerald-600 shadow-sm':'text-gray-400'}`}>موظف مخصص</button>
         </div>
       </div>
 
-      <div className="bg-gray-50 p-6 rounded-[30px] border flex flex-wrap gap-4 items-end no-print">
-         {type === 'daily' && <Input label="اختر التاريخ" type="date" value={date} onChange={setDate} />}
-         {type === 'monthly' && <Input label="اختر الشهر" type="month" value={month} onChange={setMonth} />}
-         {type === 'employee_month' && (
-             <>
-                <Select label="اختر الموظف" options={employees.map(e=>({value:e.employee_id, label:e.name}))} value={targetId} onChange={setTargetId} />
-                <Input label="اختر الشهر" type="month" value={month} onChange={setMonth} />
-             </>
-         )}
-         <button onClick={()=>window.print()} className="bg-gray-800 text-white px-8 py-2.5 rounded-2xl font-black flex gap-2"><Printer className="w-5 h-5"/> طباعة</button>
+      {/* شريط الفلاتر المطور مع نطاق التاريخ */}
+      <div className="bg-white p-6 rounded-[30px] border shadow-sm space-y-4 no-print">
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-end">
+             {type === 'daily' && <Input label="تاريخ التقرير" type="date" value={date} onChange={setDate} />}
+             {type === 'monthly' && (
+                 <>
+                    <Input label="من تاريخ" type="date" value={startDate} onChange={setStartDate} />
+                    <Input label="إلى تاريخ" type="date" value={endDate} onChange={setEndDate} />
+                 </>
+             )}
+             {type === 'employee_month' && (
+                 <>
+                    <Select label="اختر الموظف" options={employees.map(e=>({value:e.employee_id, label:e.name}))} value={targetId} onChange={setTargetId} />
+                    <Input label="من تاريخ" type="date" value={startDate} onChange={setStartDate} />
+                    <Input label="إلى تاريخ" type="date" value={endDate} onChange={setEndDate} />
+                 </>
+             )}
+             
+             {type !== 'employee_month' && (
+                 <>
+                    <Select 
+                        label="فلترة بالتخصص" 
+                        options={['all', ...(settings?.specialties || [])]} 
+                        value={filterSpecialty} 
+                        onChange={setFilterSpecialty} 
+                    />
+                    <Select 
+                        label="فلترة بالحالة" 
+                        options={['all', 'نشط', 'موقوف', 'إجازة']} 
+                        value={filterStatus} 
+                        onChange={setFilterStatus} 
+                    />
+                 </>
+             )}
+         </div>
+         
+         <div className="flex flex-col md:flex-row justify-between items-center pt-4 border-t gap-4">
+             <div className="flex items-center gap-4">
+                 <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-gray-400">الترتيب:</span>
+                    <div className="flex bg-gray-50 p-1 rounded-lg border text-[10px] font-black">
+                        <button onClick={()=>setSortBy('name')} className={`px-3 py-1 rounded ${sortBy==='name'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الاسم</button>
+                        <button onClick={()=>setSortBy('id')} className={`px-3 py-1 rounded ${sortBy==='id'?'bg-white shadow-sm text-blue-600':'text-gray-400'}`}>الكود</button>
+                    </div>
+                 </div>
+                 <div className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-lg">عدد النتائج: {filteredEmployees.length}</div>
+             </div>
+             <button onClick={()=>window.print()} className="bg-gray-800 text-white px-8 py-2.5 rounded-2xl font-black flex gap-2 hover:bg-black transition-all shadow-lg active:scale-95"><Printer className="w-5 h-5"/> طباعة التقرير</button>
+         </div>
       </div>
 
-      <div className="overflow-x-auto border rounded-[30px] bg-white">
+      <div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm min-h-[400px]">
         <table className="w-full text-sm text-right">
           {type === 'daily' && (
              <>
-                <thead className="bg-gray-100 font-bold">
-                    <tr><th className="p-4">الكود</th><th className="p-4">الموظف</th><th className="p-4">الحضور</th><th className="p-4">الانصراف</th><th className="p-4">الحالة</th></tr>
+                <thead className="bg-gray-100 font-bold text-gray-600 sticky top-0">
+                    <tr>
+                        <th className="p-4">الكود</th>
+                        <th className="p-4">الموظف</th>
+                        <th className="p-4">التخصص</th>
+                        <th className="p-4">الحضور</th>
+                        <th className="p-4">الانصراف</th>
+                        <th className="p-4">الحالة</th>
+                    </tr>
                 </thead>
                 <tbody>
-                    {employees.map(emp => {
+                    {filteredEmployees.map(emp => {
                         const att = attData.find(a => a.employee_id === emp.employee_id && a.date === date);
+                        const leave = leaveData.find(l => l.employee_id === emp.employee_id && date >= l.start_date && date <= l.end_date);
                         const t = att?.times.split(/\s+/).filter(x=>x.includes(':')) || [];
+                        const cin = t[0] || '--';
+                        const cout = t.length > 1 ? t[t.length-1] : '--';
+                        
+                        let statusText = att ? 'حاضر' : (leave ? `إجازة (${leave.type})` : 'غائب');
+                        if (new Date(date).getDay() === 5) statusText = 'عطلة (الجمعة)';
+
                         return (
-                            <tr key={emp.id} className="border-b">
-                                <td className="p-4 font-mono font-bold">{emp.employee_id}</td>
+                            <tr key={emp.id} className="border-b hover:bg-gray-50 transition-colors">
+                                <td className="p-4 font-mono font-bold text-blue-600">{emp.employee_id}</td>
                                 <td className="p-4 font-black">{emp.name}</td>
-                                <td className="p-4 text-emerald-600 font-black">{t[0] || '--'}</td>
-                                <td className="p-4 text-red-500 font-black">{t[t.length-1] || '--'}</td>
-                                <td className="p-4 font-bold">{att ? 'حاضر' : 'غائب'}</td>
+                                <td className="p-4 text-xs font-bold text-gray-500">{emp.specialty}</td>
+                                <td className="p-4 text-emerald-600 font-black">{cin}</td>
+                                <td className="p-4 text-red-500 font-black">{cout}</td>
+                                <td className={`p-4 font-bold ${att ? 'text-emerald-600' : 'text-red-400'}`}>{statusText}</td>
                             </tr>
                         );
                     })}
@@ -567,23 +643,35 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
           )}
           {type === 'monthly' && (
              <>
-                <thead className="bg-gray-100 font-bold">
-                    <tr><th className="p-4">الموظف</th><th className="p-4 text-emerald-600">أيام حضور</th><th className="p-4 text-red-500">أيام غياب</th><th className="p-4">ساعات العمل</th></tr>
+                <thead className="bg-gray-100 font-bold text-gray-600 sticky top-0">
+                    <tr>
+                        <th className="p-4">الموظف</th>
+                        <th className="p-4">التخصص</th>
+                        <th className="p-4 text-emerald-600">أيام حضور</th>
+                        <th className="p-4 text-amber-500">أيام إجازة</th>
+                        <th className="p-4 text-red-500">أيام غياب</th>
+                        <th className="p-4">ساعات العمل</th>
+                    </tr>
                 </thead>
                 <tbody>
-                    {employees.map(emp => {
-                        const monthAtts = attData.filter(a => a.employee_id === emp.employee_id && a.date.startsWith(month));
-                        let h = 0;
-                        monthAtts.forEach(a => {
+                    {filteredEmployees.map(emp => {
+                        const periodAtts = attData.filter(a => a.employee_id === emp.employee_id && a.date >= startDate && a.date <= endDate);
+                        const periodLeaves = leaveData.filter(l => l.employee_id === emp.employee_id && ((l.start_date >= startDate && l.start_date <= endDate) || (l.end_date >= startDate && l.end_date <= endDate)));
+                        
+                        let totalHours = 0;
+                        periodAtts.forEach(a => {
                             const t = a.times.split(/\s+/).filter(x=>x.includes(':'));
-                            if(t.length>=2) h += calculateHours(t[0], t[t.length-1]);
+                            if(t.length>=2) totalHours += calculateHours(t[0], t[t.length-1]);
                         });
+                        
                         return (
-                            <tr key={emp.id} className="border-b">
+                            <tr key={emp.id} className="border-b hover:bg-gray-50 transition-colors">
                                 <td className="p-4 font-black">{emp.name}</td>
-                                <td className="p-4 text-emerald-600 font-black">{monthAtts.length}</td>
-                                <td className="p-4 text-red-500 font-black">{26 - monthAtts.length}</td>
-                                <td className="p-4 font-mono font-bold">{h.toFixed(1)}</td>
+                                <td className="p-4 text-xs font-bold text-gray-400">{emp.specialty}</td>
+                                <td className="p-4 text-emerald-600 font-black text-center">{periodAtts.length}</td>
+                                <td className="p-4 text-amber-500 font-black text-center">{periodLeaves.length}</td>
+                                <td className="p-4 text-red-500 font-black text-center">--</td>
+                                <td className="p-4 font-mono font-bold text-center bg-gray-50">{totalHours.toFixed(1)}</td>
                             </tr>
                         );
                     })}
@@ -592,18 +680,30 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
           )}
           {type === 'employee_month' && targetId && (
               <>
-                <thead className="bg-gray-100 font-bold">
-                    <tr><th className="p-4">التاريخ</th><th className="p-4">الحضور</th><th className="p-4">الانصراف</th><th className="p-4">ساعات</th></tr>
+                <thead className="bg-gray-100 font-bold text-gray-600 sticky top-0">
+                    <tr>
+                        <th className="p-4">التاريخ</th>
+                        <th className="p-4">اليوم</th>
+                        <th className="p-4">الحضور</th>
+                        <th className="p-4">حالة الدخول</th>
+                        <th className="p-4">الانصراف</th>
+                        <th className="p-4">حالة الخروج</th>
+                        <th className="p-4">ساعات</th>
+                    </tr>
                 </thead>
                 <tbody>
-                    {attData.filter(a => a.employee_id === targetId && a.date.startsWith(month)).sort((a,b)=>a.date.localeCompare(b.date)).map(a => {
+                    {attData.filter(a => a.employee_id === targetId && a.date >= startDate && a.date <= endDate).sort((a,b)=>a.date.localeCompare(b.date)).map(a => {
                         const t = a.times.split(/\s+/).filter(x=>x.includes(':'));
+                        const dayName = DAYS_AR[new Date(a.date).getDay()];
                         return (
-                            <tr key={a.id} className="border-b">
+                            <tr key={a.id} className="border-b hover:bg-gray-50 transition-colors">
                                 <td className="p-4 font-bold">{a.date}</td>
+                                <td className="p-4 font-black">{dayName}</td>
                                 <td className="p-4 text-emerald-600 font-black">{t[0] || '--'}</td>
+                                <td className="p-4 text-[10px] font-bold">{getCheckInLabel(t[0])}</td>
                                 <td className="p-4 text-red-500 font-black">{t[t.length-1] || '--'}</td>
-                                <td className="p-4 font-mono">{calculateHours(t[0], t[t.length-1]).toFixed(1)}</td>
+                                <td className="p-4 text-[10px] font-bold">{getCheckOutLabel(t[t.length-1])}</td>
+                                <td className="p-4 font-mono font-bold bg-gray-50 text-center">{calculateHours(t[0], t[t.length-1]).toFixed(1)}</td>
                             </tr>
                         );
                     })}
@@ -611,6 +711,8 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
               </>
           )}
         </table>
+        {type === 'employee_month' && !targetId && <div className="p-24 text-center text-gray-400 font-black">يرجى اختيار موظف ونطاق تاريخ لعرض التقرير التفصيلي</div>}
+        {filteredEmployees.length === 0 && <div className="p-24 text-center text-gray-400 font-black">لا توجد نتائج تطابق الفلاتر المختارة</div>}
       </div>
     </div>
   );
