@@ -3,9 +3,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   ArrowRight, Settings, Users, FileText, Calendar, 
-  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck, Eye, Award, MessageCircle, User, Filter, CheckSquare, Square, MailCheck, Search, List, Edit3, Save, ChevronDown, AlertTriangle, Printer, MapPin, Phone, Hash, Briefcase, CalendarDays, PieChart, ArrowUpDown
+  Clock, BarChart3, Mail, Bell, Plus, Upload, Trash2, CheckCircle, XCircle, FileSpreadsheet, Info, Download, X, Send, LogOut, ShieldCheck, Eye, Award, MessageCircle, User, Filter, CheckSquare, Square, MailCheck, Search, List, Edit3, Save, ChevronDown, AlertTriangle, Printer, MapPin, Phone, Hash, Briefcase, CalendarDays, PieChart, ArrowUpDown, Stethoscope
 } from 'lucide-react';
-import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage, Evaluation } from '../types';
+import { GeneralSettings, Employee, LeaveRequest, AttendanceRecord, InternalMessage, Evaluation, EveningSchedule } from '../types';
 import * as XLSX from 'xlsx';
 
 // --- مساعدات ومعالجات البيانات ---
@@ -365,7 +365,6 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
                     <Input label="الجودة (10)" type="number" value={evalData.scores.s3} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s3:v}})} />
                     <Input label="العدوى (10)" type="number" value={evalData.scores.s4} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s4:v}})} />
                     <Input label="التدريب (20)" type="number" value={evalData.scores.s5} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s5:v}})} />
-                    {/* Fixed typo: setEditData changed to setEvalData */}
                     <Input label="الملفات (20)" type="number" value={evalData.scores.s6} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s6:v}})} />
                     <Input label="المهام (10)" type="number" value={evalData.scores.s7} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s7:v}})} />
                 </div>
@@ -378,48 +377,155 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
     );
 }
 
-// --- نظام المسائي ---
-function EveningSchedulesTab({ employees }: { employees: Employee[] }) {
+// --- نظام النوبتجيات (المسائي) المحدث ---
+function EveningSchedulesTab({ employees, centerName }: { employees: Employee[], centerName?: string }) {
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedDoctors, setSelectedDoctors] = useState<string[]>([]);
     const [history, setHistory] = useState<any[]>([]);
+    const [showHistory, setShowHistory] = useState(false);
+    const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
+
+    // فلاتر البحث
+    const [searchName, setSearchName] = useState('');
+    const [searchId, setSearchId] = useState('');
+    const [filterStatus, setFilterStatus] = useState('all');
 
     const fetchHistory = async () => {
-        const { data } = await supabase.from('evening_schedules').select('*').order('date', { ascending: false }).limit(20);
+        const { data } = await supabase.from('evening_schedules').select('*').order('date', { ascending: false });
         if (data) setHistory(data);
     };
+    
     useEffect(() => { fetchHistory(); }, []);
 
     const handleSave = async () => {
+        if (selectedDoctors.length === 0) return alert('برجاء اختيار الموظفين أولاً');
         const { error } = await supabase.from('evening_schedules').insert([{ date, doctors: selectedDoctors }]);
-        if(!error) { fetchHistory(); setSelectedDoctors([]); }
+        if(!error) { 
+            alert('تم حفظ الجدول بنجاح');
+            fetchHistory(); 
+            setSelectedDoctors([]); 
+        } else alert(error.message);
     };
 
+    const filteredEmployees = useMemo(() => {
+        return employees.filter(e => 
+            e.name.includes(searchName) && 
+            e.employee_id.includes(searchId) &&
+            (filterStatus === 'all' || e.status === filterStatus)
+        );
+    }, [employees, searchName, searchId, filterStatus]);
+
+    const monthlyHistory = useMemo(() => {
+        return history.filter(h => h.date.startsWith(viewMonth));
+    }, [history, viewMonth]);
+
     return (
-        <div className="space-y-8">
-            <h2 className="text-2xl font-black border-b pb-4"><Calendar className="inline-block ml-2 text-indigo-600"/> جداول النوبتجيات المسائية</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="md:col-span-1 bg-gray-50 p-6 rounded-3xl border space-y-4 shadow-inner">
-                    <Input label="تاريخ النوبتجية" type="date" value={date} onChange={setDate} />
-                    <div className="max-h-60 overflow-y-auto border rounded-2xl bg-white p-4 space-y-1">
-                        {employees.filter(e=>e.specialty.includes('طبيب')).map(doc => (
-                            <label key={doc.employee_id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded-xl cursor-pointer">
-                                <input type="checkbox" checked={selectedDoctors.includes(doc.name)} onChange={()=>setSelectedDoctors(prev => prev.includes(doc.name) ? prev.filter(n=>n!==doc.name) : [...prev, doc.name])} className="w-4 h-4 rounded text-indigo-600" />
-                                <span className="text-sm font-bold">{doc.name}</span>
+        <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="flex justify-between items-center border-b pb-4">
+                <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800">
+                    <Calendar className="w-7 h-7 text-indigo-600"/> جداول النوبتجية المسائية
+                </h2>
+                <button 
+                    onClick={() => setShowHistory(!showHistory)} 
+                    className="flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2 rounded-xl font-bold hover:bg-indigo-100 transition-all"
+                >
+                    <List className="w-4 h-4" /> {showHistory ? 'إخفاء الأرشيف' : 'عرض الجداول المحفوظة بالشهر'}
+                </button>
+            </div>
+
+            <div className="bg-gray-50 p-6 rounded-3xl border space-y-6 shadow-inner">
+                {/* 1. اختيار التاريخ */}
+                <div className="bg-white p-4 rounded-2xl shadow-sm border flex flex-col md:flex-row items-center gap-4">
+                    <div className="flex-1 w-full">
+                        <Input label="تاريخ النوبتجية" type="date" value={date} onChange={setDate} />
+                    </div>
+                    <div className="flex-1 w-full">
+                        <label className="block text-xs font-black text-gray-400 mb-1">المركز الطبي الحالي</label>
+                        <div className="p-2.5 bg-gray-50 border rounded-lg font-bold text-gray-800">{centerName || 'المركز المختار'}</div>
+                    </div>
+                </div>
+
+                {/* 2. فلاتر البحث */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Input label="بحث بالاسم" value={searchName} onChange={setSearchName} placeholder="أدخل اسم الموظف..." />
+                    <Input label="بحث بالكود" value={searchId} onChange={setSearchId} placeholder="أدخل كود الموظف..." />
+                    <Select label="حالة العمل" options={['all', 'نشط', 'موقوف', 'إجازة']} value={filterStatus} onChange={setFilterStatus} />
+                </div>
+
+                {/* 3. اختيار الموظفين (متعدد) */}
+                <div className="space-y-2">
+                    <label className="block text-xs font-black text-gray-400 uppercase tracking-widest">اختر الموظفين لهذه النوبتجية</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-80 overflow-y-auto p-2 bg-white border rounded-2xl">
+                        {filteredEmployees.map(emp => (
+                            <label 
+                                key={emp.employee_id} 
+                                className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all cursor-pointer ${selectedDoctors.includes(emp.name) ? 'border-indigo-500 bg-indigo-50 shadow-sm' : 'border-gray-100 hover:border-indigo-200'}`}
+                            >
+                                <input 
+                                    type="checkbox" 
+                                    checked={selectedDoctors.includes(emp.name)} 
+                                    onChange={() => setSelectedDoctors(prev => prev.includes(emp.name) ? prev.filter(n => n !== emp.name) : [...prev, emp.name])} 
+                                    className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500" 
+                                />
+                                <div className="flex-1 overflow-hidden">
+                                    <p className="font-bold text-sm truncate">{emp.name}</p>
+                                    <p className="text-[10px] text-gray-400 font-bold">{emp.employee_id} • {emp.specialty}</p>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black ${emp.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{emp.status}</span>
                             </label>
                         ))}
                     </div>
-                    <button onClick={handleSave} className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black">حفظ الجدول</button>
+                    {filteredEmployees.length === 0 && <p className="text-center py-6 text-gray-400 font-bold border-2 border-dashed rounded-2xl">لا يوجد موظفين يطابقون البحث</p>}
                 </div>
-                <div className="md:col-span-2 grid gap-4">
-                    {history.map(sch => (
-                        <div key={sch.id} className="p-4 bg-white border rounded-2xl shadow-sm flex justify-between items-center">
-                            <div><p className="font-black text-indigo-600">{sch.date}</p><p className="text-xs text-gray-500 font-bold">{sch.doctors?.join(' - ')}</p></div>
-                            <button onClick={async ()=>{ await supabase.from('evening_schedules').delete().eq('id', sch.id); fetchHistory(); }} className="text-red-400"><Trash2 className="w-4 h-4"/></button>
-                        </div>
-                    ))}
+
+                {/* 4. ملخص وزر الحفظ */}
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-4 border-t">
+                    <div className="text-indigo-600 font-black">
+                        عدد المختارين: <span className="text-xl">{selectedDoctors.length}</span> موظف
+                    </div>
+                    <button 
+                        onClick={handleSave} 
+                        className="bg-indigo-600 text-white px-12 py-3 rounded-2xl font-black shadow-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2"
+                    >
+                        <Save className="w-5 h-5" /> حفظ جدول النوبتجية
+                    </button>
                 </div>
             </div>
+
+            {/* عرض الأرشيف حسب الشهر */}
+            {showHistory && (
+                <div className="animate-in slide-in-from-top duration-300 space-y-6">
+                    <div className="flex items-center justify-between bg-indigo-600 p-6 rounded-[30px] text-white shadow-xl">
+                        <h3 className="text-xl font-black flex items-center gap-2"><List className="w-6 h-6"/> الأرشيف الشهري للجداول</h3>
+                        <div className="flex items-center gap-3">
+                            <span className="text-xs font-bold opacity-80">فلترة بالشهر:</span>
+                            <input 
+                                type="month" 
+                                value={viewMonth} 
+                                onChange={e => setViewMonth(e.target.value)} 
+                                className="p-2 border rounded-xl bg-white text-indigo-600 font-black outline-none" 
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {monthlyHistory.map(sch => (
+                            <div key={sch.id} className="p-6 bg-white border border-indigo-50 rounded-[30px] shadow-sm hover:shadow-md transition-all relative group overflow-hidden">
+                                <div className="absolute top-0 right-0 w-12 h-12 bg-indigo-50 rounded-bl-[30px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={async () => { if(confirm('حذف هذا الجدول؟')) { await supabase.from('evening_schedules').delete().eq('id', sch.id); fetchHistory(); } }} className="text-red-500"><Trash2 className="w-4 h-4"/></button>
+                                </div>
+                                <h4 className="font-black text-indigo-600 mb-2">{sch.date}</h4>
+                                <div className="flex flex-wrap gap-1">
+                                    {sch.doctors?.map((doc: string, idx: number) => (
+                                        <span key={idx} className="bg-gray-100 px-2 py-1 rounded-lg text-[10px] font-bold text-gray-600 border border-gray-200">{doc}</span>
+                                    ))}
+                                </div>
+                                {sch.doctors?.length === 0 && <p className="text-xs text-gray-400 font-bold italic">لا يوجد أطباء مسجلين</p>}
+                            </div>
+                        ))}
+                        {monthlyHistory.length === 0 && <div className="md:col-span-3 py-12 text-center text-gray-400 font-black border-2 border-dashed rounded-[30px]">لا توجد جداول محفوظة لشهر {viewMonth}</div>}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -657,7 +763,7 @@ const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <SidebarBtn active={activeTab === 'settings'} icon={<Settings className="w-5 h-5"/>} label="الإعدادات" onClick={() => setActiveTab('settings')} />
           <SidebarBtn active={activeTab === 'doctors'} icon={<Users className="w-5 h-5"/>} label="شئون الموظفين" onClick={() => setActiveTab('doctors')} />
           <SidebarBtn active={activeTab === 'evaluations'} icon={<Award className="w-5 h-5"/>} label="التقييمات الطبية" onClick={() => setActiveTab('evaluations')} />
-          <SidebarBtn active={activeTab === 'evening'} icon={<Calendar className="w-5 h-5"/>} label="جداول المسائي" onClick={() => setActiveTab('evening')} />
+          <SidebarBtn active={activeTab === 'evening'} icon={<Calendar className="w-5 h-5"/>} label="جداول النوبتجية" onClick={() => setActiveTab('evening')} />
           <SidebarBtn active={activeTab === 'leaves'} icon={<FileText className="w-5 h-5"/>} label="طلبات الإجازات" onClick={() => setActiveTab('leaves')} />
           <SidebarBtn active={activeTab === 'attendance'} icon={<Clock className="w-5 h-5"/>} label="سجل البصمات" onClick={() => setActiveTab('attendance')} />
           <SidebarBtn active={activeTab === 'reports'} icon={<BarChart3 className="w-5 h-5"/>} label="تقارير ذكية" onClick={() => setActiveTab('reports')} />
@@ -667,7 +773,7 @@ const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           {activeTab === 'settings' && selectedCenter && <GeneralSettingsTab center={selectedCenter} onRefresh={fetchCenters} />}
           {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={selectedCenter!.id} />}
           {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
-          {activeTab === 'evening' && <EveningSchedulesTab employees={employees} />}
+          {activeTab === 'evening' && <EveningSchedulesTab employees={employees} centerName={selectedCenter?.center_name} />}
           {activeTab === 'leaves' && <LeavesTab onRefresh={fetchEmployees} />}
           {activeTab === 'attendance' && <AttendanceTab employees={employees} onRefresh={fetchEmployees} />}
           {activeTab === 'reports' && <ReportsTab employees={employees} />}
