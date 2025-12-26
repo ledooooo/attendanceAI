@@ -49,6 +49,9 @@ const downloadSample = (type: string) => {
     } else if (type === 'evening_schedule') {
         data = [{ 'date': '2024-05-20', 'doctors': 'أحمد محمد, سارة علي, محمود حسن', 'notes': 'نوبتجية الطوارئ' }];
         filename = "Sample_Evening_Schedule.xlsx";
+    } else if (type === 'leave_requests') {
+        data = [{ 'employee_id': '101', 'type': 'اجازة اعتيادية', 'start_date': '2024-06-01', 'end_date': '2024-06-05', 'notes': 'عينة استيراد' }];
+        filename = "Sample_Leave_Requests.xlsx";
     }
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -386,9 +389,7 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
                     <Input label="الجودة (10)" type="number" value={evalData.scores.s3} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s3:v}})} />
                     <Input label="العدوى (10)" type="number" value={evalData.scores.s4} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s4:v}})} />
                     <Input label="التدريب (20)" type="number" value={evalData.scores.s5} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s5:v}})} />
-                    {/* Fixed 'setEditData' to 'setEvalData' below */}
                     <Input label="الملفات (20)" type="number" value={evalData.scores.s6} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s6:v}})} />
-                    {/* Fixed 'setEditData' to 'setEvalData' below */}
                     <Input label="المهام (10)" type="number" value={evalData.scores.s7} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s7:v}})} />
                 </div>
                 <div className="bg-white p-6 rounded-3xl border flex justify-between items-center">
@@ -582,10 +583,13 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
     );
 }
 
-// --- استعادة تبويب الإجازات ---
+// --- استعادة تبويب الإجازات المحدث ---
 function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
-  const [filter, setFilter] = useState<'all' | 'معلق' | 'مقبول' | 'مرفوض'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'معلق' | 'مقبول' | 'مرفوض'>('all');
+  const [searchName, setSearchName] = useState('');
+  const [searchId, setSearchId] = useState('');
+  const [searchType, setSearchType] = useState('all');
 
   const fetchLeaves = async () => {
     const { data } = await supabase.from('leave_requests').select(`*, employees(name, remaining_annual, remaining_casual)`).order('created_at', { ascending: false });
@@ -606,26 +610,109 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
     fetchLeaves(); onRefresh();
   };
 
+  const handleExcelImport = async (data: any[]) => {
+      const formatted = data.map(row => ({
+          employee_id: String(row.employee_id || row['كود الموظف'] || ''),
+          type: String(row.type || row['نوع الطلب'] || ''),
+          start_date: formatDateForDB(row.start_date || row['من تاريخ']),
+          end_date: formatDateForDB(row.end_date || row['إلى تاريخ']),
+          status: 'معلق',
+          notes: String(row.notes || row['ملاحظات'] || '')
+      })).filter(r => r.employee_id && r.type && r.start_date);
+      
+      const { error } = await supabase.from('leave_requests').insert(formatted);
+      if (!error) {
+          alert(`تم استيراد ${formatted.length} طلب إجازة بنجاح`);
+          fetchLeaves();
+      } else alert(error.message);
+  };
+
+  const filteredRequests = useMemo(() => {
+      return requests.filter(r => 
+          (statusFilter === 'all' || r.status === statusFilter) &&
+          (r.employee_name?.toLowerCase().includes(searchName.toLowerCase())) &&
+          (r.employee_id.includes(searchId)) &&
+          (searchType === 'all' || r.type === searchType)
+      );
+  }, [requests, statusFilter, searchName, searchId, searchType]);
+
+  const totalsByType = useMemo(() => {
+      const summary: Record<string, number> = {};
+      filteredRequests.forEach(r => {
+          summary[r.type] = (summary[r.type] || 0) + 1;
+      });
+      return summary;
+  }, [filteredRequests]);
+
+  const leaveTypesOptions = ['all', ...Array.from(new Set(requests.map(r => r.type)))];
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-black text-gray-800"><FileText className="inline-block ml-2 text-blue-600"/> طلبات الإجازات</h2>
-        <div className="flex bg-gray-100 p-1 rounded-xl">
-            {['all', 'معلق', 'مقبول', 'مرفوض'].map(f => (
-                <button key={f} onClick={()=>setFilter(f as any)} className={`px-4 py-1.5 rounded-lg text-xs font-bold ${filter===f?'bg-white text-blue-600 shadow-sm':'text-gray-400'}`}>{f==='all'?'الكل':f}</button>
-            ))}
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
+        <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2">
+            <FileText className="text-blue-600 w-7 h-7"/> طلبات الإجازات والمأموريات
+        </h2>
+        <div className="flex gap-2">
+            <button onClick={() => downloadSample('leave_requests')} className="text-gray-400 p-2 hover:text-blue-600 transition-colors" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
+            <ExcelUploadButton onData={handleExcelImport} label="استيراد طلبات" />
         </div>
       </div>
+
+      {/* فلاتر البحث */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-6 rounded-[30px] border shadow-inner">
+          <Input label="اسم الموظف" value={searchName} onChange={setSearchName} placeholder="بحث بالاسم..." />
+          <Input label="كود الموظف" value={searchId} onChange={setSearchId} placeholder="بحث بالكود..." />
+          <Select label="نوع الطلب" options={leaveTypesOptions} value={searchType} onChange={setSearchType} />
+          <div className="text-right">
+              <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">الحالة</label>
+              <div className="flex bg-white p-1 rounded-xl border">
+                  {['all', 'معلق', 'مقبول', 'مرفوض'].map(f => (
+                      <button key={f} onClick={()=>setStatusFilter(f as any)} className={`flex-1 px-2 py-1.5 rounded-lg text-[10px] font-black transition-all ${statusFilter===f?'bg-blue-600 text-white shadow-sm':'text-gray-400 hover:text-blue-600'}`}>{f==='all'?'الكل':f}</button>
+                  ))}
+              </div>
+          </div>
+      </div>
+
+      {/* ملخص الأنواع */}
+      <div className="flex flex-wrap gap-2 p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
+          <span className="text-xs font-black text-blue-700 w-full mb-2">إجمالي الطلبات حسب النوع:</span>
+          {Object.entries(totalsByType).map(([type, count]) => (
+              <div key={type} className="bg-white px-3 py-1.5 rounded-xl border shadow-sm flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-500">{type}:</span>
+                  <span className="text-sm font-black text-blue-600">{count}</span>
+              </div>
+          ))}
+          {Object.keys(totalsByType).length === 0 && <span className="text-xs text-gray-400 font-bold italic">لا توجد بيانات للعرض</span>}
+      </div>
+
       <div className="grid gap-4">
-        {requests.filter(r => filter==='all' || r.status === filter).map(req => (
-          <div key={req.id} className="p-5 bg-white border rounded-[30px] flex justify-between items-center shadow-sm">
-            <div><p className="font-black text-lg text-gray-800">{req.employee_name}</p><p className="text-sm font-bold text-blue-600">{req.type}</p><p className="text-xs text-gray-500">من {req.start_date} إلى {req.end_date}</p></div>
+        {filteredRequests.map(req => (
+          <div key={req.id} className="p-5 bg-white border rounded-[30px] flex justify-between items-center shadow-sm hover:shadow-md transition-all">
+            <div className="flex gap-4 items-center">
+                <div className="bg-gray-50 p-3 rounded-2xl text-blue-600 border"><FileText className="w-6 h-6"/></div>
+                <div>
+                    <p className="font-black text-lg text-gray-800">{req.employee_name}</p>
+                    <div className="flex items-center gap-2 text-xs font-bold text-gray-500">
+                        <span className="text-blue-600">{req.type}</span>
+                        <span>•</span>
+                        <span>ID: {req.employee_id}</span>
+                        <span>•</span>
+                        <span>من {req.start_date} إلى {req.end_date}</span>
+                    </div>
+                </div>
+            </div>
             <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-xl text-[10px] font-black ${req.status==='مقبول'?'bg-green-100 text-green-700':req.status==='مرفوض'?'bg-red-100 text-red-700':'bg-amber-100 text-amber-700'}`}>{req.status}</span>
-              {req.status === 'معلق' && <div className="flex gap-2"><button onClick={() => handleAction(req, 'مقبول')} className="bg-emerald-600 text-white p-2 rounded-xl"><CheckCircle/></button><button onClick={() => handleAction(req, 'مرفوض')} className="bg-red-600 text-white p-2 rounded-xl"><XCircle/></button></div>}
+              <span className={`px-4 py-2 rounded-xl text-xs font-black shadow-sm ${req.status==='مقبول'?'bg-green-600 text-white':req.status==='مرفوض'?'bg-red-600 text-white':'bg-amber-500 text-white'}`}>{req.status}</span>
+              {req.status === 'معلق' && (
+                  <div className="flex gap-2">
+                      <button onClick={() => handleAction(req, 'مقبول')} className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm"><CheckCircle className="w-5 h-5"/></button>
+                      <button onClick={() => handleAction(req, 'مرفوض')} className="bg-red-50 text-red-600 p-2.5 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm"><XCircle className="w-5 h-5"/></button>
+                  </div>
+              )}
             </div>
           </div>
         ))}
+        {filteredRequests.length === 0 && <div className="text-center py-20 text-gray-300 font-black border-2 border-dashed rounded-[30px]">لا توجد طلبات تطابق الفلاتر المختارة</div>}
       </div>
     </div>
   );
