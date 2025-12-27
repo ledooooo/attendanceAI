@@ -803,7 +803,7 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
 function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefresh: () => void }) {
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
 
-  const handleImport = async (data: any[]) => {
+const handleImport = async (data: any[]) => {
     // 1. جلب كافة سجلات الحضور الحالية من قاعدة البيانات لعمل المقارنة
     const { data: existing } = await supabase.from('attendance').select('id, employee_id, date, times');
     // بناء خارطة (Map) سريعة للبحث باستخدام مفتاح (كود الموظف + التاريخ)
@@ -853,7 +853,6 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
     alert(`تقرير استيراد البصمات النهائي:\n--------------------------\n- سجلات جديدة تم رفعها: ${inserted}\n- سجلات حالية تم تحديثها (لوجود تغيير): ${updated}\n- سجلات تم إهمالها (مطابقة تماماً): ${skipped}`);
     onRefresh(); 
   };
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
