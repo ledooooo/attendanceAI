@@ -810,95 +810,67 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   // دالة توحيد المفتاح للمقارنة
   const normalizeKey = (id: string, date: string) => `${id.trim()}|${date.trim()}`;
 
-  const handleAnalyzeFile = async (data: any[]) => {
-    setIsProcessing(true);
-    try {
-        // 1. مرحلة التحضير: قراءة الملف وتحديد نطاق البحث (الموظفين + التواريخ)
-        const parsedRows: any[] = [];
-        const uniqueIds = new Set<string>();
-        let minDate: string | null = null;
-        let maxDate: string | null = null;
+  // داخل AdminDashboard.tsx - تعديل دالة handleAnalyzeFile
 
-        for (const row of data) {
-            const rawId = row.employee_ || row.employee_id || row['الكود'] || row['كود الموظف'] || row['ID'] || '';
-            const eid = String(rawId).trim();
-            const d = formatDateForDB(row.date || row['التاريخ']);
-            const times = String(row.times || row['البصمات'] || row['التوقيتات'] || '').trim().replace(/\s+/g, ' ');
+const handleAnalyzeFile = async (data: any[]) => {
+  setIsProcessing(true);
+  try {
+      // 1. تجهيز البيانات وتنظيفها فقط
+      const cleanData = [];
+      const processedInFile = new Set(); // لمنع التكرار داخل الملف نفسه
+      let fileDuplicates = 0;
 
-            if (!eid || !d) continue;
+      for (const row of data) {
+          const rawId = row.employee_ || row.employee_id || row['الكود'] || row['كود الموظف'] || row['ID'] || '';
+          const eid = String(rawId).trim();
+          const d = formatDateForDB(row.date || row['التاريخ']);
+          const times = String(row.times || row['البصمات'] || row['التوقيتات'] || '').trim().replace(/\s+/g, ' ');
 
-            parsedRows.push({ eid, d, times });
-            uniqueIds.add(eid);
+          if (!eid || !d) continue;
 
-            if (!minDate || d < minDate) minDate = d;
-            if (!maxDate || d > maxDate) maxDate = d;
-        }
+          const key = `${eid}|${d}`;
+          if (processedInFile.has(key)) {
+              fileDuplicates++;
+              continue;
+          }
+          processedInFile.add(key);
 
-        if (parsedRows.length === 0) {
-            alert("لم يتم العثور على بيانات صالحة في الملف");
-            setIsProcessing(false);
-            return;
-        }
+          // نضيف للصفوف التي سنرسلها للقاعدة
+          cleanData.push({ employee_id: eid, date: d, times: times });
+      }
 
-        // 2. جلب البيانات من Supabase بذكاء (فقط الموظفين والتواريخ المطلوبة)
-        // هذا يتخطى مشكلة الـ 1000 سجل لأنه يحدد النطاق بدقة
-        const { data: existing, error } = await supabase
-            .from('attendance')
-            .select('id, employee_id, date, times')
-            .in('employee_id', Array.from(uniqueIds))
-            .gte('date', minDate!)
-            .lte('date', maxDate!);
+      if (cleanData.length === 0) {
+          alert("لا توجد بيانات صالحة");
+          setIsProcessing(false);
+          return;
+      }
 
-        if (error) throw error;
+      // 2. إرسال البيانات للقاعدة لتقوم هي بالمقارنة والمعالجة (RPC Call)
+      // هذه الخطوة هي السحر: سطر واحد يقوم بكل العمل الشاق
+      const { data: result, error } = await supabase.rpc('process_attendance_bulk', { payload: cleanData });
 
-        // بناء خريطة المقارنة
-        const existingMap = new Map<string, any>(existing?.map(a => [normalizeKey(String(a.employee_id), a.date), a]) || []);
+      if (error) throw error;
 
-        const toInsert: any[] = [];
-        const toUpdate: any[] = [];
-        let skipped = 0;
-        let fileDuplicates = 0;
-        
-        // لمنع التكرار داخل نفس الملف
-        const processedInThisFile = new Set<string>();
+      // 3. عرض النتيجة القادمة من القاعدة
+      setPreviewData({
+          toInsert: new Array(result.inserted).fill({}), // مجرد أرقام وهمية للعرض
+          toUpdate: new Array(result.updated).fill({}), 
+          skipped: result.skipped,
+          duplicates: fileDuplicates
+      });
 
-        // 3. مرحلة المقارنة النهائية
-        for (const row of parsedRows) {
-            const { eid, d, times } = row;
-            const key = normalizeKey(eid, d);
+      // ملاحظة: بما أننا نفذنا العملية فوراً، يمكنك تخطي زر "تأكيد" وجعل هذا الزر هو زر الرفع النهائي
+      // أو يمكنك تعديل الدالة لتعيد معاينة (Preview) فقط دون حفظ إذا أردت (يتطلب تعديل SQL بسيط لإزالة Commit)
+      
+      alert(`تمت العملية بنجاح!\n- إضافة: ${result.inserted}\n- تحديث: ${result.updated}\n- تطابق (تجاهل): ${result.skipped}`);
+      onRefresh();
 
-            // أ) التحقق من تكرار الملف نفسه
-            if (processedInThisFile.has(key)) {
-                fileDuplicates++;
-                continue;
-            }
-            processedInThisFile.add(key);
-
-            // ب) التحقق مع قاعدة البيانات
-            if (existingMap.has(key)) {
-                const record = existingMap.get(key) as any;
-                const recordTimes = String(record.times || '').trim().replace(/\s+/g, ' ');
-                
-                if (recordTimes !== times) {
-                    toUpdate.push({ id: record.id, employee_id: eid, date: d, times, oldTimes: recordTimes });
-                } else {
-                    skipped++;
-                }
-            } else {
-                toInsert.push({ employee_id: eid, date: d, times });
-            }
-        }
-
-        setPreviewData({ toInsert, toUpdate, skipped, duplicates: fileDuplicates });
-
-    } catch (err: any) {
-        alert("حدث خطأ أثناء معالجة الملف: " + err.message);
-        console.error(err);
-    } finally {
-        setIsProcessing(false);
-    }
-  };
-
+  } catch (err: any) {
+      alert("خطأ: " + err.message);
+  } finally {
+      setIsProcessing(false);
+  }
+};
   const executeImport = async () => {
     if (!previewData) return;
     setIsProcessing(true);
