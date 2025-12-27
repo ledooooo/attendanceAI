@@ -16,11 +16,13 @@ const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<any>(null);
   const [employeeProfile, setEmployeeProfile] = useState<Employee | null>(null);
+  // نبدأ والتحميل مفعل دائماً
   const [loading, setLoading] = useState(true);
 
-  // دالة لجلب ملف الموظف بشكل آمن
+  // دالة لجلب بيانات الموظف
   const fetchProfile = async (email: string) => {
     try {
+      // نستخدم maybeSingle لتجنب الأخطاء إذا لم يوجد
       const { data, error } = await supabase
         .from('employees')
         .select('*')
@@ -28,30 +30,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .maybeSingle();
       
       if (error) {
-        console.error("خطأ في جلب الملف الوظيفي:", error);
-        return null;
+        console.error("Error fetching profile:", error);
       }
-      return data;
+      return data; // سيعود بـ null إذا لم يوجد، أو البيانات إذا وجدت
     } catch (err) {
+      console.error("Profile fetch exception:", err);
       return null;
     }
   };
 
-  // دالة الخروج المحسنة (تنظيف كامل للذاكرة)
   const signOut = async () => {
     setLoading(true);
     try {
       await supabase.auth.signOut();
     } catch (error) {
-      console.error("Error signing out:", error);
+      console.error("SignOut Error:", error);
     } finally {
-      // تنظيف كل شيء يدوياً لضمان عدم بقاء أي أثر للجلسة
       setUser(null);
       setEmployeeProfile(null);
-      localStorage.clear(); 
-      sessionStorage.clear();
-      setLoading(false);
-      // إعادة تحميل الصفحة بالكامل لإجبار التطبيق على البدء من الصفر
+      localStorage.clear(); // تنظيف كامل
       window.location.href = '/'; 
     }
   };
@@ -66,56 +63,49 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const initSession = async () => {
       try {
-        // 1. جلب الجلسة الحالية من الذاكرة
+        // 1. استرجاع الجلسة من LocalStorage
         const { data: { session } } = await supabase.auth.getSession();
 
         if (mounted && session?.user) {
           setUser(session.user);
-          // 2. إذا وجدنا مستخدم، نجلب بيانات الموظف
+          
+          // 2. إذا وجدنا مستخدم، نجلب ملفه الوظيفي فوراً وننتظر النتيجة
           if (session.user.email) {
             const profile = await fetchProfile(session.user.email);
             if (mounted) setEmployeeProfile(profile);
           }
         }
       } catch (error) {
-        console.error("Auth init error:", error);
-        if (mounted) signOut(); // إذا حدث خطأ غريب، نخرج المستخدم
+        console.error("Init Session Error:", error);
       } finally {
+        // 3. لن نوقف التحميل إلا بعد انتهاء كل شيء
         if (mounted) setLoading(false);
       }
     };
 
     initSession();
 
-    // الاستماع لأي تغيير في حالة الدخول/الخروج
+    // الاستماع للتغييرات
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setEmployeeProfile(null);
-        setLoading(false);
-      } else if (event === 'SIGNED_IN' && session?.user) {
+      if (event === 'SIGNED_IN' && session?.user) {
+        // عند تسجيل الدخول، لا نوقف التحميل حتى نجلب البيانات
+        setLoading(true); 
         setUser(session.user);
         const profile = await fetchProfile(session.user.email!);
         setEmployeeProfile(profile);
         setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setEmployeeProfile(null);
+        setLoading(false);
       }
     });
-
-    // --- صمام الأمان (الحل السحري للتعليق) ---
-    // إذا ظل التطبيق يحمل لأكثر من 4 ثوانٍ، نوقف التحميل إجبارياً
-    const safetyTimeout = setTimeout(() => {
-        if (loading) {
-            console.warn("تأخر التحميل كثيراً، تم الإيقاف الإجباري.");
-            setLoading(false);
-        }
-    }, 4000);
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      clearTimeout(safetyTimeout);
     };
   }, []);
 
