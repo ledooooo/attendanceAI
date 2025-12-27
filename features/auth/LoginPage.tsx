@@ -20,26 +20,30 @@ export default function LoginPage() {
       if (isSignUp) {
         // --- حالة تفعيل الحساب (تسجيل جديد) ---
         
-        // 1. نتأكد أولاً أن هذا الإيميل يخص موظفاً مسجلاً بالفعل
-        const { data: existingEmp } = await supabase
-          .from('employees')
-          .select('id')
-          .eq('email', email)
-          .maybeSingle();
+        // 1. استخدام دالة RPC الآمنة للتحقق من وجود الإيميل (تتخطى مشاكل RLS)
+        const { data: exists, error: checkError } = await supabase.rpc('check_is_employee', { 
+          email_input: email.trim() 
+        });
 
-        if (!existingEmp) {
-          throw new Error('هذا البريد الإلكتروني غير مسجل في قاعدة بيانات الموظفين. راجع الإدارة.');
+        if (checkError) {
+           console.error("Check Error:", checkError);
+           throw new Error('حدث خطأ فني أثناء التحقق من البيانات.');
+        }
+
+        // إذا كانت النتيجة false، يعني الإيميل غير موجود في جدول الموظفين
+        if (!exists) {
+          throw new Error('هذا البريد الإلكتروني غير مسجل لدى إدارة الموارد البشرية. يرجى مراجعة المدير.');
         }
 
         // 2. إنشاء الحساب في Supabase Auth
         const { error } = await supabase.auth.signUp({
-          email,
+          email: email.trim(),
           password,
         });
 
         if (error) throw error;
 
-        setMessage({ text: 'تم إنشاء الحساب بنجاح! جاري تسجيل الدخول...', type: 'success' });
+        setMessage({ text: 'تم تفعيل الحساب بنجاح! جاري الدخول...', type: 'success' });
         
         // محاولة الدخول مباشرة بعد التسجيل
         await signIn(email, password);
@@ -50,8 +54,10 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       let msg = err.message;
-      if (msg.includes('Invalid login credentials')) msg = 'خطأ في البريد أو كلمة المرور';
-      if (msg.includes('User already registered')) msg = 'هذا الحساب مفعل بالفعل، قم بتسجيل الدخول.';
+      if (msg.includes('Invalid login credentials')) msg = 'بيانات الدخول غير صحيحة (تأكد من البريد وكلمة المرور)';
+      if (msg.includes('User already registered')) msg = 'هذا الحساب مفعل مسبقاً، يرجى الانتقال لتبويب "دخول" وتسجيل الدخول.';
+      if (msg.includes('Password should be at least')) msg = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.';
+      
       setMessage({ text: msg, type: 'error' });
     } finally {
       setLoading(false);
@@ -65,7 +71,7 @@ export default function LoginPage() {
           <img src="https://upload.wikimedia.org/wikipedia/ar/thumb/a/a2/Logo_Ministry_of_Health_and_Population_%28Egypt%29.svg/1200px-Logo_Ministry_of_Health_and_Population_%28Egypt%29.svg.png" alt="Logo" className="w-20 mx-auto mb-4 grayscale hover:grayscale-0 transition-all" />
           <h1 className="text-2xl font-black text-gray-800">المنظومة الذكية</h1>
           <p className="text-gray-400 font-bold mt-2 text-sm">
-            {isSignUp ? 'إنشاء كلمة مرور جديدة للموظف' : 'تسجيل الدخول للمتابعة'}
+            {isSignUp ? 'إنشاء حساب جديد للموظف' : 'تسجيل الدخول للمتابعة'}
           </p>
         </div>
 
@@ -94,7 +100,7 @@ export default function LoginPage() {
                 type="email" required 
                 value={email} onChange={e => setEmail(e.target.value)}
                 className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                placeholder="name@example.com"
+                placeholder="example@moh.gov.eg"
               />
             </div>
           </div>
@@ -107,7 +113,7 @@ export default function LoginPage() {
                 type="password" required 
                 value={password} onChange={e => setPassword(e.target.value)}
                 className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                placeholder={isSignUp ? "أنشئ كلمة مرور قوية" : "••••••••"}
+                placeholder={isSignUp ? "اختر كلمة مرور قوية" : "••••••••"}
                 minLength={6}
               />
             </div>
@@ -115,7 +121,7 @@ export default function LoginPage() {
           </div>
 
           {message && (
-            <div className={`p-3 rounded-xl text-sm font-bold text-center ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+            <div className={`p-3 rounded-xl text-sm font-bold text-center animate-in fade-in zoom-in ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
                 {message.text}
             </div>
           )}
