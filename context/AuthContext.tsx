@@ -16,39 +16,35 @@ const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<any>(null);
   const [employeeProfile, setEmployeeProfile] = useState<Employee | null>(null);
-  // نبدأ والتحميل مفعل دائماً
   const [loading, setLoading] = useState(true);
 
-  // دالة لجلب بيانات الموظف
+  // دالة جلب الملف الوظيفي (معزولة للأمان)
   const fetchProfile = async (email: string) => {
     try {
-      // نستخدم maybeSingle لتجنب الأخطاء إذا لم يوجد
       const { data, error } = await supabase
         .from('employees')
         .select('*')
         .eq('email', email)
         .maybeSingle();
       
-      if (error) {
-        console.error("Error fetching profile:", error);
-      }
-      return data; // سيعود بـ null إذا لم يوجد، أو البيانات إذا وجدت
-    } catch (err) {
-      console.error("Profile fetch exception:", err);
+      if (error) console.error("Error fetching profile:", error);
+      return data;
+    } catch {
       return null;
     }
   };
 
   const signOut = async () => {
-    setLoading(true);
     try {
+      setLoading(true);
       await supabase.auth.signOut();
     } catch (error) {
       console.error("SignOut Error:", error);
     } finally {
       setUser(null);
       setEmployeeProfile(null);
-      localStorage.clear(); // تنظيف كامل
+      localStorage.clear();
+      sessionStorage.clear();
       window.location.href = '/'; 
     }
   };
@@ -59,53 +55,71 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    let mounted = true;
+    let isMounted = true;
 
+    // 1. الوظيفة الأساسية للتحقق من الجلسة
     const initSession = async () => {
       try {
-        // 1. استرجاع الجلسة من LocalStorage
         const { data: { session } } = await supabase.auth.getSession();
 
-        if (mounted && session?.user) {
-          setUser(session.user);
-          
-          // 2. إذا وجدنا مستخدم، نجلب ملفه الوظيفي فوراً وننتظر النتيجة
-          if (session.user.email) {
-            const profile = await fetchProfile(session.user.email);
-            if (mounted) setEmployeeProfile(profile);
+        if (isMounted) {
+          if (session?.user) {
+            setUser(session.user);
+            // إذا وجدنا مستخدم، نجلب بياناته
+            if (session.user.email) {
+              const profile = await fetchProfile(session.user.email);
+              if (isMounted) setEmployeeProfile(profile);
+            }
+          } else {
+            // لا يوجد مستخدم (Incognito أو خروج)
+            setUser(null);
+            setEmployeeProfile(null);
           }
         }
       } catch (error) {
-        console.error("Init Session Error:", error);
+        console.error("Auth Init Error:", error);
       } finally {
-        // 3. لن نوقف التحميل إلا بعد انتهاء كل شيء
-        if (mounted) setLoading(false);
+        // أهم سطر: إنهاء التحميل مهما كانت النتيجة
+        if (isMounted) setLoading(false);
       }
     };
 
+    // 2. تشغيل الوظيفة
     initSession();
 
-    // الاستماع للتغييرات
+    // 3. الاستماع للتغييرات
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
+      if (!isMounted) return;
 
       if (event === 'SIGNED_IN' && session?.user) {
-        // عند تسجيل الدخول، لا نوقف التحميل حتى نجلب البيانات
-        setLoading(true); 
         setUser(session.user);
         const profile = await fetchProfile(session.user.email!);
         setEmployeeProfile(profile);
-        setLoading(false);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setEmployeeProfile(null);
-        setLoading(false);
       }
     });
 
+    // 4. (الحل السحري) مؤقت أمان إجباري
+    // هذا المؤقت يعمل بشكل مستقل تماماً عن Supabase
+    // وظيفته: إذا مر 3 ثواني ومازالت الصفحة تحمل، سيوقف التحميل فوراً
+    const forceStopTimer = setTimeout(() => {
+        if (isMounted) {
+            setLoading((currentLoading) => {
+                if (currentLoading) {
+                    console.warn("تم إيقاف التحميل إجبارياً بواسطة مؤقت الأمان.");
+                    return false;
+                }
+                return currentLoading;
+            });
+        }
+    }, 3000);
+
     return () => {
-      mounted = false;
+      isMounted = false;
       subscription.unsubscribe();
+      clearTimeout(forceStopTimer);
     };
   }, []);
 
