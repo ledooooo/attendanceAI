@@ -188,7 +188,7 @@ function EmployeeDetailView({ employee, onBack, onRefresh }: { employee: Employe
             <button onClick={onBack} className="flex items-center text-blue-600 font-bold mb-4"><ArrowRight className="ml-2 w-4 h-4"/> عودة للقائمة</button>
             <div className="flex bg-gray-50 p-6 rounded-3xl border items-center gap-6">
                 <div className="w-20 h-20 bg-white rounded-2xl border flex items-center justify-center overflow-hidden">
-                    {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover" /> : <User className="text-blue-100 w-10 h-10"/>}
+                    {employee.photo_url ? <img src={employee.photo_url} alt="Profile" className="w-full h-full object-cover" /> : <User className="text-blue-100 w-10 h-10"/>}
                 </div>
                 <div>
                     <h2 className="text-2xl font-black">{employee.name}</h2>
@@ -325,7 +325,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
                     remaining_casual: 7
                 })).filter(r => r.employee_id && r.name);
                 const { error } = await supabase.from('employees').upsert(formatted, { onConflict: 'employee_id' });
-                if (!error) { alert(`تم استيراد ${formatted.length} موظف`); onRefresh(); }
+                if (!error) { alert(`تم تحديث ${formatted.length} موظف`); onRefresh(); }
             }} label="استيراد موظفين" />
         </div>
       </div>
@@ -367,10 +367,10 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
 
     const handleSave = async () => {
         if(!evalData.employee_id) return alert('برجاء اختيار موظف');
-        const { error } = await supabase.from('evaluations').insert([{
+        const { error } = await supabase.from('evaluations').upsert([{
             employee_id: evalData.employee_id, month, score_appearance: evalData.scores.s1, score_attendance: evalData.scores.s2, score_quality: evalData.scores.s3, score_infection: evalData.scores.s4, score_training: evalData.scores.s5, score_records: evalData.scores.s6, score_tasks: evalData.scores.s7, total_score: total, notes: evalData.notes
-        }]);
-        if(!error) { alert('تم حفظ التقييم'); setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' }); }
+        }], { onConflict: 'employee_id,month' });
+        if(!error) { alert('تم حفظ التقييم بنجاح'); setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' }); }
     };
 
     return (
@@ -424,9 +424,9 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
 
     const handleSave = async () => {
         if (selectedDoctors.length === 0) return alert('برجاء اختيار الموظفين أولاً');
-        const { error } = await supabase.from('evening_schedules').insert([{ date, doctors: selectedDoctors }]);
+        const { error } = await supabase.from('evening_schedules').upsert([{ date, doctors: selectedDoctors }], { onConflict: 'date' });
         if(!error) { 
-            alert('تم حفظ الجدول بنجاح');
+            alert('تم تحديث جدول النوبتجية بنجاح');
             fetchHistory(); 
             setSelectedDoctors([]); 
         } else alert(error.message);
@@ -439,9 +439,9 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
             notes: row.notes || row['ملاحظات'] || ''
         })).filter(r => r.date && r.doctors.length > 0);
         
-        const { error } = await supabase.from('evening_schedules').insert(formatted);
+        const { error } = await supabase.from('evening_schedules').upsert(formatted, { onConflict: 'date' });
         if (!error) {
-            alert(`تم استيراد ${formatted.length} جدول نوبتجية بنجاح`);
+            alert(`تم تحديث ${formatted.length} سجل نوبتجية بنجاح`);
             fetchHistory();
         } else alert(error.message);
     };
@@ -620,9 +620,9 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
           notes: String(row.notes || row['ملاحظات'] || '')
       })).filter(r => r.employee_id && r.type && r.start_date);
       
-      const { error } = await supabase.from('leave_requests').insert(formatted);
+      const { error } = await supabase.from('leave_requests').upsert(formatted, { onConflict: 'employee_id,type,start_date' });
       if (!error) {
-          alert(`تم استيراد ${formatted.length} طلب إجازة بنجاح`);
+          alert(`تم تحديث ${formatted.length} طلب إجازة بنجاح`);
           fetchLeaves();
       } else alert(error.message);
   };
@@ -729,8 +729,8 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
       if (!validIds.has(eid)) return null;
       return { employee_id: eid, date: formatDateForDB(row.date || row['التاريخ']), times: String(row.times || row['البصمات'] || '').trim() };
     }).filter(r => r && r.employee_id && r.date);
-    const { error } = await supabase.from('attendance').insert(processed);
-    if (!error) { alert(`تم رفع ${processed.length} بصمة`); onRefresh(); }
+    const { error } = await supabase.from('attendance').upsert(processed, { onConflict: 'employee_id,date' });
+    if (!error) { alert(`تم تحديث ${processed.length} سجل بصمة`); onRefresh(); }
   };
 
   return (
@@ -743,7 +743,7 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         <Select label="الموظف" options={employees.map(e => ({value: e.employee_id, label: e.name}))} value={formData.employee_id} onChange={(v:any)=>setFormData({...formData, employee_id: v})} />
         <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any)=>setFormData({...formData, date: v})} />
         <div className="md:col-span-2"><Input label="التوقيتات (مفصولة بمسافات)" value={formData.times} onChange={(v:any)=>setFormData({...formData, times: v})} placeholder="مثال: 08:30 14:15 16:00" /></div>
-        <button onClick={async () => { await supabase.from('attendance').insert([formData]); alert('تم الحفظ'); onRefresh(); }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
+        <button onClick={async () => { await supabase.from('attendance').upsert([formData], { onConflict: 'employee_id,date' }); alert('تم الحفظ والتحديث'); onRefresh(); }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
       </div>
     </div>
   );
