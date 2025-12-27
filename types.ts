@@ -1,85 +1,54 @@
-
-export interface GeneralSettings {
-  id: string;
-  center_name: string;
-  admin_name: string;
-  phone: string;
-  address: string;
-  password: string;
-  location_url: string;
-  specialties: string[];
-  leave_types: string[];
-  holidays: string[];
-  shift_morning_in: string;
-  shift_morning_out: string;
-  shift_evening_in: string;
-  shift_evening_out: string;
-  shift_night_in: string;
-  shift_night_out: string;
-}
-
+// تعريف بيانات الموظف
 export interface Employee {
-  id: string;
-  employee_id: string;
-  name: string;
-  national_id: string;
-  specialty: string;
-  phone: string;
-  email: string;
-  gender: 'ذكر' | 'أنثى';
-  grade: string;
-  photo_url: string;
-  id_front_url: string;
-  id_back_url: string;
-  religion: string;
-  work_days: string[];
-  start_time: string;
-  end_time: string;
-  leave_annual_balance: number;
-  leave_casual_balance: number;
-  total_absence: number;
-  remaining_annual: number;
-  remaining_casual: number;
-  admin_tasks: string;
-  status: 'نشط' | 'موقوف' | 'إجازة';
-  join_date: string;
-  center_id: string;
-  training_courses: string;
-  notes: string;
+  id: string;            // المعرف الفريد في قاعدة البيانات (UUID)
+  employee_id: string;   // الكود الوظيفي (مثال: 101)
+  name: string;          // الاسم الرباعي
+  national_id: string;   // الرقم القومي
+  specialty: string;     // التخصص الوظيفي
+  status: 'نشط' | 'موقوف' | 'إجازة'; // حالة الموظف
+  join_date: string;     // تاريخ التعيين (YYYY-MM-DD)
+  center_id?: string;    // كود المركز الطبي التابع له
+  photo_url?: string;    // رابط الصورة الشخصية
+  phone?: string;        // رقم الهاتف
+  
+  // --- حقول المصادقة الجديدة (Auth Refactoring) ---
+  email?: string;        // البريد الإلكتروني (لربط حساب Supabase)
+  role?: 'admin' | 'user'; // الصلاحية: مدير أو مستخدم عادي
+
+  // --- أرصدة الإجازات (اختياري) ---
+  remaining_annual?: number; // رصيد الاعتيادي
+  remaining_casual?: number; // رصيد العارضة
 }
 
-export interface LeaveRequest {
-  id: string;
-  employee_id: string;
-  type: string;
-  start_date: string;
-  end_date: string;
-  back_date: string;
-  backup_person: string;
-  status: 'معلق' | 'مقبول' | 'مرفوض';
-  notes: string;
-  created_at: string;
-  employee_name?: string;
-}
-
+// تعريف سجل الحضور
 export interface AttendanceRecord {
   id: string;
   employee_id: string;
   date: string;
-  times: string; 
+  times: string; // تخزن الأوقات كسلسلة نصية مفصولة بمسافات (مثال: "08:00 14:00")
 }
 
-export interface EveningSchedule {
+// تعريف طلب الإجازة
+export interface LeaveRequest {
   id: string;
-  date: string;
-  doctors: string[];
+  employee_id: string;
+  type: string;          // نوع الإجازة (عارضة، اعتيادية، إلخ)
+  start_date: string;
+  end_date: string;
+  backup_person?: string; // الموظف البديل
+  status: 'معلق' | 'مقبول' | 'مرفوض';
   notes?: string;
+  created_at: string;
+  
+  // حقل إضافي للعرض عند عمل Join مع جدول الموظفين
+  employee_name?: string; 
 }
 
+// تعريف التقييم الشهري
 export interface Evaluation {
   id: string;
   employee_id: string;
-  month: string;
+  month: string;         // شهر التقييم (YYYY-MM)
   score_appearance: number;
   score_attendance: number;
   score_quality: number;
@@ -87,15 +56,38 @@ export interface Evaluation {
   score_training: number;
   score_records: number;
   score_tasks: number;
-  total_score: number;
-  notes: string;
+  total_score: number;   // المجموع من 100
+  notes?: string;
 }
 
+// تعريف الرسائل الداخلية
 export interface InternalMessage {
   id: string;
-  created_at: string;
-  from_user: string;
-  to_user: string;
+  from_user: string;     // كود المرسل (أو 'admin')
+  to_user: string;       // كود المستقبل (أو 'all')
   content: string;
-  notes: string;
+  created_at: string;
+  read: boolean;
+}
+
+// تعريف جدول النوبتجيات المسائية
+export interface EveningSchedule {
+  id: string;
+  date: string;
+  doctors: string[];     // قائمة أسماء الأطباء/الموظفين في النوبتجية
+  notes?: string;
+}
+
+// تعريف المركز الطبي (داخل الإعدادات)
+export interface Center {
+  id: string;
+  name: string;
+  password?: string; // (إرث) كلمة مرور المركز للدخول القديم
+}
+
+// تعريف الإعدادات العامة
+export interface GeneralSettings {
+  id: string;
+  centers: Center[];     // قائمة المراكز الطبية
+  admin_password?: string; // (إرث) كلمة مرور المدير العامة
 }
