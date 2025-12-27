@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [employeeProfile, setEmployeeProfile] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // دالة مساعدة لجلب البيانات (معزولة لتجنب الأخطاء)
+  // دالة جلب بيانات الموظف
   const fetchProfile = async (email: string) => {
     try {
       const { data, error } = await supabase
@@ -27,32 +27,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .eq('email', email)
         .maybeSingle();
       
-      if (error) console.error("Profile Fetch Error:", error);
+      if (error) {
+        console.warn("Profile fetch warning:", error.message);
+        return null;
+      }
       return data;
-    } catch {
+    } catch (err) {
+      console.error("Profile fetch error:", err);
       return null;
     }
   };
 
+  // تسجيل الخروج
   const signOut = async () => {
     try {
-      setLoading(true);
       await supabase.auth.signOut();
     } catch (error) {
       console.error("SignOut Error:", error);
     } finally {
-      // تنظيف جذري لكل البيانات
       setUser(null);
       setEmployeeProfile(null);
-      localStorage.clear();
-      sessionStorage.clear();
-      // إعادة توجيه قوية لإلغاء أي حالة عالقة
-      window.location.replace('/');
+      localStorage.clear(); // تنظيف كامل عند الخروج الصريح فقط
+      window.location.href = '/'; 
     }
   };
 
   const signIn = async (email: string, pass: string) => {
-    // تسجيل الدخول لا يغير حالة loading هنا، نترك الـ Listener يقوم بذلك
     const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
     if (error) throw error;
   };
@@ -60,55 +60,57 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    const initializeAuth = async () => {
+    // دالة تهيئة الجلسة عند فتح التطبيق أو عمل Refresh
+    const initSession = async () => {
       try {
-        // 1. هل توجد جلسة نشطة؟
+        // 1. محاولة استعادة الجلسة المخزنة في LocalStorage
         const { data: { session }, error } = await supabase.auth.getSession();
 
         if (error) throw error;
 
-        if (session?.user) {
-          // 2. وجدنا جلسة -> نجلب بيانات الموظف
-          if (mounted) setUser(session.user);
-          
-          if (session.user.email) {
-            const profile = await fetchProfile(session.user.email);
-            if (mounted) setEmployeeProfile(profile);
-          }
-        } else {
-          // 3. لا توجد جلسة (خروج أو incognito)
-          if (mounted) {
-            setUser(null);
-            setEmployeeProfile(null);
+        if (mounted) {
+          if (session?.user) {
+            // وجدنا جلسة مخزنة -> نستعيد المستخدم
+            setUser(session.user);
+            
+            // نجلب بيانات الموظف
+            if (session.user.email) {
+              const profile = await fetchProfile(session.user.email);
+              if (mounted) setEmployeeProfile(profile);
+            }
           }
         }
       } catch (error) {
-        console.error("Auth Initialization Failed:", error);
-        // في حالة الخطأ، نعتبر المستخدم غير مسجل
-        if (mounted) {
-          setUser(null);
-          setEmployeeProfile(null);
-        }
+        console.error("Session restoration failed:", error);
+        // ملاحظة: لا نقوم بعمل signOut هنا لتجنب طرد المستخدم إذا كان الخطأ مؤقتاً
       } finally {
-        // 4. أهم خطوة: إيقاف التحميل مهما حدث
         if (mounted) setLoading(false);
       }
     };
 
-    initializeAuth();
+    initSession();
 
-    // الاستماع للتغييرات (دخول / خروج)
+    // الاستماع لأحداث Supabase (مثل تحديث التوكن التلقائي)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
-      if (event === 'SIGNED_IN' && session?.user) {
+      console.log("Auth Event:", event); // للمراقبة في الكونسول
+
+      if (session?.user) {
         setUser(session.user);
-        const profile = await fetchProfile(session.user.email!);
-        setEmployeeProfile(profile);
+        
+        // جلب البروفايل فقط إذا لم يكن موجوداً أو تغير المستخدم
+        if (!employeeProfile || employeeProfile.email !== session.user.email) {
+             const profile = await fetchProfile(session.user.email!);
+             if (mounted) setEmployeeProfile(profile);
+        }
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setEmployeeProfile(null);
       }
+      
+      // التأكد من إيقاف التحميل في كل الحالات
+      setLoading(false);
     });
 
     return () => {
