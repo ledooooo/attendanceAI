@@ -36,7 +36,6 @@ const calculateHours = (inT: string, outT: string) => {
     return diff;
 };
 
-// دالة تحميل العينات
 const downloadSample = (type: string) => {
     let data = [];
     let filename = "";
@@ -147,7 +146,6 @@ function GeneralSettingsTab({ center, onRefresh }: { center: GeneralSettings, on
   );
 }
 
-// --- عرض تفصيلي للموظف ---
 function EmployeeDetailView({ employee, onBack, onRefresh }: { employee: Employee, onBack: () => void, onRefresh: () => void }) {
     const [subTab, setSubTab] = useState<'data' | 'requests' | 'attendance' | 'stats' | 'message'>('data');
     const [editData, setEditData] = useState<Employee>({ ...employee });
@@ -188,7 +186,7 @@ function EmployeeDetailView({ employee, onBack, onRefresh }: { employee: Employe
             <button onClick={onBack} className="flex items-center text-blue-600 font-bold mb-4"><ArrowRight className="ml-2 w-4 h-4"/> عودة للقائمة</button>
             <div className="flex bg-gray-50 p-6 rounded-3xl border items-center gap-6">
                 <div className="w-20 h-20 bg-white rounded-2xl border flex items-center justify-center overflow-hidden">
-                    {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover" /> : <User className="text-blue-100 w-10 h-10"/>}
+                    {employee.photo_url ? <img src={employee.photo_url} alt="Profile" className="w-full h-full object-cover" /> : <User className="text-blue-100 w-10 h-10"/>}
                 </div>
                 <div>
                     <h2 className="text-2xl font-black">{employee.name}</h2>
@@ -287,7 +285,6 @@ function EmployeeDetailView({ employee, onBack, onRefresh }: { employee: Employe
     );
 }
 
-// --- شئون الموظفين (جدول وفلاتر) ---
 function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
   const [selectedStaff, setSelectedStaff] = useState<Employee | null>(null);
   const [fName, setFName] = useState('');
@@ -302,6 +299,57 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
     (fStatus === 'all' || e.status === fStatus)
   );
 
+  const handleExcelImport = async (data: any[]) => {
+    const { data: existing } = await supabase.from('employees').select('id, employee_id, name, national_id, specialty, join_date');
+    const existingMap = new Map(existing?.map(e => [String(e.employee_id), e]) || []);
+
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    const toInsert = [];
+
+    for (const row of data) {
+        const eid = String(row.employee_id || row['الكود'] || '');
+        if (!eid) continue;
+
+        const payload = {
+            employee_id: eid,
+            name: String(row.name || row['الاسم'] || ''),
+            national_id: String(row.national_id || row['الرقم القومي'] || ''),
+            specialty: String(row.specialty || row['التخصص'] || ''),
+            join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']),
+            center_id: centerId,
+            status: 'نشط'
+        };
+
+        if (existingMap.has(eid)) {
+            const existingObj = existingMap.get(eid) as any;
+            const isDifferent = existingObj.name !== payload.name || 
+                               existingObj.national_id !== payload.national_id || 
+                               existingObj.specialty !== payload.specialty ||
+                               existingObj.join_date !== payload.join_date;
+
+            if (isDifferent) {
+                await supabase.from('employees').update(payload).eq('id', existingObj.id);
+                updated++;
+            } else {
+                skipped++;
+            }
+        } else {
+            toInsert.push(payload);
+            inserted++;
+        }
+    }
+
+    if (toInsert.length > 0) {
+        await supabase.from('employees').insert(toInsert);
+    }
+    
+    alert(`تقرير استيراد الموظفين:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}\nتم إهمال (مطابق): ${skipped}`);
+    onRefresh();
+  };
+
   if (selectedStaff) return <EmployeeDetailView employee={selectedStaff} onBack={()=>setSelectedStaff(null)} onRefresh={onRefresh} />;
 
   return (
@@ -310,23 +358,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
         <div className="flex gap-2">
             <button onClick={()=>downloadSample('staff')} className="text-gray-400 p-2 hover:text-blue-600 transition-colors" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
-            <ExcelUploadButton onData={async (data: any[]) => {
-                const formatted = data.map(row => ({
-                    employee_id: String(row.employee_id || row['الكود'] || ''),
-                    name: String(row.name || row['الاسم'] || ''),
-                    national_id: String(row.national_id || row['الرقم القومي'] || ''),
-                    specialty: String(row.specialty || row['التخصص'] || ''),
-                    join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']),
-                    center_id: centerId,
-                    status: 'نشط',
-                    leave_annual_balance: 21,
-                    leave_casual_balance: 7,
-                    remaining_annual: 21,
-                    remaining_casual: 7
-                })).filter(r => r.employee_id && r.name);
-                const { error } = await supabase.from('employees').upsert(formatted, { onConflict: 'employee_id' });
-                if (!error) { alert(`تم استيراد ${formatted.length} موظف`); onRefresh(); }
-            }} label="استيراد موظفين" />
+            <ExcelUploadButton onData={handleExcelImport} label="استيراد موظفين" />
         </div>
       </div>
 
@@ -359,7 +391,6 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
   );
 }
 
-// --- نظام التقييمات ---
 function EvaluationsTab({ employees }: { employees: Employee[] }) {
     const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
     const [evalData, setEvalData] = useState({ employee_id: '', scores: { s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, s6: 0, s7: 0 }, notes: '' });
@@ -367,10 +398,20 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
 
     const handleSave = async () => {
         if(!evalData.employee_id) return alert('برجاء اختيار موظف');
-        const { error } = await supabase.from('evaluations').insert([{
+        const { data: existing } = await supabase.from('evaluations').select('id').eq('employee_id', evalData.employee_id).eq('month', month).maybeSingle();
+        
+        const payload = {
             employee_id: evalData.employee_id, month, score_appearance: evalData.scores.s1, score_attendance: evalData.scores.s2, score_quality: evalData.scores.s3, score_infection: evalData.scores.s4, score_training: evalData.scores.s5, score_records: evalData.scores.s6, score_tasks: evalData.scores.s7, total_score: total, notes: evalData.notes
-        }]);
-        if(!error) { alert('تم حفظ التقييم'); setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' }); }
+        };
+
+        if (existing) {
+            await supabase.from('evaluations').update(payload).eq('id', existing.id);
+            alert('تم تحديث التقييم بنجاح');
+        } else {
+            await supabase.from('evaluations').insert([payload]);
+            alert('تم إضافة التقييم بنجاح');
+        }
+        setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' });
     };
 
     return (
@@ -401,7 +442,6 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
     );
 }
 
-// --- نظام النوبتجيات (المسائي) المطور ---
 function EveningSchedulesTab({ employees, centerName, centerId }: { employees: Employee[], centerName?: string, centerId?: string }) {
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedDoctors, setSelectedDoctors] = useState<string[]>([]);
@@ -409,7 +449,6 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
     const [showHistory, setShowHistory] = useState(false);
     const [viewMonth, setViewMonth] = useState(new Date().toISOString().slice(0, 7));
 
-    // فلاتر البحث
     const [searchName, setSearchName] = useState('');
     const [searchId, setSearchId] = useState('');
     const [filterStatus, setFilterStatus] = useState('all');
@@ -424,26 +463,50 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
 
     const handleSave = async () => {
         if (selectedDoctors.length === 0) return alert('برجاء اختيار الموظفين أولاً');
-        const { error } = await supabase.from('evening_schedules').insert([{ date, doctors: selectedDoctors }]);
-        if(!error) { 
-            alert('تم حفظ الجدول بنجاح');
-            fetchHistory(); 
-            setSelectedDoctors([]); 
-        } else alert(error.message);
+        const { data: existing } = await supabase.from('evening_schedules').select('id').eq('date', date).maybeSingle();
+        
+        if (existing) {
+            await supabase.from('evening_schedules').update({ doctors: selectedDoctors }).eq('id', existing.id);
+            alert('تم تحديث جدول النوبتجية لهذا اليوم');
+        } else {
+            await supabase.from('evening_schedules').insert([{ date, doctors: selectedDoctors }]);
+            alert('تم إضافة جدول نوبتجية جديد');
+        }
+        fetchHistory(); 
+        setSelectedDoctors([]); 
     };
 
     const handleExcelImport = async (data: any[]) => {
-        const formatted = data.map(row => ({
-            date: formatDateForDB(row.date || row['التاريخ']),
-            doctors: String(row.doctors || row['الموظفين'] || row['الأطباء'] || '').split(',').map(s => s.trim()).filter(s => s),
-            notes: row.notes || row['ملاحظات'] || ''
-        })).filter(r => r.date && r.doctors.length > 0);
-        
-        const { error } = await supabase.from('evening_schedules').insert(formatted);
-        if (!error) {
-            alert(`تم استيراد ${formatted.length} جدول نوبتجية بنجاح`);
-            fetchHistory();
-        } else alert(error.message);
+        const { data: existing } = await supabase.from('evening_schedules').select('id, date, doctors, notes');
+        const existingMap = new Map(existing?.map(h => [h.date, h]) || []);
+
+        let inserted = 0;
+        let updated = 0;
+        let skipped = 0;
+
+        for (const row of data) {
+            const d = formatDateForDB(row.date || row['التاريخ']);
+            if (!d) continue;
+            const doctors = String(row.doctors || row['الموظفين'] || row['الأطباء'] || '').split(',').map(s => s.trim()).filter(s => s);
+            const notes = row.notes || row['ملاحظات'] || '';
+
+            if (existingMap.has(d)) {
+                const existingObj = existingMap.get(d) as any;
+                const isDifferent = JSON.stringify(existingObj.doctors.sort()) !== JSON.stringify(doctors.sort()) || 
+                                   existingObj.notes !== notes;
+                if (isDifferent) {
+                    await supabase.from('evening_schedules').update({ doctors, notes }).eq('id', existingObj.id);
+                    updated++;
+                } else {
+                    skipped++;
+                }
+            } else {
+                await supabase.from('evening_schedules').insert([{ date: d, doctors, notes }]);
+                inserted++;
+            }
+        }
+        alert(`تقرير استيراد الجداول:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}\nتم إهمال (مطابق): ${skipped}`);
+        fetchHistory();
     };
 
     const filteredEmployees = useMemo(() => {
@@ -478,7 +541,6 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
             </div>
 
             <div className="bg-gray-50 p-6 rounded-3xl border space-y-6 shadow-inner">
-                {/* 1. اختيار التاريخ */}
                 <div className="bg-white p-4 rounded-2xl shadow-sm border flex flex-col md:flex-row items-center gap-6">
                     <div className="flex-1 w-full">
                         <Input label="تاريخ النوبتجية" type="date" value={date} onChange={setDate} />
@@ -491,7 +553,6 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
                     </div>
                 </div>
 
-                {/* 2. فلاتر البحث */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <Input label="بحث بالاسم" value={searchName} onChange={setSearchName} placeholder="أدخل اسم الموظف..." />
                     <Input label="بحث بالكود" value={searchId} onChange={setSearchId} placeholder="أدخل كود الموظف..." />
@@ -499,7 +560,6 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
                     <Select label="المركز" options={['all', centerId || 'current']} value={filterCenter} onChange={setFilterCenter} />
                 </div>
 
-                {/* 3. اختيار الموظفين (متعدد) */}
                 <div className="space-y-2">
                     <label className="block text-xs font-black text-gray-400 uppercase tracking-widest">اختر الموظفين لهذه النوبتجية</label>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-80 overflow-y-auto p-4 bg-white border rounded-2xl shadow-inner border-gray-100">
@@ -527,7 +587,6 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
                     </div>
                 </div>
 
-                {/* 4. ملخص وزر الحفظ */}
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-4 border-t">
                     <div className="flex items-center gap-3">
                         <div className="bg-indigo-600 text-white p-2 rounded-xl"><Users className="w-5 h-5"/></div>
@@ -542,7 +601,6 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
                 </div>
             </div>
 
-            {/* عرض الأرشيف حسب الشهر */}
             {showHistory && (
                 <div className="animate-in slide-in-from-top duration-300 space-y-6">
                     <div className="flex items-center justify-between bg-white p-6 rounded-[30px] border shadow-sm">
@@ -583,7 +641,6 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
     );
 }
 
-// --- استعادة تبويب الإجازات المحدث ---
 function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | 'معلق' | 'مقبول' | 'مرفوض'>('all');
@@ -611,20 +668,57 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
   };
 
   const handleExcelImport = async (data: any[]) => {
-      const formatted = data.map(row => ({
-          employee_id: String(row.employee_id || row['كود الموظف'] || ''),
-          type: String(row.type || row['نوع الطلب'] || ''),
-          start_date: formatDateForDB(row.start_date || row['من تاريخ']),
-          end_date: formatDateForDB(row.end_date || row['إلى تاريخ']),
-          status: 'معلق',
-          notes: String(row.notes || row['ملاحظات'] || '')
-      })).filter(r => r.employee_id && r.type && r.start_date);
+      const { data: existing } = await supabase.from('leave_requests').select('id, employee_id, type, start_date, end_date, notes');
+      const existingMap = new Map<string, any>(existing?.map(l => [`${l.employee_id}|${l.type}|${l.start_date}`, l]) || []);
+
+      let inserted = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      const toInsert = [];
+
+      for (const row of data) {
+          const eid = String(row.employee_id || row['كود الموظف'] || '');
+          const type = String(row.type || row['نوع الطلب'] || '');
+          const start = formatDateForDB(row.start_date || row['من تاريخ']);
+          const end = formatDateForDB(row.end_date || row['إلى تاريخ']);
+          const notes = String(row.notes || row['ملاحظات'] || '');
+          
+          if (!eid || !type || !start) continue;
+
+          const key = `${eid}|${type}|${start}`;
+          const payload = {
+              employee_id: eid,
+              type: type,
+              start_date: start,
+              end_date: end,
+              status: 'معلق',
+              notes: notes
+          };
+
+          if (existingMap.has(key)) {
+              const existingObj = existingMap.get(key) as any;
+              const isDifferent = existingObj.end_date !== payload.end_date || 
+                                 existingObj.notes !== payload.notes;
+
+              if (isDifferent) {
+                  await supabase.from('leave_requests').update(payload).eq('id', existingObj.id);
+                  updated++;
+              } else {
+                  skipped++;
+              }
+          } else {
+              toInsert.push(payload);
+              inserted++;
+          }
+      }
+
+      if (toInsert.length > 0) {
+          await supabase.from('leave_requests').insert(toInsert);
+      }
       
-      const { error } = await supabase.from('leave_requests').insert(formatted);
-      if (!error) {
-          alert(`تم استيراد ${formatted.length} طلب إجازة بنجاح`);
-          fetchLeaves();
-      } else alert(error.message);
+      alert(`تقرير استيراد الطلبات:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}\nتم إهمال (مطابق): ${skipped}`);
+      fetchLeaves();
   };
 
   const filteredRequests = useMemo(() => {
@@ -658,7 +752,6 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
         </div>
       </div>
 
-      {/* فلاتر البحث */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-6 rounded-[30px] border shadow-inner">
           <Input label="اسم الموظف" value={searchName} onChange={setSearchName} placeholder="بحث بالاسم..." />
           <Input label="كود الموظف" value={searchId} onChange={setSearchId} placeholder="بحث بالكود..." />
@@ -673,7 +766,6 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
           </div>
       </div>
 
-      {/* ملخص الأنواع */}
       <div className="flex flex-wrap gap-2 p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
           <span className="text-xs font-black text-blue-700 w-full mb-2">إجمالي الطلبات حسب النوع:</span>
           {Object.entries(totalsByType).map(([type, count]) => (
@@ -718,38 +810,92 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
   );
 }
 
-// --- استعادة تبويب البصمات ---
 function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefresh: () => void }) {
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
 
   const handleImport = async (data: any[]) => {
-    const validIds = new Set(employees.map(e => e.employee_id));
-    const processed = data.map(row => {
-      const eid = String(row.employee_id || row['الكود'] || '');
-      if (!validIds.has(eid)) return null;
-      return { employee_id: eid, date: formatDateForDB(row.date || row['التاريخ']), times: String(row.times || row['البصمات'] || '').trim() };
-    }).filter(r => r && r.employee_id && r.date);
-    const { error } = await supabase.from('attendance').insert(processed);
-    if (!error) { alert(`تم رفع ${processed.length} بصمة`); onRefresh(); }
+    // جلب البيانات الحالية بالكامل للمقارنة اليدوية
+    const { data: existing } = await supabase.from('attendance').select('id, employee_id, date, times');
+    const existingMap = new Map<string, any>(existing?.map(a => [`${a.employee_id}|${a.date}`, a]) || []);
+
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    const toInsert = [];
+
+    for (const row of data) {
+        const eid = String(row.employee_id || row['الكود'] || '');
+        const d = formatDateForDB(row.date || row['التاريخ']);
+        const times = String(row.times || row['البصمات'] || '').trim();
+        
+        if (!eid || !d) continue;
+        const key = `${eid}|${d}`;
+
+        if (existingMap.has(key)) {
+            const record = existingMap.get(key) as any;
+            // التحقق مما إذا كانت التوقيتات مختلفة عن الموجود في القاعدة
+            if (record.times !== times) {
+                // تحديث الصف إذا كان هناك تغيير كلي أو جزئي
+                await supabase.from('attendance').update({ times }).eq('id', record.id);
+                updated++;
+            } else {
+                // إهمال الصف إذا كان مطابقاً تماماً
+                skipped++;
+            }
+        } else {
+            // إضافة صف جديد إذا لم يكن موجوداً
+            toInsert.push({ employee_id: eid, date: d, times });
+            inserted++;
+        }
+    }
+
+    if (toInsert.length > 0) {
+        await supabase.from('attendance').insert(toInsert);
+    }
+
+    alert(`تقرير استيراد البصمات:\nتم رفع جديد: ${inserted}\nتم تحديث موجود (لتغيير البيانات): ${updated}\nتم إهمال (مطابق للبيانات الحالية): ${skipped}`);
+    onRefresh(); 
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
         <h2 className="text-2xl font-black text-gray-800"><Clock className="inline-block ml-2 text-blue-600"/> سجل البصمات</h2>
-        <ExcelUploadButton onData={handleImport} label="رفع ملف البصمات" />
+        <div className="flex gap-2">
+            <button onClick={()=>downloadSample('attendance')} className="text-gray-400 p-2 hover:text-blue-600 transition-colors" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
+            <ExcelUploadButton onData={handleImport} label="رفع ملف البصمات" />
+        </div>
       </div>
       <div className="bg-gray-50 p-8 rounded-[40px] border grid grid-cols-1 md:grid-cols-2 gap-6 shadow-inner">
         <Select label="الموظف" options={employees.map(e => ({value: e.employee_id, label: e.name}))} value={formData.employee_id} onChange={(v:any)=>setFormData({...formData, employee_id: v})} />
         <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any)=>setFormData({...formData, date: v})} />
         <div className="md:col-span-2"><Input label="التوقيتات (مفصولة بمسافات)" value={formData.times} onChange={(v:any)=>setFormData({...formData, times: v})} placeholder="مثال: 08:30 14:15 16:00" /></div>
-        <button onClick={async () => { await supabase.from('attendance').insert([formData]); alert('تم الحفظ'); onRefresh(); }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
+        <button onClick={async () => { 
+            const d = formData.date;
+            const eid = formData.employee_id;
+            if(!eid || !d) return alert('برجاء اختيار الموظف والتاريخ');
+            
+            const { data: existing } = await supabase.from('attendance').select('id, times').eq('employee_id', eid).eq('date', d).maybeSingle();
+            
+            if (existing) {
+                if (existing.times !== formData.times) {
+                    await supabase.from('attendance').update({ times: formData.times }).eq('id', existing.id);
+                    alert('تم تحديث سجل البصمة بنجاح');
+                } else {
+                    alert('البيانات مطابقة للسجل الحالي، لم يتم إجراء أي تغيير');
+                }
+            } else {
+                await supabase.from('attendance').insert([formData]);
+                alert('تم إضافة سجل بصمة جديد بنجاح');
+            }
+            onRefresh();
+        }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
       </div>
     </div>
   );
 }
 
-// --- استعادة التقارير الذكية ---
 function ReportsTab({ employees }: { employees: Employee[] }) {
   const [type, setType] = useState<'daily' | 'monthly' | 'employee_month'>('daily');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -816,7 +962,6 @@ function ReportsTab({ employees }: { employees: Employee[] }) {
   );
 }
 
-// --- استعادة التنبيهات ---
 function AlertsTab({ employees }: { employees: Employee[] }) {
     const [target, setTarget] = useState('all'); 
     const [msg, setMsg] = useState('');
@@ -847,7 +992,6 @@ function AlertsTab({ employees }: { employees: Employee[] }) {
     );
 }
 
-// --- المكون الرئيسي للمسؤول ---
 const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
@@ -922,4 +1066,5 @@ const AdminDashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     </div>
   );
 };
+
 export default AdminDashboard;
