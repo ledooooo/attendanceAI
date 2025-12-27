@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
@@ -300,8 +301,9 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
   );
 
   const handleExcelImport = async (data: any[]) => {
+    // جلب البيانات الحالية للمقارنة
     const { data: existing } = await supabase.from('employees').select('id, employee_id, name, national_id, specialty, join_date');
-    const existingMap = new Map(existing?.map(e => [String(e.employee_id), e]) || []);
+    const existingMap = new Map(existing?.map(e => [String(e.employee_id).trim(), e]) || []);
 
     let inserted = 0;
     let updated = 0;
@@ -325,6 +327,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
 
         if (existingMap.has(eid)) {
             const existingObj = existingMap.get(eid) as any;
+            // التحقق من وجود أي اختلاف في البيانات
             const isDifferent = String(existingObj.name).trim() !== payload.name || 
                                String(existingObj.national_id).trim() !== payload.national_id || 
                                String(existingObj.specialty).trim() !== payload.specialty ||
@@ -346,7 +349,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
         await supabase.from('employees').insert(toInsert);
     }
     
-    alert(`تقرير استيراد الموظفين:\n- تم رفع جديد: ${inserted}\n- تم تحديث بيانات موجودة: ${updated}\n- تم إهمال (مطابق تماماً): ${skipped}`);
+    alert(`تقرير استيراد الموظفين:\n- سجلات جديدة مضافة: ${inserted}\n- سجلات حالية تم تحديثها: ${updated}\n- سجلات مطابقة (تم إهمالها): ${skipped}`);
     onRefresh();
   };
 
@@ -432,7 +435,6 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
                     <Input label="المظهر (10)" type="number" value={evalData.scores.s1} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s1:v}})} />
                     <Input label="الحضور (20)" type="number" value={evalData.scores.s2} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s2:v}})} />
                     <Input label="الجودة (10)" type="number" value={evalData.scores.s3} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s3:v}})} />
-                    {/* Fixed: Removed incorrect reference to setEditData */}
                     <Input label="العدوى (10)" type="number" value={evalData.scores.s4} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s4:v}})} />
                     <Input label="التدريب (20)" type="number" value={evalData.scores.s5} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s5:v}})} />
                     <Input label="الملفات (20)" type="number" value={evalData.scores.s6} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s6:v}})} />
@@ -727,7 +729,7 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
           await supabase.from('leave_requests').insert(toInsert);
       }
       
-      alert(`تقرير استيراد الطلبات:\n- تم رفع جديد: ${inserted}\n- تم تحديث بيانات موجودة: ${updated}\n- تم إهمال (مطابق): ${skipped}`);
+      alert(`تقرير استيراد الطلبات:\n- سجلات جديدة مضافة: ${inserted}\n- سجلات حالية تم تحديثها: ${updated}\n- سجلات مطابقة (تم إهمالها): ${skipped}`);
       fetchLeaves();
   };
 
@@ -826,7 +828,7 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   const handleImport = async (data: any[]) => {
     // جلب كافة السجلات الحالية من قاعدة البيانات لضمان دقة المقارنة وتجنب التكرار
     const { data: existing } = await supabase.from('attendance').select('id, employee_id, date, times');
-    const existingMap = new Map<string, any>(existing?.map(a => [`${a.employee_id}|${a.date}`, a]) || []);
+    const existingMap = new Map<string, any>(existing?.map(a => [`${String(a.employee_id).trim()}|${a.date}`, a]) || []);
 
     let inserted = 0;
     let updated = 0;
@@ -864,7 +866,7 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         await supabase.from('attendance').insert(toInsert);
     }
 
-    alert(`تقرير استيراد البصمات النهائي:\n--------------------------\n- تم رفع سجلات جديدة: ${inserted}\n- تم تحديث سجلات متغيرة: ${updated}\n- تم إهمال سجلات مطابقة (بدون تغيير): ${skipped}`);
+    alert(`تقرير استيراد البصمات النهائي:\n--------------------------\n- تم رفع سجلات جديدة كلياً: ${inserted}\n- تم تحديث سجلات حالية (لتغيير البيانات): ${updated}\n- تم إهمال سجلات مطابقة تماماً: ${skipped}`);
     onRefresh(); 
   };
 
