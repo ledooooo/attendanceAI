@@ -853,6 +853,8 @@ const handleImport = async (data: any[]) => {
     alert(`تقرير استيراد البصمات النهائي:\n--------------------------\n- سجلات جديدة تم رفعها: ${inserted}\n- سجلات حالية تم تحديثها (لوجود تغيير): ${updated}\n- سجلات تم إهمالها (مطابقة تماماً): ${skipped}`);
     onRefresh(); 
   };
+
+  
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
