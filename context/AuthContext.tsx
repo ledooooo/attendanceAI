@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [employeeProfile, setEmployeeProfile] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // دالة جلب بيانات الموظف (مفصولة لسهولة الاستدعاء)
+  // دالة لجلب ملف الموظف بشكل آمن
   const fetchProfile = async (email: string) => {
     try {
       const { data, error } = await supabase
@@ -28,7 +28,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .maybeSingle();
       
       if (error) {
-        console.error("Profile fetch error:", error);
+        console.error("خطأ في جلب الملف الوظيفي:", error);
         return null;
       }
       return data;
@@ -37,18 +37,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // دالة الخروج المحسنة (تنظيف كامل)
+  // دالة الخروج المحسنة (تنظيف كامل للذاكرة)
   const signOut = async () => {
+    setLoading(true);
     try {
       await supabase.auth.signOut();
-    } catch (e) {
-      console.error("Error signing out:", e);
+    } catch (error) {
+      console.error("Error signing out:", error);
     } finally {
+      // تنظيف كل شيء يدوياً لضمان عدم بقاء أي أثر للجلسة
       setUser(null);
       setEmployeeProfile(null);
-      localStorage.clear(); // مسح الذاكرة لضمان عدم بقاء جلسة معلقة
-      window.location.href = '/'; // إعادة تحميل الصفحة بالكامل
+      localStorage.clear(); 
+      sessionStorage.clear();
+      setLoading(false);
+      // إعادة تحميل الصفحة بالكامل لإجبار التطبيق على البدء من الصفر
+      window.location.href = '/'; 
     }
+  };
+
+  const signIn = async (email: string, pass: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) throw error;
   };
 
   useEffect(() => {
@@ -56,12 +66,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const initSession = async () => {
       try {
-        // 1. محاولة جلب الجلسة الحالية
+        // 1. جلب الجلسة الحالية من الذاكرة
         const { data: { session } } = await supabase.auth.getSession();
 
         if (mounted && session?.user) {
           setUser(session.user);
-          // 2. جلب بيانات الموظف
+          // 2. إذا وجدنا مستخدم، نجلب بيانات الموظف
           if (session.user.email) {
             const profile = await fetchProfile(session.user.email);
             if (mounted) setEmployeeProfile(profile);
@@ -69,8 +79,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
       } catch (error) {
         console.error("Auth init error:", error);
-        // في حال حدوث خطأ كارثي، نقوم بتسجيل الخروج لضمان عدم تعليق التطبيق
-        if (mounted) signOut();
+        if (mounted) signOut(); // إذا حدث خطأ غريب، نخرج المستخدم
       } finally {
         if (mounted) setLoading(false);
       }
@@ -78,10 +87,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     initSession();
 
-    // الاستماع للتغييرات (تسجيل دخول/خروج)
+    // الاستماع لأي تغيير في حالة الدخول/الخروج
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
-      
+
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setEmployeeProfile(null);
@@ -91,16 +100,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const profile = await fetchProfile(session.user.email!);
         setEmployeeProfile(profile);
         setLoading(false);
-      } else if (event === 'TOKEN_REFRESHED') {
-        // لا نفعل شيئاً عند تحديث التوكن فقط لتجنب إعادة التحميل
       }
     });
 
-    // --- صمام الأمان (Safety Timeout) ---
+    // --- صمام الأمان (الحل السحري للتعليق) ---
     // إذا ظل التطبيق يحمل لأكثر من 4 ثوانٍ، نوقف التحميل إجبارياً
     const safetyTimeout = setTimeout(() => {
         if (loading) {
-            console.warn("Auth loading timed out, forcing render.");
+            console.warn("تأخر التحميل كثيراً، تم الإيقاف الإجباري.");
             setLoading(false);
         }
     }, 4000);
@@ -111,11 +118,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       clearTimeout(safetyTimeout);
     };
   }, []);
-
-  const signIn = async (email: string, pass: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-    if (error) throw error;
-  };
 
   const isAdmin = employeeProfile?.role === 'admin';
 
