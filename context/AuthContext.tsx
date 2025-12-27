@@ -18,18 +18,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [employeeProfile, setEmployeeProfile] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // دالة لجلب ملف الموظف باستخدام دالة RPC الآمنة والسريعة
+  // --- دالة جلب البيانات الآمنة (RPC) ---
   const fetchProfile = async () => {
     try {
+      // نستخدم الدالة التي أنشأناها في SQL لتجنب مشاكل الصلاحيات
       const { data, error } = await supabase.rpc('get_my_profile');
       
       if (error) {
         console.error("Profile Fetch Error:", error);
         return null;
       }
-      // RPC تعيد مصفوفة، نأخذ العنصر الأول
-      return data && data.length > 0 ? data[0] : null;
-    } catch {
+      
+      // الدالة تعيد مصفوفة، نأخذ أول عنصر
+      if (data && data.length > 0) {
+        return data[0] as Employee;
+      }
+      return null;
+    } catch (err) {
+      console.error("Unexpected Error:", err);
       return null;
     }
   };
@@ -41,7 +47,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (error) {
       console.error("SignOut Error:", error);
     } finally {
-      // تنظيف شامل وإعادة تحميل الصفحة
       setUser(null);
       setEmployeeProfile(null);
       localStorage.clear();
@@ -60,26 +65,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const initAuth = async () => {
       try {
-        // 1. استعادة الجلسة
+        // 1. استعادة الجلسة من المتصفح
         const { data: { session } } = await supabase.auth.getSession();
 
         if (session?.user) {
           if (mounted) setUser(session.user);
-          // 2. جلب البروفايل بالدالة السريعة
+          
+          // 2. جلب البروفايل فوراً
           const profile = await fetchProfile();
           if (mounted) setEmployeeProfile(profile);
         }
       } catch (error) {
         console.error("Auth Init Error:", error);
       } finally {
-        // 3. إنهاء التحميل
         if (mounted) setLoading(false);
       }
     };
 
     initAuth();
 
-    // الاستماع للتغييرات
+    // الاستماع للتغييرات (عند الـ Login أو Refresh Token)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
@@ -90,22 +95,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setEmployeeProfile(null);
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        // تحديث صامت
+        setUser(session.user);
       }
     });
-
-    // --- مؤقت الأمان (الحل الجذري للتعليق) ---
-    // يضمن اختفاء شاشة التحميل بعد 3 ثوانٍ حتى لو تعطلت الشبكة أو قاعدة البيانات
-    const safetyTimer = setTimeout(() => {
-        if (mounted && loading) {
-            console.warn("Safety timer triggered: Forcing loading to stop.");
-            setLoading(false);
-        }
-    }, 3000);
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      clearTimeout(safetyTimer);
     };
   }, []);
 
