@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
@@ -301,7 +300,6 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
   );
 
   const handleExcelImport = async (data: any[]) => {
-    // جلب البيانات الحالية للمقارنة
     const { data: existing } = await supabase.from('employees').select('id, employee_id, name, national_id, specialty, join_date');
     const existingMap = new Map(existing?.map(e => [String(e.employee_id).trim(), e]) || []);
 
@@ -312,7 +310,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
     const toInsert = [];
 
     for (const row of data) {
-        const eid = String(row.employee_id || row['الكود'] || '').trim();
+        const eid = String(row.employee_id || row.employee_ || row['الكود'] || row['كود الموظف'] || row['ID'] || '').trim();
         if (!eid) continue;
 
         const payload = {
@@ -327,7 +325,6 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
 
         if (existingMap.has(eid)) {
             const existingObj = existingMap.get(eid) as any;
-            // التحقق من وجود أي اختلاف في البيانات
             const isDifferent = String(existingObj.name).trim() !== payload.name || 
                                String(existingObj.national_id).trim() !== payload.national_id || 
                                String(existingObj.specialty).trim() !== payload.specialty ||
@@ -400,7 +397,7 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
     const total = useMemo(() => Object.values(evalData.scores).reduce((a,b)=>Number(a)+Number(b), 0), [evalData.scores]);
 
     const handleSave = async () => {
-        if(!evalData.employee_id) return alert('برجاء اختيار موظف');
+        if(!evalData.employee_id) return alert('برجاء اختيار الموظف');
         const { data: existing } = await supabase.from('evaluations').select('id, total_score').eq('employee_id', evalData.employee_id).eq('month', month).maybeSingle();
         
         const payload = {
@@ -658,7 +655,7 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
   const [statusFilter, setStatusFilter] = useState<'all' | 'معلق' | 'مقبول' | 'مرفوض'>('all');
   const [searchName, setSearchName] = useState('');
   const [searchId, setSearchId] = useState('');
-  const [searchType, setSearchType] = useState('all');
+  const [searchType, setTypeFilter] = useState('all');
 
   const fetchLeaves = async () => {
     const { data } = await supabase.from('leave_requests').select(`*, employees(name, remaining_annual, remaining_casual)`).order('created_at', { ascending: false });
@@ -690,7 +687,7 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
       const toInsert = [];
 
       for (const row of data) {
-          const eid = String(row.employee_id || row['كود الموظف'] || '').trim();
+          const eid = String(row.employee_id || row['كود الموظف'] || row['ID'] || row.employee_ || '').trim();
           const type = String(row.type || row['نوع الطلب'] || '').trim();
           const start = formatDateForDB(row.start_date || row['من تاريخ']);
           const end = formatDateForDB(row.end_date || row['إلى تاريخ']);
@@ -742,14 +739,6 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
       );
   }, [requests, statusFilter, searchName, searchId, searchType]);
 
-  const totalsByType = useMemo(() => {
-      const summary: Record<string, number> = {};
-      filteredRequests.forEach(r => {
-          summary[r.type] = (summary[r.type] || 0) + 1;
-      });
-      return summary;
-  }, [filteredRequests]);
-
   const leaveTypesOptions = ['all', ...Array.from(new Set(requests.map(r => r.type)))];
 
   return (
@@ -767,7 +756,7 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-6 rounded-[30px] border shadow-inner">
           <Input label="اسم الموظف" value={searchName} onChange={setSearchName} placeholder="بحث بالاسم..." />
           <Input label="كود الموظف" value={searchId} onChange={setSearchId} placeholder="بحث بالكود..." />
-          <Select label="نوع الطلب" options={leaveTypesOptions} value={searchType} onChange={setSearchType} />
+          <Select label="نوع الطلب" options={leaveTypesOptions} value={searchType} onChange={setTypeFilter} />
           <div className="text-right">
               <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">الحالة</label>
               <div className="flex bg-white p-1 rounded-xl border">
@@ -776,17 +765,6 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
                   ))}
               </div>
           </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2 p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
-          <span className="text-xs font-black text-blue-700 w-full mb-2">إجمالي الطلبات حسب النوع:</span>
-          {Object.entries(totalsByType).map(([type, count]) => (
-              <div key={type} className="bg-white px-3 py-1.5 rounded-xl border shadow-sm flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-gray-500">{type}:</span>
-                  <span className="text-sm font-black text-blue-600">{count}</span>
-              </div>
-          ))}
-          {Object.keys(totalsByType).length === 0 && <span className="text-xs text-gray-400 font-bold italic">لا توجد بيانات للعرض</span>}
       </div>
 
       <div className="grid gap-4">
@@ -826,8 +804,9 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
 
   const handleImport = async (data: any[]) => {
-    // جلب كافة السجلات الحالية من قاعدة البيانات لضمان دقة المقارنة وتجنب التكرار
+    // 1. جلب كافة سجلات الحضور الحالية من قاعدة البيانات لعمل المقارنة
     const { data: existing } = await supabase.from('attendance').select('id, employee_id, date, times');
+    // بناء خارطة (Map) سريعة للبحث باستخدام مفتاح (كود الموظف + التاريخ)
     const existingMap = new Map<string, any>(existing?.map(a => [`${String(a.employee_id).trim()}|${a.date}`, a]) || []);
 
     let inserted = 0;
@@ -837,22 +816,25 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
     const toInsert = [];
 
     for (const row of data) {
-        const eid = String(row.employee_id || row['الكود'] || '').trim();
+        // دعم مسميات مختلفة للرأس لضمان قراءة الكود (employee_, employee_id, الكود, ID)
+        const eid = String(row.employee_ || row.employee_id || row['الكود'] || row['كود الموظف'] || row['ID'] || '').trim();
         const d = formatDateForDB(row.date || row['التاريخ']);
-        const times = String(row.times || row['البصمات'] || '').trim();
+        const times = String(row.times || row['البصمات'] || row['التوقيتات'] || '').trim().replace(/\s+/g, ' ');
         
         if (!eid || !d) continue;
         const key = `${eid}|${d}`;
 
         if (existingMap.has(key)) {
             const record = existingMap.get(key) as any;
-            // التحقق مما إذا كانت التوقيتات (البصمات) مختلفة في الملف عن قاعدة البيانات
-            if (String(record.times).trim() !== times) {
-                // تحديث الصف فقط في حالة وجود تغيير (تحديث كلي أو جزئي)
+            // التحقق مما إذا كانت البصمات في الملف تختلف عن المسجلة في قاعدة البيانات
+            const recordTimes = String(record.times || '').trim().replace(/\s+/g, ' ');
+            
+            if (recordTimes !== times) {
+                // تحديث السجل إذا وجد اختلاف (تحديث كلي أو جزئي)
                 const { error } = await supabase.from('attendance').update({ times }).eq('id', record.id);
                 if (!error) updated++;
             } else {
-                // إهمال الصف إذا كان مطابقاً تماماً للبيانات الموجودة
+                // إهمال السجل إذا كان مطابقاً تماماً
                 skipped++;
             }
         } else {
@@ -862,11 +844,13 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         }
     }
 
+    // رفع السجلات الجديدة كدفعة واحدة (Batch insert)
     if (toInsert.length > 0) {
         await supabase.from('attendance').insert(toInsert);
     }
 
-    alert(`تقرير استيراد البصمات النهائي:\n--------------------------\n- تم رفع سجلات جديدة كلياً: ${inserted}\n- تم تحديث سجلات حالية (لتغيير البيانات): ${updated}\n- تم إهمال سجلات مطابقة تماماً: ${skipped}`);
+    // عرض تقرير النتيجة للمستخدم
+    alert(`تقرير استيراد البصمات النهائي:\n--------------------------\n- سجلات جديدة تم رفعها: ${inserted}\n- سجلات حالية تم تحديثها (لوجود تغيير): ${updated}\n- سجلات تم إهمالها (مطابقة تماماً): ${skipped}`);
     onRefresh(); 
   };
 
@@ -886,13 +870,13 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         <button onClick={async () => { 
             const d = formData.date;
             const eid = formData.employee_id;
-            const times = String(formData.times || '').trim();
+            const times = String(formData.times || '').trim().replace(/\s+/g, ' ');
             if(!eid || !d) return alert('برجاء اختيار الموظف والتاريخ');
             
             const { data: existing } = await supabase.from('attendance').select('id, times').eq('employee_id', eid).eq('date', d).maybeSingle();
             
             if (existing) {
-                if (String(existing.times).trim() !== times) {
+                if (String(existing.times || '').trim().replace(/\s+/g, ' ') !== times) {
                     await supabase.from('attendance').update({ times }).eq('id', existing.id);
                     alert('تم تحديث سجل البصمة بنجاح لوجود تغيير');
                 } else {
