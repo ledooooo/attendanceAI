@@ -802,98 +802,194 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
 
 function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefresh: () => void }) {
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
+  
+  // حالات خاصة لمرحلة المراجعة
+  const [previewData, setPreviewData] = useState<{ toInsert: any[], toUpdate: any[], skipped: number } | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-const handleImport = async (data: any[]) => {
-    // 1. جلب كافة سجلات الحضور الحالية من قاعدة البيانات لعمل المقارنة
-    const { data: existing } = await supabase.from('attendance').select('id, employee_id, date, times');
-    // بناء خارطة (Map) سريعة للبحث باستخدام مفتاح (كود الموظف + التاريخ)
-    const existingMap = new Map<string, any>(existing?.map(a => [`${String(a.employee_id).trim()}|${a.date}`, a]) || []);
+  // 1. مرحلة التحليل والمراجعة
+  const handleAnalyzeFile = async (data: any[]) => {
+    setIsProcessing(true);
+    try {
+        // جلب كافة السجلات الحالية للمقارنة
+        const { data: existing } = await supabase.from('attendance').select('id, employee_id, date, times');
+        const existingMap = new Map<string, any>(existing?.map(a => [`${String(a.employee_id).trim()}|${a.date}`, a]) || []);
 
-    let inserted = 0;
-    let updated = 0;
-    let skipped = 0;
+        const toInsert: any[] = [];
+        const toUpdate: any[] = [];
+        let skipped = 0;
 
-    const toInsert = [];
-
-    for (const row of data) {
-        // دعم مسميات مختلفة للرأس لضمان قراءة الكود (employee_, employee_id, الكود, ID)
-        const eid = String(row.employee_ || row.employee_id || row['الكود'] || row['كود الموظف'] || row['ID'] || '').trim();
-        const d = formatDateForDB(row.date || row['التاريخ']);
-        const times = String(row.times || row['البصمات'] || row['التوقيتات'] || '').trim().replace(/\s+/g, ' ');
-        
-        if (!eid || !d) continue;
-        const key = `${eid}|${d}`;
-
-        if (existingMap.has(key)) {
-            const record = existingMap.get(key) as any;
-            // التحقق مما إذا كانت البصمات في الملف تختلف عن المسجلة في قاعدة البيانات
-            const recordTimes = String(record.times || '').trim().replace(/\s+/g, ' ');
+        for (const row of data) {
+            const eid = String(row.employee_ || row.employee_id || row['الكود'] || row['كود الموظف'] || row['ID'] || '').trim();
+            const d = formatDateForDB(row.date || row['التاريخ']);
+            const times = String(row.times || row['البصمات'] || row['التوقيتات'] || '').trim().replace(/\s+/g, ' ');
             
-            if (recordTimes !== times) {
-                // تحديث السجل إذا وجد اختلاف (تحديث كلي أو جزئي)
-                const { error } = await supabase.from('attendance').update({ times }).eq('id', record.id);
-                if (!error) updated++;
+            if (!eid || !d) continue;
+            const key = `${eid}|${d}`;
+
+            if (existingMap.has(key)) {
+                const record = existingMap.get(key) as any;
+                const recordTimes = String(record.times || '').trim().replace(/\s+/g, ' ');
+                
+                // المقارنة: إذا اختلفت التوقيتات نضيفه لقائمة التحديث
+                if (recordTimes !== times) {
+                    toUpdate.push({ id: record.id, employee_id: eid, date: d, times, oldTimes: recordTimes });
+                } else {
+                    // إذا تطابقت تماماً نتجاهله
+                    skipped++;
+                }
             } else {
-                // إهمال السجل إذا كان مطابقاً تماماً
-                skipped++;
+                // إذا لم يوجد، نضيفه لقائمة الإدخال الجديد
+                toInsert.push({ employee_id: eid, date: d, times });
             }
-        } else {
-            // إضافة سجل جديد تماماً
-            toInsert.push({ employee_id: eid, date: d, times });
-            inserted++;
         }
-    }
 
-    // رفع السجلات الجديدة كدفعة واحدة (Batch insert)
-    if (toInsert.length > 0) {
-        await supabase.from('attendance').insert(toInsert);
+        // عرض النتائج للمراجعة
+        setPreviewData({ toInsert, toUpdate, skipped });
+    } catch (err) {
+        alert("حدث خطأ أثناء معالجة الملف");
+        console.error(err);
+    } finally {
+        setIsProcessing(false);
     }
-
-    // عرض تقرير النتيجة للمستخدم
-    alert(`تقرير استيراد البصمات النهائي:\n--------------------------\n- سجلات جديدة تم رفعها: ${inserted}\n- سجلات حالية تم تحديثها (لوجود تغيير): ${updated}\n- سجلات تم إهمالها (مطابقة تماماً): ${skipped}`);
-    onRefresh(); 
   };
 
-  
+  // 2. مرحلة التنفيذ الفعلي بعد التأكيد
+  const executeImport = async () => {
+    if (!previewData) return;
+    setIsProcessing(true);
+    
+    try {
+        // تنفيذ الإضافات الجديدة (Batch Insert)
+        if (previewData.toInsert.length > 0) {
+            const { error } = await supabase.from('attendance').insert(previewData.toInsert);
+            if (error) throw error;
+        }
+
+        // تنفيذ التحديثات (Loop Update) - لأن التحديث الجماعي بشرط مختلف غير مدعوم مباشرة بنفس الطريقة
+        for (const item of previewData.toUpdate) {
+             const { error } = await supabase.from('attendance').update({ times: item.times }).eq('id', item.id);
+             if (error) console.error(`Failed to update record ${item.id}`, error);
+        }
+
+        alert(`تمت العملية بنجاح:\n- تم إضافة: ${previewData.toInsert.length}\n- تم تحديث: ${previewData.toUpdate.length}`);
+        setPreviewData(null); // إخفاء واجهة المراجعة
+        onRefresh(); // تحديث الجدول في الخلفية
+    } catch (error: any) {
+        alert('حدث خطأ أثناء الحفظ: ' + error.message);
+    } finally {
+        setIsProcessing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
         <h2 className="text-2xl font-black text-gray-800"><Clock className="inline-block ml-2 text-blue-600"/> سجل البصمات</h2>
         <div className="flex gap-2">
             <button onClick={()=>downloadSample('attendance')} className="text-gray-400 p-2 hover:text-blue-600 transition-colors" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
-            <ExcelUploadButton onData={handleImport} label="رفع ملف البصمات" />
+            {/* نمرر دالة التحليل بدلاً من التنفيذ المباشر */}
+            {!previewData && <ExcelUploadButton onData={handleAnalyzeFile} label="رفع ملف البصمات" />}
         </div>
       </div>
-      <div className="bg-gray-50 p-8 rounded-[40px] border grid grid-cols-1 md:grid-cols-2 gap-6 shadow-inner">
-        <Select label="الموظف" options={employees.map(e => ({value: e.employee_id, label: e.name}))} value={formData.employee_id} onChange={(v:any)=>setFormData({...formData, employee_id: v})} />
-        <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any)=>setFormData({...formData, date: v})} />
-        <div className="md:col-span-2"><Input label="التوقيتات (مفصولة بمسافات)" value={formData.times} onChange={(v:any)=>setFormData({...formData, times: v})} placeholder="مثال: 08:30 14:15 16:00" /></div>
-        <button onClick={async () => { 
-            const d = formData.date;
-            const eid = formData.employee_id;
-            const times = String(formData.times || '').trim().replace(/\s+/g, ' ');
-            if(!eid || !d) return alert('برجاء اختيار الموظف والتاريخ');
+
+      {/* واجهة المراجعة (تظهر فقط بعد رفع الملف) */}
+      {previewData && (
+        <div className="bg-amber-50 border border-amber-200 rounded-[30px] p-8 animate-in slide-in-from-top duration-500 shadow-lg">
+            <h3 className="text-xl font-black text-amber-800 mb-6 flex items-center gap-2">
+                <AlertTriangle className="w-6 h-6"/> تقرير مراجعة البيانات قبل الحفظ
+            </h3>
             
-            const { data: existing } = await supabase.from('attendance').select('id, times').eq('employee_id', eid).eq('date', d).maybeSingle();
-            
-            if (existing) {
-                if (String(existing.times || '').trim().replace(/\s+/g, ' ') !== times) {
-                    await supabase.from('attendance').update({ times }).eq('id', existing.id);
-                    alert('تم تحديث سجل البصمة بنجاح لوجود تغيير');
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-white p-6 rounded-2xl border border-green-100 text-center shadow-sm">
+                    <p className="text-gray-500 text-xs font-bold uppercase mb-2">سجلات جديدة (Insert)</p>
+                    <p className="text-4xl font-black text-green-600">{previewData.toInsert.length}</p>
+                </div>
+                <div className="bg-white p-6 rounded-2xl border border-blue-100 text-center shadow-sm">
+                    <p className="text-gray-500 text-xs font-bold uppercase mb-2">تحديثات مطلوبة (Update)</p>
+                    <p className="text-4xl font-black text-blue-600">{previewData.toUpdate.length}</p>
+                </div>
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 text-center shadow-sm opacity-60">
+                    <p className="text-gray-500 text-xs font-bold uppercase mb-2">متطابقة (Skip)</p>
+                    <p className="text-4xl font-black text-gray-600">{previewData.skipped}</p>
+                </div>
+            </div>
+
+            {previewData.toUpdate.length > 0 && (
+                <div className="mb-8">
+                    <p className="text-xs font-bold text-gray-500 mb-2">عينة من السجلات التي سيتم تحديثها:</p>
+                    <div className="bg-white border rounded-xl overflow-hidden max-h-40 overflow-y-auto text-sm">
+                        <table className="w-full text-right">
+                            <thead className="bg-gray-50 text-gray-500">
+                                <tr><th className="p-2">الموظف</th><th className="p-2">التاريخ</th><th className="p-2">القديم</th><th className="p-2">الجديد</th></tr>
+                            </thead>
+                            <tbody>
+                                {previewData.toUpdate.slice(0, 5).map((rec, i) => (
+                                    <tr key={i} className="border-t">
+                                        <td className="p-2">{rec.employee_id}</td>
+                                        <td className="p-2">{rec.date}</td>
+                                        <td className="p-2 text-red-400 dir-ltr text-left font-mono text-xs">{rec.oldTimes}</td>
+                                        <td className="p-2 text-green-600 dir-ltr text-left font-mono text-xs">{rec.times}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {previewData.toUpdate.length > 5 && <p className="text-center text-xs p-2 text-gray-400">... والمزيد</p>}
+                    </div>
+                </div>
+            )}
+
+            <div className="flex gap-4">
+                <button 
+                    onClick={executeImport} 
+                    disabled={isProcessing}
+                    className="flex-1 bg-green-600 text-white py-3 rounded-xl font-black shadow-lg hover:bg-green-700 transition-all flex justify-center gap-2"
+                >
+                    {isProcessing ? 'جاري المعالجة...' : 'تأكيد وحفظ التغييرات'} <CheckCircle className="w-5 h-5"/>
+                </button>
+                <button 
+                    onClick={() => setPreviewData(null)} 
+                    disabled={isProcessing}
+                    className="px-8 bg-white text-gray-600 border border-gray-300 py-3 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                >
+                    إلغاء
+                </button>
+            </div>
+        </div>
+      )}
+
+      {/* نموذج الإدخال اليدوي (يظهر فقط إذا لم تكن هناك عملية مراجعة) */}
+      {!previewData && (
+        <div className="bg-gray-50 p-8 rounded-[40px] border grid grid-cols-1 md:grid-cols-2 gap-6 shadow-inner animate-in fade-in">
+            <Select label="الموظف" options={employees.map(e => ({value: e.employee_id, label: e.name}))} value={formData.employee_id} onChange={(v:any)=>setFormData({...formData, employee_id: v})} />
+            <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any)=>setFormData({...formData, date: v})} />
+            <div className="md:col-span-2"><Input label="التوقيتات (مفصولة بمسافات)" value={formData.times} onChange={(v:any)=>setFormData({...formData, times: v})} placeholder="مثال: 08:30 14:15 16:00" /></div>
+            <button onClick={async () => { 
+                const d = formData.date;
+                const eid = formData.employee_id;
+                const times = String(formData.times || '').trim().replace(/\s+/g, ' ');
+                if(!eid || !d) return alert('برجاء اختيار الموظف والتاريخ');
+                
+                const { data: existing } = await supabase.from('attendance').select('id, times').eq('employee_id', eid).eq('date', d).maybeSingle();
+                
+                if (existing) {
+                    if (String(existing.times || '').trim().replace(/\s+/g, ' ') !== times) {
+                        await supabase.from('attendance').update({ times }).eq('id', existing.id);
+                        alert('تم تحديث سجل البصمة بنجاح لوجود تغيير');
+                    } else {
+                        alert('البيانات مطابقة تماماً للسجل الحالي، لم يتم إجراء أي تغيير');
+                    }
                 } else {
-                    alert('البيانات مطابقة تماماً للسجل الحالي، لم يتم إجراء أي تغيير');
+                    await supabase.from('attendance').insert([{ employee_id: eid, date: d, times }]);
+                    alert('تم إضافة سجل بصمة جديد بنجاح');
                 }
-            } else {
-                await supabase.from('attendance').insert([{ employee_id: eid, date: d, times }]);
-                alert('تم إضافة سجل بصمة جديد بنجاح');
-            }
-            onRefresh();
-        }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
-      </div>
+                onRefresh();
+            }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
+        </div>
+      )}
     </div>
   );
 }
-
 function ReportsTab({ employees }: { employees: Employee[] }) {
   const [type, setType] = useState<'daily' | 'monthly' | 'employee_month'>('daily');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
