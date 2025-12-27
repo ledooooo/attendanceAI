@@ -18,92 +18,98 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [employeeProfile, setEmployeeProfile] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // دالة لجلب بيانات الموظف
+  // دالة جلب بيانات الموظف (مفصولة لسهولة الاستدعاء)
   const fetchProfile = async (email: string) => {
     try {
       const { data, error } = await supabase
         .from('employees')
         .select('*')
         .eq('email', email)
-        .maybeSingle(); // استخدام maybeSingle أفضل لتجنب الأخطاء إذا لم يوجد
+        .maybeSingle();
       
       if (error) {
-        console.error("Error fetching profile:", error);
+        console.error("Profile fetch error:", error);
         return null;
       }
       return data;
     } catch (err) {
-      console.error("Profile fetch exception:", err);
       return null;
     }
   };
 
+  // دالة الخروج المحسنة (تنظيف كامل)
   const signOut = async () => {
-    // تفريغ كل الحالات
-    setUser(null);
-    setEmployeeProfile(null);
-    // مسح الجلسة من Supabase
-    await supabase.auth.signOut();
-    // مسح الـ LocalStorage يدوياً لضمان عدم بقاء أي بيانات قديمة
-    localStorage.clear(); 
-    // إعادة التوجيه لصفحة الدخول (اختياري، عادة يتم تلقائياً عند تغيير الحالة)
-    window.location.href = '/'; 
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error("Error signing out:", e);
+    } finally {
+      setUser(null);
+      setEmployeeProfile(null);
+      localStorage.clear(); // مسح الذاكرة لضمان عدم بقاء جلسة معلقة
+      window.location.href = '/'; // إعادة تحميل الصفحة بالكامل
+    }
   };
 
   useEffect(() => {
+    let mounted = true;
+
     const initSession = async () => {
       try {
-        setLoading(true);
-        // 1. جلب الجلسة الحالية
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
-        if (error || !session) {
-           // إذا كان هناك خطأ في الجلسة، نعتبره غير مسجل
-           setUser(null);
-           setEmployeeProfile(null);
-           return; 
-        }
+        // 1. محاولة جلب الجلسة الحالية
+        const { data: { session } } = await supabase.auth.getSession();
 
-        setUser(session.user);
-
-        // 2. إذا وجدنا مستخدم، نحاول جلب ملفه الوظيفي
-        if (session.user.email) {
-          const profile = await fetchProfile(session.user.email);
-          if (profile) {
-            setEmployeeProfile(profile);
-          } else {
-             // هام: إذا دخل المستخدم لكن لم نجد له ملف موظف (حالة نادرة أو خطأ)
-             // لا نقوم بتسجيل الخروج فوراً لكي تظهر له رسالة "حساب غير مرتبط"
-             setEmployeeProfile(null);
+        if (mounted && session?.user) {
+          setUser(session.user);
+          // 2. جلب بيانات الموظف
+          if (session.user.email) {
+            const profile = await fetchProfile(session.user.email);
+            if (mounted) setEmployeeProfile(profile);
           }
         }
-
-      } catch (err) {
-        console.error("Auth init error:", err);
-        // في حالة الخطأ الكارثي، نخرج المستخدم
-        await signOut();
+      } catch (error) {
+        console.error("Auth init error:", error);
+        // في حال حدوث خطأ كارثي، نقوم بتسجيل الخروج لضمان عدم تعليق التطبيق
+        if (mounted) signOut();
       } finally {
-        // أهم سطر: إيقاف التحميل في كل الأحوال
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
 
     initSession();
 
+    // الاستماع للتغييرات (تسجيل دخول/خروج)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setEmployeeProfile(null);
         setLoading(false);
-      } else if (session?.user) {
+      } else if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user);
         const profile = await fetchProfile(session.user.email!);
         setEmployeeProfile(profile);
         setLoading(false);
+      } else if (event === 'TOKEN_REFRESHED') {
+        // لا نفعل شيئاً عند تحديث التوكن فقط لتجنب إعادة التحميل
       }
     });
 
-    return () => subscription.unsubscribe();
+    // --- صمام الأمان (Safety Timeout) ---
+    // إذا ظل التطبيق يحمل لأكثر من 4 ثوانٍ، نوقف التحميل إجبارياً
+    const safetyTimeout = setTimeout(() => {
+        if (loading) {
+            console.warn("Auth loading timed out, forcing render.");
+            setLoading(false);
+        }
+    }, 4000);
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+      clearTimeout(safetyTimeout);
+    };
   }, []);
 
   const signIn = async (email: string, pass: string) => {
