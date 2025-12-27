@@ -311,21 +311,26 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
         <div className="flex gap-2">
             <button onClick={()=>downloadSample('staff')} className="text-gray-400 p-2 hover:text-blue-600 transition-colors" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
             <ExcelUploadButton onData={async (data: any[]) => {
-                const formatted = data.map(row => ({
-                    employee_id: String(row.employee_id || row['الكود'] || ''),
-                    name: String(row.name || row['الاسم'] || ''),
-                    national_id: String(row.national_id || row['الرقم القومي'] || ''),
-                    specialty: String(row.specialty || row['التخصص'] || ''),
-                    join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']),
-                    center_id: centerId,
-                    status: 'نشط',
-                    leave_annual_balance: 21,
-                    leave_casual_balance: 7,
-                    remaining_annual: 21,
-                    remaining_casual: 7
-                })).filter(r => r.employee_id && r.name);
+                const map = new Map();
+                data.forEach(row => {
+                    const eid = String(row.employee_id || row['الكود'] || '');
+                    if (!eid) return;
+                    map.set(eid, {
+                        employee_id: eid,
+                        name: String(row.name || row['الاسم'] || ''),
+                        national_id: String(row.national_id || row['الرقم القومي'] || ''),
+                        specialty: String(row.specialty || row['التخصص'] || ''),
+                        join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']),
+                        center_id: centerId,
+                        status: 'نشط',
+                        leave_annual_balance: 21,
+                        leave_casual_balance: 7,
+                        remaining_annual: 21,
+                        remaining_casual: 7
+                    });
+                });
+                const formatted = Array.from(map.values()).filter(r => r.name);
                 
-                // Fetch existing IDs to compare
                 const { data: existing } = await supabase.from('employees').select('employee_id');
                 const existingIds = new Set(existing?.map(e => e.employee_id) || []);
                 
@@ -333,9 +338,9 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
                 if (!error) { 
                     const updated = formatted.filter(r => existingIds.has(r.employee_id)).length;
                     const inserted = formatted.length - updated;
-                    alert(`تمت عملية الاستيراد بنجاح:\nتم رفع عدد: ${inserted}\nتم تحديث عدد: ${updated}`);
+                    alert(`تمت عملية استيراد الموظفين بنجاح:\nتم رفع جديد: ${inserted}\nتم تحديث حالي: ${updated}`);
                     onRefresh(); 
-                }
+                } else alert(error.message);
             }} label="استيراد موظفين" />
         </div>
       </div>
@@ -443,13 +448,18 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
     };
 
     const handleExcelImport = async (data: any[]) => {
-        const formatted = data.map(row => ({
-            date: formatDateForDB(row.date || row['التاريخ']),
-            doctors: String(row.doctors || row['الموظفين'] || row['الأطباء'] || '').split(',').map(s => s.trim()).filter(s => s),
-            notes: row.notes || row['ملاحظات'] || ''
-        })).filter(r => r.date && r.doctors.length > 0);
+        const map = new Map();
+        data.forEach(row => {
+            const d = formatDateForDB(row.date || row['التاريخ']);
+            if (!d) return;
+            map.set(d, {
+                date: d,
+                doctors: String(row.doctors || row['الموظفين'] || row['الأطباء'] || '').split(',').map(s => s.trim()).filter(s => s),
+                notes: row.notes || row['ملاحظات'] || ''
+            });
+        });
+        const formatted = Array.from(map.values()).filter(r => r.doctors.length > 0);
         
-        // Fetch existing dates
         const { data: existing } = await supabase.from('evening_schedules').select('date');
         const existingDates = new Set(existing?.map(h => h.date) || []);
 
@@ -457,7 +467,7 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
         if (!error) {
             const updated = formatted.filter(r => existingDates.has(r.date)).length;
             const inserted = formatted.length - updated;
-            alert(`تم استيراد الجداول بنجاح:\nتم رفع عدد: ${inserted}\nتم تحديث عدد: ${updated}`);
+            alert(`تم استيراد الجداول بنجاح:\nتم رفع جديد: ${inserted}\nتم تحديث حالي: ${updated}`);
             fetchHistory();
         } else alert(error.message);
     };
@@ -627,16 +637,24 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
   };
 
   const handleExcelImport = async (data: any[]) => {
-      const formatted = data.map(row => ({
-          employee_id: String(row.employee_id || row['كود الموظف'] || ''),
-          type: String(row.type || row['نوع الطلب'] || ''),
-          start_date: formatDateForDB(row.start_date || row['من تاريخ']),
-          end_date: formatDateForDB(row.end_date || row['إلى تاريخ']),
-          status: 'معلق',
-          notes: String(row.notes || row['ملاحظات'] || '')
-      })).filter(r => r.employee_id && r.type && r.start_date);
+      const map = new Map();
+      data.forEach(row => {
+          const eid = String(row.employee_id || row['كود الموظف'] || '');
+          const type = String(row.type || row['نوع الطلب'] || '');
+          const start = formatDateForDB(row.start_date || row['من تاريخ']);
+          if (!eid || !type || !start) return;
+          const key = `${eid}|${type}|${start}`;
+          map.set(key, {
+              employee_id: eid,
+              type: type,
+              start_date: start,
+              end_date: formatDateForDB(row.end_date || row['إلى تاريخ']),
+              status: 'معلق',
+              notes: String(row.notes || row['ملاحظات'] || '')
+          });
+      });
+      const formatted = Array.from(map.values());
       
-      // Fetch existing records for comparison
       const { data: existing } = await supabase.from('leave_requests').select('employee_id,type,start_date');
       const existingKeys = new Set(existing?.map(l => `${l.employee_id}|${l.type}|${l.start_date}`) || []);
 
@@ -644,7 +662,7 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
       if (!error) {
           const updated = formatted.filter(r => existingKeys.has(`${r.employee_id}|${r.type}|${r.start_date}`)).length;
           const inserted = formatted.length - updated;
-          alert(`تم استيراد الطلبات بنجاح:\nتم رفع عدد: ${inserted}\nتم تحديث عدد: ${updated}`);
+          alert(`تم استيراد الطلبات بنجاح:\nتم رفع جديد: ${inserted}\nتم تحديث حالي: ${updated}`);
           fetchLeaves();
       } else alert(error.message);
   };
@@ -745,14 +763,20 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
 
   const handleImport = async (data: any[]) => {
-    const validIds = new Set(employees.map(e => e.employee_id));
-    const processed = data.map(row => {
-      const eid = String(row.employee_id || row['الكود'] || '');
-      if (!validIds.has(eid)) return null;
-      return { employee_id: eid, date: formatDateForDB(row.date || row['التاريخ']), times: String(row.times || row['البصمات'] || '').trim() };
-    }).filter(r => r && r.employee_id && r.date);
+    const map = new Map();
+    data.forEach(row => {
+        const eid = String(row.employee_id || row['الكود'] || '');
+        const d = formatDateForDB(row.date || row['التاريخ']);
+        if (!eid || !d) return;
+        const key = `${eid}|${d}`;
+        map.set(key, {
+            employee_id: eid,
+            date: d,
+            times: String(row.times || row['البصمات'] || '').trim()
+        });
+    });
+    const processed = Array.from(map.values());
     
-    // Fetch existing attendance to compare
     const { data: existing } = await supabase.from('attendance').select('employee_id,date');
     const existingKeys = new Set(existing?.map(a => `${a.employee_id}|${a.date}`) || []);
 
@@ -760,9 +784,9 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
     if (!error) { 
         const updated = processed.filter(r => existingKeys.has(`${r.employee_id}|${r.date}`)).length;
         const inserted = processed.length - updated;
-        alert(`تمت عملية استيراد البصمات بنجاح:\nتم رفع عدد: ${inserted}\nتم تحديث عدد: ${updated}`);
+        alert(`تمت عملية استيراد البصمات بنجاح:\nتم رفع جديد: ${inserted}\nتم تحديث حالي: ${updated}`);
         onRefresh(); 
-    }
+    } else alert(error.message);
   };
 
   return (
@@ -778,7 +802,18 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         <Select label="الموظف" options={employees.map(e => ({value: e.employee_id, label: e.name}))} value={formData.employee_id} onChange={(v:any)=>setFormData({...formData, employee_id: v})} />
         <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any)=>setFormData({...formData, date: v})} />
         <div className="md:col-span-2"><Input label="التوقيتات (مفصولة بمسافات)" value={formData.times} onChange={(v:any)=>setFormData({...formData, times: v})} placeholder="مثال: 08:30 14:15 16:00" /></div>
-        <button onClick={async () => { await supabase.from('attendance').upsert([formData], { onConflict: 'employee_id,date' }); alert('تم الحفظ والتحديث بنجاح'); onRefresh(); }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
+        <button onClick={async () => { 
+            const d = formData.date;
+            const eid = formData.employee_id;
+            if(!eid || !d) return alert('برجاء اختيار الموظف والتاريخ');
+            
+            const { data: existing } = await supabase.from('attendance').select('id').eq('employee_id', eid).eq('date', d).maybeSingle();
+            const { error } = await supabase.from('attendance').upsert([formData], { onConflict: 'employee_id,date' });
+            if (!error) {
+                alert(existing ? 'تم تحديث سجل البصمة بنجاح' : 'تم إضافة سجل بصمة جديد بنجاح');
+                onRefresh();
+            } else alert(error.message);
+        }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
       </div>
     </div>
   );
