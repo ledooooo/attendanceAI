@@ -311,36 +311,42 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
         <div className="flex gap-2">
             <button onClick={()=>downloadSample('staff')} className="text-gray-400 p-2 hover:text-blue-600 transition-colors" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
             <ExcelUploadButton onData={async (data: any[]) => {
-                const map = new Map();
-                data.forEach(row => {
+                const { data: existing } = await supabase.from('employees').select('id, employee_id, name, national_id, specialty, join_date');
+                // Cast Map to any to resolve unknown typing from undefined existing query result
+                const existingMap = new Map<string, any>(existing?.map(e => [String(e.employee_id), e]) || []);
+
+                let inserted = 0;
+                let updated = 0;
+
+                for (const row of data) {
                     const eid = String(row.employee_id || row['الكود'] || '');
-                    if (!eid) return;
-                    map.set(eid, {
+                    if (!eid) continue;
+
+                    const payload = {
                         employee_id: eid,
                         name: String(row.name || row['الاسم'] || ''),
                         national_id: String(row.national_id || row['الرقم القومي'] || ''),
                         specialty: String(row.specialty || row['التخصص'] || ''),
                         join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']),
                         center_id: centerId,
-                        status: 'نشط',
-                        leave_annual_balance: 21,
-                        leave_casual_balance: 7,
-                        remaining_annual: 21,
-                        remaining_casual: 7
-                    });
-                });
-                const formatted = Array.from(map.values()).filter(r => r.name);
-                
-                const { data: existing } = await supabase.from('employees').select('employee_id');
-                const existingIds = new Set(existing?.map(e => e.employee_id) || []);
-                
-                const { error } = await supabase.from('employees').upsert(formatted, { onConflict: 'employee_id' });
-                if (!error) { 
-                    const updated = formatted.filter(r => existingIds.has(r.employee_id)).length;
-                    const inserted = formatted.length - updated;
-                    alert(`تمت عملية استيراد الموظفين بنجاح:\nتم رفع جديد: ${inserted}\nتم تحديث حالي: ${updated}`);
-                    onRefresh(); 
-                } else alert(error.message);
+                        status: 'نشط'
+                    };
+
+                    if (existingMap.has(eid)) {
+                        // Cast existingObj to any to fix Property 'name'/'specialty'/'id' does not exist on type 'unknown'
+                        const existingObj = existingMap.get(eid) as any;
+                        // مقارنة بسيطة للتحديث
+                        if (existingObj.name !== payload.name || existingObj.specialty !== payload.specialty) {
+                            await supabase.from('employees').update(payload).eq('id', existingObj.id);
+                            updated++;
+                        }
+                    } else {
+                        await supabase.from('employees').insert([payload]);
+                        inserted++;
+                    }
+                }
+                alert(`تقرير الاستيراد:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}`);
+                onRefresh();
             }} label="استيراد موظفين" />
         </div>
       </div>
@@ -382,10 +388,21 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
 
     const handleSave = async () => {
         if(!evalData.employee_id) return alert('برجاء اختيار موظف');
-        const { error } = await supabase.from('evaluations').upsert([{
+        // Manual Upsert check for evaluations
+        const { data: existing } = await supabase.from('evaluations').select('id').eq('employee_id', evalData.employee_id).eq('month', month).maybeSingle();
+        
+        const payload = {
             employee_id: evalData.employee_id, month, score_appearance: evalData.scores.s1, score_attendance: evalData.scores.s2, score_quality: evalData.scores.s3, score_infection: evalData.scores.s4, score_training: evalData.scores.s5, score_records: evalData.scores.s6, score_tasks: evalData.scores.s7, total_score: total, notes: evalData.notes
-        }], { onConflict: 'employee_id,month' });
-        if(!error) { alert('تم حفظ وتحديث التقييم بنجاح'); setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' }); }
+        };
+
+        if (existing) {
+            await supabase.from('evaluations').update(payload).eq('id', existing.id);
+            alert('تم تحديث التقييم بنجاح');
+        } else {
+            await supabase.from('evaluations').insert([payload]);
+            alert('تم إضافة التقييم بنجاح');
+        }
+        setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' });
     };
 
     return (
@@ -439,37 +456,42 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
 
     const handleSave = async () => {
         if (selectedDoctors.length === 0) return alert('برجاء اختيار الموظفين أولاً');
-        const { error } = await supabase.from('evening_schedules').upsert([{ date, doctors: selectedDoctors }], { onConflict: 'date' });
-        if(!error) { 
-            alert('تم تحديث جدول النوبتجية بنجاح');
-            fetchHistory(); 
-            setSelectedDoctors([]); 
-        } else alert(error.message);
+        const { data: existing } = await supabase.from('evening_schedules').select('id').eq('date', date).maybeSingle();
+        
+        if (existing) {
+            await supabase.from('evening_schedules').update({ doctors: selectedDoctors }).eq('id', existing.id);
+            alert('تم تحديث جدول النوبتجية لهذا اليوم');
+        } else {
+            await supabase.from('evening_schedules').insert([{ date, doctors: selectedDoctors }]);
+            alert('تم إضافة جدول نوبتجية جديد');
+        }
+        fetchHistory(); 
+        setSelectedDoctors([]); 
     };
 
     const handleExcelImport = async (data: any[]) => {
-        const map = new Map();
-        data.forEach(row => {
-            const d = formatDateForDB(row.date || row['التاريخ']);
-            if (!d) return;
-            map.set(d, {
-                date: d,
-                doctors: String(row.doctors || row['الموظفين'] || row['الأطباء'] || '').split(',').map(s => s.trim()).filter(s => s),
-                notes: row.notes || row['ملاحظات'] || ''
-            });
-        });
-        const formatted = Array.from(map.values()).filter(r => r.doctors.length > 0);
-        
-        const { data: existing } = await supabase.from('evening_schedules').select('date');
-        const existingDates = new Set(existing?.map(h => h.date) || []);
+        const { data: existing } = await supabase.from('evening_schedules').select('id, date');
+        const existingMap = new Map(existing?.map(h => [h.date, h.id]));
 
-        const { error } = await supabase.from('evening_schedules').upsert(formatted, { onConflict: 'date' });
-        if (!error) {
-            const updated = formatted.filter(r => existingDates.has(r.date)).length;
-            const inserted = formatted.length - updated;
-            alert(`تم استيراد الجداول بنجاح:\nتم رفع جديد: ${inserted}\nتم تحديث حالي: ${updated}`);
-            fetchHistory();
-        } else alert(error.message);
+        let inserted = 0;
+        let updated = 0;
+
+        for (const row of data) {
+            const d = formatDateForDB(row.date || row['التاريخ']);
+            if (!d) continue;
+            const doctors = String(row.doctors || row['الموظفين'] || row['الأطباء'] || '').split(',').map(s => s.trim()).filter(s => s);
+            const notes = row.notes || row['ملاحظات'] || '';
+
+            if (existingMap.has(d)) {
+                await supabase.from('evening_schedules').update({ doctors, notes }).eq('id', existingMap.get(d));
+                updated++;
+            } else {
+                await supabase.from('evening_schedules').insert([{ date: d, doctors, notes }]);
+                inserted++;
+            }
+        }
+        alert(`تقرير استيراد الجداول:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}`);
+        fetchHistory();
     };
 
     const filteredEmployees = useMemo(() => {
@@ -637,34 +659,38 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
   };
 
   const handleExcelImport = async (data: any[]) => {
-      const map = new Map();
-      data.forEach(row => {
+      const { data: existing } = await supabase.from('leave_requests').select('id, employee_id, type, start_date');
+      const existingMap = new Map(existing?.map(l => [`${l.employee_id}|${l.type}|${l.start_date}`, l.id]));
+
+      let inserted = 0;
+      let updated = 0;
+
+      for (const row of data) {
           const eid = String(row.employee_id || row['كود الموظف'] || '');
           const type = String(row.type || row['نوع الطلب'] || '');
           const start = formatDateForDB(row.start_date || row['من تاريخ']);
-          if (!eid || !type || !start) return;
+          if (!eid || !type || !start) continue;
+
           const key = `${eid}|${type}|${start}`;
-          map.set(key, {
+          const payload = {
               employee_id: eid,
               type: type,
               start_date: start,
               end_date: formatDateForDB(row.end_date || row['إلى تاريخ']),
               status: 'معلق',
               notes: String(row.notes || row['ملاحظات'] || '')
-          });
-      });
-      const formatted = Array.from(map.values());
-      
-      const { data: existing } = await supabase.from('leave_requests').select('employee_id,type,start_date');
-      const existingKeys = new Set(existing?.map(l => `${l.employee_id}|${l.type}|${l.start_date}`) || []);
+          };
 
-      const { error } = await supabase.from('leave_requests').upsert(formatted, { onConflict: 'employee_id,type,start_date' });
-      if (!error) {
-          const updated = formatted.filter(r => existingKeys.has(`${r.employee_id}|${r.type}|${r.start_date}`)).length;
-          const inserted = formatted.length - updated;
-          alert(`تم استيراد الطلبات بنجاح:\nتم رفع جديد: ${inserted}\nتم تحديث حالي: ${updated}`);
-          fetchLeaves();
-      } else alert(error.message);
+          if (existingMap.has(key)) {
+              await supabase.from('leave_requests').update(payload).eq('id', existingMap.get(key));
+              updated++;
+          } else {
+              await supabase.from('leave_requests').insert([payload]);
+              inserted++;
+          }
+      }
+      alert(`تقرير استيراد الطلبات:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}`);
+      fetchLeaves();
   };
 
   const filteredRequests = useMemo(() => {
@@ -763,30 +789,38 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
 
   const handleImport = async (data: any[]) => {
-    const map = new Map();
-    data.forEach(row => {
+    // جلب البيانات الحالية من قاعدة البيانات للمقارنة
+    const { data: existing } = await supabase.from('attendance').select('id, employee_id, date, times');
+    // Cast Map to any to resolve unknown typing from undefined existing query result
+    const existingMap = new Map<string, any>(existing?.map(a => [`${a.employee_id}|${a.date}`, a]) || []);
+
+    let inserted = 0;
+    let updated = 0;
+
+    for (const row of data) {
         const eid = String(row.employee_id || row['الكود'] || '');
         const d = formatDateForDB(row.date || row['التاريخ']);
-        if (!eid || !d) return;
+        const times = String(row.times || row['البصمات'] || '').trim();
+        
+        if (!eid || !d) continue;
         const key = `${eid}|${d}`;
-        map.set(key, {
-            employee_id: eid,
-            date: d,
-            times: String(row.times || row['البصمات'] || '').trim()
-        });
-    });
-    const processed = Array.from(map.values());
-    
-    const { data: existing } = await supabase.from('attendance').select('employee_id,date');
-    const existingKeys = new Set(existing?.map(a => `${a.employee_id}|${a.date}`) || []);
 
-    const { error } = await supabase.from('attendance').upsert(processed, { onConflict: 'employee_id,date' });
-    if (!error) { 
-        const updated = processed.filter(r => existingKeys.has(`${r.employee_id}|${r.date}`)).length;
-        const inserted = processed.length - updated;
-        alert(`تمت عملية استيراد البصمات بنجاح:\nتم رفع جديد: ${inserted}\nتم تحديث حالي: ${updated}`);
-        onRefresh(); 
-    } else alert(error.message);
+        if (existingMap.has(key)) {
+            // Cast record to any to fix Property 'times'/'id' does not exist on type 'unknown'
+            const record = existingMap.get(key) as any;
+            // تحديث فقط إذا كانت البصمات مختلفة
+            if (record.times !== times) {
+                await supabase.from('attendance').update({ times }).eq('id', record.id);
+                updated++;
+            }
+        } else {
+            await supabase.from('attendance').insert([{ employee_id: eid, date: d, times }]);
+            inserted++;
+        }
+    }
+
+    alert(`تقرير استيراد البصمات:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}`);
+    onRefresh(); 
   };
 
   return (
@@ -808,11 +842,15 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
             if(!eid || !d) return alert('برجاء اختيار الموظف والتاريخ');
             
             const { data: existing } = await supabase.from('attendance').select('id').eq('employee_id', eid).eq('date', d).maybeSingle();
-            const { error } = await supabase.from('attendance').upsert([formData], { onConflict: 'employee_id,date' });
-            if (!error) {
-                alert(existing ? 'تم تحديث سجل البصمة بنجاح' : 'تم إضافة سجل بصمة جديد بنجاح');
-                onRefresh();
-            } else alert(error.message);
+            
+            if (existing) {
+                await supabase.from('attendance').update({ times: formData.times }).eq('id', existing.id);
+                alert('تم تحديث سجل البصمة بنجاح');
+            } else {
+                await supabase.from('attendance').insert([formData]);
+                alert('تم إضافة سجل بصمة جديد بنجاح');
+            }
+            onRefresh();
         }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
       </div>
     </div>
