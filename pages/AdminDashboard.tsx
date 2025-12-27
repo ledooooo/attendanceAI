@@ -310,14 +310,14 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
     const toInsert = [];
 
     for (const row of data) {
-        const eid = String(row.employee_id || row['الكود'] || '');
+        const eid = String(row.employee_id || row['الكود'] || '').trim();
         if (!eid) continue;
 
         const payload = {
             employee_id: eid,
-            name: String(row.name || row['الاسم'] || ''),
-            national_id: String(row.national_id || row['الرقم القومي'] || ''),
-            specialty: String(row.specialty || row['التخصص'] || ''),
+            name: String(row.name || row['الاسم'] || '').trim(),
+            national_id: String(row.national_id || row['الرقم القومي'] || '').trim(),
+            specialty: String(row.specialty || row['التخصص'] || '').trim(),
             join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']),
             center_id: centerId,
             status: 'نشط'
@@ -325,10 +325,10 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
 
         if (existingMap.has(eid)) {
             const existingObj = existingMap.get(eid) as any;
-            const isDifferent = existingObj.name !== payload.name || 
-                               existingObj.national_id !== payload.national_id || 
-                               existingObj.specialty !== payload.specialty ||
-                               existingObj.join_date !== payload.join_date;
+            const isDifferent = String(existingObj.name).trim() !== payload.name || 
+                               String(existingObj.national_id).trim() !== payload.national_id || 
+                               String(existingObj.specialty).trim() !== payload.specialty ||
+                               formatDateForDB(existingObj.join_date) !== payload.join_date;
 
             if (isDifferent) {
                 await supabase.from('employees').update(payload).eq('id', existingObj.id);
@@ -346,7 +346,7 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
         await supabase.from('employees').insert(toInsert);
     }
     
-    alert(`تقرير استيراد الموظفين:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}\nتم إهمال (مطابق): ${skipped}`);
+    alert(`تقرير استيراد الموظفين:\n- تم رفع جديد: ${inserted}\n- تم تحديث بيانات موجودة: ${updated}\n- تم إهمال (مطابق تماماً): ${skipped}`);
     onRefresh();
   };
 
@@ -398,15 +398,19 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
 
     const handleSave = async () => {
         if(!evalData.employee_id) return alert('برجاء اختيار موظف');
-        const { data: existing } = await supabase.from('evaluations').select('id').eq('employee_id', evalData.employee_id).eq('month', month).maybeSingle();
+        const { data: existing } = await supabase.from('evaluations').select('id, total_score').eq('employee_id', evalData.employee_id).eq('month', month).maybeSingle();
         
         const payload = {
             employee_id: evalData.employee_id, month, score_appearance: evalData.scores.s1, score_attendance: evalData.scores.s2, score_quality: evalData.scores.s3, score_infection: evalData.scores.s4, score_training: evalData.scores.s5, score_records: evalData.scores.s6, score_tasks: evalData.scores.s7, total_score: total, notes: evalData.notes
         };
 
         if (existing) {
-            await supabase.from('evaluations').update(payload).eq('id', existing.id);
-            alert('تم تحديث التقييم بنجاح');
+            if (existing.total_score !== total) {
+                await supabase.from('evaluations').update(payload).eq('id', existing.id);
+                alert('تم تحديث التقييم بنجاح لوجود تغيير في الدرجات');
+            } else {
+                alert('التقييم الحالي مطابق للبيانات المدخلة، لم يتم التعديل');
+            }
         } else {
             await supabase.from('evaluations').insert([payload]);
             alert('تم إضافة التقييم بنجاح');
@@ -428,6 +432,7 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
                     <Input label="المظهر (10)" type="number" value={evalData.scores.s1} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s1:v}})} />
                     <Input label="الحضور (20)" type="number" value={evalData.scores.s2} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s2:v}})} />
                     <Input label="الجودة (10)" type="number" value={evalData.scores.s3} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s3:v}})} />
+                    {/* Fixed: Removed incorrect reference to setEditData */}
                     <Input label="العدوى (10)" type="number" value={evalData.scores.s4} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s4:v}})} />
                     <Input label="التدريب (20)" type="number" value={evalData.scores.s5} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s5:v}})} />
                     <Input label="الملفات (20)" type="number" value={evalData.scores.s6} onChange={(v:any)=>setEvalData({...evalData, scores: {...evalData.scores, s6:v}})} />
@@ -463,11 +468,16 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
 
     const handleSave = async () => {
         if (selectedDoctors.length === 0) return alert('برجاء اختيار الموظفين أولاً');
-        const { data: existing } = await supabase.from('evening_schedules').select('id').eq('date', date).maybeSingle();
+        const { data: existing } = await supabase.from('evening_schedules').select('id, doctors').eq('date', date).maybeSingle();
         
         if (existing) {
-            await supabase.from('evening_schedules').update({ doctors: selectedDoctors }).eq('id', existing.id);
-            alert('تم تحديث جدول النوبتجية لهذا اليوم');
+            const isSame = JSON.stringify(existing.doctors.sort()) === JSON.stringify(selectedDoctors.sort());
+            if (!isSame) {
+                await supabase.from('evening_schedules').update({ doctors: selectedDoctors }).eq('id', existing.id);
+                alert('تم تحديث جدول النوبتجية لهذا اليوم');
+            } else {
+                alert('البيانات مطابقة للسجل الحالي، لم يتم التغيير');
+            }
         } else {
             await supabase.from('evening_schedules').insert([{ date, doctors: selectedDoctors }]);
             alert('تم إضافة جدول نوبتجية جديد');
@@ -488,12 +498,12 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
             const d = formatDateForDB(row.date || row['التاريخ']);
             if (!d) continue;
             const doctors = String(row.doctors || row['الموظفين'] || row['الأطباء'] || '').split(',').map(s => s.trim()).filter(s => s);
-            const notes = row.notes || row['ملاحظات'] || '';
+            const notes = String(row.notes || row['ملاحظات'] || '').trim();
 
             if (existingMap.has(d)) {
                 const existingObj = existingMap.get(d) as any;
-                const isDifferent = JSON.stringify(existingObj.doctors.sort()) !== JSON.stringify(doctors.sort()) || 
-                                   existingObj.notes !== notes;
+                const isDifferent = JSON.stringify((existingObj.doctors || []).sort()) !== JSON.stringify(doctors.sort()) || 
+                                   String(existingObj.notes || '').trim() !== notes;
                 if (isDifferent) {
                     await supabase.from('evening_schedules').update({ doctors, notes }).eq('id', existingObj.id);
                     updated++;
@@ -505,7 +515,7 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
                 inserted++;
             }
         }
-        alert(`تقرير استيراد الجداول:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}\nتم إهمال (مطابق): ${skipped}`);
+        alert(`تقرير استيراد الجداول:\n- تم رفع جديد: ${inserted}\n- تم تحديث بيانات موجودة: ${updated}\n- تم إهمال (مطابق): ${skipped}`);
         fetchHistory();
     };
 
@@ -678,11 +688,11 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
       const toInsert = [];
 
       for (const row of data) {
-          const eid = String(row.employee_id || row['كود الموظف'] || '');
-          const type = String(row.type || row['نوع الطلب'] || '');
+          const eid = String(row.employee_id || row['كود الموظف'] || '').trim();
+          const type = String(row.type || row['نوع الطلب'] || '').trim();
           const start = formatDateForDB(row.start_date || row['من تاريخ']);
           const end = formatDateForDB(row.end_date || row['إلى تاريخ']);
-          const notes = String(row.notes || row['ملاحظات'] || '');
+          const notes = String(row.notes || row['ملاحظات'] || '').trim();
           
           if (!eid || !type || !start) continue;
 
@@ -698,8 +708,8 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
 
           if (existingMap.has(key)) {
               const existingObj = existingMap.get(key) as any;
-              const isDifferent = existingObj.end_date !== payload.end_date || 
-                                 existingObj.notes !== payload.notes;
+              const isDifferent = formatDateForDB(existingObj.end_date) !== payload.end_date || 
+                                 String(existingObj.notes || '').trim() !== payload.notes;
 
               if (isDifferent) {
                   await supabase.from('leave_requests').update(payload).eq('id', existingObj.id);
@@ -717,7 +727,7 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
           await supabase.from('leave_requests').insert(toInsert);
       }
       
-      alert(`تقرير استيراد الطلبات:\nتم رفع جديد: ${inserted}\nتم تحديث موجود: ${updated}\nتم إهمال (مطابق): ${skipped}`);
+      alert(`تقرير استيراد الطلبات:\n- تم رفع جديد: ${inserted}\n- تم تحديث بيانات موجودة: ${updated}\n- تم إهمال (مطابق): ${skipped}`);
       fetchLeaves();
   };
 
@@ -814,7 +824,7 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
   const [formData, setFormData] = useState<Partial<AttendanceRecord>>({ date: new Date().toISOString().split('T')[0], times: '' });
 
   const handleImport = async (data: any[]) => {
-    // جلب البيانات الحالية بالكامل للمقارنة اليدوية
+    // جلب كافة السجلات الحالية من قاعدة البيانات لضمان دقة المقارنة وتجنب التكرار
     const { data: existing } = await supabase.from('attendance').select('id, employee_id, date, times');
     const existingMap = new Map<string, any>(existing?.map(a => [`${a.employee_id}|${a.date}`, a]) || []);
 
@@ -825,7 +835,7 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
     const toInsert = [];
 
     for (const row of data) {
-        const eid = String(row.employee_id || row['الكود'] || '');
+        const eid = String(row.employee_id || row['الكود'] || '').trim();
         const d = formatDateForDB(row.date || row['التاريخ']);
         const times = String(row.times || row['البصمات'] || '').trim();
         
@@ -834,17 +844,17 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
 
         if (existingMap.has(key)) {
             const record = existingMap.get(key) as any;
-            // التحقق مما إذا كانت التوقيتات مختلفة عن الموجود في القاعدة
-            if (record.times !== times) {
-                // تحديث الصف إذا كان هناك تغيير كلي أو جزئي
-                await supabase.from('attendance').update({ times }).eq('id', record.id);
-                updated++;
+            // التحقق مما إذا كانت التوقيتات (البصمات) مختلفة في الملف عن قاعدة البيانات
+            if (String(record.times).trim() !== times) {
+                // تحديث الصف فقط في حالة وجود تغيير (تحديث كلي أو جزئي)
+                const { error } = await supabase.from('attendance').update({ times }).eq('id', record.id);
+                if (!error) updated++;
             } else {
-                // إهمال الصف إذا كان مطابقاً تماماً
+                // إهمال الصف إذا كان مطابقاً تماماً للبيانات الموجودة
                 skipped++;
             }
         } else {
-            // إضافة صف جديد إذا لم يكن موجوداً
+            // إضافة سجل جديد تماماً
             toInsert.push({ employee_id: eid, date: d, times });
             inserted++;
         }
@@ -854,7 +864,7 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         await supabase.from('attendance').insert(toInsert);
     }
 
-    alert(`تقرير استيراد البصمات:\nتم رفع جديد: ${inserted}\nتم تحديث موجود (لتغيير البيانات): ${updated}\nتم إهمال (مطابق للبيانات الحالية): ${skipped}`);
+    alert(`تقرير استيراد البصمات النهائي:\n--------------------------\n- تم رفع سجلات جديدة: ${inserted}\n- تم تحديث سجلات متغيرة: ${updated}\n- تم إهمال سجلات مطابقة (بدون تغيير): ${skipped}`);
     onRefresh(); 
   };
 
@@ -874,19 +884,20 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
         <button onClick={async () => { 
             const d = formData.date;
             const eid = formData.employee_id;
+            const times = String(formData.times || '').trim();
             if(!eid || !d) return alert('برجاء اختيار الموظف والتاريخ');
             
             const { data: existing } = await supabase.from('attendance').select('id, times').eq('employee_id', eid).eq('date', d).maybeSingle();
             
             if (existing) {
-                if (existing.times !== formData.times) {
-                    await supabase.from('attendance').update({ times: formData.times }).eq('id', existing.id);
-                    alert('تم تحديث سجل البصمة بنجاح');
+                if (String(existing.times).trim() !== times) {
+                    await supabase.from('attendance').update({ times }).eq('id', existing.id);
+                    alert('تم تحديث سجل البصمة بنجاح لوجود تغيير');
                 } else {
-                    alert('البيانات مطابقة للسجل الحالي، لم يتم إجراء أي تغيير');
+                    alert('البيانات مطابقة تماماً للسجل الحالي، لم يتم إجراء أي تغيير');
                 }
             } else {
-                await supabase.from('attendance').insert([formData]);
+                await supabase.from('attendance').insert([{ employee_id: eid, date: d, times }]);
                 alert('تم إضافة سجل بصمة جديد بنجاح');
             }
             onRefresh();
