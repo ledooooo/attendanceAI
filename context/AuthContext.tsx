@@ -18,40 +18,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [employeeProfile, setEmployeeProfile] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // --- دالة جلب البيانات الآمنة (RPC) ---
-  const fetchProfile = async () => {
+  // دالة جلب البيانات باستخدام RPC (لضمان السرعة وتخطي المشاكل)
+  const fetchProfile = async (email: string) => {
     try {
-      // نستخدم الدالة التي أنشأناها في SQL لتجنب مشاكل الصلاحيات
+      // نستخدم الدالة الآمنة التي أنشأناها في SQL
+      // إذا لم تكن قد أنشأت الدالة، سيعود بـ null
       const { data, error } = await supabase.rpc('get_my_profile');
       
-      if (error) {
-        console.error("Profile Fetch Error:", error);
-        return null;
+      if (error || !data || data.length === 0) {
+         // محاولة احتياطية في حال لم تعمل RPC
+         const { data: fallbackData } = await supabase
+            .from('employees')
+            .select('*')
+            .eq('email', email)
+            .maybeSingle();
+         return fallbackData;
       }
-      
-      // الدالة تعيد مصفوفة، نأخذ أول عنصر
-      if (data && data.length > 0) {
-        return data[0] as Employee;
-      }
-      return null;
-    } catch (err) {
-      console.error("Unexpected Error:", err);
+      return data[0] as Employee;
+    } catch {
       return null;
     }
   };
 
   const signOut = async () => {
     try {
-      setLoading(true);
       await supabase.auth.signOut();
     } catch (error) {
       console.error("SignOut Error:", error);
     } finally {
       setUser(null);
       setEmployeeProfile(null);
-      localStorage.clear();
-      sessionStorage.clear();
-      window.location.href = '/'; 
+      localStorage.clear(); // تنظيف كامل
+      window.location.replace('/'); // إعادة تحميل لإجبار المتصفح على البدء من جديد
     }
   };
 
@@ -63,41 +61,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    const initAuth = async () => {
-      try {
-        // 1. استعادة الجلسة من المتصفح
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (session?.user) {
-          if (mounted) setUser(session.user);
-          
-          // 2. جلب البروفايل فوراً
-          const profile = await fetchProfile();
-          if (mounted) setEmployeeProfile(profile);
+    // دالة التعامل مع الجلسة وتحديث الحالة
+    const handleSession = async (session: any) => {
+      if (session?.user) {
+        if (mounted) setUser(session.user);
+        
+        // جلب البروفايل فقط إذا لم يكن موجوداً
+        if (session.user.email) {
+            const profile = await fetchProfile(session.user.email);
+            if (mounted) setEmployeeProfile(profile);
         }
-      } catch (error) {
-        console.error("Auth Init Error:", error);
-      } finally {
-        if (mounted) setLoading(false);
+      } else {
+        if (mounted) {
+            setUser(null);
+            setEmployeeProfile(null);
+        }
       }
+      if (mounted) setLoading(false);
     };
 
-    initAuth();
+    // 1. الاستماع المباشر للتغييرات (هذا هو الأهم للتبويبات المتعددة)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth Event:", event); // للمراقبة
 
-    // الاستماع للتغييرات (عند الـ Login أو Refresh Token)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-
-      if (event === 'SIGNED_IN' && session?.user) {
-        setUser(session.user);
-        const profile = await fetchProfile();
-        setEmployeeProfile(profile);
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        handleSession(session);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setEmployeeProfile(null);
-      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-        // تحديث صامت
-        setUser(session.user);
+        setLoading(false);
+      }
+    });
+
+    // 2. التحقق المبدئي (للحالات التي لا يطلق فيها المستمع حدثاً فورياً)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        handleSession(session);
+      } else {
+        // إذا لم نجد جلسة ولم يطلق المستمع حدثاً بعد، ننهي التحميل
+        if (mounted && loading) setLoading(false);
       }
     });
 
