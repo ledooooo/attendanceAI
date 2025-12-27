@@ -1,96 +1,28 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
-import { OFFICIAL_TEMPLATES } from '../data/OfficialTemplates'; // تأكد من المسار الصحيح
-import { Search } from 'lucide-react'; // أيقونة البحث
+// تأكد من أن هذا المسار صحيح ويشير للملف الذي أنشأته
+import { OFFICIAL_TEMPLATES } from '../data/OfficialTemplates'; 
 import { 
-  ArrowRight, User, Calendar, FilePlus, ClipboardCheck, MessageCircle, Send, LogOut, Clock, AlertTriangle, CheckCircle, List, BarChart, Inbox, FileText, Award, Printer, Share2, X, Filter, PieChart, Info, MapPin, Phone, Mail, Hash, Briefcase, CalendarDays, ShieldCheck, FileCheck
+  ArrowRight, User, Calendar, FilePlus, Clock, List, BarChart, 
+  Inbox, Award, Printer, LogOut, Phone, Hash, Briefcase, 
+  CalendarDays, ShieldCheck, FileCheck, Search
 } from 'lucide-react';
 import { Employee, LeaveRequest, AttendanceRecord, InternalMessage, GeneralSettings, Evaluation } from '../types';
 
-// --- (نفس الثوابت السابقة) ---
+// --- الثوابت ---
 const LEAVE_TYPES = [
   "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "جزء من الوقت", "خط سير", "مأمورية", "دورة تدريبية", "بيان حالة وظيفية"
 ];
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-// --- بيانات القوالب الرسمية (هنا الجزء الجديد) ---
-const OFFICIAL_TEMPLATES = [
-    {
-        id: 'status_statement',
-        title: 'بيان حالة وظيفية',
-        icon: <User className="w-6 h-6 text-blue-600"/>,
-        content: (emp: Employee) => `
-            تشهد إدارة الموارد البشرية بالمركز الطبي بأن السيد/ **${emp.name}**، 
-            والحامل للرقم القومي **${emp.national_id}**، 
-            يعمل لدينا بوظيفة **${emp.specialty}** (كود: ${emp.employee_id}).
-            
-            تاريخ التعيين: **${emp.join_date || 'غير محدد'}**.
-            حالة العمل الحالية: **${emp.status}**.
-            
-            وقد أعطي له هذا البيان بناءً على طلبه لتقديمه لمن يهمه الأمر دون أدنى مسئولية على المركز.
-        `
-    },
-    {
-        id: 'casual_leave',
-        title: 'طلب إجازة عارضة',
-        icon: <Calendar className="w-6 h-6 text-amber-600"/>,
-        content: (emp: Employee) => `
-            السيد الدكتور / مدير المركز الطبي
-            تحية طيبة وبعد،،،
-            
-            أرجو من سيادتكم التكرم بالموافقة على احتساب يوم ................. الموافق ..../..../2024
-            إجازة عارضة لظروف خاصة، حيث أنني لم أتمكن من الحضور في هذا اليوم.
-            
-            مقدمه لسيادتكم
-            الاسم: **${emp.name}**
-            الوظيفة: **${emp.specialty}**
-            التاريخ: ${new Date().toLocaleDateString('ar-EG')}
-        `
-    },
-    {
-        id: 'annual_leave',
-        title: 'طلب إجازة اعتيادية',
-        icon: <CalendarDays className="w-6 h-6 text-emerald-600"/>,
-        content: (emp: Employee) => `
-            السيد الدكتور / مدير المركز الطبي
-            تحية طيبة وبعد،،،
-            
-            أرجو الموافقة على منحي إجازة اعتيادية لمدة ( ... ) أيام
-            تبدأ من يوم ................. الموافق ..../..../2024
-            وتنتهي يوم ................. الموافق ..../..../2024
-            
-            رصيدي الحالي يسمح بذلك، وسيقوم الزميل/ .......................... بالعمل بدلاً مني خلال هذه الفترة.
-            
-            مقدمه لسيادتكم
-            الاسم: **${emp.name}**
-            الوظيفة: **${emp.specialty}**
-        `
-    },
-    {
-        id: 'sick_leave',
-        title: 'إفادة توقيع كشف طبي',
-        icon: <Stethoscope className="w-6 h-6 text-red-600"/>,
-        content: (emp: Employee) => `
-            إلى اللجنة الطبية المختصة / التامين الصحي
-            
-            نحيطكم علماً بأن الموظف/ **${emp.name}**
-            الوظيفة/ **${emp.specialty}**
-            
-            قد شعر بإعياء شديد أثناء العمل يوم ................. الساعة .................
-            وتم تحويله إليكم لتوقيع الكشف الطبي وتقرير ما يلزم من إجازة مرضية إذا استدعى الأمر.
-            
-            مدير المركز الطبي
-        `
-    }
-];
-
-// ... (باقي المكونات المساعدة Input و Select كما هي) ...
+// --- المكونات المساعدة ---
 const Input = ({ label, type = 'text', value, onChange, placeholder, required = false }: any) => (
   <div className="text-right">
     <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label} {required && <span className="text-red-500">*</span>}</label>
     <input type={type} value={value} onChange={e => onChange(e.target.value)} className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none transition-all" placeholder={placeholder} />
   </div>
 );
+
 const Select = ({ label, options, value, onChange }: any) => (
     <div className="text-right">
       <label className="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wide">{label}</label>
@@ -99,6 +31,11 @@ const Select = ({ label, options, value, onChange }: any) => (
         {options.map((opt: any) => typeof opt === 'string' ? <option key={opt} value={opt}>{opt}</option> : <option key={opt.value} value={opt.value}>{opt.label}</option>)}
       </select>
     </div>
+);
+
+// أيقونة Stethoscope (غير موجودة في Lucide React الافتراضية أحياناً)
+const Stethoscope = (props: any) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>
 );
 
 // --- المكون الرئيسي ---
@@ -115,26 +52,20 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
   
   // Data States
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [allMyRequests, setAllMyRequests] = useState<LeaveRequest[]>([]);
   const [messages, setMessages] = useState<InternalMessage[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
-  const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
   // Fetch Data Function
   const fetchStaffData = async (empId: string) => {
-    const [attRes, leaveRes, setRes, myReqRes, msgRes, evalRes] = await Promise.all([
+    const [attRes, myReqRes, msgRes, evalRes] = await Promise.all([
       supabase.from('attendance').select('*').eq('employee_id', empId),
-      supabase.from('leave_requests').select('*').eq('employee_id', empId).eq('status', 'مقبول'),
-      supabase.from('general_settings').select('*').limit(1).single(),
       supabase.from('leave_requests').select('*').eq('employee_id', empId).order('created_at', { ascending: false }),
       supabase.from('messages').select('*').or(`to_user.eq.${empId},to_user.eq.all`).order('created_at', { ascending: false }),
       supabase.from('evaluations').select('*').eq('employee_id', empId).order('month', { ascending: false })
     ]);
     if (attRes.data) setAttendance(attRes.data);
-    if (leaveRes.data) setLeaves(leaveRes.data);
-    if (setRes.data) setSettings(setRes.data);
     if (myReqRes.data) setAllMyRequests(myReqRes.data);
     if (msgRes.data) setMessages(msgRes.data);
     if (evalRes.data) setEvaluations(evalRes.data);
@@ -176,7 +107,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
     );
   }
 
-  // Helper for attendance calc (moved inside or kept outside)
+  // Calculate Hours Helper
   const calculateHours = (inT: string, outT: string) => {
     if (!inT || !outT) return 0;
     const [h1, m1] = inT.split(':').map(Number);
@@ -211,11 +142,12 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
            <StaffNav active={activeTab === 'profile'} icon={<User className="w-5 h-5"/>} label="الملف الشخصي" onClick={() => setActiveTab('profile')} />
            <StaffNav active={activeTab === 'attendance'} icon={<Clock className="w-5 h-5"/>} label="سجل الحضور" onClick={() => setActiveTab('attendance')} />
            <StaffNav active={activeTab === 'new-request'} icon={<FilePlus className="w-5 h-5"/>} label="تقديم طلب إلكتروني" onClick={() => setActiveTab('new-request')} />
-           <StaffNav active={activeTab === 'templates'} icon={<Printer className="w-5 h-5"/>} label="نماذج للطباعة" onClick={() => setActiveTab('templates')} />
+           {/* تم تغيير الاسم هنا */}
+           <StaffNav active={activeTab === 'templates'} icon={<Printer className="w-5 h-5"/>} label="طباعة نموذج" onClick={() => setActiveTab('templates')} />
            <StaffNav active={activeTab === 'requests-history'} icon={<List className="w-5 h-5"/>} label="سجل الطلبات" onClick={() => setActiveTab('requests-history')} />
            <StaffNav active={activeTab === 'evals'} icon={<Award className="w-5 h-5"/>} label="التقييمات الشهرية" onClick={() => setActiveTab('evals')} />
            <StaffNav active={activeTab === 'messages'} icon={<Inbox className="w-5 h-5"/>} label="الرسائل والتنبيهات" onClick={() => setActiveTab('messages')} />
-           <StaffNav active={activeTab === 'stats'} icon={<PieChart className="w-5 h-5"/>} label="الإحصائيات" onClick={() => setActiveTab('stats')} />
+           <StaffNav active={activeTab === 'stats'} icon={<BarChart className="w-5 h-5"/>} label="الإحصائيات" onClick={() => setActiveTab('stats')} />
         </div>
 
         {/* Main Content Area */}
@@ -232,7 +164,7 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
           )}
           {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={() => fetchStaffData(employee.employee_id)} />}
           
-          {/* هنا التبويب الجديد للقوالب */}
+          {/* تبويب النماذج (المعدل) */}
           {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
 
           {activeTab === 'requests-history' && <StaffRequestsHistory requests={allMyRequests} />}
@@ -247,19 +179,19 @@ const StaffDashboard: React.FC<StaffDashboardProps> = ({ onBack, employee, setEm
 
 // --- المكونات الفرعية ---
 
-// 1. مكون القوالب الجديد (Templates Tab)
+// 1. مكون القوالب (Templates Tab) - النسخة المتقدمة مع البحث
 const StaffTemplatesTab = ({ employee }: { employee: Employee }) => {
     const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('الكل');
 
-    // استخراج التصنيفات المتاحة تلقائياً من الملف
-    const categories = ['الكل', ...Array.from(new Set(OFFICIAL_TEMPLATES.map(t => t.category)))];
+    // استخراج التصنيفات
+    const categories = ['الكل', ...Array.from(new Set(OFFICIAL_TEMPLATES.map((t: any) => t.category)))];
 
-    // فلترة النماذج حسب البحث والتصنيف
-    const filteredTemplates = OFFICIAL_TEMPLATES.filter(tmpl => 
+    // الفلترة
+    const filteredTemplates = OFFICIAL_TEMPLATES.filter((tmpl: any) => 
         (filterCategory === 'الكل' || tmpl.category === filterCategory) &&
-        (tmpl.title.includes(searchTerm))
+        (tmpl.title.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     const handlePrint = () => {
@@ -267,9 +199,9 @@ const StaffTemplatesTab = ({ employee }: { employee: Employee }) => {
     };
 
     if (selectedTemplate) {
-        // ... (نفس كود المعاينة والطباعة السابق بالضبط بدون تغيير) ...
         return (
             <div className="animate-in fade-in duration-300">
+                {/* رأس الصفحة - يختفي عند الطباعة */}
                 <div className="flex justify-between items-center mb-8 no-print border-b pb-4">
                     <button onClick={() => setSelectedTemplate(null)} className="flex items-center text-gray-500 font-bold hover:text-emerald-600 gap-2">
                         <ArrowRight className="w-5 h-5"/> عودة للقائمة
@@ -278,19 +210,57 @@ const StaffTemplatesTab = ({ employee }: { employee: Employee }) => {
                         <Printer className="w-5 h-5"/> طباعة النموذج
                     </button>
                 </div>
-                {/* ورقة الطباعة A4 (نفس الكود السابق) */}
-                <div className="print-paper mx-auto bg-white p-12 max-w-[210mm] min-h-[297mm] relative text-black print:w-full print:max-w-none print:p-0">
+
+                {/* ورقة الطباعة A4 */}
+                <div className="print-paper mx-auto bg-white p-12 max-w-[210mm] min-h-[297mm] relative text-black print:w-full print:max-w-none print:p-0 print:m-0">
+                    
+                    {/* الترويسة الرسمية */}
                     <div className="flex justify-between items-start border-b-4 border-black pb-6 mb-12">
-                         {/* ... نفس الترويسة السابقة ... */}
-                         <div className="text-center space-y-2"><h2 className="font-black text-xl">مديرية الشئون الصحية</h2><h3 className="font-bold text-lg">المركز الطبي</h3></div>
-                         <div className="w-24 h-24 flex items-center justify-center opacity-80"><img src="https://upload.wikimedia.org/wikipedia/ar/thumb/a/a2/Logo_Ministry_of_Health_and_Population_%28Egypt%29.svg/1200px-Logo_Ministry_of_Health_and_Population_%28Egypt%29.svg.png" alt="MOH" className="w-20 object-contain grayscale" /></div>
-                         <div className="text-center space-y-2"><h2 className="font-black text-xl">Ministry of Health</h2><h3 className="font-bold text-lg">Medical Center</h3></div>
+                        <div className="text-center space-y-2">
+                            <h2 className="font-black text-xl">مديرية الشئون الصحية</h2>
+                            <h3 className="font-bold text-lg">المركز الطبي</h3>
+                            <h4 className="font-bold">شئون العاملين</h4>
+                        </div>
+                        <div className="w-24 h-24 flex items-center justify-center opacity-80">
+                             <img src="https://upload.wikimedia.org/wikipedia/ar/thumb/a/a2/Logo_Ministry_of_Health_and_Population_%28Egypt%29.svg/1200px-Logo_Ministry_of_Health_and_Population_%28Egypt%29.svg.png" alt="MOH" className="w-20 object-contain grayscale" />
+                        </div>
+                        <div className="text-center space-y-2">
+                            <h2 className="font-black text-xl">Ministry of Health</h2>
+                            <h3 className="font-bold text-lg">Medical Center</h3>
+                            <h4 className="font-bold">HR Department</h4>
+                        </div>
                     </div>
-                    <div className="text-center my-16"><h1 className="text-3xl font-black underline decoration-2 underline-offset-8 border-2 border-black inline-block px-8 py-2 rounded-lg">{selectedTemplate.title}</h1></div>
-                    <div className="text-2xl leading-[3] text-justify font-medium px-4 whitespace-pre-line">{selectedTemplate.content(employee)}</div>
-                    <div className="mt-32 grid grid-cols-2 gap-20 text-center text-lg">
-                        <div className="space-y-24"><div className="space-y-2"><p className="font-black underline">توقيع الموظف</p><p className="text-sm font-bold">{employee.name}</p></div></div>
-                        <div className="space-y-24"><div className="space-y-2"><p className="font-black underline">مدير المركز الطبي</p><p className="mt-8">............................</p></div></div>
+
+                    {/* عنوان النموذج */}
+                    <div className="text-center my-16">
+                        <h1 className="text-3xl font-black underline decoration-2 underline-offset-8 border-2 border-black inline-block px-8 py-2 rounded-lg">
+                            {selectedTemplate.title}
+                        </h1>
+                    </div>
+
+                    {/* محتوى النموذج */}
+                    <div className="text-2xl leading-[3] text-justify font-medium px-4 whitespace-pre-line min-h-[400px]">
+                        {selectedTemplate.content(employee)}
+                    </div>
+
+                    {/* التذييل والتوقيعات */}
+                    <div className="mt-20 grid grid-cols-2 gap-20 text-center text-lg break-inside-avoid">
+                        <div className="space-y-24">
+                            <div className="space-y-2">
+                                <p className="font-black underline">توقيع الموظف</p>
+                                <p className="text-sm font-bold">{employee.name}</p>
+                            </div>
+                        </div>
+                        <div className="space-y-24">
+                            <div className="space-y-2">
+                                <p className="font-black underline">مدير المركز الطبي</p>
+                                <p className="mt-8">............................</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="absolute bottom-10 left-0 right-0 text-center text-xs text-gray-500 border-t pt-2 w-full no-print">
+                        تم استخراج هذا المستند إلكترونياً من نظام إدارة المركز الطبي
                     </div>
                 </div>
             </div>
@@ -300,7 +270,7 @@ const StaffTemplatesTab = ({ employee }: { employee: Employee }) => {
     return (
         <div className="space-y-8 animate-in slide-in-from-bottom duration-500 no-print">
             <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800 border-b pb-4">
-                <FileCheck className="text-emerald-600 w-7 h-7" /> مكتبة النماذج والقوالب ({OFFICIAL_TEMPLATES.length})
+                <Printer className="text-emerald-600 w-7 h-7" /> نماذج رسمية جاهزة للطباعة ({OFFICIAL_TEMPLATES.length})
             </h3>
             
             {/* شريط البحث والتصنيف */}
@@ -309,10 +279,10 @@ const StaffTemplatesTab = ({ employee }: { employee: Employee }) => {
                     <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input 
                         type="text" 
-                        placeholder="ابحث عن اسم النموذج..." 
+                        placeholder="ابحث عن اسم النموذج (مثال: عارضة، مرتب...)" 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pr-12 pl-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500"
+                        className="w-full pr-12 pl-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
                     />
                 </div>
                 <div className="flex gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
@@ -330,37 +300,35 @@ const StaffTemplatesTab = ({ employee }: { employee: Employee }) => {
 
             {/* شبكة النماذج */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredTemplates.map((tmpl) => (
+                {filteredTemplates.map((tmpl: any) => (
                     <button 
                         key={tmpl.id}
                         onClick={() => setSelectedTemplate(tmpl)}
-                        className="p-6 bg-white border-2 border-gray-100 rounded-3xl hover:border-emerald-500 hover:shadow-lg transition-all text-right group flex flex-col items-start gap-4 relative overflow-hidden"
+                        className="p-6 bg-white border-2 border-gray-100 rounded-3xl hover:border-emerald-500 hover:shadow-lg transition-all text-right group flex flex-col items-start gap-4 relative overflow-hidden h-full"
                     >
-                        <div className="flex justify-between w-full">
-                            <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center group-hover:bg-emerald-50 transition-colors">
+                        <div className="flex justify-between w-full items-start">
+                            <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center group-hover:bg-emerald-50 transition-colors border border-gray-100">
                                 {tmpl.icon}
                             </div>
-                            <span className="text-[10px] bg-gray-100 px-2 py-1 rounded-lg text-gray-500 font-bold h-fit">{tmpl.category}</span>
+                            <span className="text-[10px] bg-gray-100 px-3 py-1 rounded-full text-gray-500 font-bold">{tmpl.category}</span>
                         </div>
-                        <div>
-                            <h4 className="font-black text-lg text-gray-800 group-hover:text-emerald-600">{tmpl.title}</h4>
-                            <p className="text-xs text-gray-400 mt-1 font-bold">اضغط للمعاينة والطباعة</p>
+                        <div className="space-y-1">
+                            <h4 className="font-black text-lg text-gray-800 group-hover:text-emerald-600 transition-colors">{tmpl.title}</h4>
+                            <p className="text-xs text-gray-400 font-bold">اضغط للمعاينة والطباعة الفورية</p>
                         </div>
                     </button>
                 ))}
                 {filteredTemplates.length === 0 && (
-                    <div className="col-span-full text-center py-12 text-gray-400 font-bold border-2 border-dashed rounded-3xl">
-                        لا توجد نماذج تطابق بحثك
+                    <div className="col-span-full text-center py-12 text-gray-400 font-bold border-2 border-dashed rounded-3xl bg-gray-50">
+                        لا توجد نماذج تطابق بحثك الحالي
                     </div>
                 )}
             </div>
         </div>
     );
 };
-// --- باقي المكونات (Profile, Attendance, etc.) تظل كما هي ---
-// (لتوفير المساحة سأكتب المكونات كما كانت، تأكد من عدم حذفها عند النسخ)
-// ... [باقي الكود الخاص بـ StaffProfile, StaffAttendance, StaffNewRequest, StaffRequestsHistory, StaffEvaluations, StaffMessages, StaffStats] ...
-// سأعيد كتابة المكونات الأساسية المطلوبة لعمل الصفحة بشكل صحيح
+
+// --- باقي المكونات الفرعية كما هي ---
 
 const StaffNav = ({ active, icon, label, onClick }: any) => (
   <button onClick={onClick} className={`w-full flex items-center p-4 rounded-2xl font-black transition-all active:scale-95 ${active ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100 border-2 border-emerald-600' : 'bg-white text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 border-2 border-transparent'}`}>
@@ -404,7 +372,7 @@ const getCheckOutLabel = (time: string): string => {
   return "انصراف";
 };
 
-const StaffAttendance = ({ attendance, selectedMonth, setSelectedMonth, calculateHours, employee }: any) => (
+const StaffAttendance = ({ attendance, selectedMonth, setSelectedMonth, calculateHours }: any) => (
     <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
         <div className="flex justify-between items-center mb-6 no-print">
             <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800"><Clock className="text-emerald-600 w-7 h-7" /> سجل الحضور والانصراف</h3>
@@ -518,7 +486,7 @@ const StaffMessages = ({ messages }: { messages: InternalMessage[] }) => (
     </div>
 );
 
-const StaffStats = ({ attendance, employee, month }: any) => {
+const StaffStats = ({ attendance, month }: any) => {
     const stats = useMemo(() => {
         const atts = attendance.filter((a:any) => a.date.startsWith(month));
         let totalHours = 0;
@@ -538,10 +506,5 @@ const StaffStats = ({ attendance, employee, month }: any) => {
         </div>
     );
 };
-
-// --- أيقونة Stethoscope الناقصة ---
-const Stethoscope = (props: any) => (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>
-);
 
 export default StaffDashboard;
