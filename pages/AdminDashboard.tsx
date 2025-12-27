@@ -324,8 +324,18 @@ function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[],
                     remaining_annual: 21,
                     remaining_casual: 7
                 })).filter(r => r.employee_id && r.name);
+                
+                // Fetch existing IDs to compare
+                const { data: existing } = await supabase.from('employees').select('employee_id');
+                const existingIds = new Set(existing?.map(e => e.employee_id) || []);
+                
                 const { error } = await supabase.from('employees').upsert(formatted, { onConflict: 'employee_id' });
-                if (!error) { alert(`تم تحديث ${formatted.length} موظف`); onRefresh(); }
+                if (!error) { 
+                    const updated = formatted.filter(r => existingIds.has(r.employee_id)).length;
+                    const inserted = formatted.length - updated;
+                    alert(`تمت عملية الاستيراد بنجاح:\nتم رفع عدد: ${inserted}\nتم تحديث عدد: ${updated}`);
+                    onRefresh(); 
+                }
             }} label="استيراد موظفين" />
         </div>
       </div>
@@ -370,7 +380,7 @@ function EvaluationsTab({ employees }: { employees: Employee[] }) {
         const { error } = await supabase.from('evaluations').upsert([{
             employee_id: evalData.employee_id, month, score_appearance: evalData.scores.s1, score_attendance: evalData.scores.s2, score_quality: evalData.scores.s3, score_infection: evalData.scores.s4, score_training: evalData.scores.s5, score_records: evalData.scores.s6, score_tasks: evalData.scores.s7, total_score: total, notes: evalData.notes
         }], { onConflict: 'employee_id,month' });
-        if(!error) { alert('تم حفظ التقييم بنجاح'); setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' }); }
+        if(!error) { alert('تم حفظ وتحديث التقييم بنجاح'); setEvalData({ employee_id: '', scores: {s1:0,s2:0,s3:0,s4:0,s5:0,s6:0,s7:0}, notes: '' }); }
     };
 
     return (
@@ -439,9 +449,15 @@ function EveningSchedulesTab({ employees, centerName, centerId }: { employees: E
             notes: row.notes || row['ملاحظات'] || ''
         })).filter(r => r.date && r.doctors.length > 0);
         
+        // Fetch existing dates
+        const { data: existing } = await supabase.from('evening_schedules').select('date');
+        const existingDates = new Set(existing?.map(h => h.date) || []);
+
         const { error } = await supabase.from('evening_schedules').upsert(formatted, { onConflict: 'date' });
         if (!error) {
-            alert(`تم تحديث ${formatted.length} سجل نوبتجية بنجاح`);
+            const updated = formatted.filter(r => existingDates.has(r.date)).length;
+            const inserted = formatted.length - updated;
+            alert(`تم استيراد الجداول بنجاح:\nتم رفع عدد: ${inserted}\nتم تحديث عدد: ${updated}`);
             fetchHistory();
         } else alert(error.message);
     };
@@ -620,9 +636,15 @@ function LeavesTab({ onRefresh }: { onRefresh: () => void }) {
           notes: String(row.notes || row['ملاحظات'] || '')
       })).filter(r => r.employee_id && r.type && r.start_date);
       
+      // Fetch existing records for comparison
+      const { data: existing } = await supabase.from('leave_requests').select('employee_id,type,start_date');
+      const existingKeys = new Set(existing?.map(l => `${l.employee_id}|${l.type}|${l.start_date}`) || []);
+
       const { error } = await supabase.from('leave_requests').upsert(formatted, { onConflict: 'employee_id,type,start_date' });
       if (!error) {
-          alert(`تم تحديث ${formatted.length} طلب إجازة بنجاح`);
+          const updated = formatted.filter(r => existingKeys.has(`${r.employee_id}|${r.type}|${r.start_date}`)).length;
+          const inserted = formatted.length - updated;
+          alert(`تم استيراد الطلبات بنجاح:\nتم رفع عدد: ${inserted}\nتم تحديث عدد: ${updated}`);
           fetchLeaves();
       } else alert(error.message);
   };
@@ -729,21 +751,34 @@ function AttendanceTab({ employees, onRefresh }: { employees: Employee[], onRefr
       if (!validIds.has(eid)) return null;
       return { employee_id: eid, date: formatDateForDB(row.date || row['التاريخ']), times: String(row.times || row['البصمات'] || '').trim() };
     }).filter(r => r && r.employee_id && r.date);
+    
+    // Fetch existing attendance to compare
+    const { data: existing } = await supabase.from('attendance').select('employee_id,date');
+    const existingKeys = new Set(existing?.map(a => `${a.employee_id}|${a.date}`) || []);
+
     const { error } = await supabase.from('attendance').upsert(processed, { onConflict: 'employee_id,date' });
-    if (!error) { alert(`تم تحديث ${processed.length} سجل بصمة`); onRefresh(); }
+    if (!error) { 
+        const updated = processed.filter(r => existingKeys.has(`${r.employee_id}|${r.date}`)).length;
+        const inserted = processed.length - updated;
+        alert(`تمت عملية استيراد البصمات بنجاح:\nتم رفع عدد: ${inserted}\nتم تحديث عدد: ${updated}`);
+        onRefresh(); 
+    }
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
         <h2 className="text-2xl font-black text-gray-800"><Clock className="inline-block ml-2 text-blue-600"/> سجل البصمات</h2>
-        <ExcelUploadButton onData={handleImport} label="رفع ملف البصمات" />
+        <div className="flex gap-2">
+            <button onClick={()=>downloadSample('attendance')} className="text-gray-400 p-2 hover:text-blue-600 transition-colors" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
+            <ExcelUploadButton onData={handleImport} label="رفع ملف البصمات" />
+        </div>
       </div>
       <div className="bg-gray-50 p-8 rounded-[40px] border grid grid-cols-1 md:grid-cols-2 gap-6 shadow-inner">
         <Select label="الموظف" options={employees.map(e => ({value: e.employee_id, label: e.name}))} value={formData.employee_id} onChange={(v:any)=>setFormData({...formData, employee_id: v})} />
         <Input label="التاريخ" type="date" value={formData.date} onChange={(v:any)=>setFormData({...formData, date: v})} />
         <div className="md:col-span-2"><Input label="التوقيتات (مفصولة بمسافات)" value={formData.times} onChange={(v:any)=>setFormData({...formData, times: v})} placeholder="مثال: 08:30 14:15 16:00" /></div>
-        <button onClick={async () => { await supabase.from('attendance').upsert([formData], { onConflict: 'employee_id,date' }); alert('تم الحفظ والتحديث'); onRefresh(); }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
+        <button onClick={async () => { await supabase.from('attendance').upsert([formData], { onConflict: 'employee_id,date' }); alert('تم الحفظ والتحديث بنجاح'); onRefresh(); }} className="md:col-span-2 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-xl">حفظ السجل يدوياً</button>
       </div>
     </div>
   );
