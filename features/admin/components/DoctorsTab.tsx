@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation, InternalMessage } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { ExcelUploadButton, downloadSample } from '../../../components/ui/ExcelUploadButton';
-import { Download, Users, ArrowRight, User, Clock, FileText, Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { 
+  Download, Users, ArrowRight, User, Clock, FileText, 
+  Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown 
+} from 'lucide-react';
 
+// استيراد المكونات الفرعية
 import StaffProfile from '../../staff/components/StaffProfile';
 import StaffAttendance from '../../staff/components/StaffAttendance';
 import StaffRequestsHistory from '../../staff/components/StaffRequestsHistory';
@@ -12,7 +16,7 @@ import StaffEvaluations from '../../staff/components/StaffEvaluations';
 import StaffStats from '../../staff/components/StaffStats';
 import StaffMessages from '../../staff/components/StaffMessages';
 
-// ... (دالة formatDateForDB كما هي)
+// دالة مساعدة لتنسيق التاريخ لقاعدة البيانات
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
@@ -30,15 +34,17 @@ const formatDateForDB = (val: any): string | null => {
 };
 
 export default function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
+  // --- States for Filtering ---
   const [fName, setFName] = useState('');
   const [fId, setFId] = useState('');
   const [fSpec, setFSpec] = useState('all');
   const [fStatus, setFStatus] = useState('all');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- Sorting State ---
+  // --- States for Sorting ---
   const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'employee_id' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
 
+  // --- States for Detail View ---
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [detailTab, setDetailTab] = useState('profile');
   const [empData, setEmpData] = useState<{
@@ -49,6 +55,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   }>({ attendance: [], requests: [], evals: [], messages: [] });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
+  // جلب بيانات الموظف المختار التفصيلية
   useEffect(() => {
     if (selectedEmp) {
       const fetchData = async () => {
@@ -70,7 +77,15 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     }
   }, [selectedEmp]);
 
-  // --- Filtering & Sorting Logic ---
+  // منطق الفلترة
+  const filtered = employees.filter(e => 
+    (e.name.includes(fName)) && 
+    (e.employee_id.includes(fId)) && 
+    (fSpec === 'all' || e.specialty === fSpec) &&
+    (fStatus === 'all' || e.status === fStatus)
+  );
+
+  // منطق الترتيب
   const handleSort = (key: 'name' | 'employee_id') => {
       let direction: 'asc' | 'desc' = 'asc';
       if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -79,14 +94,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       setSortConfig({ key, direction });
   };
 
-  const filtered = employees.filter(e => 
-    (e.name.includes(fName)) && 
-    (e.employee_id.includes(fId)) && 
-    (fSpec === 'all' || e.specialty === fSpec) &&
-    (fStatus === 'all' || e.status === fStatus)
-  );
-
-  const sortedEmployees = React.useMemo(() => {
+  const sortedEmployees = useMemo(() => {
       let sortableItems = [...filtered];
       if (sortConfig.key !== null) {
           sortableItems.sort((a, b) => {
@@ -102,19 +110,19 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       return sortableItems;
   }, [filtered, sortConfig]);
 
-  // --- Update Status Logic ---
+  // منطق تحديث الحالة السريع
   const updateStatus = async (id: string, newStatus: string) => {
       const { error } = await supabase.from('employees').update({ status: newStatus }).eq('id', id);
       if (!error) {
-          onRefresh(); // Refresh list to show new status
+          onRefresh(); // تحديث القائمة لإظهار الحالة الجديدة
       } else {
           alert('فشل تحديث الحالة: ' + error.message);
       }
   };
 
+  // منطق استيراد الإكسيل
   const handleExcelImport = async (data: any[]) => {
-      // ... (نفس كود الاستيراد السابق)
-       setIsProcessing(true);
+    setIsProcessing(true);
     try {
         const payload = data.map(row => ({
             employee_id: String(row.employee_id || row.employee_ || row['الكود'] || row['ID'] || '').trim(),
@@ -140,10 +148,11 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     }
   };
 
+  // --- عرض التفاصيل (ملف الموظف) ---
   if (selectedEmp) {
       return (
           <div className="space-y-6 animate-in slide-in-from-left duration-300">
-              {/* Header Profile */}
+              {/* Header */}
               <div className="flex items-center justify-between bg-white p-4 rounded-3xl shadow-sm border border-blue-100">
                   <div className="flex items-center gap-4">
                       <button onClick={() => setSelectedEmp(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -154,9 +163,12 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                           <p className="text-xs text-gray-500 font-bold">{selectedEmp.specialty} • {selectedEmp.employee_id}</p>
                       </div>
                   </div>
+                  <div className={`px-3 py-1 rounded-lg text-xs font-black ${selectedEmp.status==='نشط'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>
+                      {selectedEmp.status}
+                  </div>
               </div>
 
-              {/* Tabs */}
+              {/* Navigation Tabs */}
               <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                   {[
                       {id: 'profile', icon: User, label: 'البيانات والتعديل'},
@@ -176,10 +188,15 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   ))}
               </div>
 
+              {/* Content */}
               <div className="bg-white p-6 rounded-[30px] border shadow-sm min-h-[500px]">
-                  {/* تمرير دالة التحديث للملف الشخصي ليتمكن من تحديث القائمة الرئيسية عند الحفظ */}
-                  {detailTab === 'profile' && <StaffProfile employee={selectedEmp} onUpdate={onRefresh} />}
-                  
+                  {detailTab === 'profile' && (
+                      <StaffProfile 
+                          employee={selectedEmp} 
+                          isEditable={true} // تفعيل التعديل للمدير
+                          onUpdate={onRefresh} // لتحديث القائمة الرئيسية بعد الحفظ
+                      />
+                  )}
                   {detailTab === 'attendance' && <StaffAttendance attendance={empData.attendance} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={selectedEmp} />}
                   {detailTab === 'stats' && <StaffStats attendance={empData.attendance} evals={empData.evals} requests={empData.requests} month={selectedMonth} />}
                   {detailTab === 'requests' && <StaffRequestsHistory requests={empData.requests} />}
@@ -190,7 +207,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       );
   }
 
-  // --- List View ---
+  // --- عرض القائمة (الجدول الرئيسي) ---
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center border-b pb-4">
@@ -213,22 +230,22 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
               <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
                   <tr>
                       <th 
-                        className="p-4 text-center cursor-pointer hover:bg-gray-200 transition-colors"
+                        className="p-4 text-center cursor-pointer hover:bg-gray-200 transition-colors select-none"
                         onClick={() => handleSort('employee_id')}
                       >
                           <div className="flex items-center justify-center gap-1">
                              الكود
-                             {sortConfig.key === 'employee_id' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4"/> : <ArrowDown className="w-4 h-4"/>)}
+                             {sortConfig.key === 'employee_id' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}
                              {sortConfig.key !== 'employee_id' && <ArrowUpDown className="w-4 h-4 text-gray-300"/>}
                           </div>
                       </th>
                       <th 
-                        className="p-4 cursor-pointer hover:bg-gray-200 transition-colors"
+                        className="p-4 cursor-pointer hover:bg-gray-200 transition-colors select-none"
                         onClick={() => handleSort('name')}
                       >
                           <div className="flex items-center gap-1">
                              الاسم
-                             {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4"/> : <ArrowDown className="w-4 h-4"/>)}
+                             {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}
                              {sortConfig.key !== 'name' && <ArrowUpDown className="w-4 h-4 text-gray-300"/>}
                           </div>
                       </th>
@@ -240,13 +257,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   {sortedEmployees.map(emp => (
                       <tr key={emp.id} className="border-b hover:bg-blue-50/50 transition-all group">
                           {/* الكود والاسم يفتحان الملف */}
-                          <td onClick={() => setSelectedEmp(emp)} className="p-4 font-mono font-bold text-blue-600 text-center cursor-pointer">{emp.employee_id}</td>
+                          <td onClick={() => setSelectedEmp(emp)} className="p-4 font-mono font-bold text-blue-600 text-center cursor-pointer hover:underline">{emp.employee_id}</td>
                           <td onClick={() => setSelectedEmp(emp)} className="p-4 font-black group-hover:text-blue-600 transition-colors cursor-pointer">
                               <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-xs overflow-hidden">
-                                    {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover"/> : <User className="w-4 h-4"/>}
-                                </div>
-                                {emp.name}
+                                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-xs overflow-hidden">
+                                      {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover"/> : <User className="w-4 h-4"/>}
+                                  </div>
+                                  {emp.name}
                               </div>
                           </td>
                           <td onClick={() => setSelectedEmp(emp)} className="p-4 text-xs font-bold text-gray-500 text-center cursor-pointer">{emp.specialty}</td>
@@ -262,7 +279,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     emp.status === 'إجازة' ? 'bg-orange-50 border-orange-200 text-orange-700' :
                                     'bg-gray-50 border-gray-200 text-gray-700'
                                 }`}
-                                onClick={(e) => e.stopPropagation()} // لمنع فتح الملف عند الضغط على القائمة
+                                onClick={(e) => e.stopPropagation()} // هام: لمنع فتح الملف عند الضغط هنا
                               >
                                   <option value="نشط">نشط</option>
                                   <option value="موقوف">موقوف</option>
@@ -272,6 +289,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                           </td>
                       </tr>
                   ))}
+                  {sortedEmployees.length === 0 && (
+                      <tr><td colSpan={4} className="p-8 text-center text-gray-400">لا توجد نتائج مطابقة</td></tr>
+                  )}
               </tbody>
           </table>
       </div>
