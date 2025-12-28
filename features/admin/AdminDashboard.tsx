@@ -14,7 +14,8 @@ import EveningSchedulesTab from './components/EveningSchedulesTab'; // (3) جد�
 import LeavesTab from './components/LeavesTab';             // (4) طلبات الإجازات
 import EvaluationsTab from './components/EvaluationsTab';   // (5) التقييمات الطبية
 import SettingsTab from './components/SettingsTab';         // (6) إعدادات النظام
-
+import ReportsTab from './components/ReportsTab'; // <--- أضف هذا
+import { FileBarChart } from 'lucide-react'; // <--- أضف أيقونة التقارير
 import NotificationBell from '../../components/ui/NotificationBell';
 
 export default function AdminDashboard() {
@@ -45,14 +46,15 @@ export default function AdminDashboard() {
     fetchSettings();
   }, []);
 
-  const menuItems = [
-    { id: 'doctors', label: 'شئون الموظفين', icon: Users },
-    { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
-    { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange }, // جديد
-    { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
-    { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
-    { id: 'settings', label: 'إعدادات النظام', icon: Settings },
-  ];
+const menuItems = [
+  { id: 'doctors', label: 'شئون الموظفين', icon: Users },
+  { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
+  { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
+  { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart }, // <--- أضف هذا السطر
+  { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
+  { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
+  { id: 'settings', label: 'إعدادات النظام', icon: Settings },
+];
 
   return (
     <div className="min-h-screen bg-gray-50 flex font-sans text-right" dir="rtl">
@@ -120,6 +122,7 @@ export default function AdminDashboard() {
             {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={centerId} />}
             {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
             {activeTab === 'schedules' && <EveningSchedulesTab employees={employees} />}
+            {activeTab === 'reports' && <ReportsTab />}
             {activeTab === 'leaves' && <LeavesTab />}
             {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
