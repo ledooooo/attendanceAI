@@ -6,9 +6,9 @@ import { Send, CheckSquare, Square, Filter, Loader2, Mail } from 'lucide-react';
 import emailjs from '@emailjs/browser';
 
 export default function SendReportsTab() {
-    // --- إعدادات EmailJS الخاصة بك ---
+    // --- إعدادات EmailJS ---
     const SERVICE_ID = "service_57p7vff";
-    const TEMPLATE_ID = "template_2uu2xc6";
+    const TEMPLATE_ID = "template_uumarnn";
     const PUBLIC_KEY = "dBVlrOc_xTs91dlxW";
 
     const [employees, setEmployees] = useState<Employee[]>([]);
@@ -24,7 +24,6 @@ export default function SendReportsTab() {
     const [settings, setSettings] = useState<any>(null);
 
     useEffect(() => {
-        // تهيئة EmailJS عند فتح الصفحة
         emailjs.init(PUBLIC_KEY);
         fetchData();
     }, []);
@@ -52,47 +51,79 @@ export default function SendReportsTab() {
         else setSelectedIds([...selectedIds, id]);
     };
 
-    // --- دالة توليد HTML للإيميل ---
+    // --- دالة توليد HTML (تم تحسين منطق البيانات) ---
     const generateEmailHTML = (emp: Employee, attendance: AttendanceRecord[], leaves: LeaveRequest[], monthStr: string) => {
         const daysInMonth = new Date(parseInt(monthStr.split('-')[0]), parseInt(monthStr.split('-')[1]), 0).getDate();
         let rowsHTML = '';
-        let totalPresent = 0, totalAbsent = 0, totalLate = 0, totalLeaves = 0, totalHours = 0;
+        
+        // المتغيرات الحسابية
+        let totalPresent = 0;
+        let totalAbsent = 0;
+        let totalLate = 0;
+        let totalLeaves = 0;
+        let totalHours = 0;
 
         for (let d = 1; d <= daysInMonth; d++) {
-            const dayDate = `${monthStr}-${String(d).padStart(2, '0')}`;
+            const dayString = String(d).padStart(2, '0');
+            const dayDate = `${monthStr}-${dayString}`; // YYYY-MM-DD
             const dateObj = new Date(dayDate);
             const isFriday = dateObj.getDay() === 5;
             
-            const att = attendance.find(a => a.date === dayDate);
-            const leave = leaves.find(l => l.status === 'مقبول' && l.start_date <= dayDate && l.end_date >= dayDate);
+            // البحث عن سجل الحضور (مع تنظيف المسافات)
+            const att = attendance.find(a => a.date.trim() === dayDate);
+            
+            // البحث عن الإجازات
+            const leave = leaves.find(l => 
+                l.status === 'مقبول' && 
+                l.start_date <= dayDate && 
+                l.end_date >= dayDate
+            );
 
             let status = 'غياب';
-            let inTime = '--:--', outTime = '--:--', workHours = 0;
+            let inTime = '--:--';
+            let outTime = '--:--';
+            let workHours = 0;
             let rowColor = '#fff0f0'; // أحمر فاتح للغياب
 
             if (att) {
+                // حالة الحضور
                 status = 'حضور';
                 rowColor = '#f0fff4'; // أخضر فاتح
-                const times = att.times.split(/\s+/).filter(t => t.includes(':'));
-                if (times.length > 0) inTime = times[0];
-                if (times.length > 1) outTime = times[times.length - 1];
                 
-                if (times.length >= 2) {
-                    const [h1, m1] = times[0].split(':').map(Number);
-                    const [h2, m2] = times[times.length-1].split(':').map(Number);
-                    let diff = (new Date(0,0,0,h2,m2).getTime() - new Date(0,0,0,h1,m1).getTime()) / 3600000;
-                    if(diff < 0) diff += 24;
-                    workHours = parseFloat(diff.toFixed(2));
+                // معالجة التوقيتات بدقة
+                // نفترض أن التوقيتات تأتي "08:00 14:00" أو "08:00:00"
+                const times = att.times.replace(/\s+/g, ' ').trim().split(' ').filter(t => t.includes(':'));
+                
+                if (times.length > 0) {
+                    inTime = times[0].slice(0, 5); // نأخذ أول 5 خانات HH:MM
                 }
-                
+                if (times.length > 1) {
+                    outTime = times[times.length - 1].slice(0, 5);
+                }
+
+                // حساب ساعات العمل
+                if (inTime !== '--:--' && outTime !== '--:--') {
+                    const [h1, m1] = inTime.split(':').map(Number);
+                    const [h2, m2] = outTime.split(':').map(Number);
+                    const d1 = new Date(0, 0, 0, h1, m1);
+                    const d2 = new Date(0, 0, 0, h2, m2);
+                    let diffMs = d2.getTime() - d1.getTime();
+                    if (diffMs < 0) diffMs += 24 * 60 * 60 * 1000; // لو الورديات متداخلة
+                    workHours = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+                }
+
+                // حساب التأخير (بعد 8:30)
                 const [ih, im] = inTime.split(':').map(Number);
-                if (ih > 8 || (ih === 8 && im > 30)) totalLate++;
+                if (!isNaN(ih)) {
+                     if (ih > 8 || (ih === 8 && im > 30)) totalLate++;
+                }
 
                 totalPresent++;
                 totalHours += workHours;
+
             } else if (leave) {
                 status = `إجازة (${leave.type})`;
-                rowColor = '#fff7ed'; // برتقالي فاتح
+                rowColor = '#fff7ed'; // برتقالي
                 totalLeaves++;
             } else if (isFriday) {
                 status = 'عطلة أسبوعية';
@@ -118,7 +149,6 @@ export default function SendReportsTab() {
             </li>
         `).join('') || '<li style="color:#aaa">لا توجد طلبات مسجلة</li>';
 
-        // قسم الروابط الهامة
         let linksHTML = '';
         if (settings?.links_names && settings?.links_urls) {
             linksHTML = settings.links_names.map((name:string, i:number) => {
@@ -171,7 +201,7 @@ export default function SendReportsTab() {
                             <div class="stat-box" style="background:#fff7ed; color:#9a3412">إجازات: ${totalLeaves}</div>
                         </div>
                         <div class="stats-grid" style="margin-bottom:0">
-                            <div class="stat-box" style="background:#eff6ff; color:#1e40af">ساعات: ${totalHours}</div>
+                            <div class="stat-box" style="background:#eff6ff; color:#1e40af">ساعات: ${totalHours.toFixed(1)}</div>
                             <div class="stat-box" style="background:#fdf4ff; color:#86198f">تأخير: ${totalLate}</div>
                         </div>
                     </div>
@@ -199,10 +229,6 @@ export default function SendReportsTab() {
                         ${linksHTML}
                     </div>
                     ` : ''}
-
-                    <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 11px;">
-                        تم إنشاء هذا التقرير آلياً. يرجى عدم الرد على هذا البريد.
-                    </div>
                 </div>
             </body>
             </html>
@@ -211,7 +237,7 @@ export default function SendReportsTab() {
 
     const handleSendReports = async () => {
         if (selectedIds.length === 0) return alert('الرجاء اختيار موظف واحد على الأقل');
-        if (!confirm(`سيتم إرسال التقارير إلى ${selectedIds.length} موظف عبر البريد الإلكتروني. هل أنت متأكد؟`)) return;
+        if (!confirm(`سيتم إرسال التقارير إلى ${selectedIds.length} موظف. هل أنت متأكد؟`)) return;
 
         setSending(true);
         let successCount = 0;
@@ -221,43 +247,54 @@ export default function SendReportsTab() {
             const startOfMonth = `${month}-01`;
             const endOfMonth = `${month}-31`;
 
-            // جلب البيانات دفعة واحدة (تحسين الأداء)
+            // جلب البيانات مع التأكد من صيغة التاريخ
             const { data: allAttendance } = await supabase.from('attendance')
-                .select('*').gte('date', startOfMonth).lte('date', endOfMonth);
+                .select('*')
+                .gte('date', startOfMonth)
+                .lte('date', endOfMonth);
 
             const { data: allLeaves } = await supabase.from('leave_requests')
                 .select('*');
 
+            // --- فحص سريع (Debug) ---
+            // هذا التنبيه سيظهر لك لمرة واحدة لتتأكد أن البيانات وصلت
+            if (allAttendance && allAttendance.length > 0) {
+                 // alert(`DEBUG: تم جلب ${allAttendance.length} سجل بصمة للشهر ${month}`);
+            } else {
+                 alert(`تنبيه: لم يتم العثور على أي سجلات بصمة للشهر ${month} في قاعدة البيانات! تأكد من وجود بصمات لهذا الشهر.`);
+            }
+
             for (const empId of selectedIds) {
                 const emp = employees.find(e => e.id === empId);
                 
-                // تخطي الموظف إذا لم يكن لديه إيميل
                 if (!emp || !emp.email) {
-                    console.warn(`Skipping ${emp?.name}: No email`);
                     failCount++;
                     continue;
                 }
 
-                const empAtt = allAttendance?.filter(a => a.employee_id === emp.employee_id) || [];
-                const empLeaves = allLeaves?.filter(l => l.employee_id === emp.employee_id) || [];
+                // الفلترة الدقيقة باستخدام trim للتخلص من أي مسافات زائدة قد تسبب عدم التطابق
+                const empAtt = allAttendance?.filter(a => String(a.employee_id).trim() === String(emp.employee_id).trim()) || [];
+                const empLeaves = allLeaves?.filter(l => String(l.employee_id).trim() === String(emp.employee_id).trim()) || [];
                 
+                // تنبيه إذا كان الموظف ليس له حضور رغم وجود بصمات عامة
+                // if (empAtt.length === 0) console.warn(`No attendance found for ${emp.name} (ID: ${emp.employee_id})`);
+
                 const htmlContent = generateEmailHTML(emp, empAtt, empLeaves, month);
                 const subject = `تقرير شهر ${month} - ${emp.name}`;
 
                 try {
-                    // الإرسال الفعلي عبر EmailJS
                     await emailjs.send(
                         SERVICE_ID,
                         TEMPLATE_ID,
                         {
-                            to_email: emp.email,    // المتغير في قالب EmailJS
-                            subject: subject,       // المتغير في قالب EmailJS
-                            message: htmlContent    // المتغير في قالب EmailJS (يحتوي على HTML)
+                            to_email: emp.email,
+                            subject: subject,
+                            message: htmlContent
                         },
                         PUBLIC_KEY
                     );
                     successCount++;
-                } catch (err) {
+                } catch (err: any) {
                     console.error(`Failed to send to ${emp.name}`, err);
                     failCount++;
                 }
@@ -338,5 +375,4 @@ export default function SendReportsTab() {
             </div>
         </div>
     );
-
 }
