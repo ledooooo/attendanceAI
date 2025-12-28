@@ -11,10 +11,10 @@
   "dependencies": {
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "react-to-print": "^2.14.15",
     "lucide-react": "0.460.0",
     "@supabase/supabase-js": "2.46.1",
-    "xlsx": "0.18.5"
+    "xlsx": "0.18.5",
+    "react-to-print": "^3.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
