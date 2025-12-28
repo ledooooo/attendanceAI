@@ -269,9 +269,9 @@ export default function ReportsTab() {
             {/* --- Tables --- */}
             
             {/* 1. Daily Table */}
-            {activeReport === 'daily' && (
-                <table className="w-full text-sm text-right border-collapse">
-                    <thead>
+{activeReport === 'daily' && (
+    <div className="overflow-x-auto"> {/* تأكد من وجود هذا الغلاف */}
+        <table className="w-full text-sm text-right border-collapse min-w-[700px]"> {/* أضف min-w */}                    <thead>
                         <tr className="bg-gray-100 text-gray-700 print:bg-gray-200">
                             <th className="p-3 border">الكود</th>
                             <th className="p-3 border">الاسم</th>
@@ -304,12 +304,13 @@ export default function ReportsTab() {
                         ))}
                     </tbody>
                 </table>
+      </div>
             )}
 
             {/* 2. Monthly Table */}
-            {activeReport === 'monthly' && (
-                <table className="w-full text-sm text-right border-collapse">
-                    <thead>
+{activeReport === 'daily' && (
+    <div className="overflow-x-auto"> {/* تأكد من وجود هذا الغلاف */}
+        <table className="w-full text-sm text-right border-collapse min-w-[700px]"> {/* أضف min-w */}                    <thead>
                         <tr className="bg-gray-100 text-gray-700 print:bg-gray-200">
                             <th className="p-3 border">الكود</th>
                             <th className="p-3 border">الاسم</th>
@@ -332,12 +333,13 @@ export default function ReportsTab() {
                         ))}
                     </tbody>
                 </table>
+  </div>
             )}
 
             {/* 3. Absence Table */}
-            {activeReport === 'absence' && (
-                <table className="w-full text-sm text-right border-collapse">
-                    <thead>
+{activeReport === 'daily' && (
+    <div className="overflow-x-auto"> {/* تأكد من وجود هذا الغلاف */}
+        <table className="w-full text-sm text-right border-collapse min-w-[700px]"> {/* أضف min-w */}                    <thead>
                         <tr className="bg-red-50 text-red-800 print:bg-gray-200 print:text-black">
                             <th className="p-3 border">الكود</th>
                             <th className="p-3 border">الاسم</th>
@@ -361,9 +363,11 @@ export default function ReportsTab() {
                         )}
                     </tbody>
                 </table>
+  </div>
             )}
 
         </div>
     </div>
   );
+
 }
