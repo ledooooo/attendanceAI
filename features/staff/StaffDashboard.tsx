@@ -40,7 +40,7 @@ export default function StaffDashboard({ employee }: Props) {
   return (
     <div className="min-h-screen bg-gray-50 flex font-sans text-right relative overflow-x-hidden" dir="rtl">
       
-      {/* 1. زر القائمة للموبايل (يظهر فقط في الشاشات الصغيرة) */}
+      {/* 1. الشريط العلوي للموبايل (يظهر فقط في الشاشات الصغيرة) */}
       <div className="md:hidden bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-40 w-full">
         <div className="flex items-center gap-3">
             <button 
@@ -73,6 +73,7 @@ export default function StaffDashboard({ employee }: Props) {
                </h1>
                <p className="text-xs text-gray-400 font-bold mt-1 mr-7">مرحباً، {employee.name.split(' ')[0]}</p>
            </div>
+           {/* زر إغلاق القائمة في الموبايل */}
            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 bg-red-50 rounded-full text-red-500 hover:bg-red-100 transition-colors">
                <X className="w-5 h-5"/>
            </button>
@@ -87,7 +88,7 @@ export default function StaffDashboard({ employee }: Props) {
                 key={item.id}
                 onClick={() => {
                     setActiveTab(item.id);
-                    setIsSidebarOpen(false);
+                    setIsSidebarOpen(false); // إغلاق القائمة بعد الاختيار
                 }}
                 className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${
                   isActive 
@@ -149,7 +150,7 @@ export default function StaffDashboard({ employee }: Props) {
           {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
           {activeTab === 'attendance' && (
             <StaffAttendance 
-                attendance={[]} // البيانات يتم جلبها داخلياً الآن أو تمررها إذا كانت متوفرة
+                attendance={[]} // يتم جلب البيانات داخل المكون
                 selectedMonth={new Date().toISOString().slice(0, 7)} 
                 setSelectedMonth={()=>{}} 
                 employee={employee} 
