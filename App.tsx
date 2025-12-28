@@ -1,13 +1,14 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext'; // <--- استيراد
 import LoginPage from './features/auth/LoginPage';
 import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
+import { supabase } from './supabaseClient';
 
 const AppContent = () => {
   const { user, employeeProfile, loading, isAdmin, signOut } = useAuth();
 
-  // 1. شاشة التحميل (تظهر عند الريفريش حتى يتم استعادة الجلسة)
   if (loading) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-gray-50">
@@ -17,12 +18,8 @@ const AppContent = () => {
     );
   }
 
-  // 2. غير مسجل دخول
-  if (!user) {
-    return <LoginPage />;
-  }
+  if (!user) return <LoginPage />;
 
-  // 3. مسجل دخول لكن بيانات الموظف لم تصل بعد (أو غير موجودة)
   if (!employeeProfile) {
     return (
       <div className="h-screen flex flex-col items-center justify-center text-center p-6 bg-white" dir="rtl">
@@ -31,7 +28,9 @@ const AppContent = () => {
            إذا استمرت هذه الشاشة، فهذا يعني أن إيميلك ({user.email}) غير مرتبط بملف موظف.
         </p>
         <button 
-            onClick={signOut} 
+            onClick={() => {
+                supabase.auth.signOut().then(() => window.location.replace('/'));
+            }} 
             className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold hover:bg-gray-900 transition-all text-sm"
         >
             تسجيل خروج
@@ -40,14 +39,16 @@ const AppContent = () => {
     );
   }
 
-  // 4. الدخول الناجح
   return isAdmin ? <AdminDashboard /> : <StaffDashboard employee={employeeProfile} />;
 };
 
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      {/* تغليف التطبيق بمزود الإشعارات */}
+      <NotificationProvider>
+        <AppContent />
+      </NotificationProvider>
     </AuthProvider>
   );
 }

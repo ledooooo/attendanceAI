@@ -99,3 +99,14 @@ export interface GeneralSettings {
   centers: Center[];     // قائمة المراكز الطبية
   admin_password?: string; // (إرث) كلمة مرور المدير العامة
 }
+
+// أضف هذا في نهاية ملف src/types.ts
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
