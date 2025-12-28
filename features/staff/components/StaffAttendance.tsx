@@ -10,7 +10,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
     const [lastUpdate, setLastUpdate] = useState<string>('');
 
     useEffect(() => {
-        // 1. جلب تاريخ آخر تحديث من إعدادات النظام
+        // 1. جلب تاريخ آخر تحديث للبيانات
         const fetchMeta = async () => {
             const { data } = await supabase.from('general_settings').select('last_attendance_update').limit(1).maybeSingle();
             if (data && data.last_attendance_update) {
@@ -19,7 +19,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         };
         fetchMeta();
 
-        // 2. جلب سجلات الحضور إذا لم تكن ممررة
+        // 2. جلب بيانات الحضور
         if (initialAttendance && initialAttendance.length > 0) {
             setAttendanceData(initialAttendance);
         } else if (employee?.employee_id) {
@@ -53,17 +53,17 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
 
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
-            {/* الهيدر مع حقل التاريخ وفلتر الشهر */}
+            {/* الهيدر */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 no-print">
-                <div>
+                <div className="w-full md:w-auto">
                     <h3 className="text-xl md:text-2xl font-black flex items-center gap-3 text-gray-800">
                         <Clock className="text-emerald-600 w-6 h-6 md:w-7 md:h-7" /> سجل الحضور
                     </h3>
-                    {/* عرض تاريخ آخر تحديث */}
+                    {/* عرض آخر تحديث */}
                     {lastUpdate && (
-                        <p className="text-[10px] md:text-xs text-gray-400 font-bold mt-2 flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100 w-fit">
+                        <div className="text-[10px] md:text-xs text-blue-600 font-bold mt-2 flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 w-fit">
                             <Info className="w-3 h-3"/> تم تحديث البيانات: {lastUpdate}
-                        </p>
+                        </div>
                     )}
                 </div>
                 
@@ -78,9 +78,9 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                 </div>
             </div>
 
-            {/* الجدول القابل للتمرير */}
+            {/* الجدول - تم إضافة min-w-[600px] لمنع انضغاط الأعمدة في الموبايل */}
             <div className="overflow-x-auto border rounded-3xl shadow-sm bg-white custom-scrollbar">
-                <table className="w-full text-sm text-right min-w-[600px]"> {/* min-w يمنع انضغاط الجدول في الموبايل */}
+                <table className="w-full text-sm text-right min-w-[600px]">
                     <thead className="bg-gray-100 font-black text-gray-600">
                         <tr className="border-b">
                             <th className="p-4 whitespace-nowrap">التاريخ</th>
@@ -100,7 +100,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                             const dObj = new Date(dateStr);
                             const att = attendanceData.find((a:any) => a.date === dateStr);
                             
-                            // استخراج الوقت بدقة باستخدام Regex
+                            // استخراج دقيق للوقت
                             const times = att?.times.match(/\d{1,2}:\d{2}/g) || [];
                             const cin = times[0] || '--';
                             const cout = times.length > 1 ? times[times.length - 1] : '--';
