@@ -104,31 +104,41 @@ export default function SendReportsTab() {
     };
 
     // --- دالة الإرسال باستخدام Brevo API ---
+// --- دالة الإرسال عبر Vercel Serverless Function ---
     const sendViaBrevo = async (toEmail: string, toName: string, subject: string, htmlContent: string) => {
-        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-            method: 'POST',
-            headers: {
-                'accept': 'application/json',
-                'api-key': BREVO_API_KEY,
-                'content-type': 'application/json'
-            },
-            body: JSON.stringify({
-                sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-                to: [{ email: toEmail, name: toName }],
-                subject: subject,
-                htmlContent: htmlContent
-            })
-        });
-        return response.ok;
+        try {
+            // الاتصال بملف الـ api الذي أنشأناه
+            const response = await fetch('/api/send-report', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    toEmail,
+                    toName,
+                    subject,
+                    htmlContent
+                })
+            });
+
+            const data = await response.json();
+            
+            if (!response.ok) {
+                console.error("Server Error:", data);
+                return false;
+            }
+            
+            return true;
+        } catch (error) {
+            console.error("Network Error:", error);
+            return false;
+        }
     };
 
     const handleSendReports = async () => {
         if (selectedIds.length === 0) return alert('اختر موظفاً واحداً على الأقل');
         if (!confirm(`إرسال ${selectedIds.length} تقرير؟`)) return;
         
-        // التحقق من مفتاح API
-        if (BREVO_API_KEY.includes('xxx')) return alert('الرجاء وضع مفتاح Brevo API في الكود أولاً');
-
         setSending(true);
         let successCount = 0;
         let failCount = 0;
@@ -150,13 +160,8 @@ export default function SendReportsTab() {
                 const htmlContent = generateEmailHTML(emp, empAtt, empLeaves, month);
                 const subject = `تقرير شهر ${month} - ${emp.name}`;
 
-                try {
-                    const isSent = await sendViaBrevo(emp.email, emp.name, subject, htmlContent);
-                    if (isSent) successCount++; else failCount++;
-                } catch (err) {
-                    console.error(err);
-                    failCount++;
-                }
+                const isSent = await sendViaBrevo(emp.email, emp.name, subject, htmlContent);
+                if (isSent) successCount++; else failCount++;
             }
             alert(`التقرير:\n✅ نجح: ${successCount}\n❌ فشل: ${failCount}`);
         } catch (e:any) {
@@ -166,7 +171,6 @@ export default function SendReportsTab() {
             setSelectedIds([]);
         }
     };
-
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Mail className="text-emerald-600"/> إرسال التقارير (Brevo)</h2>
@@ -214,3 +218,4 @@ export default function SendReportsTab() {
         </div>
     );
 }
+
