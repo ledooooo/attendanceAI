@@ -3,40 +3,48 @@ import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { FilePlus } from 'lucide-react';
-import { useNotifications } from '../../../context/NotificationContext';
+import { useNotifications } from '../../../context/NotificationContext'; // 1. استيراد السياق
+
 const LEAVE_TYPES = [
   "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "جزء من الوقت", "خط سير", "مأمورية", "دورة تدريبية", "بيان حالة وظيفية"
 ];
-export default function StaffNewRequest({ employee, refresh }: any) {
-    // 2. استخدام الدالة
-    const { sendNotification } = useNotifications();
-    
-    // ... داخل دالة submit وبعد نجاح الإرسال (if (!error)):
-    
-    if (!error) {
-        // إرسال إشعار للمدير (user_id = 'admin')
-        await sendNotification(
-            'admin', 
-            'طلب جديد', 
-            `قام الموظف ${employee.name} بتقديم طلب ${formData.type}`
-        );
-        
-        alert('تم الإرسال');
-        // ... باقي كود التصفير
-    }
-}
+
 export default function StaffNewRequest({ employee, refresh }: { employee: Employee, refresh: () => void }) {
+    const { sendNotification } = useNotifications(); // 2. استخدام الهوك
     const [formData, setFormData] = useState({ type: '', start: '', end: '', backup: '', notes: '' });
     const [submitting, setSubmitting] = useState(false);
 
+    // 3. التأكد من أن الدالة async
     const submit = async () => {
         if(!formData.type || !formData.start || !formData.end) return alert('برجاء إكمال البيانات الأساسية');
+        
         setSubmitting(true);
+        
         const { error } = await supabase.from('leave_requests').insert([{ 
-            employee_id: employee.employee_id, type: formData.type, start_date: formData.start, end_date: formData.end, backup_person: formData.backup, status: 'معلق', notes: formData.notes 
+            employee_id: employee.employee_id, 
+            type: formData.type, 
+            start_date: formData.start, 
+            end_date: formData.end, 
+            backup_person: formData.backup, 
+            status: 'معلق', 
+            notes: formData.notes 
         }]);
-        if(!error) { alert('تم الإرسال'); setFormData({ type: '', start: '', end: '', backup: '', notes: '' }); refresh(); } 
-        else alert(error.message);
+
+        if(!error) { 
+            // 4. استخدام await داخل الدالة الـ async
+            await sendNotification(
+                'admin', 
+                'طلب جديد', 
+                `قام الموظف ${employee.name} بتقديم طلب ${formData.type}`
+            );
+
+            alert('تم الإرسال'); 
+            setFormData({ type: '', start: '', end: '', backup: '', notes: '' }); 
+            refresh(); 
+        } else {
+            alert(error.message);
+        }
+        
         setSubmitting(false);
     };
 
