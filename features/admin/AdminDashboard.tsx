@@ -10,8 +10,7 @@ import EveningSchedulesTab from './components/EveningSchedulesTab';
 import LeavesTab from './components/LeavesTab';
 import EvaluationsTab from './components/EvaluationsTab';
 import SettingsTab from './components/SettingsTab';
-import NotificationBell from '../../components/NotificationBell'; // تأكد من المسار
-
+import NotificationBell from '../../components/ui/NotificationBell';
 
 export default function AdminDashboard() {
   const { signOut, user, employeeProfile } = useAuth();

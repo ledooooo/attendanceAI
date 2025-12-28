@@ -12,7 +12,7 @@ import StaffNewRequest from './components/StaffNewRequest';
 import StaffRequestsHistory from './components/StaffRequestsHistory';
 import StaffEvaluations from './components/StaffEvaluations';
 import StaffMessages from './components/StaffMessages';
-
+import NotificationBell from '../../components/ui/NotificationBell';
 interface Props {
   employee: Employee;
 }
@@ -78,7 +78,21 @@ export default function StaffDashboard({ employee }: Props) {
           <LogOut className="w-5 h-5"/> خروج
         </button>
       </div>
+// مثال في StaffDashboard.tsx داخل الـ Header
+<div className="flex items-center gap-4">
+   <div className="relative">
+      {/* ... صورة البروفايل ... */}
+   </div>
 
+   {/* أضف الجرس هنا */}
+   <div className="hidden md:block">
+      <NotificationBell />
+   </div>
+
+   <div>
+      {/* ... اسم الموظف ... */}
+   </div>
+</div>
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Sidebar */}
         <div className="space-y-2 no-print">
