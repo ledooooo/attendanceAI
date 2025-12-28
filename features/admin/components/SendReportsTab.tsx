@@ -8,7 +8,7 @@ import emailjs from '@emailjs/browser';
 export default function SendReportsTab() {
     // --- بيانات الاعتماد الخاصة بك ---
     const SERVICE_ID = "service_57p7vff";
-    const TEMPLATE_ID = "template_uumarnn";
+    const TEMPLATE_ID = "template_2uu2xc6";
     const PUBLIC_KEY = "dBVlrOc_xTs91dlxW";
 
     const [employees, setEmployees] = useState<Employee[]>([]);
@@ -388,3 +388,4 @@ export default function SendReportsTab() {
         </div>
     );
 }
+
