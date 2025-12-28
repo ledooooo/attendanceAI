@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   const { toEmail, toName, subject, htmlContent } = req.body;
 
   // ⚠️ هام: ضع هنا الإيميل الذي سجلت به في Brevo
-  const SENDER_EMAIL = "ضع_ايميلك_المسجل_في_Brevo_هنا"; 
+  const SENDER_EMAIL = "gharbalmatar@gmail.com"; 
   const SENDER_NAME = "نظام الموارد البشرية";
 
   try {
