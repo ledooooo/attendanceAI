@@ -11,6 +11,7 @@
   "dependencies": {
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-to-print": "^3.0.0",
     "lucide-react": "0.460.0",
     "@supabase/supabase-js": "2.46.1",
     "xlsx": "0.18.5"
