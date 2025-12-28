@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   // مفتاح Brevo الجديد الخاص بك
   // يفضل وضعه في إعدادات Vercel كـ Environment Variable
   // لكن للسهولة الآن ضعه هنا (تذكر حماية الملف)
-  const BREVO_API_KEY = "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"; 
+  const BREVO_API_KEY = "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"; 
 
   const SENDER_EMAIL = "gharbalmatar@gmail.com"; // الإيميل الذي فعلته في Brevo
   const SENDER_NAME = "نظام الموارد البشرية";
