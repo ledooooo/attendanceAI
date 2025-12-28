@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react'; 
+import React, { useEffect, useState } from 'react';
 import { Clock, Calendar, Info } from 'lucide-react';
-import { supabase } from '../../../supabaseClient'; 
+import { supabase } from '../../../supabaseClient';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
@@ -9,9 +9,8 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
     const [viewMonth, setViewMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7));
     const [lastUpdate, setLastUpdate] = useState<string>('');
 
-    // جلب بيانات الحضور + تاريخ آخر تحديث
     useEffect(() => {
-        // 1. جلب تاريخ آخر تحديث
+        // 1. جلب تاريخ آخر تحديث من إعدادات النظام
         const fetchMeta = async () => {
             const { data } = await supabase.from('general_settings').select('last_attendance_update').limit(1).maybeSingle();
             if (data && data.last_attendance_update) {
@@ -20,7 +19,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         };
         fetchMeta();
 
-        // 2. جلب بيانات الحضور إذا لم تكن ممررة
+        // 2. جلب سجلات الحضور إذا لم تكن ممررة
         if (initialAttendance && initialAttendance.length > 0) {
             setAttendanceData(initialAttendance);
         } else if (employee?.employee_id) {
@@ -54,17 +53,20 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
 
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
+            {/* الهيدر مع حقل التاريخ وفلتر الشهر */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 no-print">
                 <div>
                     <h3 className="text-xl md:text-2xl font-black flex items-center gap-3 text-gray-800">
                         <Clock className="text-emerald-600 w-6 h-6 md:w-7 md:h-7" /> سجل الحضور
                     </h3>
+                    {/* عرض تاريخ آخر تحديث */}
                     {lastUpdate && (
                         <p className="text-[10px] md:text-xs text-gray-400 font-bold mt-2 flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100 w-fit">
                             <Info className="w-3 h-3"/> تم تحديث البيانات: {lastUpdate}
                         </p>
                     )}
                 </div>
+                
                 <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border w-full md:w-auto">
                     <Calendar className="w-5 h-5 text-gray-400"/>
                     <input 
@@ -76,8 +78,9 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                 </div>
             </div>
 
+            {/* الجدول القابل للتمرير */}
             <div className="overflow-x-auto border rounded-3xl shadow-sm bg-white custom-scrollbar">
-                <table className="w-full text-sm text-right min-w-[600px]">
+                <table className="w-full text-sm text-right min-w-[600px]"> {/* min-w يمنع انضغاط الجدول في الموبايل */}
                     <thead className="bg-gray-100 font-black text-gray-600">
                         <tr className="border-b">
                             <th className="p-4 whitespace-nowrap">التاريخ</th>
@@ -97,6 +100,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                             const dObj = new Date(dateStr);
                             const att = attendanceData.find((a:any) => a.date === dateStr);
                             
+                            // استخراج الوقت بدقة باستخدام Regex
                             const times = att?.times.match(/\d{1,2}:\d{2}/g) || [];
                             const cin = times[0] || '--';
                             const cout = times.length > 1 ? times[times.length - 1] : '--';
