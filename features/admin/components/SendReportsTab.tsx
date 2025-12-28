@@ -3,12 +3,17 @@ import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { Send, CheckSquare, Square, Filter, Loader2, Mail } from 'lucide-react';
+import emailjs from '@emailjs/browser';
 
 export default function SendReportsTab() {
+    // --- إعدادات EmailJS الخاصة بك ---
+    const SERVICE_ID = "service_57p7vff";
+    const TEMPLATE_ID = "template_uumarnn";
+    const PUBLIC_KEY = "dBVlrOc_xTs91dlxW";
+
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-    const [loading, setLoading] = useState(false);
     const [sending, setSending] = useState(false);
     
     // فلاتر
@@ -16,10 +21,11 @@ export default function SendReportsTab() {
     const [fStatus, setFStatus] = useState('نشط');
     const [fId, setFId] = useState('');
 
-    // بيانات مساعدة
     const [settings, setSettings] = useState<any>(null);
 
     useEffect(() => {
+        // تهيئة EmailJS عند فتح الصفحة
+        emailjs.init(PUBLIC_KEY);
         fetchData();
     }, []);
 
@@ -30,7 +36,6 @@ export default function SendReportsTab() {
         if (sett) setSettings(sett);
     };
 
-    // الموظفون بعد الفلترة
     const filteredEmployees = employees.filter(e => 
         (fSpec === 'all' || e.specialty === fSpec) &&
         (fStatus === 'all' || e.status === fStatus) &&
@@ -47,13 +52,12 @@ export default function SendReportsTab() {
         else setSelectedIds([...selectedIds, id]);
     };
 
-    // --- منطق توليد HTML الإيميل ---
+    // --- دالة توليد HTML للإيميل ---
     const generateEmailHTML = (emp: Employee, attendance: AttendanceRecord[], leaves: LeaveRequest[], monthStr: string) => {
         const daysInMonth = new Date(parseInt(monthStr.split('-')[0]), parseInt(monthStr.split('-')[1]), 0).getDate();
         let rowsHTML = '';
         let totalPresent = 0, totalAbsent = 0, totalLate = 0, totalLeaves = 0, totalHours = 0;
 
-        // توليد جدول الحضور
         for (let d = 1; d <= daysInMonth; d++) {
             const dayDate = `${monthStr}-${String(d).padStart(2, '0')}`;
             const dateObj = new Date(dayDate);
@@ -73,7 +77,6 @@ export default function SendReportsTab() {
                 if (times.length > 0) inTime = times[0];
                 if (times.length > 1) outTime = times[times.length - 1];
                 
-                // حساب الساعات
                 if (times.length >= 2) {
                     const [h1, m1] = times[0].split(':').map(Number);
                     const [h2, m2] = times[times.length-1].split(':').map(Number);
@@ -82,7 +85,6 @@ export default function SendReportsTab() {
                     workHours = parseFloat(diff.toFixed(2));
                 }
                 
-                // حساب التأخير (افتراضي بعد 8:30)
                 const [ih, im] = inTime.split(':').map(Number);
                 if (ih > 8 || (ih === 8 && im > 30)) totalLate++;
 
@@ -110,83 +112,76 @@ export default function SendReportsTab() {
             `;
         }
 
-        // توليد جدول الطلبات
         const requestsHTML = leaves.map(l => `
             <li style="margin-bottom: 5px; padding: 5px; background: #f8f9fa; border-radius: 4px;">
                 <strong>${l.type}</strong> (${l.start_date} إلى ${l.end_date}) - <span style="color: ${l.status==='مقبول'?'green':'red'}">${l.status}</span>
             </li>
-        `).join('') || '<li>لا توجد طلبات</li>';
+        `).join('') || '<li style="color:#aaa">لا توجد طلبات مسجلة</li>';
 
-        // توليد الروابط
+        // قسم الروابط الهامة
         let linksHTML = '';
         if (settings?.links_names && settings?.links_urls) {
-            linksHTML = settings.links_names.map((name:string, i:number) => `
-                <a href="${settings.links_urls[i]}" style="display: block; margin: 5px 0; color: #059669; text-decoration: none; font-weight: bold;">🔗 ${name}</a>
-            `).join('');
+            linksHTML = settings.links_names.map((name:string, i:number) => {
+                if(!name || !settings.links_urls[i]) return '';
+                return `
+                <a href="${settings.links_urls[i]}" target="_blank" style="display: block; margin: 8px 0; padding: 10px; background: #ecfdf5; color: #059669; text-decoration: none; font-weight: bold; border-radius: 6px; text-align: center; border: 1px solid #a7f3d0;">
+                   🔗 ${name}
+                </a>
+            `}).join('');
         }
 
-        // HTML الهيكل الكامل
         return `
             <!DOCTYPE html>
             <html dir="rtl" lang="ar">
             <head>
                 <style>
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; margin: 0; padding: 20px; }
-                    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-                    .header { background: #059669; color: white; padding: 20px; text-align: center; }
-                    .section { padding: 20px; border-bottom: 1px solid #eee; }
-                    .section-title { font-size: 18px; font-weight: bold; color: #059669; margin-bottom: 10px; border-bottom: 2px solid #059669; display: inline-block; }
-                    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px; }
-                    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
-                    .stat-box { background: #ecfdf5; padding: 10px; border-radius: 8px; color: #065f46; font-weight: bold; }
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; margin: 0; padding: 0; }
+                    .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; }
+                    .header { background: #059669; color: white; padding: 30px 20px; text-align: center; }
+                    .section { padding: 20px; border-bottom: 1px solid #f3f4f6; }
+                    .section-title { font-size: 16px; font-weight: bold; color: #059669; margin-bottom: 15px; border-right: 4px solid #059669; padding-right: 10px; }
+                    .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; color: #374151; border-bottom: 1px dashed #eee; padding-bottom: 4px; }
+                    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; margin-bottom: 10px; }
+                    .stat-box { padding: 10px; border-radius: 8px; font-weight: bold; font-size: 13px; }
                     table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; }
-                    @media only screen and (max-width: 600px) {
-                        .info-grid, .stats-grid { grid-template-columns: 1fr; }
-                    }
                 </style>
             </head>
             <body>
                 <div class="container">
                     <div class="header">
-                        <h2 style="margin:0;">تقرير شهر ${monthStr}</h2>
-                        <p style="margin:5px 0 0;">${emp.name} - ${settings?.center_name || 'مركز غرب المطار'}</p>
+                        <h2 style="margin:0; font-size: 24px;">تقرير شهر ${monthStr}</h2>
+                        <p style="margin:10px 0 0; opacity: 0.9;">${emp.name}</p>
+                        <p style="margin:5px 0 0; font-size: 12px; opacity: 0.8;">${settings?.center_name || 'المركز الطبي'}</p>
                     </div>
 
                     <div class="section">
                         <div class="section-title">البيانات الشخصية</div>
-                        <div class="info-grid">
-                            <div><strong>الرقم الوظيفي:</strong> ${emp.employee_id}</div>
-                            <div><strong>الاسم:</strong> ${emp.name}</div>
-                            <div><strong>الرقم القومي:</strong> ${emp.national_id}</div>
-                            <div><strong>الهاتف:</strong> ${emp.phone}</div>
-                            <div><strong>البريد:</strong> ${emp.email}</div>
-                            <div><strong>المهام:</strong> ${emp.admin_tasks || 'لا يوجد'}</div>
-                        </div>
+                        <div class="info-row"><span>الرقم الوظيفي:</span> <strong>${emp.employee_id}</strong></div>
+                        <div class="info-row"><span>الرقم القومي:</span> <strong>${emp.national_id}</strong></div>
+                        <div class="info-row"><span>الهاتف:</span> <strong>${emp.phone}</strong></div>
+                        <div class="info-row"><span>البريد:</span> <strong>${emp.email}</strong></div>
+                        <div class="info-row"><span>المهام الإدارية:</span> <strong>${emp.admin_tasks || '-'}</strong></div>
                     </div>
 
                     <div class="section">
                         <div class="section-title">ملخص الأداء</div>
                         <div class="stats-grid">
-                            <div class="stat-box">الحضور: ${totalPresent} يوم</div>
-                            <div class="stat-box" style="background:#fef2f2; color:#991b1b">الغياب: ${totalAbsent} يوم</div>
-                            <div class="stat-box" style="background:#fff7ed; color:#9a3412">الإجازات: ${totalLeaves}</div>
-                            <div class="stat-box" style="background:#eff6ff; color:#1e40af">الساعات: ${totalHours.toFixed(1)}</div>
-                            <div class="stat-box" style="background:#fdf4ff; color:#86198f">التأخير: ${totalLate}</div>
+                            <div class="stat-box" style="background:#ecfdf5; color:#065f46">حضور: ${totalPresent}</div>
+                            <div class="stat-box" style="background:#fef2f2; color:#991b1b">غياب: ${totalAbsent}</div>
+                            <div class="stat-box" style="background:#fff7ed; color:#9a3412">إجازات: ${totalLeaves}</div>
+                        </div>
+                        <div class="stats-grid" style="margin-bottom:0">
+                            <div class="stat-box" style="background:#eff6ff; color:#1e40af">ساعات: ${totalHours}</div>
+                            <div class="stat-box" style="background:#fdf4ff; color:#86198f">تأخير: ${totalLate}</div>
                         </div>
                     </div>
 
                     <div class="section">
-                        <div class="section-title">سجل الحضور والانصراف</div>
+                        <div class="section-title">سجل الحضور اليومي</div>
                         <div style="overflow-x: auto;">
                             <table>
-                                <thead style="background: #f3f4f6;">
-                                    <tr>
-                                        <th style="padding: 8px;">التاريخ</th>
-                                        <th style="padding: 8px;">دخول</th>
-                                        <th style="padding: 8px;">الحالة</th>
-                                        <th style="padding: 8px;">خروج</th>
-                                        <th style="padding: 8px;">ساعات</th>
-                                    </tr>
+                                <thead style="background: #f9fafb; color: #4b5563;">
+                                    <tr><th>التاريخ</th><th>دخول</th><th>الحالة</th><th>خروج</th><th>ساعات</th></tr>
                                 </thead>
                                 <tbody>${rowsHTML}</tbody>
                             </table>
@@ -198,13 +193,15 @@ export default function SendReportsTab() {
                         <ul style="list-style: none; padding: 0; margin: 0; font-size: 13px;">${requestsHTML}</ul>
                     </div>
 
+                    ${linksHTML ? `
                     <div class="section" style="background: #f0fdf4;">
-                        <div class="section-title">روابط هامة</div>
-                        ${linksHTML || '<p>لا توجد روابط</p>'}
+                        <div class="section-title">روابط هامة للموظفين</div>
+                        ${linksHTML}
                     </div>
+                    ` : ''}
 
-                    <div style="text-align: center; padding: 20px; color: #aaa; font-size: 12px;">
-                        تم استخراج هذا التقرير آلياً من نظام الحضور الذكي
+                    <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 11px;">
+                        تم إنشاء هذا التقرير آلياً. يرجى عدم الرد على هذا البريد.
                     </div>
                 </div>
             </body>
@@ -214,71 +211,60 @@ export default function SendReportsTab() {
 
     const handleSendReports = async () => {
         if (selectedIds.length === 0) return alert('الرجاء اختيار موظف واحد على الأقل');
-        if (!confirm(`سيتم إرسال التقارير إلى ${selectedIds.length} موظف عبر البريد الإلكتروني. هل تريد المتابعة؟`)) return;
+        if (!confirm(`سيتم إرسال التقارير إلى ${selectedIds.length} موظف عبر البريد الإلكتروني. هل أنت متأكد؟`)) return;
 
         setSending(true);
         let successCount = 0;
         let failCount = 0;
 
         try {
-            // جلب بيانات الحضور والطلبات للشهر المحدد لجميع الموظفين المختارين مرة واحدة
             const startOfMonth = `${month}-01`;
             const endOfMonth = `${month}-31`;
 
+            // جلب البيانات دفعة واحدة (تحسين الأداء)
             const { data: allAttendance } = await supabase.from('attendance')
-                .select('*')
-                .gte('date', startOfMonth)
-                .lte('date', endOfMonth)
-                .in('employee_id', employees.filter(e => selectedIds.includes(e.id)).map(e => e.employee_id));
+                .select('*').gte('date', startOfMonth).lte('date', endOfMonth);
 
             const { data: allLeaves } = await supabase.from('leave_requests')
-                .select('*')
-                .in('employee_id', employees.filter(e => selectedIds.includes(e.id)).map(e => e.employee_id));
+                .select('*');
 
-            // حلقة تكرارية للإرسال
             for (const empId of selectedIds) {
                 const emp = employees.find(e => e.id === empId);
+                
+                // تخطي الموظف إذا لم يكن لديه إيميل
                 if (!emp || !emp.email) {
-                    console.warn(`تجاوز ${emp?.name} - لا يوجد بريد`);
+                    console.warn(`Skipping ${emp?.name}: No email`);
                     failCount++;
                     continue;
                 }
 
-                // تجهيز بيانات الموظف
                 const empAtt = allAttendance?.filter(a => a.employee_id === emp.employee_id) || [];
                 const empLeaves = allLeaves?.filter(l => l.employee_id === emp.employee_id) || [];
                 
-                // توليد HTML
                 const htmlContent = generateEmailHTML(emp, empAtt, empLeaves, month);
-                const subject = `تقرير شهر ${month} - ${emp.name} - ${settings?.center_name}`;
+                const subject = `تقرير شهر ${month} - ${emp.name}`;
 
-                // --- استدعاء Edge Function للإرسال ---
-                // ملاحظة: هذا يتطلب إعداد Edge Function في Supabase
-                // سنقوم هنا بمحاكاة النجاح إذا لم تكن الدالة موجودة
-                const { error } = await supabase.functions.invoke('send-email-report', {
-                    body: {
-                        to: emp.email,
-                        subject: subject,
-                        html: htmlContent
-                    }
-                });
-
-                if (error) {
-                    console.error('Send Error:', error);
-                    // في حالة عدم وجود الدالة، سنعتبر العملية "محاكاة" ناجحة لإظهار تجربة المستخدم
-                    // لكن في الواقع يجب عليك إنشاء الدالة
-                    console.log('Simulation: Email sent to', emp.email); 
-                    // failCount++; // قم بتفعيل هذا السطر عند وجود الدالة فعلياً
-                    successCount++; 
-                } else {
+                try {
+                    // الإرسال الفعلي عبر EmailJS
+                    await emailjs.send(
+                        SERVICE_ID,
+                        TEMPLATE_ID,
+                        {
+                            to_email: emp.email,    // المتغير في قالب EmailJS
+                            subject: subject,       // المتغير في قالب EmailJS
+                            message: htmlContent    // المتغير في قالب EmailJS (يحتوي على HTML)
+                        },
+                        PUBLIC_KEY
+                    );
                     successCount++;
+                } catch (err) {
+                    console.error(`Failed to send to ${emp.name}`, err);
+                    failCount++;
                 }
             }
-
-            alert(`تمت العملية:\n- تم الإرسال: ${successCount}\n- فشل/تجاوز: ${failCount}\n\n(ملاحظة: لكي يعمل الإرسال الفعلي، يجب ربط خدمة إيميل بـ Supabase Edge Functions)`);
-
+            alert(`اكتملت العملية:\n✅ تم الإرسال بنجاح: ${successCount}\n❌ فشل الإرسال: ${failCount}`);
         } catch (e: any) {
-            alert('حدث خطأ غير متوقع: ' + e.message);
+            alert('حدث خطأ عام: ' + e.message);
         } finally {
             setSending(false);
             setSelectedIds([]);
@@ -300,15 +286,13 @@ export default function SendReportsTab() {
             </div>
 
             {/* جدول الاختيار */}
-            <div className="bg-white rounded-[30px] border shadow-sm overflow-hidden min-h-[400px]">
+            <div className="bg-white rounded-[30px] border shadow-sm overflow-hidden min-h-[400px] mb-20">
                 <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                        <button onClick={toggleSelectAll} className="flex items-center gap-2 font-bold text-gray-600 hover:text-emerald-600">
-                            {selectedIds.length === filteredEmployees.length ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>}
-                            تحديد الكل ({filteredEmployees.length})
-                        </button>
-                    </div>
-                    <div className="text-sm font-bold text-gray-500">تم اختيار: {selectedIds.length} موظف</div>
+                    <button onClick={toggleSelectAll} className="flex items-center gap-2 font-bold text-gray-600 hover:text-emerald-600">
+                        {selectedIds.length === filteredEmployees.length && filteredEmployees.length > 0 ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>}
+                        تحديد الكل ({filteredEmployees.length})
+                    </button>
+                    <div className="text-sm font-bold text-gray-500">تم اختيار: {selectedIds.length}</div>
                 </div>
 
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto custom-scrollbar">
@@ -318,7 +302,6 @@ export default function SendReportsTab() {
                                 <th className="p-4 w-10"></th>
                                 <th className="p-4">الكود</th>
                                 <th className="p-4">الاسم</th>
-                                <th className="p-4">التخصص</th>
                                 <th className="p-4">البريد الإلكتروني</th>
                                 <th className="p-4 text-center">الحالة</th>
                             </tr>
@@ -329,9 +312,8 @@ export default function SendReportsTab() {
                                     <td className="p-4">
                                         {selectedIds.includes(emp.id) ? <CheckSquare className="w-5 h-5 text-emerald-600"/> : <Square className="w-5 h-5 text-gray-300"/>}
                                     </td>
-                                    <td className="p-4 font-mono font-bold text-emerald-700">{emp.employee_id}</td>
+                                    <td className="p-4 font-mono font-bold">{emp.employee_id}</td>
                                     <td className="p-4 font-bold">{emp.name}</td>
-                                    <td className="p-4 text-gray-500">{emp.specialty}</td>
                                     <td className="p-4 text-gray-500 font-mono text-xs">{emp.email || <span className="text-red-400">لا يوجد بريد</span>}</td>
                                     <td className="p-4 text-center">
                                         <span className={`px-2 py-1 rounded text-xs font-bold ${emp.status==='نشط'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{emp.status}</span>
