@@ -110,3 +110,10 @@ export interface AppNotification {
   is_read: boolean;
   created_at: string;
 }
+
+// أضف/حدث هذه الواجهة في ملف types.ts
+export interface GeneralSettings {
+    // ... الحقول السابقة
+    links_names?: string[];
+    links_urls?: string[];
+}

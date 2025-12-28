@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-import { FileBarChart, Printer, Search, Calendar, UserX, CheckCircle, Clock, Filter } from 'lucide-react';
+import { Printer, Search, Calendar, UserX, CheckCircle, Clock, Filter, FileBarChart } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 
 type ReportType = 'daily' | 'monthly' | 'absence';
@@ -19,7 +19,8 @@ export default function ReportsTab() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7)); // للشهري
   const [filterName, setFilterName] = useState('');
   const [filterSpecialty, setFilterSpecialty] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all'); // حضور، غياب، إجازة
+  const [filterAttendanceStatus, setFilterAttendanceStatus] = useState('all'); // حضور، غياب، إجازة (الخاصة باليوم)
+  const [filterJobStatus, setFilterJobStatus] = useState('all'); // نشط، موقوف (الخاصة بجدول الموظفين)
 
   const componentRef = useRef(null); // مرجع للطباعة
 
@@ -37,8 +38,8 @@ export default function ReportsTab() {
   const fetchData = async () => {
     setLoading(true);
     
-    // 1. جلب الموظفين
-    const { data: emps } = await supabase.from('employees').select('*').neq('status', 'موقوف').order('name');
+    // 1. جلب الموظفين (تم إزالة شرط neq status موقوف لكي يظهروا في الفلتر إذا أردنا ذلك)
+    const { data: emps } = await supabase.from('employees').select('*').order('name');
     if (emps) setEmployees(emps);
 
     // 2. جلب الحضور والإجازات حسب نوع التقرير
@@ -77,69 +78,91 @@ export default function ReportsTab() {
           const empAtt = attendance.find(a => a.employee_id === emp.employee_id);
           const empLeave = leaves.find(l => l.employee_id === emp.employee_id);
           
-          let status = 'غياب';
+          let reportStatus = 'غياب';
           let inTime = '-';
           let outTime = '-';
 
           if (empAtt) {
-              status = 'حضور';
+              reportStatus = 'حضور';
               const times = empAtt.times.split(/\s+/).filter(t => t.includes(':'));
               if (times.length > 0) inTime = times[0];
               if (times.length > 1) outTime = times[times.length - 1];
           } else if (empLeave) {
-              status = 'إجازة'; // أو نوع الإجازة: empLeave.type
+              reportStatus = 'إجازة';
           }
 
-          return { ...emp, status, inTime, outTime, leaveType: empLeave?.type };
+          return { 
+              ...emp, 
+              reportStatus, // حالة الحضور اليومي
+              jobStatus: emp.status, // حالة الموظف الأصلية من قاعدة البيانات
+              inTime, 
+              outTime, 
+              leaveType: empLeave?.type 
+          };
       }).filter(item => {
           if (filterName && !item.name.includes(filterName)) return false;
           if (filterSpecialty !== 'all' && item.specialty !== filterSpecialty) return false;
-          if (filterStatus !== 'all') {
-              if (filterStatus === 'حضور' && item.status !== 'حضور') return false;
-              if (filterStatus === 'غياب' && item.status !== 'غياب') return false;
-              if (filterStatus === 'إجازة' && item.status !== 'إجازة') return false;
+          
+          // فلتر حالة الحضور (حضور/غياب/إجازة)
+          if (filterAttendanceStatus !== 'all') {
+              if (filterAttendanceStatus === 'حضور' && item.reportStatus !== 'حضور') return false;
+              if (filterAttendanceStatus === 'غياب' && item.reportStatus !== 'غياب') return false;
+              if (filterAttendanceStatus === 'إجازة' && item.reportStatus !== 'إجازة') return false;
           }
+
+          // فلتر حالة الموظف الوظيفية (نشط/موقوف)
+          if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
+
           return true;
       });
-  }, [employees, attendance, leaves, filterName, filterSpecialty, filterStatus]);
+  }, [employees, attendance, leaves, filterName, filterSpecialty, filterAttendanceStatus, filterJobStatus]);
 
-  // --- معالجة البيانات لتقرير الغياب (فلترة خاصة) ---
+  // --- معالجة البيانات لتقرير الغياب ---
   const absenceData = useMemo(() => {
-      // نفس منطق اليومي ولكن نعرض فقط الغياب
       return employees.map(emp => {
           const hasAtt = attendance.some(a => a.employee_id === emp.employee_id);
           const hasLeave = leaves.some(l => l.employee_id === emp.employee_id);
           
           if (!hasAtt && !hasLeave) {
-              return { ...emp, status: 'غياب غير مبرر' };
+              return { 
+                  ...emp, 
+                  reportStatus: 'غياب غير مبرر',
+                  jobStatus: emp.status // الاحتفاظ بالحالة الأصلية
+              };
           }
           return null;
       }).filter(Boolean).filter((item:any) => {
            if (filterName && !item.name.includes(filterName)) return false;
            if (filterSpecialty !== 'all' && item.specialty !== filterSpecialty) return false;
+           
+           // فلتر حالة الموظف الوظيفية
+           if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
+
            return true;
       });
-  }, [employees, attendance, leaves, filterName, filterSpecialty]);
+  }, [employees, attendance, leaves, filterName, filterSpecialty, filterJobStatus]);
 
   // --- معالجة البيانات للتقرير الشهري ---
   const monthlyData = useMemo(() => {
       return employees.map(emp => {
           const empAtts = attendance.filter(a => a.employee_id === emp.employee_id);
-          // حساب تقريبي للإجازات (يحتاج لمنطق أدق للأيام المتداخلة، لكن هذا كافٍ للعرض)
           const empLeaves = leaves.filter(l => l.employee_id === emp.employee_id).length; 
 
           return {
               ...emp,
               daysPresent: empAtts.length,
-              daysLeaves: empLeaves, // عدد مرات الإجازات وليس الأيام بالضرورة
-              // الغياب = (أيام الشهر حتى اليوم - الجمعة - الحضور - الإجازات) *منطق تقريبي*
+              daysLeaves: empLeaves,
           };
       }).filter(item => {
            if (filterName && !item.name.includes(filterName)) return false;
            if (filterSpecialty !== 'all' && item.specialty !== filterSpecialty) return false;
+           
+           // فلتر حالة الموظف الوظيفية (هنا item.status هي الحالة الأصلية لأنه لم يتم استبدالها)
+           if (filterJobStatus !== 'all' && item.status !== filterJobStatus) return false;
+           
            return true;
       });
-  }, [employees, attendance, leaves, filterName, filterSpecialty]);
+  }, [employees, attendance, leaves, filterName, filterSpecialty, filterJobStatus]);
 
 
   // الإحصائيات العامة
@@ -147,9 +170,9 @@ export default function ReportsTab() {
       if (activeReport === 'daily') {
           return {
               total: employees.length,
-              present: dailyData.filter(d => d.status === 'حضور').length,
-              absent: dailyData.filter(d => d.status === 'غياب').length,
-              leave: dailyData.filter(d => d.status === 'إجازة').length
+              present: dailyData.filter(d => d.reportStatus === 'حضور').length,
+              absent: dailyData.filter(d => d.reportStatus === 'غياب').length,
+              leave: dailyData.filter(d => d.reportStatus === 'إجازة').length
           };
       } else if (activeReport === 'absence') {
           return { total: absenceData.length };
@@ -175,7 +198,7 @@ export default function ReportsTab() {
         </div>
 
         {/* Filters Bar */}
-        <div className="bg-white p-4 rounded-2xl border shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 no-print">
+        <div className="bg-white p-4 rounded-2xl border shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4 no-print">
             {activeReport !== 'monthly' ? (
                 <Input type="date" label="التاريخ" value={date} onChange={setDate} />
             ) : (
@@ -183,8 +206,13 @@ export default function ReportsTab() {
             )}
             <Input label="اسم الموظف" placeholder="بحث..." value={filterName} onChange={setFilterName} />
             <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e => e.specialty)))]} value={filterSpecialty} onChange={setFilterSpecialty} />
+            
+            {/* فلتر حالة الموظف الوظيفية (جديد) */}
+            <Select label="حالة الموظف (الوظيفية)" options={['all', 'نشط', 'موقوف', 'إجازة', 'خارج المركز']} value={filterJobStatus} onChange={setFilterJobStatus} />
+
+            {/* فلتر حالة الحضور (يظهر فقط في اليومي) */}
             {activeReport === 'daily' && (
-                <Select label="الحالة" options={['all', 'حضور', 'غياب', 'إجازة']} value={filterStatus} onChange={setFilterStatus} />
+                <Select label="حالة الحضور (اليوم)" options={['all', 'حضور', 'غياب', 'إجازة']} value={filterAttendanceStatus} onChange={setFilterAttendanceStatus} />
             )}
         </div>
 
@@ -230,6 +258,12 @@ export default function ReportsTab() {
                         <span className="text-sm font-bold text-red-700">موظف متغيب بدون إذن</span>
                     </div>
                 )}
+                {activeReport === 'monthly' && (
+                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center print:border-gray-300 col-span-4">
+                        <span className="block text-3xl font-black text-blue-600">{stats.total}</span>
+                        <span className="text-sm font-bold text-blue-700">إجمالي الموظفين في التقرير</span>
+                    </div>
+                )}
             </div>
 
             {/* --- Tables --- */}
@@ -242,9 +276,10 @@ export default function ReportsTab() {
                             <th className="p-3 border">الكود</th>
                             <th className="p-3 border">الاسم</th>
                             <th className="p-3 border">التخصص</th>
+                            <th className="p-3 border">حالة الموظف</th>
                             <th className="p-3 border text-center">حضور</th>
                             <th className="p-3 border text-center">انصراف</th>
-                            <th className="p-3 border text-center">الحالة</th>
+                            <th className="p-3 border text-center">حالة اليوم</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -253,15 +288,16 @@ export default function ReportsTab() {
                                 <td className="p-3 border font-mono">{row.employee_id}</td>
                                 <td className="p-3 border font-bold">{row.name}</td>
                                 <td className="p-3 border text-gray-600">{row.specialty}</td>
+                                <td className="p-3 border text-xs">{row.jobStatus}</td>
                                 <td className="p-3 border text-center font-mono">{row.inTime}</td>
                                 <td className="p-3 border text-center font-mono">{row.outTime}</td>
                                 <td className="p-3 border text-center">
                                     <span className={`px-2 py-1 rounded-md text-xs font-black ${
-                                        row.status === 'حضور' ? 'bg-green-100 text-green-700 print:bg-transparent print:text-black' :
-                                        row.status === 'غياب' ? 'bg-red-100 text-red-700 print:bg-transparent print:text-black' :
+                                        row.reportStatus === 'حضور' ? 'bg-green-100 text-green-700 print:bg-transparent print:text-black' :
+                                        row.reportStatus === 'غياب' ? 'bg-red-100 text-red-700 print:bg-transparent print:text-black' :
                                         'bg-orange-100 text-orange-700 print:bg-transparent print:text-black'
                                     }`}>
-                                        {row.status === 'إجازة' && row.leaveType ? row.leaveType : row.status}
+                                        {row.reportStatus === 'إجازة' && row.leaveType ? row.leaveType : row.reportStatus}
                                     </span>
                                 </td>
                             </tr>
@@ -278,6 +314,7 @@ export default function ReportsTab() {
                             <th className="p-3 border">الكود</th>
                             <th className="p-3 border">الاسم</th>
                             <th className="p-3 border">التخصص</th>
+                            <th className="p-3 border">حالة الموظف</th>
                             <th className="p-3 border text-center">أيام الحضور</th>
                             <th className="p-3 border text-center">الإجازات المقبولة</th>
                         </tr>
@@ -288,6 +325,7 @@ export default function ReportsTab() {
                                 <td className="p-3 border font-mono">{row.employee_id}</td>
                                 <td className="p-3 border font-bold">{row.name}</td>
                                 <td className="p-3 border text-gray-600">{row.specialty}</td>
+                                <td className="p-3 border text-xs">{row.status}</td>
                                 <td className="p-3 border text-center font-bold text-green-600">{row.daysPresent}</td>
                                 <td className="p-3 border text-center font-bold text-orange-600">{row.daysLeaves}</td>
                             </tr>
@@ -304,7 +342,7 @@ export default function ReportsTab() {
                             <th className="p-3 border">الكود</th>
                             <th className="p-3 border">الاسم</th>
                             <th className="p-3 border">التخصص</th>
-                            <th className="p-3 border">حالة العمل</th>
+                            <th className="p-3 border">حالة الموظف</th>
                             <th className="p-3 border text-center">الحالة اليوم</th>
                         </tr>
                     </thead>
@@ -314,7 +352,7 @@ export default function ReportsTab() {
                                 <td className="p-3 border font-mono">{row.employee_id}</td>
                                 <td className="p-3 border font-bold">{row.name}</td>
                                 <td className="p-3 border text-gray-600">{row.specialty}</td>
-                                <td className="p-3 border">{row.status}</td>
+                                <td className="p-3 border text-xs">{row.jobStatus}</td>
                                 <td className="p-3 border text-center font-black text-red-600">غياب غير مبرر</td>
                             </tr>
                         ))}

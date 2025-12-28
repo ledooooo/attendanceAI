@@ -17,7 +17,8 @@ import SettingsTab from './components/SettingsTab';         // (6) إعدادا�
 import ReportsTab from './components/ReportsTab'; // <--- أضف هذا
 import { FileBarChart } from 'lucide-react'; // <--- أضف أيقونة التقارير
 import NotificationBell from '../../components/ui/NotificationBell';
-
+import SendReportsTab from './components/SendReportsTab';
+import { Mail } from 'lucide-react'; // استيراد أيقونة الإيميل
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
   const [activeTab, setActiveTab] = useState('doctors');
@@ -54,6 +55,7 @@ const menuItems = [
   { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
   { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
   { id: 'settings', label: 'إعدادات النظام', icon: Settings },
+  { id: 'send_reports', label: 'إرسال التقارير', icon: Mail }, // <--- الجديد
 ];
 
   return (
@@ -126,6 +128,7 @@ const menuItems = [
             {activeTab === 'leaves' && <LeavesTab />}
             {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
+            {activeTab === 'send_reports' && <SendReportsTab />} {/* <--- الجديد */}
         </div>
       </main>
     </div>
