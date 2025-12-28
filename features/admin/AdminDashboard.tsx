@@ -4,36 +4,33 @@ import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
-  Activity, Settings, LogOut, Menu, LayoutDashboard, Bell 
+  Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart 
 } from 'lucide-react';
 
-// استيراد التبويبات الستة
-import DoctorsTab from './components/DoctorsTab';         // (1) شئون الموظفين
-import AttendanceTab from './components/AttendanceTab';     // (2) سجلات البصمة
-import EveningSchedulesTab from './components/EveningSchedulesTab'; // (3) جداول النوبتجية
-import LeavesTab from './components/LeavesTab';             // (4) طلبات الإجازات
-import EvaluationsTab from './components/EvaluationsTab';   // (5) التقييمات الطبية
-import SettingsTab from './components/SettingsTab';         // (6) إعدادات النظام
-import ReportsTab from './components/ReportsTab'; // <--- أضف هذا
-import { FileBarChart } from 'lucide-react'; // <--- أضف أيقونة التقارير
-import NotificationBell from '../../components/ui/NotificationBell';
+// استيراد التبويبات
+import DoctorsTab from './components/DoctorsTab';
+import AttendanceTab from './components/AttendanceTab';
+import EveningSchedulesTab from './components/EveningSchedulesTab';
+import LeavesTab from './components/LeavesTab';
+import EvaluationsTab from './components/EvaluationsTab';
+import SettingsTab from './components/SettingsTab';
+import ReportsTab from './components/ReportsTab';
 import SendReportsTab from './components/SendReportsTab';
-import { Mail } from 'lucide-react'; // استيراد أيقونة الإيميل
+import NotificationBell from '../../components/ui/NotificationBell';
+
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
   const [activeTab, setActiveTab] = useState('doctors');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [centerName, setCenterName] = useState('جاري التحميل...');
   const [centerId, setCenterId] = useState('');
-  const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // مغلقة افتراضياً للموبايل
 
-  // جلب الموظفين (نحتاجهم في معظم التبويبات)
   const fetchEmployees = async () => {
     const { data } = await supabase.from('employees').select('*').order('name');
     if (data) setEmployees(data);
   };
 
-  // جلب إعدادات المركز
   const fetchSettings = async () => {
       const { data } = await supabase.from('general_settings').select('center_name, id').maybeSingle();
       if (data) {
@@ -47,88 +44,112 @@ export default function AdminDashboard() {
     fetchSettings();
   }, []);
 
-const menuItems = [
-  { id: 'doctors', label: 'شئون الموظفين', icon: Users },
-  { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
-  { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
-  { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart }, // <--- أضف هذا السطر
-  { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
-  { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
-  { id: 'settings', label: 'إعدادات النظام', icon: Settings },
-  { id: 'send_reports', label: 'إرسال التقارير', icon: Mail }, // <--- الجديد
-];
+  const menuItems = [
+    { id: 'doctors', label: 'شئون الموظفين', icon: Users },
+    { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
+    { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
+    { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
+    { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
+    { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
+    { id: 'send_reports', label: 'إرسال التقارير', icon: Mail },
+    { id: 'settings', label: 'إعدادات النظام', icon: Settings },
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex font-sans text-right" dir="rtl">
+    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right relative overflow-x-hidden" dir="rtl">
       
-      {/* القائمة الجانبية */}
-      <aside className={`fixed md:relative z-30 h-screen bg-white border-l transition-all duration-300 ${isSidebarOpen ? 'w-72' : 'w-0 md:w-20'} overflow-hidden flex flex-col`}>
-        <div className="p-6 flex items-center justify-center border-b h-20 shrink-0">
-           {isSidebarOpen ? (
-               <h1 className="text-xl font-black text-emerald-700 flex items-center gap-2">
-                   <LayoutDashboard className="w-6 h-6"/> لوحة التحكم
-               </h1>
-           ) : (
-               <LayoutDashboard className="w-8 h-8 text-emerald-700"/>
-           )}
+      {/* 1. الشريط العلوي للموبايل فقط */}
+      <div className="md:hidden bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+            <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
+                <Menu className="w-6 h-6 text-gray-700"/>
+            </button>
+            <span className="font-black text-emerald-800 text-sm truncate max-w-[150px]">{centerName}</span>
+        </div>
+        <NotificationBell />
+      </div>
+
+      {/* 2. القائمة الجانبية (Sidebar) */}
+      <aside className={`
+          fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 ease-in-out
+          ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
+          md:translate-x-0 md:static md:shadow-none md:flex md:flex-col
+      `}>
+        {/* رأس القائمة */}
+        <div className="p-6 border-b flex items-center justify-between h-20 shrink-0">
+           <div className="flex items-center gap-2 text-emerald-700">
+               <LayoutDashboard className="w-8 h-8"/>
+               <h1 className="text-xl font-black">لوحة التحكم</h1>
+           </div>
+           {/* زر إغلاق للموبايل */}
+           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 bg-gray-50 rounded-full hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors">
+               <X className="w-5 h-5"/>
+           </button>
         </div>
 
-        <nav className="p-4 space-y-2 mt-4 flex-1 overflow-y-auto custom-scrollbar">
+        {/* عناصر القائمة */}
+        <nav className="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
           {menuItems.map(item => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => {
+                  setActiveTab(item.id);
+                  setIsSidebarOpen(false); // إغلاق القائمة بعد الاختيار في الموبايل
+              }}
               className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all duration-200 ${
                 activeTab === item.id 
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 font-bold' 
+                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 font-bold translate-x-[-5px]' 
                   : 'text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 font-medium'
               }`}
             >
-              <item.icon className={`w-6 h-6 shrink-0 ${!isSidebarOpen && 'mx-auto'}`} />
-              <span className={`${!isSidebarOpen && 'hidden'} whitespace-nowrap`}>{item.label}</span>
+              <item.icon className="w-5 h-5 shrink-0" />
+              <span>{item.label}</span>
             </button>
           ))}
         </nav>
 
+        {/* تذييل القائمة */}
         <div className="p-4 border-t bg-gray-50 shrink-0">
            <button 
              onClick={signOut} 
-             className={`w-full flex items-center gap-2 text-red-500 p-3 rounded-xl hover:bg-red-50 transition-all font-bold ${!isSidebarOpen && 'justify-center'}`}
+             className="w-full flex items-center justify-center gap-2 text-red-500 p-3 rounded-xl hover:bg-red-100 transition-all font-bold bg-white border border-gray-100 shadow-sm"
            >
              <LogOut className="w-5 h-5 shrink-0" />
-             <span className={!isSidebarOpen ? 'hidden' : ''}>تسجيل خروج</span>
+             تسجيل خروج
            </button>
         </div>
       </aside>
 
-      {/* المحتوى الرئيسي */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        {/* الهيدر */}
-        <header className="h-20 bg-white border-b flex justify-between items-center px-6 shadow-sm z-20 shrink-0">
-            <div className="flex items-center gap-4">
-                <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">
-                    <Menu className="w-6 h-6" />
-                </button>
-                <div>
-                    <h2 className="text-lg font-black text-gray-800">{centerName}</h2>
-                    <p className="text-xs text-gray-400 font-bold">المستخدم: {user?.email}</p>
-                </div>
+      {/* 3. خلفية مظللة للموبايل (Overlay) */}
+      {isSidebarOpen && (
+        <div 
+            className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
+            onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* 4. المحتوى الرئيسي */}
+      <main className="flex-1 flex flex-col h-[calc(100vh-64px)] md:h-screen overflow-hidden bg-gray-50/50">
+        
+        {/* هيدر الكمبيوتر */}
+        <header className="hidden md:flex h-20 bg-white border-b justify-between items-center px-8 shadow-sm shrink-0">
+            <div>
+                <h2 className="text-xl font-black text-gray-800">{centerName}</h2>
+                <p className="text-xs text-gray-400 font-bold mt-1">المستخدم الحالي: {user?.email}</p>
             </div>
-            <div className="flex items-center gap-4">
-                 <NotificationBell />
-            </div>
+            <NotificationBell />
         </header>
 
-        {/* منطقة التبويبات */}
-        <div className="flex-1 overflow-y-auto bg-gray-50/50 p-4 md:p-8 custom-scrollbar">
+        {/* منطقة التبويبات (قابلة للتمرير) */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-20 md:pb-8">
             {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={centerId} />}
             {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
             {activeTab === 'schedules' && <EveningSchedulesTab employees={employees} />}
             {activeTab === 'reports' && <ReportsTab />}
-            {activeTab === 'leaves' && <LeavesTab />}
+            {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
             {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
-            {activeTab === 'send_reports' && <SendReportsTab />} {/* <--- الجديد */}
+            {activeTab === 'send_reports' && <SendReportsTab />}
         </div>
       </main>
     </div>
