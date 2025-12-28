@@ -225,9 +225,10 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
           <Select label="الحالة" options={['all', 'نشط', 'موقوف', 'إجازة', 'خارج المركز']} value={fStatus} onChange={setFStatus} />
       </div>
       
-      <div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
-          <table className="w-full text-sm text-right">
-              <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
+<div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
+    {/* 👇 التعديل هنا: إضافة min-w-[800px] للجدول */}
+    <table className="w-full text-sm text-right min-w-[800px]">
+      <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
                   <tr>
                       <th 
                         className="p-4 text-center cursor-pointer hover:bg-gray-200 transition-colors select-none"
