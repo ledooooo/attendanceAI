@@ -6,7 +6,7 @@ import { FilePlus, Send } from 'lucide-react';
 import { useNotifications } from '../../../context/NotificationContext';
 
 const LEAVE_TYPES = [
-  "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "جزء من الوقت", "خط سير", "مأمورية", "دورة تدريبية", "بيان حالة وظيفية"
+  "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورةتدريبية", "خط سير", "مأمورية", "اذن صباحى", "اذن مسائي", "تأمين صحي", "مأمورية"
 ];
 
 export default function StaffNewRequest({ employee, refresh }: { employee: Employee, refresh: () => void }) {
@@ -15,7 +15,7 @@ export default function StaffNewRequest({ employee, refresh }: { employee: Emplo
         type: '', 
         start: '', 
         end: '', 
-        returnDate: '', // خانة جديدة
+        returnDate: '', // خانة تاريخ العودة
         backup: '', 
         notes: '' 
     });
@@ -29,18 +29,16 @@ export default function StaffNewRequest({ employee, refresh }: { employee: Emplo
 
         setSubmitting(true);
         
-        // دمج تاريخ العودة في الملاحظات أو إضافته كحقل إذا قمت بتعديل الجدول
-        // سأقوم بدمجه في الملاحظات حالياً لعدم تغيير هيكلة قاعدة البيانات
-        const notesWithReturn = `تاريخ العودة: ${formData.returnDate} \n ${formData.notes}`;
-
+        // التصحيح هنا: إرسال back_date بشكل صريح
         const { error } = await supabase.from('leave_requests').insert([{ 
             employee_id: employee.employee_id, 
             type: formData.type, 
             start_date: formData.start, 
-            end_date: formData.end, 
+            end_date: formData.end,
+            back_date: formData.returnDate, // <--- هذا هو السطر الذي يحل المشكلة
             backup_person: formData.backup, 
             status: 'معلق', 
-            notes: notesWithReturn 
+            notes: formData.notes 
         }]);
 
         if(!error) { 
@@ -49,7 +47,8 @@ export default function StaffNewRequest({ employee, refresh }: { employee: Emplo
             setFormData({ type: '', start: '', end: '', returnDate: '', backup: '', notes: '' }); 
             refresh(); 
         } else {
-            alert(error.message);
+            console.error(error); // طباعة الخطأ في الكونسول للمراجعة
+            alert('خطأ في الإرسال: ' + error.message);
         }
         setSubmitting(false);
     };
@@ -64,7 +63,10 @@ export default function StaffNewRequest({ employee, refresh }: { employee: Emplo
                     </div>
                     <Input label="من تاريخ *" type="date" value={formData.start} onChange={(v:any)=>setFormData({...formData, start: v})} required />
                     <Input label="إلى تاريخ *" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, end: v})} required />
+                    
+                    {/* حقل العودة للعمل */}
                     <Input label="تاريخ العودة للعمل *" type="date" value={formData.returnDate} onChange={(v:any)=>setFormData({...formData, returnDate: v})} required />
+                    
                     <Input label="الموظف البديل *" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} required placeholder="اسم الزميل القائم بالعمل" />
                     
                     <div className="md:col-span-2">

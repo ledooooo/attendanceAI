@@ -1,3 +1,4 @@
+// ... (نفس الاستيرادات السابقة)
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation, InternalMessage } from '../../../types';
@@ -5,7 +6,6 @@ import { Input, Select } from '../../../components/ui/FormElements';
 import { ExcelUploadButton, downloadSample } from '../../../components/ui/ExcelUploadButton';
 import { Download, Users, ArrowRight, User, Clock, FileText, Award, BarChart, Inbox } from 'lucide-react';
 
-// استيراد مكونات العرض (نستخدم نفس مكونات الموظف لتوحيد الشكل)
 import StaffProfile from '../../staff/components/StaffProfile';
 import StaffAttendance from '../../staff/components/StaffAttendance';
 import StaffRequestsHistory from '../../staff/components/StaffRequestsHistory';
@@ -13,6 +13,7 @@ import StaffEvaluations from '../../staff/components/StaffEvaluations';
 import StaffStats from '../../staff/components/StaffStats';
 import StaffMessages from '../../staff/components/StaffMessages';
 
+// ... (دالة formatDateForDB نفسها)
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
@@ -30,14 +31,12 @@ const formatDateForDB = (val: any): string | null => {
 };
 
 export default function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
-  // --- States for List View ---
   const [fName, setFName] = useState('');
   const [fId, setFId] = useState('');
   const [fSpec, setFSpec] = useState('all');
   const [fStatus, setFStatus] = useState('all');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- States for Detail View ---
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [detailTab, setDetailTab] = useState('profile');
   const [empData, setEmpData] = useState<{
@@ -48,7 +47,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   }>({ attendance: [], requests: [], evals: [], messages: [] });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  // جلب بيانات الموظف المختار
   useEffect(() => {
     if (selectedEmp) {
       const fetchData = async () => {
@@ -70,7 +68,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     }
   }, [selectedEmp]);
 
-  // الفلترة
   const filtered = employees.filter(e => 
     (e.name.includes(fName)) && 
     (e.employee_id.includes(fId)) && 
@@ -79,7 +76,8 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   );
 
   const handleExcelImport = async (data: any[]) => {
-    setIsProcessing(true);
+      // ... (نفس كود الاستيراد السابق)
+       setIsProcessing(true);
     try {
         const payload = data.map(row => ({
             employee_id: String(row.employee_id || row.employee_ || row['الكود'] || row['ID'] || '').trim(),
@@ -105,11 +103,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     }
   };
 
-  // --- عرض التفاصيل (ملف الموظف) ---
   if (selectedEmp) {
       return (
           <div className="space-y-6 animate-in slide-in-from-left duration-300">
-              {/* Header */}
               <div className="flex items-center justify-between bg-white p-4 rounded-3xl shadow-sm border border-blue-100">
                   <div className="flex items-center gap-4">
                       <button onClick={() => setSelectedEmp(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -125,8 +121,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   </div>
               </div>
 
-              {/* Navigation */}
-              <div className="flex gap-2 overflow-x-auto pb-2">
+              <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                   {[
                       {id: 'profile', icon: User, label: 'البيانات'},
                       {id: 'attendance', icon: Clock, label: 'الحضور'},
@@ -145,11 +140,20 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   ))}
               </div>
 
-              {/* Content */}
               <div className="bg-white p-6 rounded-[30px] border shadow-sm min-h-[500px]">
                   {detailTab === 'profile' && <StaffProfile employee={selectedEmp} />}
                   {detailTab === 'attendance' && <StaffAttendance attendance={empData.attendance} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={selectedEmp} />}
-                  {detailTab === 'stats' && <StaffStats attendance={empData.attendance} month={selectedMonth} />}
+                  
+                  {/* --- التصحيح هنا: تمرير كل البيانات المطلوبة --- */}
+                  {detailTab === 'stats' && (
+                      <StaffStats 
+                          attendance={empData.attendance} 
+                          evals={empData.evals}        // أضفنا هذا
+                          requests={empData.requests}  // أضفنا هذا
+                          month={selectedMonth} 
+                      />
+                  )}
+                  
                   {detailTab === 'requests' && <StaffRequestsHistory requests={empData.requests} />}
                   {detailTab === 'evals' && <StaffEvaluations evals={empData.evals} />}
                   {detailTab === 'messages' && <StaffMessages messages={empData.messages} />}
@@ -158,7 +162,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       );
   }
 
-  // --- عرض القائمة (الجدول الرئيسي) ---
+  // --- عرض القائمة (نفس الكود السابق) ---
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center border-b pb-4">
