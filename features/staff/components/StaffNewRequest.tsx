@@ -3,11 +3,28 @@ import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { FilePlus } from 'lucide-react';
-
+import { useNotifications } from '../../../context/NotificationContext';
 const LEAVE_TYPES = [
   "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "جزء من الوقت", "خط سير", "مأمورية", "دورة تدريبية", "بيان حالة وظيفية"
 ];
-
+export default function StaffNewRequest({ employee, refresh }: any) {
+    // 2. استخدام الدالة
+    const { sendNotification } = useNotifications();
+    
+    // ... داخل دالة submit وبعد نجاح الإرسال (if (!error)):
+    
+    if (!error) {
+        // إرسال إشعار للمدير (user_id = 'admin')
+        await sendNotification(
+            'admin', 
+            'طلب جديد', 
+            `قام الموظف ${employee.name} بتقديم طلب ${formData.type}`
+        );
+        
+        alert('تم الإرسال');
+        // ... باقي كود التصفير
+    }
+}
 export default function StaffNewRequest({ employee, refresh }: { employee: Employee, refresh: () => void }) {
     const [formData, setFormData] = useState({ type: '', start: '', end: '', backup: '', notes: '' });
     const [submitting, setSubmitting] = useState(false);

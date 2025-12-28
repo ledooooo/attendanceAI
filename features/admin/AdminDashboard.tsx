@@ -10,6 +10,8 @@ import EveningSchedulesTab from './components/EveningSchedulesTab';
 import LeavesTab from './components/LeavesTab';
 import EvaluationsTab from './components/EvaluationsTab';
 import SettingsTab from './components/SettingsTab';
+import NotificationBell from '../../components/NotificationBell'; // تأكد من المسار
+
 
 export default function AdminDashboard() {
   const { signOut, user, employeeProfile } = useAuth();
@@ -62,7 +64,11 @@ export default function AdminDashboard() {
             <h1 className="text-xl font-black tracking-tighter">بوابة الإدارة المركزية</h1>
             <p className="text-[10px] text-slate-500 mt-2 font-mono uppercase tracking-widest">{employeeProfile?.center_id}</p>
         </div>
-        
+        // ... داخل الـ return في الهيدر أو الـ Sidebar
+<div className="flex items-center gap-4">
+    <NotificationBell /> {/* أضفه هنا */}
+    <div className="flex items-center gap-3 p-4...">...</div>
+</div>
         <nav className="flex-1 space-y-2 overflow-y-auto custom-scrollbar">
             <NavItem id="doctors" icon={Users} label="شئون الموظفين" />
             <NavItem id="attendance" icon={Clock} label="سجلات البصمة" />

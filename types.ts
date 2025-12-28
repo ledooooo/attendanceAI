@@ -27,7 +27,15 @@ export interface AttendanceRecord {
   date: string;
   times: string; // تخزن الأوقات كسلسلة نصية مفصولة بمسافات (مثال: "08:00 14:00")
 }
-
+// أضف هذا في نهاية ملف types.ts
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
 // تعريف طلب الإجازة
 export interface LeaveRequest {
   id: string;

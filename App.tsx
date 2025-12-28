@@ -3,7 +3,18 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './features/auth/LoginPage';
 import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
+// ... imports
+import { NotificationProvider } from './context/NotificationContext'; // استيراد
 
+export default function App() {
+  return (
+    <AuthProvider>
+      <NotificationProvider> {/* إضافة هذا السطر */}
+        <AppContent />
+      </NotificationProvider> {/* إضافة هذا السطر */}
+    </AuthProvider>
+  );
+}
 const AppContent = () => {
   const { user, employeeProfile, loading, isAdmin, signOut } = useAuth();
 
