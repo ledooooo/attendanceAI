@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { ExcelUploadButton, downloadSample } from '../../../components/ui/ExcelUploadButton';
-import { Clock, Download, CheckCircle, AlertTriangle, RefreshCcw } from 'lucide-react';
+import { Clock, Download, CheckCircle, AlertTriangle, RefreshCcw, History } from 'lucide-react';
 
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
@@ -22,6 +22,20 @@ const formatDateForDB = (val: any): string | null => {
 export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
+  const [lastUpdate, setLastUpdate] = useState<string>('غير متوفر');
+
+  // جلب تاريخ آخر تحديث
+  const fetchLastUpdate = async () => {
+      const { data } = await supabase.from('attendance').select('created_at').order('created_at', { ascending: false }).limit(1);
+      if (data && data.length > 0) {
+          const date = new Date(data[0].created_at);
+          setLastUpdate(date.toLocaleString('ar-EG'));
+      }
+  };
+
+  useEffect(() => {
+      fetchLastUpdate();
+  }, []);
 
   const handleAnalyzeFile = async (data: any[]) => {
     setIsProcessing(true);
@@ -39,7 +53,6 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
             return;
         }
 
-        // استدعاء دالة RPC الذكية في قاعدة البيانات
         const { data: result, error } = await supabase.rpc('process_attendance_bulk', { payload });
 
         if (error) throw error;
@@ -47,6 +60,7 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
         setLastResult(result);
         alert(`تمت العملية بنجاح!\n- مضاف: ${result.inserted}\n- محدث: ${result.updated}\n- متجاهل: ${result.skipped}`);
         
+        fetchLastUpdate(); // تحديث التاريخ
         if (onRefresh) onRefresh();
 
     } catch (err: any) {
@@ -57,9 +71,14 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center border-b pb-4">
-        <h2 className="text-2xl font-black text-gray-800"><Clock className="inline-block ml-2 text-blue-600"/> سجل البصمات (Smart Sync)</h2>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
+        <div>
+            <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Clock className="text-blue-600"/> سجل البصمات (Smart Sync)</h2>
+            <p className="text-xs text-gray-400 font-bold mt-1 flex items-center gap-1">
+                <History className="w-3 h-3"/> آخر تحديث للبيانات: <span className="text-emerald-600">{lastUpdate}</span>
+            </p>
+        </div>
         <div className="flex gap-2">
             <button onClick={()=>downloadSample('attendance')} className="text-gray-400 p-2 hover:text-blue-600 transition-all shadow-sm rounded-lg" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
             <ExcelUploadButton onData={handleAnalyzeFile} label={isProcessing ? "جاري المزامنة..." : "رفع ومعالجة إكسيل"} />
