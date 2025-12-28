@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { ExcelUploadButton, downloadSample } from '../../../components/ui/ExcelUploadButton';
-import { Clock, Download, CheckCircle, AlertTriangle, RefreshCcw, History } from 'lucide-react';
+import { Clock, Download, CheckCircle, AlertTriangle, RefreshCcw, History, CalendarCheck } from 'lucide-react';
 
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
@@ -24,12 +24,12 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
   const [lastResult, setLastResult] = useState<any>(null);
   const [lastUpdate, setLastUpdate] = useState<string>('غير متوفر');
 
-  // جلب تاريخ آخر تحديث
+  // جلب تاريخ آخر تحديث من جدول الإعدادات
   const fetchLastUpdate = async () => {
-      const { data } = await supabase.from('attendance').select('created_at').order('created_at', { ascending: false }).limit(1);
-      if (data && data.length > 0) {
-          const date = new Date(data[0].created_at);
-          setLastUpdate(date.toLocaleString('ar-EG'));
+      const { data } = await supabase.from('general_settings').select('last_attendance_update').limit(1).maybeSingle();
+      if (data && data.last_attendance_update) {
+          const date = new Date(data.last_attendance_update);
+          setLastUpdate(date.toLocaleString('ar-EG', { dateStyle: 'full', timeStyle: 'short' }));
       }
   };
 
@@ -57,10 +57,15 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
 
         if (error) throw error;
 
+        // --- تحديث توقيت آخر رفع في الإعدادات ---
+        // نقوم بتحديث الصف الأول في جدول الإعدادات بالتوقيت الحالي
+        // (نفترض وجود صف واحد للإعدادات، أو نحدث الجميع لضمان التغطية)
+        await supabase.from('general_settings').update({ last_attendance_update: new Date() }).gt('id', '00000000-0000-0000-0000-000000000000'); 
+
         setLastResult(result);
         alert(`تمت العملية بنجاح!\n- مضاف: ${result.inserted}\n- محدث: ${result.updated}\n- متجاهل: ${result.skipped}`);
         
-        fetchLastUpdate(); // تحديث التاريخ
+        fetchLastUpdate(); // تحديث التاريخ المعروض
         if (onRefresh) onRefresh();
 
     } catch (err: any) {
@@ -75,9 +80,10 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
       <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
         <div>
             <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Clock className="text-blue-600"/> سجل البصمات (Smart Sync)</h2>
-            <p className="text-xs text-gray-400 font-bold mt-1 flex items-center gap-1">
-                <History className="w-3 h-3"/> آخر تحديث للبيانات: <span className="text-emerald-600">{lastUpdate}</span>
-            </p>
+            <div className="mt-2 inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg text-xs font-bold border border-blue-100">
+                <CalendarCheck className="w-4 h-4"/>
+                آخر تحديث للبيانات: {lastUpdate}
+            </div>
         </div>
         <div className="flex gap-2">
             <button onClick={()=>downloadSample('attendance')} className="text-gray-400 p-2 hover:text-blue-600 transition-all shadow-sm rounded-lg" title="تحميل ملف عينة"><Download className="w-5 h-5"/></button>
