@@ -1,16 +1,26 @@
-import React, { useEffect, useState } from 'react'; // أضفنا useEffect لجلب البيانات إذا لزم الأمر
-import { Clock, Calendar } from 'lucide-react';
-import { supabase } from '../../../supabaseClient'; // استيراد supabase لجلب البيانات
+import React, { useEffect, useState } from 'react'; 
+import { Clock, Calendar, Info } from 'lucide-react';
+import { supabase } from '../../../supabaseClient'; 
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
 export default function StaffAttendance({ attendance: initialAttendance, selectedMonth: initialMonth, setSelectedMonth, employee }: any) {
-    // حالة محلية للبيانات في حال لم يتم تمريرها من الأب
     const [attendanceData, setAttendanceData] = useState(initialAttendance || []);
     const [viewMonth, setViewMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7));
+    const [lastUpdate, setLastUpdate] = useState<string>('');
 
-    // دالة لجلب البيانات (إذا لم تمرر من الأب)
+    // جلب بيانات الحضور + تاريخ آخر تحديث
     useEffect(() => {
+        // 1. جلب تاريخ آخر تحديث
+        const fetchMeta = async () => {
+            const { data } = await supabase.from('general_settings').select('last_attendance_update').limit(1).maybeSingle();
+            if (data && data.last_attendance_update) {
+                setLastUpdate(new Date(data.last_attendance_update).toLocaleString('ar-EG', { dateStyle: 'full', timeStyle: 'short' }));
+            }
+        };
+        fetchMeta();
+
+        // 2. جلب بيانات الحضور إذا لم تكن ممررة
         if (initialAttendance && initialAttendance.length > 0) {
             setAttendanceData(initialAttendance);
         } else if (employee?.employee_id) {
@@ -27,7 +37,6 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         }
     }, [viewMonth, employee, initialAttendance]);
 
-    // دالة تحديث الشهر (للمزامنة مع الأب أو محلياً)
     const handleMonthChange = (e: any) => {
         const val = e.target.value;
         setViewMonth(val);
@@ -46,9 +55,16 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 no-print">
-                <h3 className="text-xl md:text-2xl font-black flex items-center gap-3 text-gray-800">
-                    <Clock className="text-emerald-600 w-6 h-6 md:w-7 md:h-7" /> سجل الحضور
-                </h3>
+                <div>
+                    <h3 className="text-xl md:text-2xl font-black flex items-center gap-3 text-gray-800">
+                        <Clock className="text-emerald-600 w-6 h-6 md:w-7 md:h-7" /> سجل الحضور
+                    </h3>
+                    {lastUpdate && (
+                        <p className="text-[10px] md:text-xs text-gray-400 font-bold mt-2 flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-lg border border-gray-100 w-fit">
+                            <Info className="w-3 h-3"/> تم تحديث البيانات: {lastUpdate}
+                        </p>
+                    )}
+                </div>
                 <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border w-full md:w-auto">
                     <Calendar className="w-5 h-5 text-gray-400"/>
                     <input 
@@ -60,9 +76,8 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                 </div>
             </div>
 
-            {/* 👇 هذا هو الغلاف المهم للتجاوب */}
             <div className="overflow-x-auto border rounded-3xl shadow-sm bg-white custom-scrollbar">
-                <table className="w-full text-sm text-right min-w-[600px]"> {/* أضفنا min-w */}
+                <table className="w-full text-sm text-right min-w-[600px]">
                     <thead className="bg-gray-100 font-black text-gray-600">
                         <tr className="border-b">
                             <th className="p-4 whitespace-nowrap">التاريخ</th>
@@ -76,14 +91,13 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                         {Array.from({ length: 31 }, (_, i) => {
                             const day = i + 1;
                             const dateStr = `${viewMonth}-${String(day).padStart(2, '0')}`;
-                            // التأكد من صحة التاريخ
                             const daysInMonth = new Date(Number(viewMonth.split('-')[0]), Number(viewMonth.split('-')[1]), 0).getDate();
                             if (day > daysInMonth) return null;
 
                             const dObj = new Date(dateStr);
                             const att = attendanceData.find((a:any) => a.date === dateStr);
                             
-                            const times = att?.times.match(/\d{1,2}:\d{2}/g) || []; // استخراج أفضل للوقت
+                            const times = att?.times.match(/\d{1,2}:\d{2}/g) || [];
                             const cin = times[0] || '--';
                             const cout = times.length > 1 ? times[times.length - 1] : '--';
                             const hours = times.length >= 2 ? calculateHours(times[0], times[times.length-1]).toFixed(1) : '0.0';
