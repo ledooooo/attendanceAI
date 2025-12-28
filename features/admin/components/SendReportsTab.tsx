@@ -238,9 +238,9 @@ export default function SendReportsTab() {
                         <div className="text-sm font-bold text-gray-500 pt-1">محدد: {selectedIds.length}</div>
                     </div>
                 </div>
-                <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
-                    <table className="w-full text-sm text-right">
-                        <thead className="bg-gray-100 font-black text-gray-600 sticky top-0">
+<div className="overflow-x-auto max-h-[500px] custom-scrollbar">
+    <table className="w-full text-sm text-right min-w-[600px]"> {/* أضف min-w */}
+        <thead className="bg-gray-100 font-black text-gray-600 sticky top-0">
                             <tr><th className="p-4 w-10"></th><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">البريد</th><th className="p-4 text-center">الحالة</th></tr>
                         </thead>
                         <tbody>
@@ -267,3 +267,4 @@ export default function SendReportsTab() {
         </div>
     );
 }
+
