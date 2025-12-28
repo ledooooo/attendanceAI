@@ -3,47 +3,44 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginPage from './features/auth/LoginPage';
 import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
-// ... imports
-import { NotificationProvider } from './context/NotificationContext'; // استيراد
 
-export default function App() {
-  return (
-    <AuthProvider>
-      <NotificationProvider> {/* إضافة هذا السطر */}
-        <AppContent />
-      </NotificationProvider> {/* إضافة هذا السطر */}
-    </AuthProvider>
-  );
-}
 const AppContent = () => {
   const { user, employeeProfile, loading, isAdmin, signOut } = useAuth();
 
+  // 1. شاشة التحميل (تظهر عند الريفريش حتى يتم استعادة الجلسة)
   if (loading) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-gray-50 font-sans" dir="rtl">
-        <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-gray-500 font-bold text-sm">جاري التحميل...</p>
+      <div className="h-screen flex flex-col items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-600 border-t-transparent"></div>
+        <p className="mt-4 text-gray-400 text-sm font-bold">جاري استعادة الجلسة...</p>
       </div>
     );
   }
 
-  // 1. غير مسجل دخول
-  if (!user) return <LoginPage />;
+  // 2. غير مسجل دخول
+  if (!user) {
+    return <LoginPage />;
+  }
 
-  // 2. مسجل دخول لكن بدون بروفايل (مشكلة في الربط)
+  // 3. مسجل دخول لكن بيانات الموظف لم تصل بعد (أو غير موجودة)
   if (!employeeProfile) {
     return (
       <div className="h-screen flex flex-col items-center justify-center text-center p-6 bg-white" dir="rtl">
-        <h2 className="text-xl font-black text-gray-800 mb-2">تنبيه</h2>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">جاري التحقق من بيانات الموظف...</h2>
         <p className="text-gray-500 mb-6 text-sm">
-           البريد <b>{user.email}</b> مسجل، ولكن لا توجد بيانات وظيفية مرتبطة به.
+           إذا استمرت هذه الشاشة، فهذا يعني أن إيميلك ({user.email}) غير مرتبط بملف موظف.
         </p>
-        <button onClick={signOut} className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold text-sm">تسجيل خروج</button>
+        <button 
+            onClick={signOut} 
+            className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold hover:bg-gray-900 transition-all text-sm"
+        >
+            تسجيل خروج
+        </button>
       </div>
     );
   }
 
-  // 3. توجيه ناجح
+  // 4. الدخول الناجح
   return isAdmin ? <AdminDashboard /> : <StaffDashboard employee={employeeProfile} />;
 };
 
