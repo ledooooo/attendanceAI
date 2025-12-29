@@ -230,8 +230,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   {detailTab === 'stats' && <StaffStats attendance={empData.attendance} evals={empData.evals} requests={empData.requests} month={selectedMonth} />}
 {detailTab === 'requests' && <StaffRequestsHistory requests={empData.requests} employee={selectedEmp} />}
                 {detailTab === 'evals' && <StaffEvaluations evals={empData.evals} />}
-                  {detailTab === 'messages' && <StaffMessages messages={empData.messages} />}
-              </div>
+{detailTab === 'messages' && (
+    <StaffMessages 
+        messages={empData.messages} 
+        employee={selectedEmp} 
+        currentUserId="admin" 
+    />
+)}              </div>
           </div>
       );
   }
