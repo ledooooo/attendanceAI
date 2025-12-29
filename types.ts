@@ -5,19 +5,40 @@ export interface Employee {
   name: string;          // الاسم الرباعي
   national_id: string;   // الرقم القومي
   specialty: string;     // التخصص الوظيفي
-  status: 'نشط' | 'موقوف' | 'إجازة'; // حالة الموظف
+  status: string;        // حالة الموظف ('نشط' | 'موقوف' | 'إجازة' | ...)
   join_date: string;     // تاريخ التعيين (YYYY-MM-DD)
   center_id?: string;    // كود المركز الطبي التابع له
   photo_url?: string;    // رابط الصورة الشخصية
   phone?: string;        // رقم الهاتف
   
-  // --- حقول المصادقة الجديدة (Auth Refactoring) ---
-  email?: string;        // البريد الإلكتروني (لربط حساب Supabase)
-  role?: 'admin' | 'user'; // الصلاحية: مدير أو مستخدم عادي
+  // --- حقول المصادقة ---
+  email?: string;        // البريد الإلكتروني
+  role?: string;         // الصلاحية ('admin' | 'user')
 
-  // --- أرصدة الإجازات (اختياري) ---
-  remaining_annual?: number; // رصيد الاعتيادي
-  remaining_casual?: number; // رصيد العارضة
+  // --- بيانات إضافية (التي كانت تسبب الخطأ) ---
+  gender?: string;
+  grade?: string;
+  religion?: string;
+  
+  // مواعيد العمل
+  work_days?: string[];  // أيام العمل (مصفوفة)
+  start_time?: string;
+  end_time?: string;
+
+  // أرصدة الإجازات
+  leave_annual_balance?: number; // رصيد الاعتيادي (أصل)
+  leave_casual_balance?: number; // رصيد العارضة (أصل)
+  remaining_annual?: number;     // المتبقي اعتيادي
+  remaining_casual?: number;     // المتبقي عارضة
+  total_absence?: number;        // إجمالي الغياب
+  maternity?: boolean;           // إجازة وضع
+
+  // معلومات أخرى
+  admin_tasks?: string;
+  training_courses?: string;
+  notes?: string;
+  id_front_url?: string;
+  id_back_url?: string;
 }
 
 // تعريف سجل الحضور
@@ -25,9 +46,10 @@ export interface AttendanceRecord {
   id: string;
   employee_id: string;
   date: string;
-  times: string; // تخزن الأوقات كسلسلة نصية مفصولة بمسافات (مثال: "08:00 14:00")
+  times: string; // "08:00 14:00"
 }
-// أضف هذا في نهاية ملف types.ts
+
+// تعريف الإشعارات
 export interface AppNotification {
   id: string;
   user_id: string;
@@ -36,27 +58,28 @@ export interface AppNotification {
   is_read: boolean;
   created_at: string;
 }
+
 // تعريف طلب الإجازة
 export interface LeaveRequest {
   id: string;
   employee_id: string;
-  type: string;          // نوع الإجازة (عارضة، اعتيادية، إلخ)
+  type: string;          // نوع الإجازة
   start_date: string;
   end_date: string;
+  back_date?: string;    // تاريخ العودة
   backup_person?: string; // الموظف البديل
   status: 'معلق' | 'مقبول' | 'مرفوض';
   notes?: string;
   created_at: string;
-  
-  // حقل إضافي للعرض عند عمل Join مع جدول الموظفين
-  employee_name?: string; 
+  employee_name?: string; // للعرض
 }
 
 // تعريف التقييم الشهري
 export interface Evaluation {
   id: string;
   employee_id: string;
-  month: string;         // شهر التقييم (YYYY-MM)
+  month: string;         // YYYY-MM
+  year?: number;
   score_appearance: number;
   score_attendance: number;
   score_quality: number;
@@ -64,56 +87,41 @@ export interface Evaluation {
   score_training: number;
   score_records: number;
   score_tasks: number;
-  total_score: number;   // المجموع من 100
+  total_score: number;   
   notes?: string;
 }
 
 // تعريف الرسائل الداخلية
 export interface InternalMessage {
   id: string;
-  from_user: string;     // كود المرسل (أو 'admin')
-  to_user: string;       // كود المستقبل (أو 'all')
-  content: string;
+  from_user: string;     
+  to_user: string;       
+  message: string;       // لاحظ: الاسم قد يكون message أو content حسب الجدول
   created_at: string;
-  read: boolean;
+  is_read: boolean;
 }
 
 // تعريف جدول النوبتجيات المسائية
 export interface EveningSchedule {
   id: string;
   date: string;
-  doctors: string[];     // قائمة أسماء الأطباء/الموظفين في النوبتجية
+  doctors: string[];     
   notes?: string;
 }
 
-// تعريف المركز الطبي (داخل الإعدادات)
+// تعريف المركز الطبي
 export interface Center {
   id: string;
   name: string;
-  password?: string; // (إرث) كلمة مرور المركز للدخول القديم
+  password?: string; 
 }
 
 // تعريف الإعدادات العامة
 export interface GeneralSettings {
   id: string;
-  centers: Center[];     // قائمة المراكز الطبية
-  admin_password?: string; // (إرث) كلمة مرور المدير العامة
-}
-
-// أضف هذا في نهاية ملف src/types.ts
-
-export interface AppNotification {
-  id: string;
-  user_id: string;
-  title: string;
-  message: string;
-  is_read: boolean;
-  created_at: string;
-}
-
-// أضف/حدث هذه الواجهة في ملف types.ts
-export interface GeneralSettings {
-    // ... الحقول السابقة
-    links_names?: string[];
-    links_urls?: string[];
+  centers: Center[];
+  admin_password?: string;
+  links_names?: string[];
+  links_urls?: string[];
+  last_attendance_update?: string;
 }
