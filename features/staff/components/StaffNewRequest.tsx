@@ -2,80 +2,163 @@ import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-import { FilePlus, Send } from 'lucide-react';
+import { FilePlus, Send, Calendar, UserCheck } from 'lucide-react';
 import { useNotifications } from '../../../context/NotificationContext';
 
 const LEAVE_TYPES = [
-  "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورةتدريبية", "خط سير", "مأمورية", "اذن صباحى", "اذن مسائي", "تأمين صحي", "مأمورية"
+  "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورة تدريبية", "خط سير", "مأمورية", "اذن صباحى", "اذن مسائي", "تأمين صحي"
 ];
 
 export default function StaffNewRequest({ employee, refresh }: { employee: Employee, refresh: () => void }) {
     const { sendNotification } = useNotifications();
-    const [formData, setFormData] = useState({ 
-        type: '', 
-        start: '', 
-        end: '', 
-        returnDate: '', // خانة تاريخ العودة
-        backup: '', 
-        notes: '' 
-    });
     const [submitting, setSubmitting] = useState(false);
+    
+    // حالة النموذج
+    const [formData, setFormData] = useState({
+        type: LEAVE_TYPES[0], // قيمة افتراضية
+        start: '',
+        end: '',
+        returnDate: '', // تاريخ العودة
+        backup: '',
+        notes: ''
+    });
 
     const submit = async () => {
-        // التحقق الإجباري
-        if(!formData.type || !formData.start || !formData.end || !formData.returnDate || !formData.backup) {
-            return alert('عفواً، جميع الحقول الموضحة بعلامة (*) إجبارية.');
+        // 1. التحقق الإجباري
+        if (!formData.type || !formData.start || !formData.end || !formData.returnDate || !formData.backup) {
+            return alert('⚠️ عفواً، جميع الحقول الموضحة بعلامة (*) إجبارية.');
+        }
+
+        // 2. التحقق من منطقية التواريخ
+        if (new Date(formData.end) < new Date(formData.start)) {
+            return alert('⚠️ تاريخ النهاية يجب أن يكون بعد تاريخ البداية!');
+        }
+        if (new Date(formData.returnDate) <= new Date(formData.end)) {
+            return alert('⚠️ تاريخ العودة للعمل يجب أن يكون بعد انتهاء الإجازة!');
         }
 
         setSubmitting(true);
         
-        // التصحيح هنا: إرسال back_date بشكل صريح
-        const { error } = await supabase.from('leave_requests').insert([{ 
-            employee_id: employee.employee_id, 
-            type: formData.type, 
-            start_date: formData.start, 
-            end_date: formData.end,
-            back_date: formData.returnDate, // <--- هذا هو السطر الذي يحل المشكلة
-            backup_person: formData.backup, 
-            status: 'معلق', 
-            notes: formData.notes 
-        }]);
+        try {
+            // 3. الإرسال لقاعدة البيانات
+            const { error } = await supabase.from('leave_requests').insert([{ 
+                employee_id: employee.employee_id, 
+                type: formData.type, 
+                start_date: formData.start, 
+                end_date: formData.end,
+                back_date: formData.returnDate, // الربط مع العمود الصحيح في القاعدة
+                backup_person: formData.backup, 
+                status: 'معلق', 
+                notes: formData.notes 
+            }]);
 
-        if(!error) { 
-            await sendNotification('admin', 'طلب جديد', `طلب ${formData.type} من ${employee.name}`);
-            alert('تم إرسال الطلب بنجاح'); 
-            setFormData({ type: '', start: '', end: '', returnDate: '', backup: '', notes: '' }); 
-            refresh(); 
-        } else {
-            console.error(error); // طباعة الخطأ في الكونسول للمراجعة
-            alert('خطأ في الإرسال: ' + error.message);
+            if (error) throw error;
+
+            // 4. إرسال إشعار للمدير
+            // نستخدم 'admin' كمعرف عام للمديرين، أو يمكنك استبداله بكود مدير محدد
+            await sendNotification('admin', 'طلب جديد 📄', `قام ${employee.name} بتقديم طلب ${formData.type}`);
+
+            alert('✅ تم إرسال الطلب بنجاح'); 
+            
+            // 5. تصفير النموذج وتحديث الصفحة
+            setFormData({ 
+                type: LEAVE_TYPES[0], 
+                start: '', 
+                end: '', 
+                returnDate: '', 
+                backup: '', 
+                notes: '' 
+            }); 
+            refresh();
+
+        } catch (error: any) {
+            console.error(error);
+            alert('❌ خطأ في الإرسال: ' + error.message);
+        } finally {
+            setSubmitting(false);
         }
-        setSubmitting(false);
     };
 
     return (
-        <div className="space-y-8 animate-in slide-in-from-bottom duration-500">
-            <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800"><FilePlus className="text-emerald-600 w-7 h-7" /> تقديم طلب إلكتروني</h3>
-            <div className="bg-white p-8 rounded-[40px] border shadow-sm space-y-6">
+        <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
+            <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800">
+                <FilePlus className="text-emerald-600 w-7 h-7" /> تقديم طلب إلكتروني
+            </h3>
+            
+            <div className="bg-white p-6 md:p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6">
+                
+                {/* تنويه بسيط */}
+                <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-blue-800 text-sm font-bold flex items-center gap-2">
+                    <UserCheck className="w-5 h-5"/>
+                    يرجى التأكد من التنسيق مع الموظف البديل قبل تقديم الطلب.
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* نوع الطلب */}
                     <div className="md:col-span-2">
-                        <Select label="نوع الطلب *" options={LEAVE_TYPES} value={formData.type} onChange={(v:any)=>setFormData({...formData, type: v})} required />
+                        <Select 
+                            label="نوع الطلب *" 
+                            options={LEAVE_TYPES} 
+                            value={formData.type} 
+                            onChange={(v:any)=>setFormData({...formData, type: v})} 
+                        />
                     </div>
-                    <Input label="من تاريخ *" type="date" value={formData.start} onChange={(v:any)=>setFormData({...formData, start: v})} required />
-                    <Input label="إلى تاريخ *" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, end: v})} required />
+
+                    {/* التواريخ */}
+                    <Input 
+                        label="من تاريخ *" 
+                        type="date" 
+                        value={formData.start} 
+                        onChange={(v:any)=>setFormData({...formData, start: v})} 
+                    />
+                    <Input 
+                        label="إلى تاريخ *" 
+                        type="date" 
+                        value={formData.end} 
+                        onChange={(v:any)=>setFormData({...formData, end: v})} 
+                    />
                     
-                    {/* حقل العودة للعمل */}
-                    <Input label="تاريخ العودة للعمل *" type="date" value={formData.returnDate} onChange={(v:any)=>setFormData({...formData, returnDate: v})} required />
+                    {/* تاريخ العودة والموظف البديل */}
+                    <div className="relative">
+                         <Input 
+                            label="تاريخ العودة للعمل *" 
+                            type="date" 
+                            value={formData.returnDate} 
+                            onChange={(v:any)=>setFormData({...formData, returnDate: v})} 
+                        />
+                        <Calendar className="absolute left-3 top-9 text-gray-400 w-4 h-4 pointer-events-none"/>
+                    </div>
                     
-                    <Input label="الموظف البديل *" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} required placeholder="اسم الزميل القائم بالعمل" />
+                    <Input 
+                        label="الموظف البديل *" 
+                        value={formData.backup} 
+                        onChange={(v:any)=>setFormData({...formData, backup: v})} 
+                        placeholder="اسم الزميل القائم بالعمل" 
+                    />
                     
+                    {/* الملاحظات */}
                     <div className="md:col-span-2">
-                        <label className="block text-xs font-bold text-gray-500 mb-1">ملاحظات إضافية</label>
-                        <textarea value={formData.notes} onChange={(e)=>setFormData({...formData, notes: e.target.value})} className="w-full p-3 rounded-xl border border-gray-300 outline-none focus:ring-2 focus:ring-emerald-500 min-h-[100px]" placeholder="أي تفاصيل أخرى..."></textarea>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">ملاحظات إضافية (اختياري)</label>
+                        <textarea 
+                            value={formData.notes} 
+                            onChange={(e)=>setFormData({...formData, notes: e.target.value})} 
+                            className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all min-h-[100px] text-sm font-medium" 
+                            placeholder="اكتب أي تفاصيل أخرى..."
+                        />
                     </div>
                 </div>
-                <button onClick={submit} disabled={submitting} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 active:scale-95 disabled:bg-gray-400">
-                    <Send className="w-5 h-5" /> {submitting ? 'جاري الإرسال...' : 'إرسال الطلب للاعتماد'}
+
+                {/* زر الإرسال */}
+                <button 
+                    onClick={submit} 
+                    disabled={submitting} 
+                    className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-emerald-700 hover:shadow-emerald-200 transition-all flex justify-center items-center gap-2 active:scale-95 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                    {submitting ? (
+                        <span className="flex items-center gap-2">جاري الإرسال... <span className="animate-spin">⏳</span></span>
+                    ) : (
+                        <><Send className="w-5 h-5" /> إرسال الطلب للاعتماد</>
+                    )}
                 </button>
             </div>
         </div>
