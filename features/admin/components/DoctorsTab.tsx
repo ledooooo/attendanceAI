@@ -3,7 +3,7 @@ import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation, InternalMessage } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
-import * as XLSX from 'xlsx'; // تأكد من تثبيت المكتبة npm install xlsx
+import * as XLSX from 'xlsx';
 import { 
   Download, Users, ArrowRight, User, Clock, FileText, 
   Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown 
@@ -17,7 +17,6 @@ import StaffEvaluations from '../../staff/components/StaffEvaluations';
 import StaffStats from '../../staff/components/StaffStats';
 import StaffMessages from '../../staff/components/StaffMessages';
 
-// دالة مساعدة لتنسيق التاريخ لقاعدة البيانات
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
@@ -35,17 +34,12 @@ const formatDateForDB = (val: any): string | null => {
 };
 
 export default function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
-  // --- States for Filtering ---
   const [fName, setFName] = useState('');
   const [fId, setFId] = useState('');
   const [fSpec, setFSpec] = useState('all');
   const [fStatus, setFStatus] = useState('all');
   const [isProcessing, setIsProcessing] = useState(false);
-
-  // --- States for Sorting ---
   const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'employee_id' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
-
-  // --- States for Detail View ---
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [detailTab, setDetailTab] = useState('profile');
   const [empData, setEmpData] = useState<{
@@ -56,7 +50,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   }>({ attendance: [], requests: [], evals: [], messages: [] });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  // جلب بيانات الموظف المختار التفصيلية
   useEffect(() => {
     if (selectedEmp) {
       const fetchData = async () => {
@@ -66,7 +59,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             supabase.from('evaluations').select('*').eq('employee_id', selectedEmp.employee_id).order('month', { ascending: false }),
             supabase.from('messages').select('*').or(`to_user.eq.${selectedEmp.employee_id},to_user.eq.all`).order('created_at', { ascending: false })
         ]);
-        
         setEmpData({
             attendance: att.data || [],
             requests: req.data || [],
@@ -78,7 +70,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     }
   }, [selectedEmp]);
 
-  // منطق الفلترة
   const filtered = employees.filter(e => 
     (e.name.includes(fName)) && 
     (e.employee_id.includes(fId)) && 
@@ -86,12 +77,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     (fStatus === 'all' || e.status === fStatus)
   );
 
-  // منطق الترتيب
   const handleSort = (key: 'name' | 'employee_id') => {
       let direction: 'asc' | 'desc' = 'asc';
-      if (sortConfig.key === key && sortConfig.direction === 'asc') {
-          direction = 'desc';
-      }
+      if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
       setSortConfig({ key, direction });
   };
 
@@ -99,103 +87,129 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       let sortableItems = [...filtered];
       if (sortConfig.key !== null) {
           sortableItems.sort((a, b) => {
-              if (a[sortConfig.key!] < b[sortConfig.key!]) {
-                  return sortConfig.direction === 'asc' ? -1 : 1;
-              }
-              if (a[sortConfig.key!] > b[sortConfig.key!]) {
-                  return sortConfig.direction === 'asc' ? 1 : -1;
-              }
+              if (a[sortConfig.key!] < b[sortConfig.key!]) return sortConfig.direction === 'asc' ? -1 : 1;
+              if (a[sortConfig.key!] > b[sortConfig.key!]) return sortConfig.direction === 'asc' ? 1 : -1;
               return 0;
           });
       }
       return sortableItems;
   }, [filtered, sortConfig]);
 
-  // منطق تحديث الحالة السريع
   const updateStatus = async (id: string, newStatus: string) => {
       const { error } = await supabase.from('employees').update({ status: newStatus }).eq('id', id);
-      if (!error) {
-          onRefresh();
-      } else {
-          alert('فشل تحديث الحالة: ' + error.message);
-      }
+      if (!error) onRefresh();
+      else alert('فشل تحديث الحالة: ' + error.message);
   };
 
-  // --- تشغيل زر تحميل العينة ---
+  // --- 1. زر تحميل العينة (تم التحديث ليشمل كل الخانات) ---
   const handleDownloadSample = () => {
-    // البيانات الافتراضية للعينة
+    // جميع الخانات المطلوبة
     const sampleData = [
       {
-        'الكود': '101',
-        'الاسم': 'أحمد محمد',
-        'الرقم القومي': '29001011234567',
-        'التخصص': 'طبيب عام',
-        'تاريخ التعيين': '2023-01-01',
-        'البريد': 'ahmed@example.com',
-        'الهاتف': '01000000000'
-      },
-      {
-        'الكود': '102',
-        'الاسم': 'سارة علي',
-        'الرقم القومي': '29505051234567',
-        'التخصص': 'تمريض',
-        'تاريخ التعيين': '2023-05-15',
-        'البريد': 'sara@example.com',
-        'الهاتف': '01100000000'
+        employee_id: '101',
+        name: 'اسم الموظف',
+        national_id: '29000000000000',
+        specialty: 'طبيب عام',
+        phone: '01000000000',
+        email: 'employee@example.com',
+        gender: 'ذكر',
+        grade: 'أخصائي',
+        photo_url: '',
+        id_front_url: '',
+        id_back_url: '',
+        religion: 'مسلم',
+        work_days: 'Sunday,Monday,Tuesday,Wednesday,Thursday',
+        start_time: '08:00',
+        end_time: '14:00',
+        leave_annual_balance: 21,
+        leave_casual_balance: 7,
+        total_absence: 0,
+        remaining_annual: 21,
+        remaining_casual: 7,
+        admin_tasks: 'لا يوجد',
+        status: 'نشط',
+        join_date: '2023-01-01',
+        center_id: centerId, // يتم وضع كود المركز الحالي
+        training_courses: '',
+        notes: '',
+        maternity: '',
+        role: 'user'
       }
     ];
 
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "بيانات الموظفين");
-    XLSX.writeFile(wb, "نموذج_استيراد_الموظفين.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Employees");
+    XLSX.writeFile(wb, "نموذج_بيانات_الموظفين.xlsx");
   };
 
-  // --- منطق استيراد الإكسيل المحدث (بدون RPC لتجنب خطأ UUID) ---
+  // --- 2. منطق الاستيراد (تم التحديث لربط كل الخانات) ---
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     try {
         const processedRows = data.map((row) => {
-            // تنظيف البيانات
-            const empId = String(row['الكود'] || row['ID'] || row.employee_id || '').trim();
-            const name = String(row['الاسم'] || row.name || '').trim();
+            const empId = String(row.employee_id || row['الكود'] || row['ID'] || '').trim();
+            const name = String(row.name || row['الاسم'] || '').trim();
             
             if (!empId || !name) return null;
 
-            // البحث عن الموظف في القائمة الحالية (لتحديد ما إذا كان تحديث أم إضافة)
-            // هذا يحل مشكلة operator does not exist: uuid = text
-            // لأننا نحضر الـ UUID الصحيح من البيانات المحملة مسبقاً
+            // البحث عن الموظف (للتحديث)
             const existingEmp = employees.find(e => e.employee_id === empId);
 
             return {
-                id: existingEmp ? existingEmp.id : undefined, // إذا وجدنا الموظف، نستخدم معرفه للتحديث
+                id: existingEmp ? existingEmp.id : undefined, // التحديث في حالة الوجود
+                center_id: centerId, // ربط بالمركز الحالي دائماً
+                
                 employee_id: empId,
                 name: name,
-                national_id: String(row['الرقم القومي'] || row.national_id || '').trim(),
-                specialty: String(row['التخصص'] || row.specialty || '').trim(),
-                join_date: formatDateForDB(row['تاريخ التعيين'] || row.join_date) || new Date().toISOString().split('T')[0],
-                email: String(row['البريد'] || row.email || '').trim() || null,
-                phone: String(row['الهاتف'] || row.phone || '').trim() || null,
-                status: 'نشط', // الحالة الافتراضية
-                center_id: centerId
+                national_id: String(row.national_id || row['الرقم القومي'] || '').trim(),
+                specialty: String(row.specialty || row['التخصص'] || '').trim(),
+                phone: String(row.phone || row['الهاتف'] || '').trim(),
+                email: String(row.email || row['البريد'] || '').trim() || null,
+                
+                // الخانات الجديدة
+                gender: String(row.gender || '').trim(),
+                grade: String(row.grade || '').trim(),
+                photo_url: String(row.photo_url || '').trim(),
+                id_front_url: String(row.id_front_url || '').trim(),
+                id_back_url: String(row.id_back_url || '').trim(),
+                religion: String(row.religion || '').trim(),
+                work_days: String(row.work_days || '').trim(),
+                start_time: String(row.start_time || '').trim(),
+                end_time: String(row.end_time || '').trim(),
+                
+                // تحويل الأرقام
+                leave_annual_balance: Number(row.leave_annual_balance) || 21,
+                leave_casual_balance: Number(row.leave_casual_balance) || 7,
+                total_absence: Number(row.total_absence) || 0,
+                remaining_annual: Number(row.remaining_annual) || 21,
+                remaining_casual: Number(row.remaining_casual) || 7,
+                
+                admin_tasks: String(row.admin_tasks || '').trim(),
+                status: String(row.status || 'نشط').trim(),
+                join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']) || new Date().toISOString().split('T')[0],
+                
+                training_courses: String(row.training_courses || '').trim(),
+                notes: String(row.notes || '').trim(),
+                maternity: String(row.maternity || '').trim(),
+                role: String(row.role || 'user').trim()
             };
-        }).filter(Boolean); // إزالة الصفوف الفارغة
+        }).filter(Boolean);
 
         if (processedRows.length === 0) {
-            alert('لم يتم العثور على بيانات صالحة. تأكد من استخدام نموذج العينة.');
+            alert('لم يتم العثور على بيانات صالحة.');
             return;
         }
 
-        // استخدام Upsert مباشرة (تحديث إذا وجد المعرف، إضافة إذا لم يوجد)
+        // Upsert: تحديث إذا وجد الـ ID، إضافة إذا لم يوجد
         const { data: res, error } = await supabase.from('employees').upsert(processedRows).select();
 
         if (error) throw error;
 
-        // حساب الإحصائيات تقريبياً
         const updatedCount = processedRows.filter(r => r?.id).length;
         const insertedCount = processedRows.length - updatedCount;
 
-        alert(`تمت العملية بنجاح!\n- تم معالجة: ${processedRows.length} صف\n- تحديث بيانات: ${updatedCount}\n- موظفين جدد: ${insertedCount}`);
+        alert(`تمت العملية بنجاح!\n- الإجمالي: ${processedRows.length}\n- تحديث: ${updatedCount}\n- جديد: ${insertedCount}`);
         onRefresh();
         
     } catch (e:any) {
@@ -206,11 +220,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     }
   };
 
-  // --- عرض التفاصيل (ملف الموظف) ---
   if (selectedEmp) {
       return (
           <div className="space-y-6 animate-in slide-in-from-left duration-300">
-              {/* Header */}
               <div className="flex items-center justify-between bg-white p-4 rounded-3xl shadow-sm border border-blue-100">
                   <div className="flex items-center gap-4">
                       <button onClick={() => setSelectedEmp(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -226,7 +238,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   </div>
               </div>
 
-              {/* Navigation Tabs */}
               <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                   {[
                       {id: 'profile', icon: User, label: 'البيانات والتعديل'},
@@ -246,15 +257,8 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   ))}
               </div>
 
-              {/* Content */}
               <div className="bg-white p-6 rounded-[30px] border shadow-sm min-h-[500px]">
-                  {detailTab === 'profile' && (
-                      <StaffProfile 
-                          employee={selectedEmp} 
-                          isEditable={true} 
-                          onUpdate={onRefresh} 
-                      />
-                  )}
+                  {detailTab === 'profile' && <StaffProfile employee={selectedEmp} isEditable={true} onUpdate={onRefresh} />}
                   {detailTab === 'attendance' && <StaffAttendance attendance={empData.attendance} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={selectedEmp} />}
                   {detailTab === 'stats' && <StaffStats attendance={empData.attendance} evals={empData.evals} requests={empData.requests} month={selectedMonth} />}
                   {detailTab === 'requests' && <StaffRequestsHistory requests={empData.requests} />}
@@ -265,18 +269,16 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       );
   }
 
-  // --- عرض القائمة (الجدول الرئيسي) ---
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
         <div className="flex gap-2">
-            {/* زر تحميل العينة */}
             <button 
                 onClick={handleDownloadSample} 
                 className="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 hover:text-blue-600 transition-all shadow-sm text-sm"
             >
-                <Download className="w-4 h-4"/> تحميل نموذج عينة
+                <Download className="w-4 h-4"/> تحميل نموذج عينة شامل
             </button>
             <ExcelUploadButton onData={handleExcelImport} label={isProcessing ? "جاري المزامنة..." : "رفع ملف إكسيل"} />
         </div>
@@ -293,20 +295,14 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
           <table className="w-full text-sm text-right min-w-[800px]">
               <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
                   <tr>
-                      <th 
-                        className="p-4 text-center cursor-pointer hover:bg-gray-200 transition-colors select-none"
-                        onClick={() => handleSort('employee_id')}
-                      >
+                      <th className="p-4 text-center cursor-pointer hover:bg-gray-200 transition-colors select-none" onClick={() => handleSort('employee_id')}>
                           <div className="flex items-center justify-center gap-1">
                              الكود
                              {sortConfig.key === 'employee_id' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}
                              {sortConfig.key !== 'employee_id' && <ArrowUpDown className="w-4 h-4 text-gray-300"/>}
                           </div>
                       </th>
-                      <th 
-                        className="p-4 cursor-pointer hover:bg-gray-200 transition-colors select-none"
-                        onClick={() => handleSort('name')}
-                      >
+                      <th className="p-4 cursor-pointer hover:bg-gray-200 transition-colors select-none" onClick={() => handleSort('name')}>
                           <div className="flex items-center gap-1">
                              الاسم
                              {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}
@@ -324,7 +320,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                           <td onClick={() => setSelectedEmp(emp)} className="p-4 font-black group-hover:text-blue-600 transition-colors cursor-pointer">
                               <div className="flex items-center gap-2">
                                   <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-xs overflow-hidden">
-                                      {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover"/> : <User className="w-4 h-4"/>}
+                                      {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover" alt=""/> : <User className="w-4 h-4"/>}
                                   </div>
                                   {emp.name}
                               </div>
