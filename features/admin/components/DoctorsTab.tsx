@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation, InternalMessage } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-import { ExcelUploadButton, downloadSample } from '../../../components/ui/ExcelUploadButton';
+import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
+import * as XLSX from 'xlsx'; // تأكد من تثبيت المكتبة npm install xlsx
 import { 
   Download, Users, ArrowRight, User, Clock, FileText, 
   Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown 
@@ -114,35 +115,92 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   const updateStatus = async (id: string, newStatus: string) => {
       const { error } = await supabase.from('employees').update({ status: newStatus }).eq('id', id);
       if (!error) {
-          onRefresh(); // تحديث القائمة لإظهار الحالة الجديدة
+          onRefresh();
       } else {
           alert('فشل تحديث الحالة: ' + error.message);
       }
   };
 
-  // منطق استيراد الإكسيل
+  // --- تشغيل زر تحميل العينة ---
+  const handleDownloadSample = () => {
+    // البيانات الافتراضية للعينة
+    const sampleData = [
+      {
+        'الكود': '101',
+        'الاسم': 'أحمد محمد',
+        'الرقم القومي': '29001011234567',
+        'التخصص': 'طبيب عام',
+        'تاريخ التعيين': '2023-01-01',
+        'البريد': 'ahmed@example.com',
+        'الهاتف': '01000000000'
+      },
+      {
+        'الكود': '102',
+        'الاسم': 'سارة علي',
+        'الرقم القومي': '29505051234567',
+        'التخصص': 'تمريض',
+        'تاريخ التعيين': '2023-05-15',
+        'البريد': 'sara@example.com',
+        'الهاتف': '01100000000'
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "بيانات الموظفين");
+    XLSX.writeFile(wb, "نموذج_استيراد_الموظفين.xlsx");
+  };
+
+  // --- منطق استيراد الإكسيل المحدث (بدون RPC لتجنب خطأ UUID) ---
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     try {
-        const payload = data.map(row => ({
-            employee_id: String(row.employee_id || row.employee_ || row['الكود'] || row['ID'] || '').trim(),
-            name: String(row.name || row['الاسم'] || '').trim(),
-            national_id: String(row.national_id || row['الرقم القومي'] || '').trim(),
-            specialty: String(row.specialty || row['التخصص'] || '').trim(),
-            join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']) || new Date().toISOString().split('T')[0],
-            center_id: centerId,
-            email: String(row.email || row['البريد'] || '').trim() || null
-        })).filter(r => r.employee_id && r.name);
+        const processedRows = data.map((row) => {
+            // تنظيف البيانات
+            const empId = String(row['الكود'] || row['ID'] || row.employee_id || '').trim();
+            const name = String(row['الاسم'] || row.name || '').trim();
+            
+            if (!empId || !name) return null;
 
-        if (payload.length === 0) return alert('لا توجد بيانات صالحة');
+            // البحث عن الموظف في القائمة الحالية (لتحديد ما إذا كان تحديث أم إضافة)
+            // هذا يحل مشكلة operator does not exist: uuid = text
+            // لأننا نحضر الـ UUID الصحيح من البيانات المحملة مسبقاً
+            const existingEmp = employees.find(e => e.employee_id === empId);
 
-        const { data: res, error } = await supabase.rpc('process_employees_bulk', { payload });
+            return {
+                id: existingEmp ? existingEmp.id : undefined, // إذا وجدنا الموظف، نستخدم معرفه للتحديث
+                employee_id: empId,
+                name: name,
+                national_id: String(row['الرقم القومي'] || row.national_id || '').trim(),
+                specialty: String(row['التخصص'] || row.specialty || '').trim(),
+                join_date: formatDateForDB(row['تاريخ التعيين'] || row.join_date) || new Date().toISOString().split('T')[0],
+                email: String(row['البريد'] || row.email || '').trim() || null,
+                phone: String(row['الهاتف'] || row.phone || '').trim() || null,
+                status: 'نشط', // الحالة الافتراضية
+                center_id: centerId
+            };
+        }).filter(Boolean); // إزالة الصفوف الفارغة
+
+        if (processedRows.length === 0) {
+            alert('لم يتم العثور على بيانات صالحة. تأكد من استخدام نموذج العينة.');
+            return;
+        }
+
+        // استخدام Upsert مباشرة (تحديث إذا وجد المعرف، إضافة إذا لم يوجد)
+        const { data: res, error } = await supabase.from('employees').upsert(processedRows).select();
+
         if (error) throw error;
 
-        alert(`تقرير المزامنة:\n- إضافة: ${res.inserted}\n- تحديث: ${res.updated}\n- تجاهل: ${res.skipped}`);
+        // حساب الإحصائيات تقريبياً
+        const updatedCount = processedRows.filter(r => r?.id).length;
+        const insertedCount = processedRows.length - updatedCount;
+
+        alert(`تمت العملية بنجاح!\n- تم معالجة: ${processedRows.length} صف\n- تحديث بيانات: ${updatedCount}\n- موظفين جدد: ${insertedCount}`);
         onRefresh();
+        
     } catch (e:any) {
-        alert('حدث خطأ: ' + e.message);
+        console.error(e);
+        alert('حدث خطأ أثناء المعالجة: ' + e.message);
     } finally {
         setIsProcessing(false);
     }
@@ -193,8 +251,8 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   {detailTab === 'profile' && (
                       <StaffProfile 
                           employee={selectedEmp} 
-                          isEditable={true} // تفعيل التعديل للمدير
-                          onUpdate={onRefresh} // لتحديث القائمة الرئيسية بعد الحفظ
+                          isEditable={true} 
+                          onUpdate={onRefresh} 
                       />
                   )}
                   {detailTab === 'attendance' && <StaffAttendance attendance={empData.attendance} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={selectedEmp} />}
@@ -210,11 +268,17 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   // --- عرض القائمة (الجدول الرئيسي) ---
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center border-b pb-4">
+      <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
         <div className="flex gap-2">
-            <button onClick={()=>downloadSample('staff')} className="text-gray-400 p-2 hover:text-blue-600 transition-all"><Download className="w-5 h-5"/></button>
-            <ExcelUploadButton onData={handleExcelImport} label={isProcessing ? "جاري المزامنة..." : "استيراد موظفين"} />
+            {/* زر تحميل العينة */}
+            <button 
+                onClick={handleDownloadSample} 
+                className="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 hover:text-blue-600 transition-all shadow-sm text-sm"
+            >
+                <Download className="w-4 h-4"/> تحميل نموذج عينة
+            </button>
+            <ExcelUploadButton onData={handleExcelImport} label={isProcessing ? "جاري المزامنة..." : "رفع ملف إكسيل"} />
         </div>
       </div>
       
@@ -225,10 +289,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
           <Select label="الحالة" options={['all', 'نشط', 'موقوف', 'إجازة', 'خارج المركز']} value={fStatus} onChange={setFStatus} />
       </div>
       
-<div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
-    {/* 👇 التعديل هنا: إضافة min-w-[800px] للجدول */}
-    <table className="w-full text-sm text-right min-w-[800px]">
-      <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
+      <div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
+          <table className="w-full text-sm text-right min-w-[800px]">
+              <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
                   <tr>
                       <th 
                         className="p-4 text-center cursor-pointer hover:bg-gray-200 transition-colors select-none"
@@ -257,7 +320,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
               <tbody>
                   {sortedEmployees.map(emp => (
                       <tr key={emp.id} className="border-b hover:bg-blue-50/50 transition-all group">
-                          {/* الكود والاسم يفتحان الملف */}
                           <td onClick={() => setSelectedEmp(emp)} className="p-4 font-mono font-bold text-blue-600 text-center cursor-pointer hover:underline">{emp.employee_id}</td>
                           <td onClick={() => setSelectedEmp(emp)} className="p-4 font-black group-hover:text-blue-600 transition-colors cursor-pointer">
                               <div className="flex items-center gap-2">
@@ -268,8 +330,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                               </div>
                           </td>
                           <td onClick={() => setSelectedEmp(emp)} className="p-4 text-xs font-bold text-gray-500 text-center cursor-pointer">{emp.specialty}</td>
-                          
-                          {/* القائمة المنسدلة لتغيير الحالة */}
                           <td className="p-4 text-center">
                               <select 
                                 value={emp.status || 'نشط'} 
@@ -280,7 +340,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     emp.status === 'إجازة' ? 'bg-orange-50 border-orange-200 text-orange-700' :
                                     'bg-gray-50 border-gray-200 text-gray-700'
                                 }`}
-                                onClick={(e) => e.stopPropagation()} // هام: لمنع فتح الملف عند الضغط هنا
+                                onClick={(e) => e.stopPropagation()} 
                               >
                                   <option value="نشط">نشط</option>
                                   <option value="موقوف">موقوف</option>
