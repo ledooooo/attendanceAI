@@ -11,8 +11,8 @@ export default defineConfig({
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
         name: 'نظام حضور الموظفين',
-        short_name: 'حضور',
-        description: 'نظام إدارة الحضور والانصراف للمركز الطبي',
+        short_name: 'الحضور والانصراف',
+        description: 'نظام إدارة الحضور والانصراف بمركز غرب المطار',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone', // هذا السطر يجعله يفتح كتطبيق بدون شريط المتصفح
