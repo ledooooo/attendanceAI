@@ -4,7 +4,7 @@ import { Employee } from '../../types';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Download, Info, Heart, Smartphone
+  Share2, Download, Info, Heart, Smartphone, HelpCircle
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -29,57 +29,64 @@ export default function StaffDashboard({ employee }: Props) {
   // حالات المميزات الجديدة
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
-  const [showInstallPopup, setShowInstallPopup] = useState(false); // للنافذة التلقائية
+  const [showInstallPopup, setShowInstallPopup] = useState(false);
+  
+  // حالة لمعرفة هل التطبيق يعمل كـ PWA (مثبت) أم في المتصفح
+  const [isStandalone, setIsStandalone] = useState(false);
 
-  // 1. الاستماع لحدث تثبيت التطبيق
   useEffect(() => {
+    // التحقق: هل التطبيق مثبت ومفتوح كـ PWA؟
+    const checkStandalone = () => {
+      const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
+                               (window.navigator as any).standalone === true;
+      setIsStandalone(isStandaloneMode);
+    };
+    checkStandalone();
+
+    // الاستماع لحدث التثبيت
     const handler = (e: any) => {
-      // منع ظهور شريط المتصفح الافتراضي الصغير
       e.preventDefault();
-      // حفظ الحدث لاستخدامه لاحقاً
       setDeferredPrompt(e);
-      // إظهار النافذة المنبثقة تلقائياً بعد 3 ثواني
-      setTimeout(() => {
-          setShowInstallPopup(true);
-      }, 3000);
+      // إظهار النافذة المنبثقة فقط إذا كان الحدث متاحاً ولم يتم التثبيت بعد
+      if (!isStandalone) {
+          setTimeout(() => setShowInstallPopup(true), 3000);
+      }
     };
 
     window.addEventListener('beforeinstallprompt', handler);
-
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  // دالة تنفيذ التثبيت
+  // دالة التثبيت (الذكية)
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    // إظهار نافذة التثبيت الأصلية للمتصفح
-    deferredPrompt.prompt();
-    // انتظار قرار المستخدم
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-      setShowInstallPopup(false);
+    if (deferredPrompt) {
+      // 1. إذا كان المتصفح جاهزاً للتثبيت التلقائي
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        setShowInstallPopup(false);
+      }
+    } else {
+      // 2. إذا لم يظهر الحدث (بسبب إلغاء التثبيت مؤخراً أو قيود المتصفح)
+      // نظهر تعليمات يدوية
+      alert("لإعادة تثبيت التطبيق:\n\n1️⃣ اضغط على أيقونة (⁝) أو السهم في أعلى المتصفح.\n2️⃣ اختر 'تثبيت التطبيق' (Install App) أو 'الإضافة للشاشة الرئيسية'.");
     }
   };
 
-  // دالة المشاركة
   const handleShareApp = async () => {
     const shareData = {
         title: 'تطبيق غرب المطار',
-        text: 'تابع حضورك وانصرافك وقدم طلباتك بسهولة عبر تطبيق غرب المطار',
+        text: 'بوابة الموظفين - غرب المطار',
         url: window.location.origin
     };
-
     try {
-        if (navigator.share) {
-            await navigator.share(shareData);
-        } else {
+        if (navigator.share) await navigator.share(shareData);
+        else {
             navigator.clipboard.writeText(window.location.origin);
-            alert('تم نسخ رابط التطبيق!');
+            alert('تم نسخ الرابط');
         }
-    } catch (err) {
-        console.error('Error sharing:', err);
-    }
+    } catch (err) { console.error(err); }
   };
 
   const menuItems = [
@@ -96,7 +103,6 @@ export default function StaffDashboard({ employee }: Props) {
   return (
     <div className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
-      {/* Overlay للموبايل */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
@@ -104,14 +110,12 @@ export default function StaffDashboard({ employee }: Props) {
         />
       )}
 
-      {/* القائمة الجانبية */}
       <aside className={`
           fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl 
           transform transition-transform duration-300 ease-in-out flex flex-col
           ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
           md:translate-x-0 md:static md:shadow-none
       `}>
-        {/* رأس القائمة */}
         <div className="h-24 flex items-center justify-between px-6 border-b shrink-0 bg-emerald-50/50">
            <div className="flex items-center gap-3">
                <div className="bg-white p-2 rounded-xl shadow-sm border border-emerald-100">
@@ -128,7 +132,6 @@ export default function StaffDashboard({ employee }: Props) {
            </button>
         </div>
 
-        {/* روابط التنقل */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -155,10 +158,10 @@ export default function StaffDashboard({ employee }: Props) {
           <div className="my-4 border-t border-gray-100"></div>
           
           <div className="space-y-1">
-             {/* زر التثبيت في القائمة (يظهر فقط إذا كان التطبيق غير مثبت) */}
-             {deferredPrompt && (
+             {/* زر التثبيت يظهر دائماً إذا لم نكن في وضع التطبيق (Standalone) */}
+             {!isStandalone && (
                 <button onClick={handleInstallClick} className="w-full flex items-center gap-4 px-4 py-2.5 rounded-xl text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors font-medium">
-                    <Download className="w-5 h-5 text-blue-500" />
+                    {deferredPrompt ? <Download className="w-5 h-5 text-blue-500" /> : <HelpCircle className="w-5 h-5 text-gray-400"/>}
                     <span className="text-sm">تثبيت التطبيق</span>
                 </button>
              )}
@@ -186,7 +189,6 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
       </aside>
 
-      {/* المحتوى الرئيسي */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-50/50">
         <header className="md:hidden h-16 bg-white border-b flex items-center justify-between px-4 sticky top-0 z-30 shadow-sm shrink-0">
             <div className="flex items-center gap-3">
@@ -244,8 +246,8 @@ export default function StaffDashboard({ employee }: Props) {
         </main>
       </div>
 
-      {/* --- النافذة المنبثقة التلقائية للتثبيت (Auto Install Popup) --- */}
-      {showInstallPopup && deferredPrompt && (
+      {/* النافذة المنبثقة للتثبيت التلقائي (تظهر فقط إذا كان التثبيت متاحاً فورياً) */}
+      {showInstallPopup && deferredPrompt && !isStandalone && (
           <div className="fixed bottom-0 left-0 right-0 z-[100] p-4 animate-in slide-in-from-bottom duration-500 md:hidden">
               <div className="bg-white rounded-[30px] shadow-2xl border border-gray-100 p-5 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
@@ -258,18 +260,8 @@ export default function StaffDashboard({ employee }: Props) {
                       </div>
                   </div>
                   <div className="flex gap-2">
-                      <button 
-                        onClick={() => setShowInstallPopup(false)}
-                        className="p-3 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 font-bold"
-                      >
-                          <X className="w-5 h-5"/>
-                      </button>
-                      <button 
-                        onClick={handleInstallClick}
-                        className="py-3 px-6 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-200 font-bold text-sm hover:bg-emerald-700"
-                      >
-                          تثبيت
-                      </button>
+                      <button onClick={() => setShowInstallPopup(false)} className="p-3 bg-gray-50 text-gray-400 rounded-xl hover:bg-gray-100 font-bold"><X className="w-5 h-5"/></button>
+                      <button onClick={handleInstallClick} className="py-3 px-6 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-200 font-bold text-sm hover:bg-emerald-700">تثبيت</button>
                   </div>
               </div>
           </div>
