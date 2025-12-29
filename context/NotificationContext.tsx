@@ -14,26 +14,26 @@ interface NotificationContextType {
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
-// رابط صوت التنبيه
 const NOTIFICATION_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
 
 export const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user, role } = useAuth(); // نحتاج معرفة الدور (admin/user)
+  // التصحيح هنا: نستخرج employeeProfile بدلاً من role
+  const { user, employeeProfile } = useAuth();
+  
+  // نستخرج الدور من ملف الموظف (إذا كان محملاً)
+  const role = employeeProfile?.role; 
+
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  
-  // حالة لعرض التنبيه المنبثق (Toast)
   const [toast, setToast] = useState<{title: string, msg: string} | null>(null);
 
-  // تشغيل الصوت
   const playSound = () => {
     try {
       const audio = new Audio(NOTIFICATION_SOUND_URL);
-      audio.play().catch(() => {}); // نتجاهل الخطأ اذا لم يتفاعل المستخدم مع الصفحة
+      audio.play().catch(() => {}); 
     } catch (error) { console.error(error); }
   };
 
-  // إظهار التنبيه المرئي لمدة 5 ثواني
   const showToast = (title: string, msg: string) => {
       setToast({ title, msg });
       playSound();
@@ -43,21 +43,18 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   const fetchNotifications = async () => {
     if (!user) return;
     
-    let targetId = user.id;
+    // تحديد هوية المستلم بناءً على الدور
+    let targetId = user.id; // احتياطي
 
-    // إذا لم يكن مديراً، نبحث عن كود الموظف الخاص به
-    if (role !== 'admin') {
-        const { data: empData } = await supabase.from('employees').select('employee_id').eq('email', user.email).single();
-        if (empData) targetId = empData.employee_id;
-    } else {
-        // إذا كان مديراً، معرفه هو 'admin' لاستقبال إشعارات النظام
+    if (role === 'admin') {
         targetId = 'admin';
+    } else if (employeeProfile?.employee_id) {
+        targetId = employeeProfile.employee_id;
     }
 
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
-      // جلب الإشعارات الخاصة بالمستخدم أو العامة
       .or(`user_id.eq.${targetId},user_id.eq.all`)
       .order('created_at', { ascending: false })
       .limit(20);
@@ -70,14 +67,15 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
   const markAsRead = async () => {
     if (!user) return;
-    let targetId = role === 'admin' ? 'admin' : user.id;
+    
+    let targetId = user.id;
 
-    if (role !== 'admin') {
-         const { data: empData } = await supabase.from('employees').select('employee_id').eq('email', user.email).single();
-         if (empData) targetId = empData.employee_id;
+    if (role === 'admin') {
+        targetId = 'admin';
+    } else if (employeeProfile?.employee_id) {
+        targetId = employeeProfile.employee_id;
     }
 
-    // تحديث الكل كمقروء لهذا المستخدم
     const { error } = await supabase
       .from('notifications')
       .update({ is_read: true })
@@ -103,7 +101,6 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     fetchNotifications();
     if (!user) return;
 
-    // الاشتراك في التغييرات اللحظية
     const channel = supabase
       .channel('public:notifications')
       .on(
@@ -112,23 +109,19 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
         async (payload) => {
           const newNotif = payload.new as AppNotification;
           
-          // تحديد هوية المستخدم الحالي لمقارنتها مع الإشعار القادم
-          let myTargetId = 'admin'; // افتراضياً للمدير
+          let myTargetId = 'admin'; 
 
           if (role !== 'admin') {
-             const { data: emp } = await supabase.from('employees').select('employee_id').eq('email', user.email).single();
-             if (emp) myTargetId = emp.employee_id;
-             else return; // لا يوجد موظف مرتبط
+             if (employeeProfile?.employee_id) {
+                 myTargetId = employeeProfile.employee_id;
+             } else {
+                 return; // لم يتم تحميل ملف الموظف بعد
+             }
           }
 
-          // الشرط: هل الإشعار مرسل لي؟ (سواء كنت أنا الموظف أو أنا الأدمن)
-          // أو هل الإشعار عام للكل 'all'
           if (newNotif.user_id === myTargetId || newNotif.user_id === 'all') {
-             // 1. تحديث القائمة والعداد
              setNotifications(prev => [newNotif, ...prev]);
              setUnreadCount(prev => prev + 1);
-             
-             // 2. إظهار التنبيه المرئي والصوتي
              showToast(newNotif.title, newNotif.message);
           }
         }
@@ -136,13 +129,12 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, role]);
+    // أضفنا employeeProfile للمراقبة ليعيد التشغيل عند تحميل البيانات
+  }, [user, employeeProfile]); 
 
   return (
     <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, fetchNotifications, sendNotification }}>
       {children}
-      
-      {/* مكون التنبيه المنبثق (Toast Notification) */}
       {toast && (
           <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] bg-white border-l-4 border-orange-500 shadow-2xl rounded-lg p-4 min-w-[300px] animate-in slide-in-from-top-5 duration-300 flex items-start gap-3">
               <div className="bg-orange-100 p-2 rounded-full">
