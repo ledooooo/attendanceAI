@@ -64,7 +64,7 @@ export default function LoginPage() {
                 <span className="text-4xl">🏥</span>
              </div>
           </div>
-          <h1 className="text-2xl font-black text-gray-800">المركز الطبي الذكي</h1>
+          <h1 className="text-2xl font-black text-gray-800">مركز غرب المطار</h1>
           <p className="text-gray-400 font-bold mt-2 text-sm">
             {isSignUp ? 'تفعيل حساب موظف جديد' : 'تسجيل الدخول للمتابعة'}
           </p>
@@ -129,4 +129,5 @@ export default function LoginPage() {
       </div>
     </div>
   );
+
 }
