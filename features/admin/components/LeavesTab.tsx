@@ -28,7 +28,7 @@ const formatDateForDB = (val: any): string | null => {
 
 export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
