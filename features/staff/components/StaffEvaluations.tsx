@@ -1,50 +1,105 @@
-import React, { useState } from 'react';
-import { Evaluation } from '../../../types';
-import { Award, CalendarSearch } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '../../../supabaseClient';
+import { Award, ChevronDown, ChevronUp, Star } from 'lucide-react';
 
-export default function StaffEvaluations({ evals }: { evals: Evaluation[] }) {
-    const [filterMonth, setFilterMonth] = useState('');
+export default function StaffEvaluations({ evals: initialData, employee }: any) {
+    const [evals, setEvals] = useState<any[]>(initialData || []);
+    const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
 
-    const filteredEvals = evals.filter(ev => !filterMonth || ev.month === filterMonth);
+    useEffect(() => {
+        const fetchEvals = async () => {
+            if(!employee?.employee_id) return;
+            const { data } = await supabase
+                .from('evaluations')
+                .select('*')
+                .eq('employee_id', employee.employee_id)
+                .order('month', { ascending: false });
+            
+            if(data) setEvals(data);
+            setLoading(false);
+        };
+        fetchEvals();
+    }, [employee]);
+
+    const toggleExpand = (id: string) => {
+        setExpandedId(expandedId === id ? null : id);
+    };
+
+    // دالة مساعدة لعرض تفاصيل الدرجة
+    const ScoreRow = ({ label, score, max }: any) => (
+        <div className="flex justify-between items-center text-sm py-2 border-b border-gray-50 last:border-0">
+            <span className="text-gray-600">{label}</span>
+            <span className="font-bold text-gray-800">{score} <span className="text-gray-300 text-xs">/ {max}</span></span>
+        </div>
+    );
 
     return (
-        <div className="space-y-6 animate-in slide-in-from-bottom duration-500 text-right">
-            <div className="flex justify-between items-center border-b pb-4">
-                <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800"><Award className="text-emerald-600 w-7 h-7" /> أرشيف التقييمات</h3>
-                <div className="flex items-center gap-2">
-                    <CalendarSearch className="w-5 h-5 text-gray-400"/>
-                    <input 
-                        type="month" 
-                        value={filterMonth} 
-                        onChange={(e) => setFilterMonth(e.target.value)} 
-                        className="p-2 border rounded-xl text-sm font-bold bg-gray-50 outline-none focus:ring-2 focus:ring-emerald-500" 
-                    />
-                </div>
-            </div>
+        <div className="space-y-6 animate-in fade-in duration-500">
+            <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
+                <Award className="w-6 h-6 text-purple-600"/> تقييمات الأداء
+            </h3>
 
-            <div className="grid gap-6">
-                {filteredEvals.map(ev => (
-                    <div key={ev.id} className="p-8 bg-white border rounded-[30px] shadow-sm hover:shadow-lg transition-all border-r-8 border-r-emerald-500">
-                        <div className="flex justify-between items-center mb-6">
-                            <h4 className="font-black text-xl text-emerald-800 flex items-center gap-2">
-                                <span className="bg-emerald-100 px-3 py-1 rounded-lg text-sm">شهر {ev.month}</span>
-                            </h4>
-                            <div className="flex flex-col items-end">
-                                <span className="text-4xl font-black text-emerald-600">{ev.total_score}%</span>
-                                <span className="text-[10px] text-gray-400 font-bold">الدرجة النهائية</span>
+            {loading ? (
+                <div className="text-center py-8 text-gray-400">جاري تحميل التقييمات...</div>
+            ) : evals.length === 0 ? (
+                <div className="bg-purple-50 p-8 rounded-3xl text-center border border-purple-100">
+                    <p className="text-purple-800 font-bold">لم يتم تسجيل تقييمات بعد</p>
+                </div>
+            ) : (
+                <div className="grid gap-4">
+                    {evals.map((ev) => (
+                        <div key={ev.id} className="bg-white border border-gray-100 rounded-3xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+                            {/* Header Card */}
+                            <div 
+                                onClick={() => toggleExpand(ev.id)}
+                                className="p-5 flex items-center justify-between cursor-pointer bg-gradient-to-l from-white to-gray-50"
+                            >
+                                <div className="flex items-center gap-4">
+                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white shadow-lg ${
+                                        ev.total_score >= 90 ? 'bg-emerald-500 shadow-emerald-200' : 
+                                        ev.total_score >= 75 ? 'bg-blue-500 shadow-blue-200' : 'bg-orange-500 shadow-orange-200'
+                                    }`}>
+                                        {ev.total_score}%
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-gray-800 text-lg">تقييم شهر {ev.month}</h4>
+                                        <p className="text-xs text-gray-500 font-bold mt-1">
+                                            {ev.total_score >= 90 ? 'مستوى ممتاز 🌟' : ev.total_score >= 75 ? 'مستوى جيد جداً 👍' : 'يحتاج تحسين 📉'}
+                                        </p>
+                                    </div>
+                                </div>
+                                {expandedId === ev.id ? <ChevronUp className="text-gray-400"/> : <ChevronDown className="text-gray-400"/>}
                             </div>
+
+                            {/* Expanded Details */}
+                            {expandedId === ev.id && (
+                                <div className="p-5 bg-gray-50 border-t border-gray-100 animate-in slide-in-from-top-2">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                        <ScoreRow label="المظهر العام" score={ev.score_appearance} max={10} />
+                                        <ScoreRow label="الحضور والانتظام" score={ev.score_attendance} max={10} />
+                                        <ScoreRow label="لجان الجودة" score={ev.score_quality} max={10} />
+                                        <ScoreRow label="مكافحة العدوى" score={ev.score_infection} max={10} />
+                                        <ScoreRow label="التدريب" score={ev.score_training} max={10} />
+                                        <ScoreRow label="الملفات الطبية" score={ev.score_records} max={10} />
+                                        <div className="col-span-1 md:col-span-2 mt-2 pt-2 border-t border-gray-200">
+                                            <div className="flex justify-between items-center">
+                                                <span className="font-bold text-gray-700">أداء الأعمال المسندة</span>
+                                                <span className="font-black text-purple-600 text-lg">{ev.score_tasks} <span className="text-xs text-gray-400">/ 40</span></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {ev.notes && (
+                                        <div className="mt-4 p-3 bg-yellow-50 text-yellow-800 text-sm rounded-xl border border-yellow-100">
+                                            <strong>ملاحظات:</strong> {ev.notes}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-gray-600 mb-4">
-                            <div className="bg-gray-50 p-3 rounded-xl border text-center"><span className="block font-bold text-gray-400 mb-1">الحضور</span><span className="font-black text-lg">{ev.score_attendance}</span></div>
-                            <div className="bg-gray-50 p-3 rounded-xl border text-center"><span className="block font-bold text-gray-400 mb-1">المظهر</span><span className="font-black text-lg">{ev.score_appearance}</span></div>
-                            <div className="bg-gray-50 p-3 rounded-xl border text-center"><span className="block font-bold text-gray-400 mb-1">الجودة</span><span className="font-black text-lg">{ev.score_quality}</span></div>
-                            <div className="bg-gray-50 p-3 rounded-xl border text-center"><span className="block font-bold text-gray-400 mb-1">المهام</span><span className="font-black text-lg">{ev.score_tasks}</span></div>
-                        </div>
-                        {ev.notes && <p className="text-sm text-gray-600 border-t pt-4 mt-4 bg-gray-50/50 p-4 rounded-xl"><b>ملاحظات الإدارة:</b> {ev.notes}</p>}
-                    </div>
-                ))}
-                {filteredEvals.length === 0 && <p className="text-center text-gray-400 py-10 border-2 border-dashed rounded-3xl">لا توجد تقييمات لهذا الشهر</p>}
-            </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
