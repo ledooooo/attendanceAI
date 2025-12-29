@@ -23,9 +23,9 @@ interface Props {
 export default function StaffDashboard({ employee }: Props) {
   const { signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // التحكم في القائمة للموبايل
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // التحكم في ظهور القائمة للموبايل
 
-  // قائمة التنقل
+  // عناصر القائمة
   const menuItems = [
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
@@ -40,7 +40,7 @@ export default function StaffDashboard({ employee }: Props) {
   return (
     <div className="min-h-screen bg-gray-50 flex font-sans text-right relative overflow-x-hidden" dir="rtl">
       
-      {/* 1. الشريط العلوي (للموبايل فقط) */}
+      {/* 1. الشريط العلوي (يظهر فقط في الموبايل) */}
       <div className="md:hidden bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-40 w-full border-b">
         <div className="flex items-center gap-3">
             <button 
@@ -51,6 +51,7 @@ export default function StaffDashboard({ employee }: Props) {
             </button>
             <span className="font-black text-emerald-800 text-sm">بوابة الموظف</span>
         </div>
+        {/* صورة الموظف المصغرة */}
         <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center border border-emerald-200 overflow-hidden">
              {employee.photo_url ? (
                <img src={employee.photo_url} className="w-full h-full object-cover" alt="Profile" />
@@ -61,12 +62,12 @@ export default function StaffDashboard({ employee }: Props) {
       </div>
 
       {/* 2. القائمة الجانبية (Sidebar) */}
-      {/* Responsive: Fixed & Hidden on Mobile (Slide-in), Static on Desktop */}
       <aside className={`
           fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 ease-in-out
           ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
           md:translate-x-0 md:static md:shadow-none md:flex md:flex-col md:h-screen
       `}>
+        {/* رأس القائمة */}
         <div className="p-6 border-b flex items-center justify-between h-24 shrink-0">
            <div className="flex flex-col">
                <h1 className="text-lg font-black text-emerald-800 flex items-center gap-2">
@@ -80,6 +81,7 @@ export default function StaffDashboard({ employee }: Props) {
            </button>
         </div>
 
+        {/* روابط التنقل */}
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -89,7 +91,7 @@ export default function StaffDashboard({ employee }: Props) {
                 key={item.id}
                 onClick={() => {
                     setActiveTab(item.id);
-                    setIsSidebarOpen(false); // إغلاق القائمة عند الاختيار (موبايل)
+                    setIsSidebarOpen(false); // إغلاق القائمة تلقائياً عند الاختيار
                 }}
                 className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${
                   isActive 
@@ -104,6 +106,7 @@ export default function StaffDashboard({ employee }: Props) {
           })}
         </nav>
 
+        {/* زر الخروج */}
         <div className="p-4 border-t bg-gray-50 shrink-0">
           <button
             onClick={signOut}
@@ -115,7 +118,7 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
       </aside>
 
-      {/* 3. طبقة التعتيم (Overlay) للموبايل */}
+      {/* 3. طبقة التعتيم الخلفية (Overlay) عند فتح القائمة في الموبايل */}
       {isSidebarOpen && (
         <div 
             className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
@@ -126,7 +129,7 @@ export default function StaffDashboard({ employee }: Props) {
       {/* 4. منطقة المحتوى الرئيسي */}
       <main className="flex-1 p-4 md:p-8 w-full max-w-[100vw] overflow-hidden overflow-y-auto h-[calc(100vh-73px)] md:h-screen bg-gray-50/50">
         
-        {/* هيدر الصفحة الداخلي (للكمبيوتر فقط) */}
+        {/* هيدر الصفحة (يظهر في الكمبيوتر فقط) */}
         <div className="hidden md:flex bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 mb-8 justify-between items-center">
             <div className="flex items-center gap-4">
                 <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center overflow-hidden border-2 border-emerald-100">
@@ -146,9 +149,10 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
         </div>
 
-        {/* عرض التبويبات */}
+        {/* حاوية المحتوى */}
         <div className="bg-white p-4 md:p-8 rounded-[30px] shadow-sm border border-gray-100 min-h-[500px] relative overflow-hidden">
           {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
+          
           {activeTab === 'attendance' && (
             <StaffAttendance 
                 attendance={[]} 
@@ -157,6 +161,7 @@ export default function StaffDashboard({ employee }: Props) {
                 employee={employee} 
             /> 
           )}
+
           {activeTab === 'stats' && <StaffStats attendance={[]} evals={[]} requests={[]} month={new Date().toISOString().slice(0, 7)} />} 
           {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={()=>{}} />}
           {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
