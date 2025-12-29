@@ -9,7 +9,7 @@ import {
   Search, Filter, Download, Trash2, Edit, Save, X 
 } from 'lucide-react';
 
-// دالة تنسيق التاريخ (نفس المستخدمة سابقاً)
+// دالة تنسيق التاريخ
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
@@ -107,30 +107,25 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     let skipped = 0;
 
     try {
-        // جلب كل الإجازات الحالية للمقارنة (لتجنب التكرار)
         const { data: currentLeaves } = await supabase.from('leave_requests').select('*');
         const dbLeaves = currentLeaves || [];
 
         const rowsToUpsert: any[] = [];
-        // لتتبع ما تم معالجته في الملف الحالي (لمنع تكرار الصفوف داخل نفس الملف)
         const processedKeys = new Set(); 
 
         for (const row of data) {
-            // تنظيف البيانات
             const empId = String(row['كود الموظف'] || row.employee_id || '').trim();
             const type = String(row['نوع الإجازة'] || row.type || '').trim();
             const startDate = formatDateForDB(row['تاريخ البداية'] || row.start_date);
             
             if (!empId || !type || !startDate) continue;
 
-            // مفتاح فريد للصف (كود + نوع + تاريخ بداية)
             const rowKey = `${empId}_${type}_${startDate}`;
-            if (processedKeys.has(rowKey)) continue; // تجاهل التكرار في الملف
+            if (processedKeys.has(rowKey)) continue; 
             processedKeys.add(rowKey);
 
             const endDate = formatDateForDB(row['تاريخ النهاية'] || row.end_date) || startDate;
             const statusRaw = String(row['الحالة'] || row.status || 'معلق').trim();
-            // توحيد صيغة الحالة
             const status = ['مقبول', 'مرفوض', 'معلق'].includes(statusRaw) ? statusRaw : 'معلق';
             
             const payload = {
@@ -144,7 +139,6 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
                 back_date: formatDateForDB(row['تاريخ العودة'] || row.back_date)
             };
 
-            // البحث عن سجل مطابق في قاعدة البيانات
             const existingRecord = dbLeaves.find(l => 
                 l.employee_id === empId && 
                 l.type === type && 
@@ -152,24 +146,20 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
             );
 
             if (existingRecord) {
-                // هل هناك تغيير في البيانات؟
                 const isChanged = 
                     existingRecord.end_date !== payload.end_date ||
                     existingRecord.status !== payload.status ||
                     existingRecord.backup_person !== payload.backup_person ||
                     existingRecord.notes !== payload.notes ||
-                    (payload.back_date && existingRecord.back_date !== payload.back_date); // مقارنة اختيارية لتاريخ العودة
+                    (payload.back_date && existingRecord.back_date !== payload.back_date);
 
                 if (isChanged) {
-                    // تحديث
                     rowsToUpsert.push({ ...payload, id: existingRecord.id });
                     updated++;
                 } else {
-                    // تجاهل (متطابق تماماً)
                     skipped++;
                 }
             } else {
-                // جديد (إضافة)
                 rowsToUpsert.push(payload);
                 inserted++;
             }
@@ -208,9 +198,36 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
       fetchData();
   };
 
-  // تغيير حالة سريع
-  const updateStatus = async (id: string, newStatus: string) => {
-      await supabase.from('leave_requests').update({ status: newStatus }).eq('id', id);
+  // --- تحديث الحالة مع إرسال إشعار للموظف ---
+  const updateStatus = async (request: LeaveRequest, newStatus: string) => {
+      // 1. تحديث حالة الطلب في قاعدة البيانات
+      const { error: updateError } = await supabase
+          .from('leave_requests')
+          .update({ status: newStatus })
+          .eq('id', request.id);
+
+      if (updateError) {
+          alert('حدث خطأ أثناء تحديث الحالة');
+          return;
+      }
+
+      // 2. إرسال إشعار للموظف (Insert Notification)
+      // نفترض أن جدول notifications تم إنشاؤه كما اتفقنا
+      const { error: notifError } = await supabase
+          .from('notifications')
+          .insert({
+              user_id: request.employee_id, // إرسال للكود الوظيفي
+              title: 'تحديث حالة طلب الإجازة',
+              message: `تم تغيير حالة طلب الإجازة (${request.type}) لشهر ${request.start_date} إلى: ${newStatus}`,
+              is_read: false
+          });
+
+      if (notifError) {
+          console.error("فشل إرسال الإشعار:", notifError);
+          // لا نوقف العملية لأن التحديث تم بالفعل، فقط نسجل الخطأ
+      }
+
+      // 3. تحديث البيانات في الشاشة
       fetchData();
   };
 
@@ -275,7 +292,8 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
                                 <td className="p-4 text-center">
                                     <select 
                                         value={req.status}
-                                        onChange={(e) => updateStatus(req.id, e.target.value)}
+                                        // هنا نمرر الكائن req بالكامل بدلاً من req.id فقط
+                                        onChange={(e) => updateStatus(req, e.target.value)}
                                         className={`px-2 py-1 rounded-lg text-xs font-bold border outline-none cursor-pointer ${
                                             req.status === 'مقبول' ? 'bg-green-100 text-green-700 border-green-200' :
                                             req.status === 'مرفوض' ? 'bg-red-100 text-red-700 border-red-200' :
