@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Evaluation, Employee } from '../../../types';
+import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import * as XLSX from 'xlsx';
 import { 
   Award, Download, Search, TrendingUp, AlertCircle, 
-  CheckCircle2, XCircle, Trash2, Edit 
+  CheckCircle2, XCircle, Trash2, Edit, Plus, Save, X 
 } from 'lucide-react';
 
 export default function EvaluationsTab({ employees }: { employees: Employee[] }) {
@@ -18,18 +18,31 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
   const [fMonth, setFMonth] = useState(new Date().toISOString().slice(0, 7));
   const [fEmployee, setFEmployee] = useState('');
 
+  // حالة النافذة المنبثقة (Modal) للإضافة اليدوية
+  const [showModal, setShowModal] = useState(false);
+  const [formData, setFormData] = useState({
+      employee_id: '',
+      month: new Date().toISOString().slice(0, 7),
+      score_appearance: 0,
+      score_attendance: 0,
+      score_quality: 0,
+      score_infection: 0,
+      score_training: 0,
+      score_records: 0,
+      score_tasks: 0,
+      notes: ''
+  });
+
   useEffect(() => {
     fetchData();
-  }, [fMonth]); // إعادة الجلب عند تغيير الشهر
+  }, [fMonth]); 
 
   const fetchData = async () => {
     setLoading(true);
-    // جلب التقييمات للشهر المحدد (أو الكل اذا اردت)
-    // هنا نجلب للشهر المحدد لتخفيف الحمل، او يمكن جلب فترة اوسع
     const { data } = await supabase
       .from('evaluations')
       .select('*, employees(name, specialty)')
-      .ilike('month', `${fMonth}%`) // فلترة بالشهر المختار
+      .ilike('month', `${fMonth}%`)
       .order('total_score', { ascending: false });
 
     if (data) {
@@ -42,70 +55,46 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
     setLoading(false);
   };
 
-  // --- 1. تحميل نموذج العينة ---
   const handleDownloadSample = () => {
     const sampleData = [
       {
         'كود الموظف': '101',
         'الشهر': '2023-10',
         'المظهر العام': 10,
-        'الحضور': 10,
+        'الحضور': 20,
         'الجودة': 10,
         'مكافحة العدوى': 10,
-        'التدريب': 10,
-        'الملفات الطبية': 10,
-        'أداء الأعمال': 40,
+        'التدريب': 20,
+        'الملفات الطبية': 20,
+        'أداء الأعمال': 10,
         'ملاحظات': 'أداء ممتاز'
-      },
-      {
-        'كود الموظف': '102',
-        'الشهر': '2023-10',
-        'المظهر العام': 8,
-        'الحضور': 9,
-        'الجودة': 8,
-        'مكافحة العدوى': 9,
-        'التدريب': 8,
-        'الملفات الطبية': 9,
-        'أداء الأعمال': 35,
-        'ملاحظات': 'يحتاج تحسين في الجودة'
       }
     ];
-
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Evaluations");
     XLSX.writeFile(wb, "نموذج_التقييمات_الطبية.xlsx");
   };
 
-  // --- 2. معالجة الرفع الذكي ---
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
-    let inserted = 0;
-    let updated = 0;
-    let skipped = 0;
+    let inserted = 0, updated = 0, skipped = 0;
 
     try {
-        // جلب التقييمات الموجودة حالياً للمقارنة (لشهر الملف أو الكل)
-        // للأمان نجلب الكل أو نعتمد على Upsert، هنا سنجلب الكل للمقارنة الدقيقة
         const { data: currentEvals } = await supabase.from('evaluations').select('*');
         const dbEvals = currentEvals || [];
-
         const rowsToUpsert: any[] = [];
-        const processedKeys = new Set(); // لمنع تكرار نفس الموظف+الشهر في نفس الملف
+        const processedKeys = new Set(); 
 
         for (const row of data) {
-            // قراءة البيانات
             const empId = String(row['كود الموظف'] || row.employee_id || '').trim();
-            const month = String(row['الشهر'] || row.month || '').trim(); // صيغة YYYY-MM
-
+            const month = String(row['الشهر'] || row.month || '').trim(); 
             if (!empId || !month) continue;
 
-            // مفتاح فريد
             const rowKey = `${empId}_${month}`;
             if (processedKeys.has(rowKey)) continue;
             processedKeys.add(rowKey);
 
-            // استخراج الدرجات (مع قيمة افتراضية 0)
             const s1 = Number(row['المظهر العام'] || row.score_appearance) || 0;
             const s2 = Number(row['الحضور'] || row.score_attendance) || 0;
             const s3 = Number(row['الجودة'] || row.score_quality) || 0;
@@ -114,7 +103,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
             const s6 = Number(row['الملفات الطبية'] || row.score_records) || 0;
             const s7 = Number(row['أداء الأعمال'] || row.score_tasks) || 0;
             
-            // حساب المجموع تلقائياً
             const total = s1 + s2 + s3 + s4 + s5 + s6 + s7;
             const year = parseInt(month.split('-')[0]) || new Date().getFullYear();
 
@@ -133,11 +121,8 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
                 notes: String(row['ملاحظات'] || row.notes || '').trim()
             };
 
-            // البحث عن سجل موجود
             const existingRecord = dbEvals.find(e => e.employee_id === empId && e.month === month);
-
             if (existingRecord) {
-                // هل هناك تغيير؟
                 const isChanged = 
                     existingRecord.score_appearance !== payload.score_appearance ||
                     existingRecord.score_attendance !== payload.score_attendance ||
@@ -155,7 +140,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
                     skipped++;
                 }
             } else {
-                // جديد
                 rowsToUpsert.push(payload);
                 inserted++;
             }
@@ -165,16 +149,64 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
             const { error } = await supabase.from('evaluations').upsert(rowsToUpsert);
             if (error) throw error;
         }
-
         alert(`تقرير المعالجة:\n✅ تم إضافة: ${inserted}\n🔄 تم تحديث: ${updated}\n⏭️ تم تجاهل (متطابق): ${skipped}`);
         fetchData();
-
     } catch (err: any) {
-        console.error(err);
         alert('خطأ في المعالجة: ' + err.message);
     } finally {
         setIsProcessing(false);
     }
+  };
+
+  // --- دالة حفظ التقييم اليدوي ---
+  const handleManualSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!formData.employee_id) return alert("الرجاء اختيار الموظف");
+
+      const total = 
+        formData.score_appearance + formData.score_attendance + 
+        formData.score_quality + formData.score_infection + 
+        formData.score_training + formData.score_records + 
+        formData.score_tasks;
+
+      const year = parseInt(formData.month.split('-')[0]) || new Date().getFullYear();
+
+      const payload = {
+          ...formData,
+          year: year,
+          total_score: total
+      };
+
+      try {
+          // استخدام Upsert للسماح بالتحديث إذا كان التقييم موجوداً لنفس الشهر
+          // نحتاج للتحقق أولاً للحصول على الـ ID في حالة التحديث، أو يمكن الاعتماد على constraint فريد في قاعدة البيانات
+          // هنا سأقوم بالتحقق البسيط يدوياً
+          const { data: existing } = await supabase.from('evaluations')
+            .select('id')
+            .eq('employee_id', formData.employee_id)
+            .eq('month', formData.month)
+            .maybeSingle();
+
+          const finalPayload = existing ? { ...payload, id: existing.id } : payload;
+          
+          const { error } = await supabase.from('evaluations').upsert(finalPayload);
+
+          if (error) throw error;
+          
+          alert("تم حفظ التقييم بنجاح");
+          setShowModal(false);
+          fetchData();
+          // تصفير النموذج
+          setFormData({
+            employee_id: '',
+            month: new Date().toISOString().slice(0, 7),
+            score_appearance: 0, score_attendance: 0, score_quality: 0, score_infection: 0,
+            score_training: 0, score_records: 0, score_tasks: 0, notes: ''
+          });
+
+      } catch (err: any) {
+          alert("خطأ في الحفظ: " + err.message);
+      }
   };
 
   // تصفية للعرض
@@ -183,7 +215,7 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
   );
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 relative">
         
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
@@ -191,6 +223,12 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
                 <Award className="w-7 h-7 text-purple-600"/> التقييمات الشهرية
             </h2>
             <div className="flex gap-2">
+                <button 
+                    onClick={() => setShowModal(true)}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-700 transition-all shadow-sm text-sm"
+                >
+                    <Plus className="w-4 h-4"/> إضافة تقييم
+                </button>
                 <button 
                     onClick={handleDownloadSample} 
                     className="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 hover:text-purple-600 transition-all shadow-sm text-sm"
@@ -267,6 +305,83 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
                 </tbody>
             </table>
         </div>
+
+        {/* --- Modal إضافة تقييم يدوي --- */}
+        {showModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in duration-300">
+                    <div className="p-6 border-b flex justify-between items-center bg-gray-50">
+                        <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
+                            <Plus className="w-5 h-5 text-purple-600"/> تسجيل تقييم جديد
+                        </h3>
+                        <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-red-500">
+                            <X className="w-6 h-6"/>
+                        </button>
+                    </div>
+                    
+                    <form onSubmit={handleManualSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto custom-scrollbar">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">الموظف</label>
+                                <select 
+                                    className="w-full p-3 rounded-xl border bg-gray-50 outline-none focus:border-purple-500 font-bold text-sm"
+                                    value={formData.employee_id}
+                                    onChange={e => setFormData({...formData, employee_id: e.target.value})}
+                                    required
+                                >
+                                    <option value="">اختر الموظف...</option>
+                                    {employees.map(e => (
+                                        <option key={e.id} value={e.employee_id}>{e.name} ({e.employee_id})</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <Input 
+                                type="month" 
+                                label="الشهر" 
+                                value={formData.month} 
+                                onChange={val => setFormData({...formData, month: val})} 
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-purple-50 p-4 rounded-2xl border border-purple-100">
+                            <Input type="number" label="المظهر (10)" value={formData.score_appearance} onChange={v => setFormData({...formData, score_appearance: Number(v)})} min={0} max={10}/>
+                            <Input type="number" label="الحضور (10)" value={formData.score_attendance} onChange={v => setFormData({...formData, score_attendance: Number(v)})} min={0} max={10}/>
+                            <Input type="number" label="الجودة (10)" value={formData.score_quality} onChange={v => setFormData({...formData, score_quality: Number(v)})} min={0} max={10}/>
+                            <Input type="number" label="العدوى (10)" value={formData.score_infection} onChange={v => setFormData({...formData, score_infection: Number(v)})} min={0} max={10}/>
+                            <Input type="number" label="التدريب (10)" value={formData.score_training} onChange={v => setFormData({...formData, score_training: Number(v)})} min={0} max={10}/>
+                            <Input type="number" label="الملفات (10)" value={formData.score_records} onChange={v => setFormData({...formData, score_records: Number(v)})} min={0} max={10}/>
+                            <div className="col-span-2">
+                                <Input type="number" label="أداء الأعمال (40)" value={formData.score_tasks} onChange={v => setFormData({...formData, score_tasks: Number(v)})} min={0} max={40}/>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between bg-gray-100 p-4 rounded-xl">
+                            <span className="font-bold text-gray-600">المجموع الكلي:</span>
+                            <span className="text-2xl font-black text-purple-600">
+                                {formData.score_appearance + formData.score_attendance + formData.score_quality + formData.score_infection + formData.score_training + formData.score_records + formData.score_tasks} / 100
+                            </span>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات</label>
+                            <textarea 
+                                className="w-full p-3 rounded-xl border bg-gray-50 outline-none focus:border-purple-500 font-medium text-sm min-h-[80px]"
+                                value={formData.notes}
+                                onChange={e => setFormData({...formData, notes: e.target.value})}
+                                placeholder="أي ملاحظات إضافية..."
+                            />
+                        </div>
+
+                        <div className="flex gap-3 pt-2">
+                            <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">إلغاء</button>
+                            <button type="submit" className="flex-1 py-3 rounded-xl font-bold text-white bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-200 transition-all flex justify-center items-center gap-2">
+                                <Save className="w-5 h-5"/> حفظ التقييم
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
     </div>
   );
 }
