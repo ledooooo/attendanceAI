@@ -10,7 +10,6 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
     const [lastUpdate, setLastUpdate] = useState<string>('');
 
     useEffect(() => {
-        // 1. جلب تاريخ آخر تحديث للبيانات
         const fetchMeta = async () => {
             const { data } = await supabase.from('general_settings').select('last_attendance_update').limit(1).maybeSingle();
             if (data && data.last_attendance_update) {
@@ -19,7 +18,6 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         };
         fetchMeta();
 
-        // 2. جلب بيانات الحضور
         if (initialAttendance && initialAttendance.length > 0) {
             setAttendanceData(initialAttendance);
         } else if (employee?.employee_id) {
@@ -53,73 +51,74 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
 
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
-            {/* الهيدر */}
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 no-print">
-                <div className="w-full md:w-auto">
-                    <h3 className="text-xl md:text-2xl font-black flex items-center gap-3 text-gray-800">
-                        <Clock className="text-emerald-600 w-6 h-6 md:w-7 md:h-7" /> سجل الحضور
+            {/* الهيدر والفلاتر */}
+            <div className="flex flex-col gap-4 mb-4">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-lg md:text-2xl font-black flex items-center gap-2 text-gray-800">
+                        <Clock className="text-emerald-600 w-6 h-6" /> سجل الحضور
                     </h3>
-                    {/* عرض آخر تحديث */}
-                    {lastUpdate && (
-                        <div className="text-[10px] md:text-xs text-blue-600 font-bold mt-2 flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 w-fit">
-                            <Info className="w-3 h-3"/> تم تحديث البيانات: {lastUpdate}
-                        </div>
-                    )}
+                    <div className="bg-gray-100 px-3 py-2 rounded-xl flex items-center gap-2 border border-gray-200">
+                        <Calendar className="w-4 h-4 text-gray-500"/>
+                        <input 
+                            type="month" 
+                            value={viewMonth} 
+                            onChange={handleMonthChange} 
+                            className="bg-transparent font-bold text-sm text-gray-700 outline-none w-28" 
+                        />
+                    </div>
                 </div>
                 
-                <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border w-full md:w-auto">
-                    <Calendar className="w-5 h-5 text-gray-400"/>
-                    <input 
-                        type="month" 
-                        value={viewMonth} 
-                        onChange={handleMonthChange} 
-                        className="bg-transparent font-bold text-gray-700 outline-none w-full" 
-                    />
-                </div>
+                {lastUpdate && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-2.5 flex items-center gap-2 text-xs font-bold text-blue-700">
+                        <Info className="w-4 h-4 shrink-0"/> 
+                        <span>تم تحديث البيانات: {lastUpdate}</span>
+                    </div>
+                )}
             </div>
 
-            {/* الجدول - تم إضافة min-w-[600px] لمنع انضغاط الأعمدة في الموبايل */}
-            <div className="overflow-x-auto border rounded-3xl shadow-sm bg-white custom-scrollbar">
-                <table className="w-full text-sm text-right min-w-[600px]">
-                    <thead className="bg-gray-100 font-black text-gray-600">
-                        <tr className="border-b">
-                            <th className="p-4 whitespace-nowrap">التاريخ</th>
-                            <th className="p-4 whitespace-nowrap">اليوم</th>
-                            <th className="p-4 text-emerald-600 whitespace-nowrap">حضور</th>
-                            <th className="p-4 text-red-500 whitespace-nowrap">انصراف</th>
-                            <th className="p-4 whitespace-nowrap">ساعات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {Array.from({ length: 31 }, (_, i) => {
-                            const day = i + 1;
-                            const dateStr = `${viewMonth}-${String(day).padStart(2, '0')}`;
-                            const daysInMonth = new Date(Number(viewMonth.split('-')[0]), Number(viewMonth.split('-')[1]), 0).getDate();
-                            if (day > daysInMonth) return null;
+            {/* الجدول المتجاوب */}
+            <div className="border border-gray-100 rounded-3xl shadow-sm bg-white overflow-hidden">
+                <div className="overflow-x-auto custom-scrollbar pb-2">
+                    <table className="w-full text-sm text-right min-w-[500px]">
+                        <thead className="bg-gray-50/50 font-black text-gray-500 border-b">
+                            <tr>
+                                <th className="p-4 whitespace-nowrap">التاريخ</th>
+                                <th className="p-4 whitespace-nowrap">اليوم</th>
+                                <th className="p-4 whitespace-nowrap text-emerald-600">دخول</th>
+                                <th className="p-4 whitespace-nowrap text-red-500">خروج</th>
+                                <th className="p-4 whitespace-nowrap">ساعات</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                            {Array.from({ length: 31 }, (_, i) => {
+                                const day = i + 1;
+                                const dateStr = `${viewMonth}-${String(day).padStart(2, '0')}`;
+                                const daysInMonth = new Date(Number(viewMonth.split('-')[0]), Number(viewMonth.split('-')[1]), 0).getDate();
+                                if (day > daysInMonth) return null;
 
-                            const dObj = new Date(dateStr);
-                            const att = attendanceData.find((a:any) => a.date === dateStr);
-                            
-                            // استخراج دقيق للوقت
-                            const times = att?.times.match(/\d{1,2}:\d{2}/g) || [];
-                            const cin = times[0] || '--';
-                            const cout = times.length > 1 ? times[times.length - 1] : '--';
-                            const hours = times.length >= 2 ? calculateHours(times[0], times[times.length-1]).toFixed(1) : '0.0';
-                            
-                            const isFriday = dObj.getDay() === 5;
+                                const dObj = new Date(dateStr);
+                                const att = attendanceData.find((a:any) => a.date === dateStr);
+                                
+                                const times = att?.times.match(/\d{1,2}:\d{2}/g) || [];
+                                const cin = times[0] || '--';
+                                const cout = times.length > 1 ? times[times.length - 1] : '--';
+                                const hours = times.length >= 2 ? calculateHours(times[0], times[times.length-1]).toFixed(1) : '-';
+                                
+                                const isFriday = dObj.getDay() === 5;
 
-                            return (
-                                <tr key={dateStr} className={`border-b transition-colors ${isFriday ? 'bg-gray-50/50' : 'hover:bg-blue-50/30'}`}>
-                                    <td className="p-4 font-bold text-gray-700">{dateStr}</td>
-                                    <td className={`p-4 font-bold ${isFriday ? 'text-red-400' : 'text-gray-600'}`}>{DAYS_AR[dObj.getDay()]}</td>
-                                    <td className="p-4 text-emerald-600 font-black dir-ltr">{cin}</td>
-                                    <td className="p-4 text-red-500 font-black dir-ltr">{cout}</td>
-                                    <td className="p-4 font-mono font-black text-blue-600">{hours}</td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+                                return (
+                                    <tr key={dateStr} className={`transition-colors ${isFriday ? 'bg-red-50/30' : 'hover:bg-emerald-50/30'}`}>
+                                        <td className="p-4 font-bold text-gray-700 text-xs">{dateStr}</td>
+                                        <td className={`p-4 font-bold text-xs ${isFriday ? 'text-red-400' : 'text-gray-500'}`}>{DAYS_AR[dObj.getDay()]}</td>
+                                        <td className="p-4 font-black text-emerald-600 dir-ltr text-xs">{cin}</td>
+                                        <td className="p-4 font-black text-red-500 dir-ltr text-xs">{cout}</td>
+                                        <td className="p-4 font-mono font-bold text-blue-600 text-xs">{hours}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     );
