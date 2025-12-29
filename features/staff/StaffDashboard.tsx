@@ -171,8 +171,8 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'stats' && <StaffStats attendance={[]} evals={[]} requests={[]} month={new Date().toISOString().slice(0, 7)} />} 
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={()=>{}} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
-                    {activeTab === 'requests-history' && <StaffRequestsHistory requests={[]} />}
-                    {activeTab === 'evaluations' && <StaffEvaluations evals={[]} />}
+{activeTab === 'requests-history' && <StaffRequestsHistory requests={[]} employee={employee} />}
+                  {activeTab === 'evaluations' && <StaffEvaluations evals={[]} />}
                     {activeTab === 'messages' && <StaffMessages messages={[]} />}
                 </div>
             </div>
