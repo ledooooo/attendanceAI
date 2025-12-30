@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Moon, Calendar, FileText, AlertCircle, Clock } from 'lucide-react';
+import { Moon, Calendar, FileText, AlertCircle, Clock, Bug } from 'lucide-react';
 
 interface EveningSchedule {
   id: string;
@@ -12,6 +12,9 @@ interface EveningSchedule {
 export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { employeeId: string, employeeCode: string }) {
   const [schedules, setSchedules] = useState<EveningSchedule[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // متغيرات لتخزين البيانات الخام للفحص
+  const [rawData, setRawData] = useState<any[]>([]);
   const [debugMsg, setDebugMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -22,7 +25,7 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
     setLoading(true);
     const today = new Date().toISOString().slice(0, 10);
 
-    // 1. جلب كل الجداول المستقبلية
+    // 1. جلب البيانات
     const { data, error } = await supabase
       .from('evening_schedules')
       .select('*')
@@ -30,38 +33,37 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
       .order('date', { ascending: true });
 
     if (error) {
-      console.error('Error fetching schedules:', error);
-      setDebugMsg('حدث خطأ في جلب البيانات: ' + error.message);
+      setDebugMsg('خطأ في الاتصال: ' + error.message);
       setLoading(false);
       return;
     }
 
-    console.log("Raw Data from DB:", data); // فحص البيانات في الكونسول
+    setRawData(data || []); // حفظ البيانات الخام للعرض
 
-    // 2. الفلترة الذكية
+    // 2. الفلترة المتقدمة
     const myShifts = (data || []).filter((item: EveningSchedule) => {
       let docs = item.doctors;
       
-      // إذا كانت البيانات نصاً (Stringified JSON)، نحولها
+      // تحويل النص إلى JSON إذا لزم الأمر
       if (typeof docs === 'string') {
         try { docs = JSON.parse(docs); } catch (e) { return false; }
       }
 
       if (!Array.isArray(docs)) return false;
 
-      // البحث عن الموظف (سواء كان مخزناً كـ ID أو Code أو Object)
+      // البحث عن الموظف
       return docs.some((d: any) => {
-        // تنظيف القيم للمقارنة (تحويل كله لنصوص)
         const val = String(d).trim();
-        const empIdStr = String(employeeId).trim();
-        const empCodeStr = String(employeeCode).trim();
+        const empIdStr = String(employeeId).trim();   // UUID
+        const empCodeStr = String(employeeCode).trim(); // Code (80)
 
-        // 1. مقارنة مباشرة (إذا كانت المصفوفة ["101", "102"])
+        // مقارنة مباشرة (أرقام أو نصوص)
         if (val === empIdStr || val === empCodeStr) return true;
 
-        // 2. مقارنة كائنات (إذا كانت المصفوفة [{id: "...", name: "..."}])
+        // مقارنة كائنات (Objects)
         if (typeof d === 'object' && d !== null) {
-          const objId = String(d.id || d.employee_id || d.code || '').trim();
+          // فحص جميع الاحتمالات الممكنة لتخزين الكود
+          const objId = String(d.id || d.value || d.employee_id || d.code || d.user_id || '').trim();
           return objId === empIdStr || objId === empCodeStr;
         }
 
@@ -71,8 +73,14 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
 
     setSchedules(myShifts);
     
+    // رسالة التنبيه إذا وجد بيانات ولم يجد تطابق
     if (data && data.length > 0 && myShifts.length === 0) {
-        setDebugMsg(`تم جلب ${data.length} نوبتجية من القاعدة، لكن لم يتم العثور على تطابق مع كودك (${employeeCode}). تأكد من أنك مضاف في الجدول.`);
+        // سنقوم بعرض عينة من البيانات المخزنة لنعرف الشكل
+        const sampleDoc = data[0].doctors;
+        const sampleStr = typeof sampleDoc === 'object' ? JSON.stringify(sampleDoc) : String(sampleDoc);
+        setDebugMsg(`أنت تبحث عن الكود: ( ${employeeCode} ) أو المعرف: ( ${employeeId} )\nلكن البيانات المخزنة في الجدول هي: \n${sampleStr}`);
+    } else {
+        setDebugMsg(null);
     }
 
     setLoading(false);
@@ -90,7 +98,7 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-12 space-y-4">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        <p className="text-gray-400">جاري البحث عن نوبتجياتك...</p>
+        <p className="text-gray-400">جاري تحميل الجدول...</p>
     </div>
   );
 
@@ -106,10 +114,18 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
         </div>
       </div>
 
-      {/* رسالة تصحيح (تظهر فقط إذا كانت هناك مشكلة في الفلترة) */}
-      {debugMsg && schedules.length === 0 && (
-         <div className="bg-yellow-50 text-yellow-800 p-4 rounded-xl text-xs mb-4 border border-yellow-200">
-            <strong>ملاحظة للنظام:</strong> {debugMsg}
+      {/* --- منطقة التشخيص (تظهر فقط عند وجود مشكلة) --- */}
+      {debugMsg && (
+         <div className="bg-amber-50 text-amber-900 p-4 rounded-xl text-sm mb-6 border border-amber-200 shadow-sm" dir="ltr">
+            <div className="flex items-center gap-2 font-bold mb-2 text-amber-700 border-b border-amber-200 pb-2">
+                <Bug className="w-4 h-4"/> تقرير التشخيص (لماذا لا يظهر الجدول؟)
+            </div>
+            <pre className="whitespace-pre-wrap font-mono text-xs bg-white/50 p-2 rounded border border-amber-100">
+                {debugMsg}
+            </pre>
+            <p className="mt-2 text-xs text-right font-bold text-amber-600" dir="rtl">
+                * انسخ الكلام الموجود في المربع بالأعلى وأرسله لي لأقوم بتعديل كود الفلترة.
+            </p>
          </div>
       )}
 
