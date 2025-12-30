@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
@@ -9,27 +9,45 @@ const LEAVE_TYPES = [
   "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورة تدريبية", "خط سير", "مأمورية", "اذن صباحى", "اذن مسائي", "تأمين صحي"
 ];
 
-export default function StaffNewRequest({ employee, refresh }: { employee: Employee, refresh: () => void }) {
+// 1. تحديث الواجهة لتقبل initialDate (اختياري)
+interface Props { 
+    employee: Employee; 
+    refresh: () => void;
+    initialDate?: string | null; 
+}
+
+export default function StaffNewRequest({ employee, refresh, initialDate }: Props) {
     const { sendNotification } = useNotifications();
     const [submitting, setSubmitting] = useState(false);
     
     // حالة النموذج
     const [formData, setFormData] = useState({
-        type: LEAVE_TYPES[0], // قيمة افتراضية
-        start: '',
-        end: '',
-        returnDate: '', // تاريخ العودة
-        backup: '',
+        type: LEAVE_TYPES[0], 
+        start: initialDate || '', // استخدام التاريخ الممرر كبداية
+        end: initialDate || '',   // وكهناية (افتراض يوم واحد)
+        returnDate: '', 
+        backup: '', 
         notes: ''
     });
 
+    // 2. تأثير (Effect) لتحديث النموذج إذا تغير التاريخ الممرر
+    useEffect(() => {
+        if (initialDate) {
+            setFormData(prev => ({
+                ...prev,
+                start: initialDate,
+                end: initialDate
+            }));
+        }
+    }, [initialDate]);
+
     const submit = async () => {
-        // 1. التحقق الإجباري
+        // التحقق الإجباري
         if (!formData.type || !formData.start || !formData.end || !formData.returnDate || !formData.backup) {
             return alert('⚠️ عفواً، جميع الحقول الموضحة بعلامة (*) إجبارية.');
         }
 
-        // 2. التحقق من منطقية التواريخ
+        // التحقق من منطقية التواريخ
         if (new Date(formData.end) < new Date(formData.start)) {
             return alert('⚠️ تاريخ النهاية يجب أن يكون بعد تاريخ البداية!');
         }
@@ -40,13 +58,13 @@ export default function StaffNewRequest({ employee, refresh }: { employee: Emplo
         setSubmitting(true);
         
         try {
-            // 3. الإرسال لقاعدة البيانات
+            // الإرسال لقاعدة البيانات
             const { error } = await supabase.from('leave_requests').insert([{ 
                 employee_id: employee.employee_id, 
                 type: formData.type, 
                 start_date: formData.start, 
                 end_date: formData.end,
-                back_date: formData.returnDate, // الربط مع العمود الصحيح في القاعدة
+                back_date: formData.returnDate, 
                 backup_person: formData.backup, 
                 status: 'معلق', 
                 notes: formData.notes 
@@ -54,13 +72,12 @@ export default function StaffNewRequest({ employee, refresh }: { employee: Emplo
 
             if (error) throw error;
 
-            // 4. إرسال إشعار للمدير
-            // نستخدم 'admin' كمعرف عام للمديرين، أو يمكنك استبداله بكود مدير محدد
+            // إرسال إشعار للمدير
             await sendNotification('admin', 'طلب جديد 📄', `قام ${employee.name} بتقديم طلب ${formData.type}`);
 
             alert('✅ تم إرسال الطلب بنجاح'); 
             
-            // 5. تصفير النموذج وتحديث الصفحة
+            // تصفير النموذج وتحديث الصفحة
             setFormData({ 
                 type: LEAVE_TYPES[0], 
                 start: '', 
@@ -87,7 +104,6 @@ export default function StaffNewRequest({ employee, refresh }: { employee: Emplo
             
             <div className="bg-white p-6 md:p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6">
                 
-                {/* تنويه بسيط */}
                 <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-blue-800 text-sm font-bold flex items-center gap-2">
                     <UserCheck className="w-5 h-5"/>
                     يرجى التأكد من التنسيق مع الموظف البديل قبل تقديم الطلب.
