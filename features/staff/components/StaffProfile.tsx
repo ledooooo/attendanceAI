@@ -1,11 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { User, Save, Upload, Camera, Calendar, Briefcase, FileText, Phone, Mail, MapPin, Loader2 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
-import { Input, Select } from '../../../components/ui/FormElements';
-import { 
-    Save, User, Clock, Phone, FileText, Star, ShieldCheck, 
-    Loader2, Lock, Calendar, Briefcase, Mail, MapPin, BadgeCheck 
-} from 'lucide-react';
 
 interface Props {
     employee: Employee;
@@ -13,310 +9,292 @@ interface Props {
     onUpdate?: () => void;
 }
 
+const DAYS_OPTIONS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
+
 export default function StaffProfile({ employee, isEditable = false, onUpdate }: Props) {
+    const [formData, setFormData] = useState<any>({ ...employee });
     const [loading, setLoading] = useState(false);
-    
-    // تهيئة البيانات
-    const [formData, setFormData] = useState({
-        name: employee.name || '',
-        employee_id: employee.employee_id || '',
-        national_id: employee.national_id || '',
-        specialty: employee.specialty || '',
-        phone: employee.phone || '',
-        email: employee.email || '',
-        gender: employee.gender || 'ذكر',
-        grade: employee.grade || '',
-        religion: employee.religion || '',
-        join_date: employee.join_date || '',
-        status: employee.status || 'نشط',
-        // Dates & Times
-        start_time: employee.start_time || '',
-        end_time: employee.end_time || '',
-        // Leaves
-        leave_annual_balance: employee.leave_annual_balance || 21,
-        leave_casual_balance: employee.leave_casual_balance || 7,
-        remaining_annual: employee.remaining_annual || 21,
-        remaining_casual: employee.remaining_casual || 7,
-        total_absence: employee.total_absence || 0,
-        // Extras
-        admin_tasks: employee.admin_tasks || '',
-        training_courses: employee.training_courses || '',
-        notes: employee.notes || '',
-        // URLs
-        photo_url: employee.photo_url || '',
-        id_front_url: employee.id_front_url || '',
-        id_back_url: employee.id_back_url || '',
-        work_days: Array.isArray(employee.work_days) ? employee.work_days.join(', ') : (employee.work_days || '')
-    });
+    const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
-        setFormData({
-            name: employee.name || '',
-            employee_id: employee.employee_id || '',
-            national_id: employee.national_id || '',
-            specialty: employee.specialty || '',
-            phone: employee.phone || '',
-            email: employee.email || '',
-            gender: employee.gender || 'ذكر',
-            grade: employee.grade || '',
-            religion: employee.religion || '',
-            join_date: employee.join_date || '',
-            status: employee.status || 'نشط',
-            start_time: employee.start_time || '',
-            end_time: employee.end_time || '',
-            leave_annual_balance: employee.leave_annual_balance || 21,
-            leave_casual_balance: employee.leave_casual_balance || 7,
-            remaining_annual: employee.remaining_annual || 21,
-            remaining_casual: employee.remaining_casual || 7,
-            total_absence: employee.total_absence || 0,
-            admin_tasks: employee.admin_tasks || '',
-            training_courses: employee.training_courses || '',
-            notes: employee.notes || '',
-            photo_url: employee.photo_url || '',
-            id_front_url: employee.id_front_url || '',
-            id_back_url: employee.id_back_url || '',
-            work_days: Array.isArray(employee.work_days) ? employee.work_days.join(', ') : (employee.work_days || '')
-        });
+        // التأكد من أن work_days هي مصفوفة وليست نصاً
+        let wd = employee.work_days;
+        if (typeof wd === 'string') wd = (wd as string).split(',');
+        if (!Array.isArray(wd)) wd = [];
+
+        setFormData({ ...employee, work_days: wd });
     }, [employee]);
 
-    const handleSave = async () => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        setFormData((prev: any) => ({ ...prev, [name]: value }));
+    };
+
+    const handleWorkDayToggle = (day: string) => {
+        let currentDays = formData.work_days || [];
+        if (currentDays.includes(day)) {
+            setFormData({ ...formData, work_days: currentDays.filter((d: string) => d !== day) });
+        } else {
+            setFormData({ ...formData, work_days: [...currentDays, day] });
+        }
+    };
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        setUploading(true);
+        const file = e.target.files[0];
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${employee.employee_id}_${Date.now()}.${fileExt}`; // اسم فريد
+        const filePath = `${fileName}`;
+
+        try {
+            const { error: uploadError } = await supabase.storage
+                .from('staff-photos')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            const { data: urlData } = supabase.storage.from('staff-photos').getPublicUrl(filePath);
+            
+            // تحديث الواجهة فوراً
+            setFormData((prev: any) => ({ ...prev, photo_url: urlData.publicUrl }));
+            alert('تم رفع الصورة بنجاح! لا تنس حفظ التعديلات.');
+        } catch (error: any) {
+            console.error(error);
+            alert('فشل رفع الصورة: تأكد من إنشاء bucket باسم "staff-photos" في Supabase وجعله Public.');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
         if (!isEditable) return;
         setLoading(true);
         try {
-            const workDaysArray = formData.work_days.split(/[,،]/).map((d: string) => d.trim()).filter((d: string) => d);
+            const payload = {
+                ...formData,
+                work_days: formData.work_days, // Supabase سيقبل المصفوفة إذا كان العمود نصي (سيحولها JSON) أو مصفوفة نصية
+                leave_annual_balance: Number(formData.leave_annual_balance),
+                leave_casual_balance: Number(formData.leave_casual_balance),
+                remaining_annual: Number(formData.remaining_annual),
+                remaining_casual: Number(formData.remaining_casual),
+                total_absence: Number(formData.total_absence),
+            };
+
             const { error } = await supabase
                 .from('employees')
-                .update({ ...formData, work_days: workDaysArray })
+                .update(payload)
                 .eq('id', employee.id);
 
             if (error) throw error;
-            alert('✅ تم تحديث الملف الشخصي بنجاح');
+            alert('✅ تم تحديث البيانات بنجاح');
             if (onUpdate) onUpdate();
-        } catch (err: any) {
-            alert('❌ خطأ: ' + err.message);
+        } catch (error: any) {
+            alert('❌ خطأ: ' + error.message);
         } finally {
             setLoading(false);
         }
     };
 
-    const commonProps = { disabled: !isEditable };
-    // تحسين ستايل الحقول عند القراءة فقط
-    const inputClass = !isEditable 
-        ? "bg-transparent border-transparent px-0 font-bold text-gray-800 shadow-none focus:ring-0" 
-        : "bg-gray-50 border-gray-200 focus:bg-white";
-
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 pb-10">
+        <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-500 pb-10">
             
-            {/* --- 1. Header Section (Banner) --- */}
-            <div className="bg-white rounded-[2.5rem] p-6 shadow-sm border border-gray-100 relative overflow-hidden">
-                {/* Background Decoration */}
-                <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-emerald-500 to-teal-600 opacity-10"></div>
-                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500 rounded-bl-full opacity-5"></div>
-
-                <div className="relative flex flex-col md:flex-row items-start md:items-end gap-6 mt-4">
-                    {/* Profile Image */}
-                    <div className="w-28 h-28 rounded-[2rem] bg-white p-1.5 shadow-lg -mt-8 md:mt-0 z-10">
-                        {formData.photo_url ? (
-                            <img src={formData.photo_url} alt="Profile" className="w-full h-full object-cover rounded-[1.7rem]" />
-                        ) : (
-                            <div className="w-full h-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl font-black rounded-[1.7rem]">
-                                {formData.name.charAt(0)}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Basic Info */}
-                    <div className="flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-3">
-                            <h2 className="text-2xl font-black text-gray-800">{formData.name}</h2>
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${formData.status === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                <div className={`w-2 h-2 rounded-full ${formData.status === 'نشط' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                {formData.status}
-                            </span>
-                        </div>
-                        <p className="text-gray-500 font-medium flex items-center gap-2">
-                            <Briefcase className="w-4 h-4"/> {formData.specialty || 'غير محدد'}
-                            <span className="text-gray-300">|</span>
-                            <span className="text-emerald-600 font-mono font-bold">ID: {formData.employee_id}</span>
-                        </p>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-3 self-end">
-                        {isEditable ? (
-                            <button onClick={handleSave} disabled={loading} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-100 flex items-center gap-2 transition-all active:scale-95">
-                                {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>}
-                                حفظ التعديلات
-                            </button>
-                        ) : (
-                            <div className="flex items-center gap-2 text-gray-400 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100">
-                                <Lock className="w-4 h-4"/> <span className="text-xs font-bold">للقراءة فقط</span>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* 1. Header & Image */}
+            <div className="flex flex-col md:flex-row items-center gap-6 bg-gradient-to-br from-blue-50 to-white p-8 rounded-[30px] border border-blue-100 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-bl-full opacity-50 pointer-events-none"></div>
                 
-                {/* --- 2. Left Column (Details) --- */}
-                <div className="lg:col-span-8 space-y-6">
-                    
-                    {/* A. Personal & Work Info */}
-                    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                        <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
-                            <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><User className="w-5 h-5"/></div>
-                            البيانات الأساسية
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                            <Input label="الاسم الرباعي" value={formData.name} onChange={(v:any)=>setFormData({...formData, name: v})} {...commonProps} className={inputClass} />
-                            <Input label="الرقم القومي" value={formData.national_id} onChange={(v:any)=>setFormData({...formData, national_id: v})} {...commonProps} className={inputClass} />
-                            <Input label="تاريخ التعيين" type="date" value={formData.join_date} onChange={(v:any)=>setFormData({...formData, join_date: v})} {...commonProps} className={inputClass} />
-                            
-                            {isEditable ? (
-                                <Select label="النوع" options={['ذكر', 'أنثى']} value={formData.gender} onChange={(v:any)=>setFormData({...formData, gender: v})} />
-                            ) : (
-                                <Input label="النوع" value={formData.gender} readOnly className={inputClass} />
-                            )}
-                            
-                            <Input label="الدرجة الوظيفية" value={formData.grade} onChange={(v:any)=>setFormData({...formData, grade: v})} {...commonProps} className={inputClass} />
-                            <Input label="الديانة" value={formData.religion} onChange={(v:any)=>setFormData({...formData, religion: v})} {...commonProps} className={inputClass} />
-                        </div>
-                    </div>
-
-                    {/* B. Contact Info */}
-                    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                        <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
-                            <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><Phone className="w-5 h-5"/></div>
-                            معلومات التواصل
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                            <Input label="رقم الهاتف" value={formData.phone} onChange={(v:any)=>setFormData({...formData, phone: v})} {...commonProps} className={inputClass} />
-                            <Input label="البريد الإلكتروني" value={formData.email} onChange={(v:any)=>setFormData({...formData, email: v})} {...commonProps} className={inputClass} />
-                            <div className="md:col-span-2">
-                                <Input label="رابط الصورة الشخصية" value={formData.photo_url} onChange={(v:any)=>setFormData({...formData, photo_url: v})} {...commonProps} className={inputClass} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* C. Additional Info */}
-                    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                         <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
-                            <div className="p-2 bg-gray-50 rounded-lg text-gray-600"><FileText className="w-5 h-5"/></div>
-                            ملفات وملاحظات
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Input label="رابط البطاقة (وجه)" value={formData.id_front_url} onChange={(v:any)=>setFormData({...formData, id_front_url: v})} {...commonProps} className={inputClass} />
-                            <Input label="رابط البطاقة (ظهر)" value={formData.id_back_url} onChange={(v:any)=>setFormData({...formData, id_back_url: v})} {...commonProps} className={inputClass} />
-                            <div className="md:col-span-2">
-                                <label className="block text-xs font-bold text-gray-400 mb-2">ملاحظات إدارية</label>
-                                <textarea 
-                                    value={formData.notes} 
-                                    onChange={(e)=>setFormData({...formData, notes: e.target.value})} 
-                                    disabled={!isEditable}
-                                    className={`w-full p-4 rounded-2xl border outline-none focus:ring-2 focus:ring-emerald-500 min-h-[100px] text-sm font-medium ${!isEditable ? 'bg-gray-50 border-transparent text-gray-600' : 'bg-white border-gray-200'}`}
-                                ></textarea>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* --- 3. Right Column (Stats & Work) --- */}
-                <div className="lg:col-span-4 space-y-6">
-                    
-                    {/* A. Leave Stats Cards */}
-                    <div className="bg-gradient-to-br from-emerald-600 to-teal-800 p-6 rounded-[2.5rem] text-white shadow-xl shadow-emerald-100">
-                        <h4 className="font-bold mb-6 flex items-center gap-2 text-emerald-100">
-                            <Star className="w-5 h-5"/> أرصدة الإجازات
-                        </h4>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-white/10 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
-                                <span className="text-xs text-emerald-200 block mb-1">متبقي اعتيادي</span>
-                                <span className="text-3xl font-black">{formData.remaining_annual}</span>
-                                <span className="text-[10px] opacity-70 block">من أصل {formData.leave_annual_balance}</span>
-                            </div>
-                            <div className="bg-white/10 backdrop-blur-sm p-4 rounded-2xl border border-white/10">
-                                <span className="text-xs text-emerald-200 block mb-1">متبقي عارضة</span>
-                                <span className="text-3xl font-black">{formData.remaining_casual}</span>
-                                <span className="text-[10px] opacity-70 block">من أصل {formData.leave_casual_balance}</span>
-                            </div>
-                        </div>
-                        
-                        {/* Only show inputs when editing to fix balances */}
-                        {isEditable && (
-                            <div className="mt-6 pt-6 border-t border-white/20 grid gap-3">
-                                <p className="text-xs font-bold text-emerald-200">تعديل الأرصدة:</p>
-                                <input type="number" placeholder="رصيد سنوي" className="bg-white/20 border-none rounded-lg p-2 text-white placeholder-emerald-200 text-sm" value={formData.leave_annual_balance} onChange={e=>setFormData({...formData, leave_annual_balance: Number(e.target.value)})} />
-                                <input type="number" placeholder="متبقي سنوي" className="bg-white/20 border-none rounded-lg p-2 text-white placeholder-emerald-200 text-sm" value={formData.remaining_annual} onChange={e=>setFormData({...formData, remaining_annual: Number(e.target.value)})} />
+                <div className="relative group shrink-0">
+                    <div className="w-36 h-36 rounded-[2rem] border-4 border-white shadow-xl overflow-hidden bg-white">
+                        {formData.photo_url ? (
+                            <img src={formData.photo_url} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
+                                <User className="w-16 h-16" />
                             </div>
                         )}
                     </div>
+                    {isEditable && (
+                        <label className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-3 rounded-2xl cursor-pointer hover:bg-blue-700 shadow-lg transition-transform transform hover:scale-110 border-4 border-white">
+                            {uploading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Camera className="w-5 h-5" />}
+                            <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+                        </label>
+                    )}
+                </div>
 
-                    {/* B. Work Schedule */}
-                    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                        <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2">
-                            <div className="p-2 bg-orange-50 rounded-lg text-orange-600"><Clock className="w-5 h-5"/></div>
-                            مواعيد العمل
-                        </h4>
-                        
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-2xl">
-                                <div className="text-center flex-1 border-l border-gray-200">
-                                    <span className="text-xs text-gray-400 block mb-1">الحضور</span>
-                                    <span className="font-black text-gray-800 text-lg">{formData.start_time || '--:--'}</span>
-                                </div>
-                                <div className="text-center flex-1">
-                                    <span className="text-xs text-gray-400 block mb-1">الانصراف</span>
-                                    <span className="font-black text-gray-800 text-lg">{formData.end_time || '--:--'}</span>
-                                </div>
-                            </div>
-
-                            {isEditable ? (
-                                <div className="grid grid-cols-2 gap-2">
-                                     <Input label="تعديل الحضور" type="time" value={formData.start_time} onChange={(v:any)=>setFormData({...formData, start_time: v})} className="text-xs"/>
-                                     <Input label="تعديل الانصراف" type="time" value={formData.end_time} onChange={(v:any)=>setFormData({...formData, end_time: v})} className="text-xs"/>
-                                </div>
-                            ) : null}
-
-                            <div>
-                                <label className="block text-xs font-bold text-gray-400 mb-2">أيام العمل</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {formData.work_days.split(/[,،]/).map((day, idx) => (
-                                        day.trim() && (
-                                            <span key={idx} className="bg-orange-50 text-orange-700 px-3 py-1 rounded-lg text-xs font-bold border border-orange-100">
-                                                {day.trim()}
-                                            </span>
-                                        )
-                                    ))}
-                                    {!formData.work_days && <span className="text-xs text-gray-400">لم تحدد أيام عمل</span>}
-                                </div>
-                                {isEditable && (
-                                    <input 
-                                        type="text" 
-                                        className="mt-2 w-full text-sm p-2 border rounded-xl" 
-                                        placeholder="اكتب الأيام (السبت، الأحد...)" 
-                                        value={formData.work_days} 
-                                        onChange={(e)=>setFormData({...formData, work_days: e.target.value})}
-                                    />
-                                )}
-                            </div>
-                        </div>
+                <div className="text-center md:text-right flex-1 z-10">
+                    <div className="flex flex-col md:flex-row md:items-center gap-3 mb-2">
+                        <h2 className="text-3xl font-black text-gray-800">{formData.name}</h2>
+                        <span className={`px-3 py-1 rounded-lg text-xs font-black w-fit mx-auto md:mx-0 ${formData.status === 'نشط' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {formData.status}
+                        </span>
                     </div>
-
-                    {/* C. Absense Stats */}
-                    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-                         <div className="flex items-center justify-between">
-                             <h4 className="font-bold text-gray-800 flex items-center gap-2">
-                                <div className="p-2 bg-red-50 rounded-lg text-red-600"><ShieldCheck className="w-5 h-5"/></div>
-                                إجمالي الغياب
-                             </h4>
-                             <span className="text-3xl font-black text-red-600">{formData.total_absence}</span>
-                         </div>
-                    </div>
-
+                    <p className="text-gray-500 font-bold flex items-center justify-center md:justify-start gap-2 mb-4">
+                        <Briefcase className="w-4 h-4"/> {formData.specialty}
+                        <span className="text-gray-300">|</span>
+                        <span className="font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded">#{formData.employee_id}</span>
+                    </p>
+                    
+                    {isEditable && (
+                        <button type="submit" disabled={loading} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg hover:shadow-blue-200 transition-all flex items-center gap-2 mx-auto md:mx-0">
+                            {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>}
+                            حفظ التعديلات
+                        </button>
+                    )}
                 </div>
             </div>
-        </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                
+                {/* 2. Personal Info */}
+                <Section title="البيانات الشخصية" icon={User}>
+                    <Field label="الاسم بالكامل" name="name" value={formData.name} onChange={handleChange} disabled={!isEditable} />
+                    <div className="grid grid-cols-2 gap-4">
+                        <Field label="الرقم القومي" name="national_id" value={formData.national_id} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="تاريخ التعيين" type="date" name="join_date" value={formData.join_date} onChange={handleChange} disabled={!isEditable} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <Field label="الجنس" name="gender" value={formData.gender} onChange={handleChange} disabled={!isEditable} as="select" options={['ذكر', 'أنثى']} />
+                        <Field label="الديانة" name="religion" value={formData.religion} onChange={handleChange} disabled={!isEditable} as="select" options={['مسلم', 'مسيحي']} />
+                    </div>
+                </Section>
+
+                {/* 3. Job Details */}
+                <Section title="تفاصيل الوظيفة" icon={Briefcase}>
+                    <div className="grid grid-cols-2 gap-4">
+                        <Field label="الكود الوظيفي" name="employee_id" value={formData.employee_id} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="الدرجة الوظيفية" name="grade" value={formData.grade} onChange={handleChange} disabled={!isEditable} />
+                    </div>
+                    <Field label="التخصص" name="specialty" value={formData.specialty} onChange={handleChange} disabled={!isEditable} />
+                    <Field label="المركز التابع له" name="center_id" value={formData.center_id} onChange={handleChange} disabled={!isEditable} />
+                    <Field label="المهام الإدارية" name="admin_tasks" value={formData.admin_tasks} onChange={handleChange} disabled={!isEditable} />
+                </Section>
+
+                {/* 4. Contact Info */}
+                <Section title="بيانات الاتصال" icon={Phone}>
+                    <div className="grid grid-cols-2 gap-4">
+                        <Field label="رقم الهاتف" name="phone" value={formData.phone} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="البريد الإلكتروني" name="email" value={formData.email} onChange={handleChange} disabled={!isEditable} />
+                    </div>
+                    <Field label="الدورات التدريبية" name="training_courses" value={formData.training_courses} onChange={handleChange} disabled={!isEditable} as="textarea" />
+                </Section>
+
+                {/* 5. Schedule & Work Days */}
+                <Section title="المواعيد وأيام العمل" icon={Calendar}>
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <Field label="وقت الحضور" type="time" name="start_time" value={formData.start_time} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="وقت الانصراف" type="time" name="end_time" value={formData.end_time} onChange={handleChange} disabled={!isEditable} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">أيام العمل الأسبوعية</label>
+                        <div className="flex flex-wrap gap-2">
+                            {DAYS_OPTIONS.map(day => (
+                                <button
+                                    type="button"
+                                    key={day}
+                                    onClick={() => isEditable && handleWorkDayToggle(day)}
+                                    disabled={!isEditable}
+                                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                                        (formData.work_days || []).includes(day)
+                                            ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                                            : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {day}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </Section>
+
+                {/* 6. Leaves Balance */}
+                <div className="xl:col-span-2">
+                    <Section title="أرصدة الإجازات والغياب" icon={FileText}>
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            <BalanceCard label="رصيد اعتيادي" value={formData.leave_annual_balance} name="leave_annual_balance" onChange={handleChange} editable={isEditable} color="blue" />
+                            <BalanceCard label="متبقي اعتيادي" value={formData.remaining_annual} name="remaining_annual" onChange={handleChange} editable={isEditable} color="blue" />
+                            
+                            <BalanceCard label="رصيد عارضة" value={formData.leave_casual_balance} name="leave_casual_balance" onChange={handleChange} editable={isEditable} color="orange" />
+                            <BalanceCard label="متبقي عارضة" value={formData.remaining_casual} name="remaining_casual" onChange={handleChange} editable={isEditable} color="orange" />
+                            
+                            <BalanceCard label="إجمالي الغياب" value={formData.total_absence} name="total_absence" onChange={handleChange} editable={isEditable} color="red" />
+                            
+                            <div className="bg-gray-50 p-3 rounded-2xl border border-gray-200">
+                                <label className="block text-[10px] font-bold text-gray-500 mb-1">إجازة وضع؟</label>
+                                <select 
+                                    name="maternity" 
+                                    value={formData.maternity} 
+                                    onChange={handleChange} 
+                                    disabled={!isEditable}
+                                    className="w-full bg-transparent font-black text-gray-800 outline-none"
+                                >
+                                    <option value="لا">لا</option>
+                                    <option value="نعم">نعم</option>
+                                </select>
+                            </div>
+                        </div>
+                    </Section>
+                </div>
+
+                {/* 7. Files & Notes */}
+                <div className="xl:col-span-2">
+                    <Section title="مرفقات وملاحظات" icon={FileText}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Field label="رابط البطاقة (وجه)" name="id_front_url" value={formData.id_front_url} onChange={handleChange} disabled={!isEditable} />
+                            <Field label="رابط البطاقة (ظهر)" name="id_back_url" value={formData.id_back_url} onChange={handleChange} disabled={!isEditable} />
+                            <div className="md:col-span-2">
+                                <Field label="ملاحظات إضافية" name="notes" value={formData.notes} onChange={handleChange} disabled={!isEditable} as="textarea" />
+                            </div>
+                        </div>
+                    </Section>
+                </div>
+
+            </div>
+        </form>
     );
 }
+
+// Sub-components
+const Section = ({ title, icon: Icon, children }: any) => (
+    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+        <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2 pb-3 border-b border-gray-50">
+            <div className="p-2 bg-gray-50 rounded-xl text-gray-600"><Icon className="w-5 h-5"/></div>
+            {title}
+        </h4>
+        <div className="space-y-4">{children}</div>
+    </div>
+);
+
+const Field = ({ label, as = 'input', options, ...props }: any) => (
+    <div>
+        <label className="block text-xs font-bold text-gray-400 mb-1.5 mr-1">{label}</label>
+        {as === 'select' ? (
+            <select className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-gray-700 text-sm" {...props}>
+                <option value="">اختر...</option>
+                {options?.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+        ) : as === 'textarea' ? (
+            <textarea className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-medium text-sm min-h-[80px]" {...props} />
+        ) : (
+            <input className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-gray-700 text-sm" {...props} />
+        )}
+    </div>
+);
+
+const BalanceCard = ({ label, value, name, onChange, editable, color }: any) => (
+    <div className={`p-4 rounded-2xl border ${editable ? 'bg-white' : 'bg-gray-50'} border-${color}-100 relative overflow-hidden group`}>
+        <div className={`absolute top-0 right-0 w-1 h-full bg-${color}-500`}></div>
+        <span className="text-[10px] font-bold text-gray-400 block mb-1">{label}</span>
+        {editable ? (
+            <input 
+                type="number" 
+                name={name} 
+                value={value} 
+                onChange={onChange} 
+                className="w-full bg-transparent font-black text-2xl text-gray-800 outline-none border-b border-transparent focus:border-gray-300"
+            />
+        ) : (
+            <span className="font-black text-2xl text-gray-800">{value}</span>
+        )}
+    </div>
+);
