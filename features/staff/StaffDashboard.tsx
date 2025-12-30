@@ -5,7 +5,7 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Download, Info, Heart, Smartphone, HelpCircle
+  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon // تمت إضافة Moon
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -18,7 +18,8 @@ import StaffEvaluations from './components/StaffEvaluations';
 import StaffMessages from './components/StaffMessages';
 import StaffStats from './components/StaffStats';
 import StaffNewsFeed from './components/StaffNewsFeed';
-import EOMVotingCard from './components/EOMVotingCard'; // استيراد كارت التصويت
+import EOMVotingCard from './components/EOMVotingCard';
+import EmployeeEveningSchedule from './components/EmployeeEveningSchedule'; // تمت إضافة المكون الجديد
 
 interface Props {
   employee: Employee;
@@ -99,10 +100,12 @@ export default function StaffDashboard({ employee }: Props) {
     } catch (err) { console.error(err); }
   };
 
+  // --- قائمة الموظف ---
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
+    { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon }, // تمت إضافة هذا العنصر
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
@@ -241,7 +244,6 @@ export default function StaffDashboard({ employee }: Props) {
                 </div>
 
                 <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-5 md:p-8 min-h-[500px]">
-                    {/* هنا التغيير: عرض كارت التصويت + الأخبار في الصفحة الرئيسية */}
                     {activeTab === 'news' && (
                         <>
                             <EOMVotingCard employee={employee} />
@@ -258,6 +260,15 @@ export default function StaffDashboard({ employee }: Props) {
                             employee={employee} 
                         /> 
                     )}
+                    
+                    {/* هنا يتم عرض جدول النوبتجيات المسائية */}
+                    {activeTab === 'evening-schedule' && (
+                        <EmployeeEveningSchedule 
+                            employeeId={employee.id} 
+                            employeeCode={employee.employee_id} 
+                        />
+                    )}
+
                     {activeTab === 'stats' && <StaffStats attendance={[]} evals={[]} requests={[]} month={new Date().toISOString().slice(0, 7)} />} 
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={()=>{}} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
@@ -291,23 +302,23 @@ export default function StaffDashboard({ employee }: Props) {
 
       {showAboutModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden text-center relative p-6 animate-in zoom-in-95">
-                 <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors">
-                     <X className="w-5 h-5"/>
-                 </button>
-                 <div className="w-20 h-20 bg-emerald-100 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200">
-                      <img src="/pwa-192x192.png" className="w-16 h-16 rounded-xl" alt="Logo" onError={(e) => e.currentTarget.style.display='none'}/>
-                 </div>
-                 <h2 className="text-xl font-black text-gray-800 mb-1">غرب المطار</h2>
-                 <p className="text-sm text-gray-500 font-bold mb-6">نظام إدارة الموارد البشرية الذكي</p>
-                 <div className="space-y-3 text-sm text-gray-600 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                     <div className="flex justify-between"><span>الإصدار:</span><span className="font-bold font-mono">1.0.0</span></div>
-                     <div className="flex justify-between"><span>التطوير:</span><span className="font-bold">قسم الـ IT</span></div>
-                 </div>
-                 <div className="mt-6 text-xs text-gray-400 flex items-center justify-center gap-1">
-                     تم التطوير بكل <Heart className="w-3 h-3 text-red-500 fill-red-500"/>
-                 </div>
-             </div>
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden text-center relative p-6 animate-in zoom-in-95">
+                  <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors">
+                      <X className="w-5 h-5"/>
+                  </button>
+                  <div className="w-20 h-20 bg-emerald-100 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200">
+                       <img src="/pwa-192x192.png" className="w-16 h-16 rounded-xl" alt="Logo" onError={(e) => e.currentTarget.style.display='none'}/>
+                  </div>
+                  <h2 className="text-xl font-black text-gray-800 mb-1">غرب المطار</h2>
+                  <p className="text-sm text-gray-500 font-bold mb-6">نظام إدارة الموارد البشرية الذكي</p>
+                  <div className="space-y-3 text-sm text-gray-600 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                      <div className="flex justify-between"><span>الإصدار:</span><span className="font-bold font-mono">1.0.0</span></div>
+                      <div className="flex justify-between"><span>التطوير:</span><span className="font-bold">قسم الـ IT</span></div>
+                  </div>
+                  <div className="mt-6 text-xs text-gray-400 flex items-center justify-center gap-1">
+                      تم التطوير بكل <Heart className="w-3 h-3 text-red-500 fill-red-500"/>
+                  </div>
+              </div>
         </div>
       )}
     </div>
