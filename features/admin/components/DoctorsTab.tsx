@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Employee, AttendanceRecord, LeaveRequest, Evaluation, InternalMessage } from '../../../types';
+import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import * as XLSX from 'xlsx';
@@ -45,18 +45,21 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   const [empData, setEmpData] = useState<any>({ attendance: [], requests: [], evals: [], messages: [] });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
+  // --- دالة جلب بيانات الموظف (تم فصلها لاستخدامها عند التحديث) ---
+  const fetchEmpData = async () => {
+    if (!selectedEmp) return;
+    const [att, req, evl, msg] = await Promise.all([
+        supabase.from('attendance').select('*').eq('employee_id', selectedEmp.employee_id),
+        supabase.from('leave_requests').select('*').eq('employee_id', selectedEmp.employee_id).order('created_at', { ascending: false }),
+        supabase.from('evaluations').select('*').eq('employee_id', selectedEmp.employee_id).order('month', { ascending: false }),
+        supabase.from('messages').select('*').or(`to_user.eq.${selectedEmp.employee_id},to_user.eq.all`).order('created_at', { ascending: false })
+    ]);
+    setEmpData({ attendance: att.data || [], requests: req.data || [], evals: evl.data || [], messages: msg.data || [] });
+  };
+
   useEffect(() => {
     if (selectedEmp) {
-      const fetchData = async () => {
-        const [att, req, evl, msg] = await Promise.all([
-            supabase.from('attendance').select('*').eq('employee_id', selectedEmp.employee_id),
-            supabase.from('leave_requests').select('*').eq('employee_id', selectedEmp.employee_id).order('created_at', { ascending: false }),
-            supabase.from('evaluations').select('*').eq('employee_id', selectedEmp.employee_id).order('month', { ascending: false }),
-            supabase.from('messages').select('*').or(`to_user.eq.${selectedEmp.employee_id},to_user.eq.all`).order('created_at', { ascending: false })
-        ]);
-        setEmpData({ attendance: att.data || [], requests: req.data || [], evals: evl.data || [], messages: msg.data || [] });
-      };
-      fetchData();
+        fetchEmpData();
     }
   }, [selectedEmp]);
 
@@ -88,49 +91,19 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       onRefresh();
   };
 
-  // --- 1. تحميل نموذج العينة (بكل الخانات المطلوبة) ---
   const handleDownloadSample = () => {
+    // ... (نفس كود التحميل السابق) ...
     const sampleData = [
-      {
-        employee_id: '101',
-        name: 'اسم الموظف',
-        national_id: '29000000000000',
-        specialty: 'طبيب عام',
-        phone: '01000000000',
-        email: 'employee@example.com',
-        gender: 'ذكر',
-        grade: 'أخصائي',
-        photo_url: '',
-        id_front_url: '',
-        id_back_url: '',
-        religion: 'مسلم',
-        work_days: 'Sunday,Monday',
-        start_time: '08:00',
-        end_time: '14:00',
-        leave_annual_balance: 21,
-        leave_casual_balance: 7,
-        total_absence: 0,
-        remaining_annual: 21,
-        remaining_casual: 7,
-        admin_tasks: 'لا يوجد',
-        status: 'نشط',
-        join_date: '2023-01-01',
-        center_id: centerId, // يضع كود المركز الحالي تلقائياً للتسهيل
-        training_courses: '',
-        notes: '',
-        maternity: '',
-        role: 'user'
-      }
+      { employee_id: '101', name: 'اسم الموظف', national_id: '29000000000000', specialty: 'طبيب عام', phone: '01000000000', email: 'employee@example.com', gender: 'ذكر', grade: 'أخصائي', photo_url: '', id_front_url: '', id_back_url: '', religion: 'مسلم', work_days: 'Sunday,Monday', start_time: '08:00', end_time: '14:00', leave_annual_balance: 21, leave_casual_balance: 7, total_absence: 0, remaining_annual: 21, remaining_casual: 7, admin_tasks: 'لا يوجد', status: 'نشط', join_date: '2023-01-01', center_id: centerId, training_courses: '', notes: '', maternity: '', role: 'user' }
     ];
-
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Employees");
     XLSX.writeFile(wb, "نموذج_بيانات_الموظفين.xlsx");
   };
 
-  // --- 2. معالجة الرفع (باستخدام RPC للدقة والسرعة) ---
   const handleExcelImport = async (data: any[]) => {
+    // ... (نفس كود الاستيراد السابق) ...
     setIsProcessing(true);
     try {
         const payload = data.map((row) => ({
@@ -140,8 +113,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             specialty: String(row.specialty || row['التخصص'] || '').trim(),
             phone: String(row.phone || row['الهاتف'] || '').trim(),
             email: String(row.email || row['البريد'] || '').trim(),
-            
-            // الخانات الجديدة
             gender: String(row.gender || '').trim(),
             grade: String(row.grade || '').trim(),
             photo_url: String(row.photo_url || '').trim(),
@@ -151,34 +122,26 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             work_days: String(row.work_days || '').trim(),
             start_time: String(row.start_time || '').trim(),
             end_time: String(row.end_time || '').trim(),
-            
             leave_annual_balance: Number(row.leave_annual_balance) || 21,
             leave_casual_balance: Number(row.leave_casual_balance) || 7,
             total_absence: Number(row.total_absence) || 0,
             remaining_annual: Number(row.remaining_annual) || 21,
             remaining_casual: Number(row.remaining_casual) || 7,
-            
             admin_tasks: String(row.admin_tasks || '').trim(),
             status: String(row.status || 'نشط').trim(),
             join_date: formatDateForDB(row.join_date || row['تاريخ التعيين']) || new Date().toISOString().split('T')[0],
-            center_id: centerId, // فرض مركز المدير الحالي
-            
+            center_id: centerId,
             training_courses: String(row.training_courses || '').trim(),
             notes: String(row.notes || '').trim(),
             maternity: String(row.maternity || '').trim(),
             role: String(row.role || 'user').trim()
-        })).filter(r => r.employee_id && r.name); // تجاهل الصفوف الفارغة
+        })).filter(r => r.employee_id && r.name);
 
         if (payload.length === 0) return alert('لم يتم العثور على بيانات صالحة.');
-
-        // استدعاء الدالة الذكية (RPC)
         const { data: res, error } = await supabase.rpc('process_employees_bulk', { payload });
-
         if (error) throw error;
-
         alert(`تقرير العملية:\n✅ تم إضافة: ${res.inserted}\n🔄 تم تحديث: ${res.updated}\n⏭️ متطابق (تجاهل): ${res.skipped}`);
         onRefresh();
-        
     } catch (e:any) {
         console.error(e);
         alert('حدث خطأ أثناء المعالجة: ' + e.message);
@@ -228,20 +191,32 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   {detailTab === 'profile' && <StaffProfile employee={selectedEmp} isEditable={true} onUpdate={onRefresh} />}
                   {detailTab === 'attendance' && <StaffAttendance attendance={empData.attendance} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={selectedEmp} />}
                   {detailTab === 'stats' && <StaffStats attendance={empData.attendance} evals={empData.evals} requests={empData.requests} month={selectedMonth} />}
-{detailTab === 'requests' && <StaffRequestsHistory requests={empData.requests} employee={selectedEmp} />}
-                {detailTab === 'evals' && <StaffEvaluations evals={empData.evals} />}
-{detailTab === 'messages' && (
-    <StaffMessages 
-        messages={empData.messages} 
-        employee={selectedEmp} 
-        currentUserId="admin" 
-    />
-)}              </div>
+                  {detailTab === 'requests' && <StaffRequestsHistory requests={empData.requests} employee={selectedEmp} />}
+                  
+                  {/* هنا التحديث: تمرير isAdmin و onUpdate و employee */}
+                  {detailTab === 'evals' && (
+                    <StaffEvaluations 
+                        evals={empData.evals} 
+                        employee={selectedEmp}
+                        isAdmin={true}
+                        onUpdate={fetchEmpData}
+                    />
+                  )}
+                  
+                  {detailTab === 'messages' && (
+                    <StaffMessages 
+                        messages={empData.messages} 
+                        employee={selectedEmp} 
+                        currentUserId="admin" 
+                    />
+                  )}              
+              </div>
           </div>
       );
   }
 
   return (
+    // ... (باقي الكود الخاص بالقائمة الجدولية كما هو) ...
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
