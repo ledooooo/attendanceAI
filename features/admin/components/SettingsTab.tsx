@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Input } from '../../../components/ui/FormElements';
-import { AttendanceRule } from '../../../types'; // تأكد من إضافة الواجهة في types.ts
+import { AttendanceRule } from '../../../types'; 
 import {
   Save, Building, Clock, MapPin, Calculator, Link as LinkIcon,
   Plus, Trash2, Loader2, Locate, Settings2
@@ -38,7 +38,6 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
     fetchRules();
   }, []);
 
-  // --- جلب البيانات ---
   const fetchSettings = async () => {
     try {
       const { data } = await supabase.from('general_settings').select('*').limit(1).maybeSingle();
@@ -70,7 +69,25 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
       if (data) setRules(data);
   };
 
-  // --- دوال الروابط (القديمة) ---
+  const addRule = async () => {
+      if(!newRule.name || !newRule.start_time || !newRule.end_time) return alert('البيانات ناقصة');
+      
+      const { error } = await supabase.from('attendance_rules').insert(newRule);
+      if(!error) {
+          setNewRule({ name: '', type: 'in', start_time: '', end_time: '', color: 'emerald' });
+          fetchRules();
+      } else {
+          alert(error.message);
+      }
+  };
+
+  const deleteRule = async (id: string) => {
+      if(!confirm('حذف القاعدة؟')) return;
+      await supabase.from('attendance_rules').delete().eq('id', id);
+      fetchRules();
+  };
+
+  // ... (باقي دوال الحفظ والروابط كما هي في كودك القديم، سأضعها هنا للاكتمال)
   const addLink = () => {
       setFormData(prev => ({
           ...prev,
@@ -94,26 +111,6 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
       else setFormData(prev => ({ ...prev, links_urls: list as string[] }));
   };
 
-  // --- دوال قواعد الحضور (الجديدة) ---
-  const addRule = async () => {
-      if(!newRule.name || !newRule.start_time || !newRule.end_time) return alert('البيانات ناقصة');
-      
-      const { error } = await supabase.from('attendance_rules').insert(newRule);
-      if(!error) {
-          setNewRule({ name: '', type: 'in', start_time: '', end_time: '', color: 'emerald' });
-          fetchRules();
-      } else {
-          alert(error.message);
-      }
-  };
-
-  const deleteRule = async (id: string) => {
-      if(!confirm('حذف القاعدة؟')) return;
-      await supabase.from('attendance_rules').delete().eq('id', id);
-      fetchRules();
-  };
-
-  // --- دوال أخرى ---
   const getCurrentLocation = () => {
       if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition((pos) => {
@@ -350,8 +347,8 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                     )}
                 </div>
             </div>
-        </div>
 
+        </div>
     </div>
   );
 }
