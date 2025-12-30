@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Award, Star, TrendingUp, Plus, Save, X } from 'lucide-react';
+import { Award, Star, TrendingUp, Plus, Save, X, Clock, User } from 'lucide-react'; // تم التصحيح هنا
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 
