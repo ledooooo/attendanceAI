@@ -6,30 +6,27 @@ import { Send, CheckSquare, Square, Loader2, Mail, Bug } from 'lucide-react';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-// --- دوال مساعدة قوية لمعالجة البيانات ---
-
-// 1. توحيد تنسيق التاريخ (YYYY-MM-DD) لضمان المطابقة
+// --- دوال مساعدة ---
 const normalizeDate = (dateInput: any): string => {
     if (!dateInput) return "";
-    try {
-        const d = new Date(dateInput);
-        if (isNaN(d.getTime())) return String(dateInput).substring(0, 10);
-        return d.toISOString().slice(0, 10);
-    } catch (e) {
-        return String(dateInput).substring(0, 10);
+    // نحاول التعامل مع التاريخ سواء كان كائن Date أو نص
+    let d = new Date(dateInput);
+    if (isNaN(d.getTime())) {
+        // محاولة اصلاح التنسيق اذا كان نصاً وبه مسافات
+        const str = String(dateInput).trim();
+        d = new Date(str);
     }
+    // إرجاع التاريخ بتنسيق YYYY-MM-DD
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    return String(dateInput).substring(0, 10); // فشل التحويل، نعيد النص كما هو
 };
 
-// 2. تحليل أيام العمل
 const parseWorkDays = (workDays: any): string[] => {
     if (!workDays) return ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
     if (Array.isArray(workDays)) return workDays;
     if (typeof workDays === 'string') return workDays.split(/[,،]/).map(d => d.trim());
     return [];
 };
-
-// 3. تنظيف النصوص للمقارنة
-const cleanId = (id: any) => String(id).trim();
 
 export default function SendReportsTab() {
     
@@ -45,33 +42,18 @@ export default function SendReportsTab() {
     const [fId, setFId] = useState('');
     const [settings, setSettings] = useState<any>(null);
 
-    // Raw Data
-    const [rawAttendance, setRawAttendance] = useState<AttendanceRecord[]>([]);
+    // Leaves (طلبات الإجازات ليست كثيرة عادة، يمكن جلبها كلها)
     const [rawLeaves, setRawLeaves] = useState<LeaveRequest[]>([]);
 
     useEffect(() => { fetchData(); }, [month]); 
 
     const fetchData = async () => {
-        // حساب أول وآخر يوم في الشهر بدقة
-        const [y, m] = month.split('-').map(Number);
-        const daysInMonth = new Date(y, m, 0).getDate();
-        const startOfMonth = `${month}-01`;
-        const endOfMonth = `${month}-${daysInMonth}`;
-
         const { data: emps } = await supabase.from('employees').select('*').order('name');
         const { data: sett } = await supabase.from('general_settings').select('*').single();
-        
-        // جلب الحضور (معالجة التواريخ تتم لاحقاً)
-        const { data: att } = await supabase.from('attendance')
-            .select('*')
-            .gte('date', startOfMonth)
-            .lte('date', endOfMonth);
-
-        const { data: lvs } = await supabase.from('leave_requests').select('*');
+        const { data: lvs } = await supabase.from('leave_requests').select('*'); // الإجازات عددها قليل مقارنة بالحضور
 
         if (emps) setEmployees(emps);
         if (sett) setSettings(sett);
-        if (att) setRawAttendance(att);
         if (lvs) setRawLeaves(lvs);
     };
 
@@ -91,12 +73,12 @@ export default function SendReportsTab() {
         else setSelectedIds([...selectedIds, id]);
     };
 
-    // --- مولد التقرير (HTML) ---
+    // --- HTML Generator ---
     const generateEmailHTML = (emp: Employee, attendance: AttendanceRecord[], leaves: LeaveRequest[], monthStr: string) => {
-        const daysInMonth = new Date(parseInt(monthStr.split('-')[0]), parseInt(monthStr.split('-')[1]), 0).getDate();
+        const [y, m] = monthStr.split('-').map(Number);
+        const daysInMonth = new Date(y, m, 0).getDate(); // عدد أيام الشهر
         let rowsHTML = '';
         
-        // المتغيرات الإحصائية
         let stats = {
             present: 0,
             absent: 0,
@@ -112,23 +94,17 @@ export default function SendReportsTab() {
             const dayString = String(d).padStart(2, '0');
             const targetDate = `${monthStr}-${dayString}`;
             
-            // تخطي المستقبل
-            if (targetDate > todayStr && monthStr === todayStr.slice(0, 7)) continue;
+            // تخطي الأيام المستقبلية
+            if (targetDate > todayStr) continue;
 
             const dateObj = new Date(targetDate);
             const dayName = DAYS_AR[dateObj.getDay()];
             const isWorkDay = empWorkDays.includes(dayName);
             
-            // البحث عن البصمة باستخدام المطابقة القوية
+            // المطابقة باستخدام الدالة الموحدة
             const att = attendance.find(a => normalizeDate(a.date) === targetDate);
-            
-            const leave = leaves.find(l => 
-                l.status === 'مقبول' && 
-                normalizeDate(l.start_date) <= targetDate && 
-                normalizeDate(l.end_date) >= targetDate
-            );
+            const leave = leaves.find(l => l.status === 'مقبول' && normalizeDate(l.start_date) <= targetDate && normalizeDate(l.end_date) >= targetDate);
 
-            // القيم الافتراضية
             let statusText = 'غياب';
             let rowColor = '#fee2e2'; // أحمر فاتح
             let textColor = '#991b1b'; // أحمر غامق
@@ -136,16 +112,13 @@ export default function SendReportsTab() {
             let outTime = '--:--';
             let dailyHours = 0;
 
-            // 1. حالة الحضور (الأولوية للبصمة)
+            // 1. حضور
             if (att && att.times && att.times.trim().length > 0) {
                 const times = att.times.match(/\d{1,2}:\d{2}/g) || [];
-                
                 if (times.length > 0) {
                     inTime = times[0];
                     if (times.length > 1) {
                         outTime = times[times.length - 1];
-                        
-                        // حساب الساعات
                         const [h1, m1] = inTime.split(':').map(Number);
                         const [h2, m2] = outTime.split(':').map(Number);
                         let diff = (new Date(0,0,0,h2,m2).getTime() - new Date(0,0,0,h1,m1).getTime()) / 3600000;
@@ -154,51 +127,40 @@ export default function SendReportsTab() {
                     }
                 }
 
-                // تحديد الحالة
                 if (isWorkDay) {
-                    // افتراض التأخير بعد 8:30
                     const [ih, im] = inTime.split(':').map(Number);
                     if (ih > 8 || (ih === 8 && im > 30)) {
                         statusText = 'تأخير';
-                        rowColor = '#fffbeb'; // أصفر
-                        textColor = '#b45309';
+                        rowColor = '#fffbeb'; textColor = '#b45309';
                         stats.late++;
                     } else {
                         statusText = 'حضور';
-                        rowColor = '#ffffff'; // أبيض
-                        textColor = '#166534';
+                        rowColor = '#ffffff'; textColor = '#166534';
                     }
                 } else {
                     statusText = 'إضافي';
-                    rowColor = '#eff6ff'; // أزرق
-                    textColor = '#1e40af';
+                    rowColor = '#eff6ff'; textColor = '#1e40af';
                 }
-
                 stats.present++;
                 stats.totalHours += dailyHours;
 
             } 
-            // 2. حالة الإجازة
+            // 2. إجازة
             else if (leave) {
                 statusText = `إجازة (${leave.type})`;
-                rowColor = '#dcfce7';
-                textColor = '#166534';
-                inTime = 'اجازة';
-                outTime = 'اجازة';
+                rowColor = '#dcfce7'; textColor = '#166534';
+                inTime = 'إجازة'; outTime = 'إجازة';
                 stats.leaves++;
             } 
-            // 3. حالة الراحة / العطلة
+            // 3. راحة
             else if (!isWorkDay) {
                 statusText = 'راحة';
-                rowColor = '#f3f4f6';
-                textColor = '#6b7280';
-                inTime = '-';
-                outTime = '-';
+                rowColor = '#f3f4f6'; textColor = '#6b7280';
+                inTime = '-'; outTime = '-';
             } 
-            // 4. الغياب
+            // 4. غياب
             else {
                 stats.absent++;
-                // القيم الافتراضية (أحمر) تظل كما هي
             }
 
             rowsHTML += `
@@ -211,8 +173,7 @@ export default function SendReportsTab() {
                     <td style="padding: 8px; text-align: center; border-left: 1px solid #e2e8f0; direction:ltr;">${outTime}</td>
                     <td style="padding: 8px; text-align: center; border-left: 1px solid #e2e8f0; font-weight:bold;">${dailyHours > 0 ? dailyHours : '-'}</td>
                     <td style="padding: 8px; text-align: center; font-weight:bold; color:${textColor};">${statusText}</td>
-                </tr>
-            `;
+                </tr>`;
         }
 
         const requestsHTML = leaves.length > 0 
@@ -233,9 +194,10 @@ export default function SendReportsTab() {
             <head>
                 <meta charset="UTF-8">
                 <style>
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f5f9; margin: 0; padding: 20px; direction: rtl; }
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; margin: 0; padding: 20px; direction: rtl; }
                     .container { max-width: 800px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }
                     .header { background: #059669; color: white; padding: 30px; text-align: center; }
+                    .emp-info { background: #ecfdf5; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
                     .section { padding: 20px; border-bottom: 4px solid #f1f5f9; }
                     .section-title { font-size: 16px; font-weight: 800; color: #334155; margin-bottom: 15px; border-right: 4px solid #059669; padding-right: 10px; }
                     table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -248,19 +210,16 @@ export default function SendReportsTab() {
             </head>
             <body>
                 <div class="container">
-                    
                     <div class="header">
-                        <h1 style="margin:0; font-size:24px;">تقرير الحضور الشهري</h1>
-                        <p style="margin:5px 0 0; opacity:0.9;">${monthStr}</p>
+                        <h1 style="margin:0; font-size:24px;">تقرير شهر ${monthStr}</h1>
+                        <p style="margin:5px 0 0; opacity:0.9;">${settings?.center_name || 'المركز الطبي'}</p>
                     </div>
-                    <div style="background:#ecfdf5; padding:15px 20px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
+                    <div class="emp-info">
                         <div>
                             <h2 style="margin:0; font-size:18px; color:#064e3b;">${emp.name}</h2>
                             <p style="margin:2px 0 0; font-size:13px; color:#065f46;">${emp.specialty} | كود: ${emp.employee_id}</p>
                         </div>
-                        <div style="font-size:12px; font-weight:bold; color:#047857;">${settings?.center_name || 'المركز الطبي'}</div>
                     </div>
-
                     <div class="section">
                         <div class="section-title">📊 ملخص الأداء</div>
                         <div class="stats-grid">
@@ -268,45 +227,30 @@ export default function SendReportsTab() {
                             <div class="stat-box" style="background:#fef2f2; color:#991b1b"><span class="stat-val">${stats.absent}</span><span class="stat-lbl">غياب</span></div>
                             <div class="stat-box" style="background:#fffbeb; color:#b45309"><span class="stat-val">${stats.late}</span><span class="stat-lbl">تأخير</span></div>
                             <div class="stat-box" style="background:#faf5ff; color:#7e22ce"><span class="stat-val">${stats.leaves}</span><span class="stat-lbl">إجازة</span></div>
-                            <div class="stat-box" style="background:#eff6ff; color:#1e40af"><span class="stat-val">${stats.totalHours}</span><span class="stat-lbl">ساعات</span></div>
+                            <div class="stat-box" style="background:#eff6ff; color:#1e40af"><span class="stat-val">${stats.totalHours.toFixed(1)}</span><span class="stat-lbl">ساعات</span></div>
                         </div>
                     </div>
-
                     <div class="section">
                         <div class="section-title">📅 السجل اليومي</div>
                         <div style="overflow-x:auto;">
                             <table>
-                                <thead>
-                                    <tr>
-                                        <th style="width:25%">التاريخ</th>
-                                        <th>دخول</th>
-                                        <th>خروج</th>
-                                        <th>ساعات</th>
-                                        <th>الحالة</th>
-                                    </tr>
-                                </thead>
+                                <thead><tr><th style="width:25%">التاريخ</th><th>دخول</th><th>خروج</th><th>ساعات</th><th>الحالة</th></tr></thead>
                                 <tbody>${rowsHTML}</tbody>
                             </table>
                         </div>
                     </div>
-
                     <div class="section">
                         <div class="section-title">📝 الطلبات والإجازات</div>
                         <ul style="list-style:none; padding:0; margin:0;">${requestsHTML}</ul>
                     </div>
-
                     ${linksHTML ? `<div class="section"><div class="section-title">🔗 روابط هامة</div>${linksHTML}</div>` : ''}
-                    
-                    <div style="padding:20px; text-align:center; font-size:11px; color:#94a3b8; background:#f8fafc;">
-                        تم استخراج التقرير آلياً - ${new Date().toLocaleDateString('ar-EG')}
-                    </div>
+                    <div style="padding:20px; text-align:center; font-size:11px; color:#94a3b8; background:#f8fafc;">تم استخراج التقرير آلياً - ${new Date().toLocaleDateString('ar-EG')}</div>
                 </div>
             </body>
             </html>
         `;
     };
 
-    // --- دالة الإرسال (Brevo via Vercel) ---
     const sendViaServer = async (toEmail: string, toName: string, subject: string, htmlContent: string) => {
         try {
             const response = await fetch('/api/send-email', {
@@ -331,15 +275,29 @@ export default function SendReportsTab() {
         let lastError = '';
 
         try {
+            // حساب أيام الشهر المحدد للجلب الدقيق
+            const [y, m] = month.split('-').map(Number);
+            const daysInMonth = new Date(y, m, 0).getDate();
+            const startOfMonth = `${month}-01`;
+            const endOfMonth = `${month}-${daysInMonth}`;
+
             for (const empId of selectedIds) {
                 const emp = employees.find(e => e.id === empId);
                 if (!emp || !emp.email) { failCount++; continue; }
 
-                // تصفية قوية للبيانات المطابقة فقط
-                const empAtt = rawAttendance.filter(a => cleanId(a.employee_id) === cleanId(emp.employee_id));
-                const empLeaves = rawLeaves.filter(l => cleanId(l.employee_id) === cleanId(emp.employee_id));
+                // === التغيير الجذري هنا ===
+                // جلب بيانات الحضور لهذا الموظف تحديداً من قاعدة البيانات مباشرة لتجاوز حد الـ 1000 صف
+                const { data: empAtt } = await supabase
+                    .from('attendance')
+                    .select('*')
+                    .eq('employee_id', emp.employee_id)
+                    .gte('date', startOfMonth)
+                    .lte('date', endOfMonth);
+
+                const empLeaves = rawLeaves.filter(l => l.employee_id === emp.employee_id);
                 
-                const htmlContent = generateEmailHTML(emp, empAtt, empLeaves, month);
+                // استخدام البيانات التي تم جلبها للتو (empAtt) وليس البيانات العامة
+                const htmlContent = generateEmailHTML(emp, empAtt || [], empLeaves, month);
                 const subject = `تقرير شهر ${month} - ${emp.name}`;
 
                 const result = await sendViaServer(emp.email, emp.name, subject, htmlContent);
@@ -360,6 +318,35 @@ export default function SendReportsTab() {
         }
     };
 
+    // --- زر الفحص (Debug) محدث أيضاً ---
+    const handleDebug = async () => {
+        if (selectedIds.length === 0) return alert("اختر موظفاً واحداً للفحص");
+        const emp = employees.find(e => e.id === selectedIds[0]);
+        if (!emp) return;
+
+        const startOfMonth = `${month}-01`;
+        const endOfMonth = `${month}-31`;
+
+        // جلب خاص لهذا الموظف للفحص
+        const { data: dbAtt } = await supabase
+            .from('attendance')
+            .select('*')
+            .eq('employee_id', emp.employee_id)
+            .gte('date', startOfMonth)
+            .lte('date', endOfMonth);
+
+        let msg = `فحص الموظف: ${emp.name} (${emp.employee_id})\n`;
+        msg += `الفترة: ${month}\n`;
+        msg += `عدد السجلات في القاعدة: ${dbAtt?.length || 0}\n`;
+        
+        if (dbAtt && dbAtt.length > 0) {
+            msg += `\nأول سجل: ${dbAtt[0].date} - ${dbAtt[0].times}`;
+        } else {
+            msg += `\n⚠️ لا توجد سجلات. تأكد من أن كود الموظف في ملف البصمة هو "${emp.employee_id}"`;
+        }
+        alert(msg);
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Mail className="text-emerald-600"/> إرسال التقارير الشهرية</h2>
@@ -376,7 +363,12 @@ export default function SendReportsTab() {
                     <button onClick={toggleSelectAll} className="flex items-center gap-2 font-bold text-gray-600 hover:text-emerald-600">
                         {selectedIds.length === filteredEmployees.length && filteredEmployees.length > 0 ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>} تحديد الكل ({filteredEmployees.length})
                     </button>
-                    <div className="text-sm font-bold text-gray-500 pt-1">محدد: {selectedIds.length}</div>
+                    <div className="flex gap-2">
+                         <button onClick={handleDebug} className="flex items-center gap-1 bg-amber-100 text-amber-800 px-3 py-1 rounded-lg text-xs font-bold hover:bg-amber-200 transition-colors">
+                            <Bug className="w-4 h-4"/> فحص البيانات
+                        </button>
+                        <div className="text-sm font-bold text-gray-500 pt-1">محدد: {selectedIds.length}</div>
+                    </div>
                 </div>
                 <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
                     <table className="w-full text-sm text-right min-w-[600px]">
