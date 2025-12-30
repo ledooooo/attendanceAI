@@ -6,7 +6,7 @@ import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import * as XLSX from 'xlsx';
 import { 
   Download, Users, ArrowRight, User, Clock, FileText, 
-  Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart
+  Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, RefreshCw
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -39,6 +39,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   const [fSpec, setFSpec] = useState('all');
   const [fStatus, setFStatus] = useState('all');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false); // حالة زر المزامنة
   const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'employee_id' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [detailTab, setDetailTab] = useState('profile');
@@ -93,10 +94,25 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       onRefresh();
   };
 
-  // اختصار لفتح الإحصائيات مباشرة
   const openStats = (emp: Employee) => {
       setSelectedEmp(emp);
       setDetailTab('stats');
+  };
+
+  // --- دالة المزامنة الجديدة ---
+  const handleSyncBalances = async () => {
+      if (!confirm('هل تريد إعادة حساب أرصدة الإجازات لجميع الموظفين بناءً على الطلبات المقبولة؟')) return;
+      setIsSyncing(true);
+      try {
+          const { error } = await supabase.rpc('recalculate_all_balances');
+          if (error) throw error;
+          alert('تم تحديث جميع الأرصدة بنجاح ✅');
+          onRefresh(); // إعادة تحميل بيانات الجدول
+      } catch (err: any) {
+          alert('حدث خطأ: ' + err.message);
+      } finally {
+          setIsSyncing(false);
+      }
   };
 
   const handleDownloadSample = () => {
@@ -197,7 +213,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                   {detailTab === 'profile' && <StaffProfile employee={selectedEmp} isEditable={true} onUpdate={onRefresh} />}
                   {detailTab === 'attendance' && <StaffAttendance attendance={empData.attendance} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={selectedEmp} />}
                   
-                  {/* هنا التعديل: تمرير بيانات الموظف للحسابات */}
                   {detailTab === 'stats' && <StaffStats 
                         attendance={empData.attendance} 
                         evals={empData.evals} 
@@ -233,12 +248,23 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-center">
+            {/* زر المزامنة الجديد */}
+            <button 
+                onClick={handleSyncBalances}
+                disabled={isSyncing}
+                className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-100 transition-all shadow-sm text-sm"
+                title="إعادة حساب الأرصدة المتبقية بناءً على الطلبات المقبولة"
+            >
+                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}/> 
+                {isSyncing ? 'جاري الحساب...' : 'مزامنة الأرصدة'}
+            </button>
+
             <button 
                 onClick={handleDownloadSample} 
                 className="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 hover:text-blue-600 transition-all shadow-sm text-sm"
             >
-                <Download className="w-4 h-4"/> تحميل نموذج شامل
+                <Download className="w-4 h-4"/> نموذج إكسيل
             </button>
             <ExcelUploadButton onData={handleExcelImport} label={isProcessing ? "جاري المزامنة..." : "رفع ملف إكسيل"} />
         </div>
