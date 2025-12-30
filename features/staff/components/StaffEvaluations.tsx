@@ -1,166 +1,316 @@
 import React, { useState } from 'react';
-import { Award, Star, TrendingUp, Plus, Save, X, Clock, User } from 'lucide-react'; // تم التصحيح هنا
+import { Award, Star, TrendingUp, Plus, Save, X, Edit, Trash2, CheckSquare } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 
 interface Props {
     evals: any[];
-    employee?: Employee; // مطلوب للمدير
-    isAdmin?: boolean;   // هل المستخدم مدير؟
-    onUpdate?: () => void; // لتحديث البيانات بعد الحفظ
+    employee?: Employee;
+    isAdmin?: boolean;
+    onUpdate?: () => void;
 }
 
 export default function StaffEvaluations({ evals, employee, isAdmin = false, onUpdate }: Props) {
-    const [showAddForm, setShowAddForm] = useState(false);
-    const [newEval, setNewEval] = useState({
+    const [showForm, setShowForm] = useState(false);
+    const [editMode, setEditMode] = useState(false);
+    const [currentEvalId, setCurrentEvalId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    
+    // الحالة الأولية للنموذج
+    const initialFormState = {
         month: new Date().toISOString().slice(0, 7),
-        score_performance: 0,
-        score_attendance: 0,
-        score_appearance: 0,
+        score_appearance: 0, // 10
+        score_attendance: 0, // 20
+        score_quality: 0,    // 10
+        score_infection: 0,  // 10
+        score_training: 0,   // 20
+        score_records: 0,    // 20
+        score_tasks: 0,      // 10
         notes: ''
-    });
+    };
 
+    const [formData, setFormData] = useState(initialFormState);
+
+    // دالة لفتح وضع التعديل
+    const openEdit = (evalItem: any) => {
+        setFormData({
+            month: evalItem.month,
+            score_appearance: evalItem.score_appearance || 0,
+            score_attendance: evalItem.score_attendance || 0,
+            score_quality: evalItem.score_quality || 0,
+            score_infection: evalItem.score_infection || 0,
+            score_training: evalItem.score_training || 0,
+            score_records: evalItem.score_records || 0,
+            score_tasks: evalItem.score_tasks || 0,
+            notes: evalItem.notes || ''
+        });
+        setCurrentEvalId(evalItem.id);
+        setEditMode(true);
+        setShowForm(true);
+        // سكرول للنموذج
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    // دالة الحفظ (إضافة أو تعديل)
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!employee) return;
+        setLoading(true);
 
-        // حساب الدرجة النهائية
-        const total = Math.round(
-            (Number(newEval.score_performance) + Number(newEval.score_attendance) + Number(newEval.score_appearance)) / 3
-        );
+        // حساب المجموع تلقائياً
+        const total = 
+            Number(formData.score_appearance) + 
+            Number(formData.score_attendance) + 
+            Number(formData.score_quality) + 
+            Number(formData.score_infection) + 
+            Number(formData.score_training) + 
+            Number(formData.score_records) + 
+            Number(formData.score_tasks);
 
-        const { error } = await supabase.from('evaluations').insert({
+        const payload = {
             employee_id: employee.employee_id,
-            month: newEval.month,
-            score_performance: newEval.score_performance,
-            score_attendance: newEval.score_attendance,
-            score_appearance: newEval.score_appearance,
+            month: formData.month,
+            year: parseInt(formData.month.split('-')[0]),
+            score_appearance: Number(formData.score_appearance),
+            score_attendance: Number(formData.score_attendance),
+            score_quality: Number(formData.score_quality),
+            score_infection: Number(formData.score_infection),
+            score_training: Number(formData.score_training),
+            score_records: Number(formData.score_records),
+            score_tasks: Number(formData.score_tasks),
             total_score: total,
-            notes: newEval.notes
-        });
+            notes: formData.notes
+        };
 
-        if (!error) {
-            alert('تم حفظ التقييم بنجاح ✅');
-            setShowAddForm(false);
-            setNewEval({ month: new Date().toISOString().slice(0, 7), score_performance: 0, score_attendance: 0, score_appearance: 0, notes: '' });
+        try {
+            let error;
+            if (editMode && currentEvalId) {
+                // تعديل
+                const res = await supabase.from('evaluations').update(payload).eq('id', currentEvalId);
+                error = res.error;
+            } else {
+                // إضافة جديد
+                const res = await supabase.from('evaluations').insert(payload);
+                error = res.error;
+            }
+
+            if (error) throw error;
+
+            alert(editMode ? 'تم تعديل التقييم بنجاح ✅' : 'تم إضافة التقييم بنجاح ✅');
+            setShowForm(false);
+            setEditMode(false);
+            setFormData(initialFormState);
             if (onUpdate) onUpdate();
-        } else {
-            alert('حدث خطأ: ' + error.message);
+
+        } catch (err: any) {
+            alert('حدث خطأ: ' + err.message);
+        } finally {
+            setLoading(false);
         }
     };
 
+    // دالة لحذف التقييم (اختياري)
+    const handleDelete = async (id: string) => {
+        if (!confirm('هل أنت متأكد من حذف هذا التقييم؟')) return;
+        const { error } = await supabase.from('evaluations').delete().eq('id', id);
+        if (!error && onUpdate) onUpdate();
+    };
+
+    // حساب المجموع الحالي للعرض المباشر أثناء الكتابة
+    const currentTotal = 
+        Number(formData.score_appearance) + 
+        Number(formData.score_attendance) + 
+        Number(formData.score_quality) + 
+        Number(formData.score_infection) + 
+        Number(formData.score_training) + 
+        Number(formData.score_records) + 
+        Number(formData.score_tasks);
+
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
-            {/* رأس الصفحة وزر الإضافة للمدير */}
-            <div className="flex justify-between items-center">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b pb-4">
                 <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800">
-                    <Award className="text-yellow-500 w-7 h-7" /> التقييمات الشهرية
+                    <Award className="text-purple-600 w-7 h-7" /> التقييمات الشهرية
                 </h3>
-                {isAdmin && !showAddForm && (
+                {isAdmin && !showForm && (
                     <button 
-                        onClick={() => setShowAddForm(true)}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
+                        onClick={() => { 
+                            setEditMode(false); 
+                            setFormData(initialFormState); 
+                            setShowForm(true); 
+                        }} 
+                        className="bg-purple-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg hover:shadow-purple-200"
                     >
-                        <Plus className="w-5 h-5"/> إضافة تقييم
+                        <Plus className="w-5 h-5"/> تقييم جديد
                     </button>
                 )}
             </div>
 
-            {/* نموذج الإضافة (للمدير فقط) */}
-            {showAddForm && isAdmin && (
-                <div className="bg-gray-50 border border-blue-200 rounded-[2.5rem] p-6 mb-6 shadow-sm">
-                    <div className="flex justify-between items-center mb-4">
-                        <h4 className="font-bold text-blue-800">تقييم جديد</h4>
-                        <button onClick={() => setShowAddForm(false)} className="bg-white p-2 rounded-full hover:text-red-500 transition-colors"><X className="w-5 h-5"/></button>
+            {/* Form */}
+            {showForm && isAdmin && (
+                <div className="bg-gray-50 border border-purple-200 rounded-[2.5rem] p-6 mb-8 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-20 h-20 bg-purple-100 rounded-bl-full opacity-50 pointer-events-none"></div>
+                    
+                    <div className="flex justify-between items-center mb-6 relative z-10">
+                        <h4 className="font-bold text-purple-800 text-lg flex items-center gap-2">
+                            {editMode ? <Edit className="w-5 h-5"/> : <Plus className="w-5 h-5"/>}
+                            {editMode ? 'تعديل التقييم الحالي' : 'إضافة تقييم شهر جديد'}
+                        </h4>
+                        <button onClick={() => setShowForm(false)} className="bg-white p-2 rounded-full text-gray-500 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm">
+                            <X className="w-5 h-5"/>
+                        </button>
                     </div>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">الشهر</label>
-                                <input type="month" required className="w-full p-3 rounded-xl border border-gray-300" 
-                                    value={newEval.month} onChange={e => setNewEval({...newEval, month: e.target.value})} />
+
+                    <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="md:col-span-2 lg:col-span-1">
+                                <label className="block text-xs font-bold text-gray-500 mb-1.5">شهر التقييم</label>
+                                <input 
+                                    type="month" 
+                                    required 
+                                    className="w-full p-3 rounded-xl border border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none transition-all font-bold text-gray-700" 
+                                    value={formData.month} 
+                                    onChange={e => setFormData({...formData, month: e.target.value})} 
+                                    disabled={editMode} // منع تغيير التاريخ عند التعديل لمنع التضارب
+                                />
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">الأداء الفني (100%)</label>
-                                <input type="number" min="0" max="100" required className="w-full p-3 rounded-xl border border-gray-300" 
-                                    value={newEval.score_performance} onChange={e => setNewEval({...newEval, score_performance: Number(e.target.value)})} />
+                            
+                            <InputGroup label="المظهر العام (10)" max={10} val={formData.score_appearance} setVal={(v)=>setFormData({...formData, score_appearance: v})} />
+                            <InputGroup label="لجان الجودة (10)" max={10} val={formData.score_quality} setVal={(v)=>setFormData({...formData, score_quality: v})} />
+                            <InputGroup label="مكافحة العدوى (10)" max={10} val={formData.score_infection} setVal={(v)=>setFormData({...formData, score_infection: v})} />
+                            
+                            <InputGroup label="الحضور والغياب (20)" max={20} val={formData.score_attendance} setVal={(v)=>setFormData({...formData, score_attendance: v})} />
+                            <InputGroup label="التدريب (20)" max={20} val={formData.score_training} setVal={(v)=>setFormData({...formData, score_training: v})} />
+                            <InputGroup label="الملفات الطبية (20)" max={20} val={formData.score_records} setVal={(v)=>setFormData({...formData, score_records: v})} />
+                            <InputGroup label="أداء الأعمال (10)" max={10} val={formData.score_tasks} setVal={(v)=>setFormData({...formData, score_tasks: v})} />
+                        </div>
+
+                        <div className="flex flex-col md:flex-row gap-4 items-stretch">
+                            <div className="flex-1">
+                                <label className="block text-xs font-bold text-gray-500 mb-1.5">ملاحظات المدير</label>
+                                <textarea 
+                                    className="w-full p-3 rounded-xl border border-gray-300 focus:border-purple-500 outline-none h-24 text-sm resize-none"
+                                    placeholder="اكتب أي ملاحظات إضافية هنا..." 
+                                    value={formData.notes} 
+                                    onChange={e => setFormData({...formData, notes: e.target.value})}
+                                ></textarea>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">الالتزام والمواعيد (100%)</label>
-                                <input type="number" min="0" max="100" required className="w-full p-3 rounded-xl border border-gray-300" 
-                                    value={newEval.score_attendance} onChange={e => setNewEval({...newEval, score_attendance: Number(e.target.value)})} />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-1">المظهر والسلوك (100%)</label>
-                                <input type="number" min="0" max="100" required className="w-full p-3 rounded-xl border border-gray-300" 
-                                    value={newEval.score_appearance} onChange={e => setNewEval({...newEval, score_appearance: Number(e.target.value)})} />
+                            <div className="w-full md:w-48 bg-purple-600 rounded-2xl p-4 flex flex-col items-center justify-center text-white shadow-lg">
+                                <span className="text-xs font-bold opacity-80 mb-1">المجموع الكلي</span>
+                                <span className="text-4xl font-black">{currentTotal}</span>
+                                <span className="text-xs opacity-60">من 100</span>
                             </div>
                         </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1">ملاحظات</label>
-                            <textarea className="w-full p-3 rounded-xl border border-gray-300 h-20"
-                                value={newEval.notes} onChange={e => setNewEval({...newEval, notes: e.target.value})}></textarea>
-                        </div>
-                        <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 flex justify-center items-center gap-2">
-                            <Save className="w-5 h-5"/> حفظ التقييم
+
+                        <button 
+                            type="submit" 
+                            disabled={loading}
+                            className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 flex justify-center items-center gap-2 transition-all shadow-xl hover:shadow-2xl disabled:opacity-70"
+                        >
+                            <Save className="w-5 h-5"/> {loading ? 'جاري الحفظ...' : 'حفظ التقييم'}
                         </button>
                     </form>
                 </div>
             )}
 
-            {/* قائمة التقييمات السابقة */}
+            {/* List */}
             <div className="grid gap-4">
                 {evals.length === 0 ? (
-                    <div className="text-center py-10 bg-gray-50 rounded-3xl border border-dashed border-gray-300">
-                        <p className="text-gray-400 font-bold">لا توجد تقييمات مسجلة بعد</p>
+                    <div className="text-center py-12 bg-gray-50 rounded-[2.5rem] border border-dashed border-gray-200">
+                        <Award className="w-12 h-12 text-gray-300 mx-auto mb-3"/>
+                        <p className="text-gray-400 font-bold">لا توجد تقييمات مسجلة لهذا الموظف بعد</p>
                     </div>
-                ) : evals.map((evalItem) => (
-                    <div key={evalItem.id} className="bg-white p-5 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6 hover:shadow-md transition-shadow relative overflow-hidden group">
-                        <div className={`absolute top-0 right-0 w-2 h-full ${evalItem.total_score >= 90 ? 'bg-emerald-500' : evalItem.total_score >= 75 ? 'bg-blue-500' : evalItem.total_score >= 50 ? 'bg-yellow-500' : 'bg-red-500'}`}></div>
-                        
-                        <div className="flex flex-col items-center justify-center min-w-[100px] border-l pl-6 border-gray-100">
-                            <div className="relative">
-                                <Star className={`w-12 h-12 ${evalItem.total_score >= 90 ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />
-                                <span className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-xs font-black text-gray-700 pt-1">
-                                    {evalItem.total_score}%
-                                </span>
+                ) : evals.map((ev) => (
+                    <div key={ev.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col lg:flex-row gap-6 relative group overflow-hidden transition-all hover:shadow-md">
+                        {/* الشريط الملون للدرجة */}
+                        <div className={`absolute top-0 right-0 w-2 h-full transition-colors ${
+                            ev.total_score >= 90 ? 'bg-emerald-500' : 
+                            ev.total_score >= 75 ? 'bg-blue-500' : 
+                            ev.total_score >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                        }`}></div>
+
+                        {/* قسم الدرجة والتاريخ */}
+                        <div className="flex lg:flex-col items-center justify-between lg:justify-center min-w-[120px] lg:border-l lg:pl-6 border-gray-100 pb-4 lg:pb-0 border-b lg:border-b-0">
+                            <div className="text-center">
+                                <span className="text-4xl font-black text-gray-800 block">{ev.total_score}</span>
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">الإجمالي</span>
                             </div>
-                            <span className="text-sm font-bold text-gray-600 mt-2">{evalItem.month}</span>
+                            <div className="bg-gray-100 px-3 py-1 rounded-lg mt-2 lg:mt-4">
+                                <span className="text-sm font-bold text-gray-600 font-mono">{ev.month}</span>
+                            </div>
                         </div>
 
-                        <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-4">
-                            <div className="bg-blue-50 p-3 rounded-2xl">
-                                <span className="text-[10px] text-blue-600 font-bold block mb-1">الأداء الفني</span>
-                                <div className="flex items-center gap-1">
-                                    <TrendingUp className="w-4 h-4 text-blue-600"/>
-                                    <span className="text-lg font-black text-gray-800">{evalItem.score_performance}%</span>
-                                </div>
-                            </div>
-                            <div className="bg-purple-50 p-3 rounded-2xl">
-                                <span className="text-[10px] text-purple-600 font-bold block mb-1">الالتزام</span>
-                                <div className="flex items-center gap-1">
-                                    <Clock className="w-4 h-4 text-purple-600"/>
-                                    <span className="text-lg font-black text-gray-800">{evalItem.score_attendance}%</span>
-                                </div>
-                            </div>
-                            <div className="bg-orange-50 p-3 rounded-2xl">
-                                <span className="text-[10px] text-orange-600 font-bold block mb-1">المظهر</span>
-                                <div className="flex items-center gap-1">
-                                    <User className="w-4 h-4 text-orange-600"/>
-                                    <span className="text-lg font-black text-gray-800">{evalItem.score_appearance}%</span>
-                                </div>
-                            </div>
-                            {evalItem.notes && (
-                                <div className="col-span-2 md:col-span-3 bg-gray-50 p-3 rounded-2xl mt-1">
-                                    <p className="text-xs text-gray-500 font-medium line-clamp-2">
-                                        <span className="font-bold text-gray-700">ملاحظات:</span> {evalItem.notes}
+                        {/* التفاصيل */}
+                        <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            <ScoreItem label="المظهر" val={ev.score_appearance} max={10} color="orange"/>
+                            <ScoreItem label="الحضور" val={ev.score_attendance} max={20} color="purple"/>
+                            <ScoreItem label="الجودة" val={ev.score_quality} max={10} color="blue"/>
+                            <ScoreItem label="العدوى" val={ev.score_infection} max={10} color="red"/>
+                            <ScoreItem label="التدريب" val={ev.score_training} max={20} color="green"/>
+                            <ScoreItem label="الملفات" val={ev.score_records} max={20} color="indigo"/>
+                            <ScoreItem label="الأعمال" val={ev.score_tasks} max={10} color="pink"/>
+                            
+                            {/* الملاحظات */}
+                            {ev.notes && (
+                                <div className="col-span-2 sm:col-span-3 md:col-span-4 bg-gray-50 p-3 rounded-2xl mt-2 border border-gray-100">
+                                    <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                                        <span className="font-bold text-gray-700 block mb-1">ملاحظات:</span> 
+                                        {ev.notes}
                                     </p>
                                 </div>
                             )}
                         </div>
+
+                        {/* أزرار التحكم للمدير */}
+                        {isAdmin && (
+                            <div className="flex lg:flex-col gap-2 justify-end items-center border-t lg:border-t-0 lg:border-r lg:pr-6 pt-4 lg:pt-0 border-gray-100">
+                                <button 
+                                    onClick={() => openEdit(ev)} 
+                                    className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors tooltip"
+                                    title="تعديل"
+                                >
+                                    <Edit className="w-5 h-5"/>
+                                </button>
+                                <button 
+                                    onClick={() => handleDelete(ev.id)} 
+                                    className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors tooltip"
+                                    title="حذف"
+                                >
+                                    <Trash2 className="w-5 h-5"/>
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
         </div>
     );
 }
+
+// مكونات صغيرة للتنظيم
+const InputGroup = ({ label, max, val, setVal }: any) => (
+    <div>
+        <label className="block text-[10px] font-bold text-gray-400 mb-1 flex justify-between">
+            {label} <span className="text-gray-300">Max: {max}</span>
+        </label>
+        <input 
+            type="number" 
+            min="0" 
+            max={max} 
+            className="w-full p-3 rounded-xl border border-gray-200 focus:border-purple-500 outline-none font-bold text-gray-700 text-center" 
+            value={val} 
+            onChange={e => setVal(Math.min(max, Math.max(0, Number(e.target.value))))}
+        />
+    </div>
+);
+
+const ScoreItem = ({ label, val, max, color }: any) => (
+    <div className={`bg-${color}-50 p-3 rounded-2xl border border-${color}-100 flex flex-col items-center justify-center`}>
+        <span className={`text-[10px] font-bold text-${color}-600 mb-1`}>{label}</span>
+        <div className="flex items-baseline gap-0.5">
+            <span className="text-lg font-black text-gray-800">{val}</span>
+            <span className="text-[10px] text-gray-400 font-medium">/{max}</span>
+        </div>
+    </div>
+);
