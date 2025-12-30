@@ -1,59 +1,124 @@
 import React, { useEffect, useState } from 'react';
 import { 
-    Clock, Calendar, Info, AlertCircle, CheckCircle2, 
-    XCircle, Timer, CalendarX, ArrowUpRight, Send
+    Clock, Calendar, CheckCircle2, XCircle, 
+    AlertTriangle, Star, Timer, Briefcase
 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
-import { Employee } from '../../../types';
-import StaffNewRequest from './StaffNewRequest'; // استيراد مكون الطلبات
+import { Employee, AttendanceRule } from '../../../types';
+import StaffNewRequest from './StaffNewRequest';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-// دالة مساعدة لحساب الفرق بين وقتين
-const getTimeDiff = (t1: string, t2: string) => {
+// تحويل الوقت "HH:MM" إلى دقائق للحسابات
+const toMinutes = (timeStr: string) => {
+    if (!timeStr) return 0;
+    const [h, m] = timeStr.split(':').map(Number);
+    return h * 60 + m;
+};
+
+// حساب الفرق بالساعات
+const calcHours = (t1: string, t2: string) => {
     if (!t1 || !t2) return 0;
-    const [h1, m1] = t1.split(':').map(Number);
-    const [h2, m2] = t2.split(':').map(Number);
-    return (h2 * 60 + m2) - (h1 * 60 + m1); // الفرق بالدقائق
+    const diff = toMinutes(t2) - toMinutes(t1);
+    return diff > 0 ? parseFloat((diff / 60).toFixed(1)) : 0;
 };
 
 export default function StaffAttendance({ attendance: initialAttendance, selectedMonth: initialMonth, setSelectedMonth, employee }: { attendance: any[], selectedMonth: string, setSelectedMonth: any, employee: Employee }) {
     const [attendanceData, setAttendanceData] = useState<any[]>(initialAttendance || []);
+    const [rules, setRules] = useState<AttendanceRule[]>([]);
     const [viewMonth, setViewMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7));
-    const [lastUpdate, setLastUpdate] = useState<string>('');
     const [loading, setLoading] = useState(false);
-    
-    // للنافذة المنبثقة عند الضغط على يوم غياب
+    const [monthlyEval, setMonthlyEval] = useState<number | null>(null);
     const [selectedAbsenceDate, setSelectedAbsenceDate] = useState<string | null>(null);
 
-    // 1. جلب البيانات
-    useEffect(() => {
-        const fetchMeta = async () => {
-            const { data } = await supabase.from('general_settings').select('last_attendance_update').limit(1).maybeSingle();
-            if (data?.last_attendance_update) {
-                setLastUpdate(new Date(data.last_attendance_update).toLocaleString('ar-EG', { dateStyle: 'full', timeStyle: 'short' }));
-            }
-        };
-        fetchMeta();
+    // إحصائيات الشهر
+    const [stats, setStats] = useState({
+        present: 0,
+        absent: 0,
+        late: 0,
+        leaves: 0, // سنعتبر الإجازات من جدول الطلبات المقبولة (إذا توفرت) أو الحالة
+        totalHours: 0
+    });
 
-        const fetchAtt = async () => {
+    // 1. جلب البيانات والقواعد
+    useEffect(() => {
+        const fetchData = async () => {
             if (!employee?.employee_id) return;
             setLoading(true);
-            const { data } = await supabase
+
+            // أ) جلب بصمات الشهر
+            // تصحيح: نضمن أننا نجلب كل أيام الشهر
+            const startOfMonth = `${viewMonth}-01`;
+            const endOfMonth = `${viewMonth}-31`; // SQL سيتعامل بذكاء مع الأيام الزائدة
+
+            const { data: attData } = await supabase
                 .from('attendance')
                 .select('*')
                 .eq('employee_id', employee.employee_id)
-                .gte('date', `${viewMonth}-01`)
-                .lte('date', `${viewMonth}-31`);
+                .gte('date', startOfMonth)
+                .lte('date', endOfMonth);
             
-            if (data) setAttendanceData(data);
+            if (attData) setAttendanceData(attData);
+
+            // ب) جلب القواعد
+            const { data: rulesData } = await supabase.from('attendance_rules').select('*');
+            if (rulesData) setRules(rulesData);
+
+            // ج) جلب التقييم الشهري
+            const { data: evalData } = await supabase
+                .from('evaluations')
+                .select('total_score')
+                .eq('employee_id', employee.employee_id)
+                .eq('month', viewMonth)
+                .maybeSingle();
+            
+            setMonthlyEval(evalData ? evalData.total_score : null);
+
             setLoading(false);
         };
 
-        if (employee?.employee_id) fetchAtt();
-        else if (initialAttendance) setAttendanceData(initialAttendance);
-
+        fetchData();
     }, [viewMonth, employee]);
+
+    // 2. حساب الإحصائيات بعد تحميل البيانات
+    useEffect(() => {
+        let present = 0;
+        let late = 0;
+        let totalHours = 0;
+        
+        // نحتاج لحساب عدد أيام الشهر الحالية لمعرفة الغياب
+        const daysInMonth = new Date(Number(viewMonth.split('-')[0]), Number(viewMonth.split('-')[1]), 0).getDate();
+        let validDays = 0;
+
+        // نقوم بعمل Loop لحساب الغياب بدقة
+        for (let i = 1; i <= daysInMonth; i++) {
+            const dateStr = `${viewMonth}-${String(i).padStart(2, '0')}`;
+            const dateObj = new Date(dateStr);
+            if (dateObj.getDay() === 5) continue; // تخطي الجمعة
+            if (dateObj > new Date()) continue; // تخطي المستقبل
+
+            validDays++;
+            const record = attendanceData.find(a => a.date === dateStr);
+            
+            if (record) {
+                present++;
+                const info = analyzeDay(record, rules);
+                if (info.inStatus.includes('تأخير') || info.inStatusColor === 'orange' || info.inStatusColor === 'red') {
+                    late++;
+                }
+                totalHours += info.hours;
+            }
+        }
+
+        setStats({
+            present,
+            absent: validDays - present, // أيام العمل الماضية - أيام الحضور
+            late,
+            leaves: 0, // يمكن ربطها بجدول الإجازات لاحقاً
+            totalHours
+        });
+
+    }, [attendanceData, rules, viewMonth]);
 
     const handleMonthChange = (e: any) => {
         const val = e.target.value;
@@ -61,192 +126,187 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         if (setSelectedMonth) setSelectedMonth(val);
     };
 
-    // 2. تحليل حالة الحضور والانصراف
-    const analyzeDay = (dateStr: string, attRecord: any) => {
+    // 3. دالة تحليل اليوم بناءً على القواعد
+    const analyzeDay = (attRecord: any, rulesList: AttendanceRule[]) => {
         const times = attRecord?.times?.match(/\d{1,2}:\d{2}/g) || [];
-        const cin = times[0];
-        const cout = times.length > 1 ? times[times.length - 1] : null;
+        // نفترض أن أول وقت هو دخول وآخر وقت هو خروج
+        // ملاحظة: قد تحتاج لترتيب الأوقات if they come unsorted
+        const sortedTimes = times.sort(); 
+        const cin = sortedTimes[0];
+        const cout = sortedTimes.length > 1 ? sortedTimes[sortedTimes.length - 1] : null;
         
-        let inStatus = '-';
-        let outStatus = '-';
+        let inStatus = 'غير محدد';
+        let inStatusColor = 'gray';
+        let outStatus = 'غير محدد';
+        let outStatusColor = 'gray';
         let hours = 0;
 
-        // تحليل التأخير (بناءً على مواعيد الموظف أو الافتراضي 8:30)
-        const workStart = employee.start_time || "08:30";
-        const workEnd = employee.end_time || "14:30";
-
         if (cin) {
-            const diff = getTimeDiff(workStart, cin);
-            inStatus = diff > 15 ? `تأخير ${diff} د` : 'منتظم'; // سماحية 15 دقيقة
+            const cinMins = toMinutes(cin);
+            // البحث عن القاعدة المناسبة
+            const rule = rulesList.find(r => r.type === 'in' && cinMins >= toMinutes(r.start_time) && cinMins <= toMinutes(r.end_time));
+            if (rule) {
+                inStatus = rule.name;
+                inStatusColor = rule.color;
+            } else {
+                inStatus = 'خارج النطاق';
+            }
         }
 
         if (cout) {
-            const diff = getTimeDiff(cout, workEnd);
-            outStatus = diff > 15 ? `انصراف مبكر ${diff} د` : 'منتظم';
-            
-            // حساب ساعات العمل
-            const workedMins = getTimeDiff(cin, cout);
-            hours = workedMins > 0 ? parseFloat((workedMins / 60).toFixed(1)) : 0;
+            const coutMins = toMinutes(cout);
+            const rule = rulesList.find(r => r.type === 'out' && coutMins >= toMinutes(r.start_time) && coutMins <= toMinutes(r.end_time));
+            if (rule) {
+                outStatus = rule.name;
+                outStatusColor = rule.color;
+            } else {
+                outStatus = 'خارج النطاق';
+            }
+            hours = calcHours(cin, cout);
         }
 
-        return { cin, cout, inStatus, outStatus, hours };
+        return { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours };
+    };
+
+    // دالة مساعدة للألوان
+    const getColorClass = (colorName: string) => {
+        const map: any = {
+            'emerald': 'bg-emerald-50 text-emerald-700',
+            'green': 'bg-green-50 text-green-700',
+            'red': 'bg-red-50 text-red-700',
+            'orange': 'bg-orange-50 text-orange-700',
+            'blue': 'bg-blue-50 text-blue-700',
+            'gray': 'bg-gray-50 text-gray-500',
+        };
+        return map[colorName] || map['gray'];
     };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-20">
             
-            {/* --- Header Section --- */}
-            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div>
-                    <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
-                        <Calendar className="text-emerald-600 w-6 h-6" /> سجل الحضور الشهرى
-                    </h3>
-                    {lastUpdate && (
-                        <p className="text-xs text-gray-400 mt-1 font-bold flex items-center gap-1">
-                            <Clock className="w-3 h-3"/> آخر تحديث: {lastUpdate}
-                        </p>
-                    )}
-                </div>
-                
-                <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-2xl border border-gray-100">
-                    <span className="text-xs font-bold text-gray-500 px-2">اختر الشهر:</span>
-                    <input 
-                        type="month" 
-                        value={viewMonth} 
-                        onChange={handleMonthChange} 
-                        className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-emerald-500 transition-colors" 
-                    />
+            {/* Header: اختيار الشهر */}
+            <div className="flex justify-between items-center bg-white p-4 rounded-3xl border shadow-sm">
+                <h3 className="font-black text-gray-800 text-lg flex items-center gap-2">
+                    <Calendar className="text-emerald-600"/> تقرير الحضور
+                </h3>
+                <div className="relative group">
+                     {/* تنسيق مخصص لمدخل الشهر */}
+                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 cursor-pointer hover:border-emerald-500 transition-colors">
+                        <span className="text-sm font-bold text-gray-600">
+                             {new Date(viewMonth).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}
+                        </span>
+                        <input 
+                            type="month" 
+                            value={viewMonth} 
+                            onChange={handleMonthChange}
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        />
+                    </div>
                 </div>
             </div>
 
-            {/* --- Stats Summary (Optional) --- */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 text-center">
-                    <span className="text-xs text-emerald-600 font-bold block mb-1">أيام الحضور</span>
-                    <span className="text-2xl font-black text-emerald-800">{attendanceData.length}</span>
+            {/* Top Stats Bar */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
+                    <div className="p-2 bg-green-50 text-green-600 rounded-full"><CheckCircle2 className="w-5 h-5"/></div>
+                    <span className="text-xl font-black text-gray-800">{stats.present}</span>
+                    <span className="text-[10px] text-gray-400 font-bold">حضور</span>
                 </div>
-                <div className="bg-red-50 p-4 rounded-2xl border border-red-100 text-center">
-                    <span className="text-xs text-red-600 font-bold block mb-1">تأخيرات</span>
-                    <span className="text-2xl font-black text-red-800">
-                        {attendanceData.filter(a => analyzeDay('', a).inStatus.includes('تأخير')).length}
-                    </span>
+                <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
+                    <div className="p-2 bg-red-50 text-red-600 rounded-full"><XCircle className="w-5 h-5"/></div>
+                    <span className="text-xl font-black text-gray-800">{stats.absent}</span>
+                    <span className="text-[10px] text-gray-400 font-bold">غياب</span>
                 </div>
-                 {/* يمكن إضافة المزيد هنا */}
+                <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
+                    <div className="p-2 bg-orange-50 text-orange-600 rounded-full"><AlertTriangle className="w-5 h-5"/></div>
+                    <span className="text-xl font-black text-gray-800">{stats.late}</span>
+                    <span className="text-[10px] text-gray-400 font-bold">تأخيرات</span>
+                </div>
+                <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
+                    <div className="p-2 bg-blue-50 text-blue-600 rounded-full"><Timer className="w-5 h-5"/></div>
+                    <span className="text-xl font-black text-gray-800">{stats.totalHours.toFixed(0)}</span>
+                    <span className="text-[10px] text-gray-400 font-bold">ساعات عمل</span>
+                </div>
+                <div className="bg-gradient-to-br from-yellow-50 to-orange-50 p-3 rounded-2xl border border-yellow-100 shadow-sm flex flex-col items-center justify-center gap-1 col-span-2 md:col-span-1">
+                    <div className="p-2 bg-yellow-100 text-yellow-600 rounded-full"><Star className="w-5 h-5 fill-yellow-500"/></div>
+                    <span className="text-xl font-black text-yellow-700">{monthlyEval ? `${monthlyEval}%` : '-'}</span>
+                    <span className="text-[10px] text-yellow-600 font-bold">التقييم الشهري</span>
+                </div>
             </div>
 
-            {/* --- Attendance List --- */}
+            {/* Attendance Table */}
             <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
                 <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-sm text-right min-w-[700px]">
-                        <thead className="bg-gray-50/80 font-black text-gray-600 border-b text-xs uppercase tracking-wider">
+                    <table className="w-full text-sm text-right min-w-[800px]">
+                        <thead className="bg-gray-50/80 font-black text-gray-600 border-b text-xs">
                             <tr>
-                                <th className="p-5 w-32">التاريخ</th>
-                                <th className="p-5 w-24">اليوم</th>
-                                <th className="p-5 text-emerald-700">توقيت الحضور</th>
-                                <th className="p-5 text-red-600">توقيت الانصراف</th>
-                                <th className="p-5 text-blue-600">حالة الحضور</th>
-                                <th className="p-5 text-orange-600">حالة الانصراف</th>
-                                <th className="p-5 w-24">ساعات العمل</th>
-                                <th className="p-5 w-20">إجراءات</th>
+                                <th className="p-4 w-32">التاريخ</th>
+                                <th className="p-4">اليوم</th>
+                                <th className="p-4">الحضور</th>
+                                <th className="p-4">الانصراف</th>
+                                <th className="p-4">حالة الحضور</th>
+                                <th className="p-4">حالة الانصراف</th>
+                                <th className="p-4">الساعات</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                             {loading ? (
-                                <tr><td colSpan={8} className="p-10 text-center text-gray-400">جاري تحميل البيانات...</td></tr>
+                                <tr><td colSpan={7} className="p-10 text-center text-gray-400">جاري تحميل البيانات...</td></tr>
                             ) : Array.from({ length: new Date(Number(viewMonth.split('-')[0]), Number(viewMonth.split('-')[1]), 0).getDate() }, (_, i) => {
                                 const day = i + 1;
+                                // BUG FIX: padStart ensures '05' instead of '5'
                                 const dateStr = `${viewMonth}-${String(day).padStart(2, '0')}`;
                                 const dObj = new Date(dateStr);
                                 const isFriday = dObj.getDay() === 5;
                                 const att = attendanceData.find((a:any) => a.date === dateStr);
-                                const { cin, cout, inStatus, outStatus, hours } = analyzeDay(dateStr, att);
-                                
-                                // تحديد الحالة العامة لليوم (غياب/حضور/عطلة)
-                                let rowClass = "hover:bg-gray-50 transition-colors";
-                                let dayStatus = "normal";
+                                const { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours } = analyzeDay(att, rules);
 
-                                if (isFriday) {
-                                    rowClass = "bg-red-50/20"; // عطلة
-                                    dayStatus = "weekend";
-                                } else if (!att) {
-                                    rowClass = "bg-red-50/50 hover:bg-red-100/50 cursor-pointer group"; // غياب
-                                    dayStatus = "absent";
-                                }
+                                // حالة الغياب
+                                const isAbsent = !att && !isFriday && dObj < new Date();
 
                                 return (
                                     <tr 
                                         key={dateStr} 
-                                        className={rowClass}
-                                        onClick={() => dayStatus === 'absent' && setSelectedAbsenceDate(dateStr)}
+                                        className={`
+                                            ${isFriday ? 'bg-red-50/10' : 'hover:bg-gray-50'}
+                                            ${isAbsent ? 'bg-red-50/30 cursor-pointer hover:bg-red-100/30' : ''}
+                                            transition-colors
+                                        `}
+                                        onClick={() => isAbsent && setSelectedAbsenceDate(dateStr)}
                                     >
-                                        <td className="p-5 font-bold text-gray-700">{dateStr}</td>
-                                        <td className={`p-5 font-bold ${isFriday ? 'text-red-400' : 'text-gray-500'}`}>{DAYS_AR[dObj.getDay()]}</td>
+                                        <td className="p-4 font-bold text-gray-700">{dateStr}</td>
+                                        <td className={`p-4 font-bold ${isFriday ? 'text-red-400' : 'text-gray-500'}`}>{DAYS_AR[dObj.getDay()]}</td>
                                         
-                                        {/* الحضور */}
-                                        <td className="p-5">
+                                        <td className="p-4">
+                                            {cin ? <span className="font-mono font-black text-gray-800">{cin}</span> : '--'}
+                                        </td>
+                                        <td className="p-4">
+                                            {cout ? <span className="font-mono font-black text-gray-800">{cout}</span> : '--'}
+                                        </td>
+
+                                        {/* Dynamic Status */}
+                                        <td className="p-4">
                                             {cin ? (
-                                                <span className="font-mono font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{cin}</span>
-                                            ) : dayStatus === 'absent' ? (
-                                                <span className="text-xs font-bold text-red-400 flex items-center gap-1 group-hover:text-red-600 transition-colors">
+                                                <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getColorClass(inStatusColor)}`}>
+                                                    {inStatus}
+                                                </span>
+                                            ) : isAbsent ? (
+                                                <span className="text-red-500 text-xs font-bold flex items-center gap-1">
                                                     <XCircle className="w-3 h-3"/> غياب
                                                 </span>
-                                            ) : (
-                                                <span className="text-gray-300">--</span>
-                                            )}
-                                        </td>
-
-                                        {/* الانصراف */}
-                                        <td className="p-5">
-                                            {cout ? (
-                                                <span className="font-mono font-black text-red-500 bg-red-50 px-2 py-1 rounded-lg">{cout}</span>
-                                            ) : (
-                                                <span className="text-gray-300">--</span>
-                                            )}
-                                        </td>
-
-                                        {/* حالة الحضور */}
-                                        <td className="p-5">
-                                            {inStatus.includes('تأخير') ? (
-                                                <div className="flex items-center gap-1 text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-full w-fit">
-                                                    <AlertCircle className="w-3 h-3"/> {inStatus}
-                                                </div>
-                                            ) : cin ? (
-                                                <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full w-fit">
-                                                    <CheckCircle2 className="w-3 h-3"/> {inStatus}
-                                                </div>
                                             ) : '-'}
                                         </td>
 
-                                        {/* حالة الانصراف */}
-                                        <td className="p-5">
-                                            {outStatus.includes('مبكر') ? (
-                                                <div className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-full w-fit">
-                                                    <ArrowUpRight className="w-3 h-3"/> {outStatus}
-                                                </div>
-                                            ) : cout ? (
-                                                <div className="flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full w-fit">
-                                                    <CheckCircle2 className="w-3 h-3"/> {inStatus}
-                                                </div>
+                                        <td className="p-4">
+                                             {cout ? (
+                                                <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getColorClass(outStatusColor)}`}>
+                                                    {outStatus}
+                                                </span>
                                             ) : '-'}
                                         </td>
 
-                                        {/* الساعات */}
-                                        <td className="p-5">
-                                            {hours > 0 ? (
-                                                <span className="font-mono font-bold text-blue-600">{hours} س</span>
-                                            ) : '-'}
-                                        </td>
-
-                                        {/* الإجراءات */}
-                                        <td className="p-5 text-center">
-                                            {dayStatus === 'absent' && (
-                                                <button 
-                                                    className="p-2 bg-white border border-gray-200 rounded-full hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all shadow-sm group-hover:scale-110"
-                                                    title="تبرير الغياب"
-                                                >
-                                                    <Send className="w-4 h-4"/>
-                                                </button>
-                                            )}
+                                        <td className="p-4 font-mono font-bold text-blue-600">
+                                            {hours > 0 ? hours + ' س' : '-'}
                                         </td>
                                     </tr>
                                 );
@@ -256,34 +316,26 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                 </div>
             </div>
 
-            {/* --- نافذة تقديم الطلب عند الضغط على يوم غياب --- */}
+            {/* Modal for Requesting Leave on Absent Day */}
             {selectedAbsenceDate && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl relative animate-in zoom-in-95 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                        <button 
-                            onClick={() => setSelectedAbsenceDate(null)}
-                            className="absolute top-6 left-6 p-2 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"
-                        >
+                        <button onClick={() => setSelectedAbsenceDate(null)} className="absolute top-6 left-6 p-2 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors">
                             <XCircle className="w-6 h-6"/>
                         </button>
-                        
                         <div className="p-8">
                             <h3 className="text-xl font-black text-gray-800 mb-2 flex items-center gap-2">
-                                <CalendarX className="text-red-500 w-6 h-6"/> تبرير غياب يوم {selectedAbsenceDate}
+                                <Briefcase className="text-red-500 w-6 h-6"/> تبرير غياب يوم {selectedAbsenceDate}
                             </h3>
-                            <p className="text-gray-500 text-sm mb-6 font-medium">يمكنك تقديم طلب إجازة أو مأمورية أو تبرير لهذا اليوم مباشرة.</p>
-                            
-                            {/* استدعاء مكون الطلبات مع تمرير التاريخ تلقائياً */}
                             <StaffNewRequest 
                                 employee={employee} 
-                                refresh={() => { setSelectedAbsenceDate(null); /* هنا يمكن تحديث البيانات */ }} 
-                                initialDate={selectedAbsenceDate} // ميزة نحتاج إضافتها في StaffNewRequest
+                                refresh={() => { setSelectedAbsenceDate(null); }} 
+                                initialDate={selectedAbsenceDate} 
                             />
                         </div>
                     </div>
                 </div>
             )}
-
         </div>
     );
 }
