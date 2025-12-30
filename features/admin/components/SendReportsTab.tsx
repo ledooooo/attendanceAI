@@ -4,28 +4,27 @@ import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { Send, CheckSquare, Square, Loader2, Mail, Bug } from 'lucide-react';
 
-// مصفوفة أيام الأسبوع للمطابقة مع قاعدة البيانات
+// مصفوفة أيام الأسبوع
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
 export default function SendReportsTab() {
     
-    // --- متغيرات الحالة ---
+    // --- State ---
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
     const [sending, setSending] = useState(false);
     
-    // فلاتر
+    // Filters
     const [fSpec, setFSpec] = useState('all');
     const [fStatus, setFStatus] = useState('نشط');
     const [fId, setFId] = useState('');
     const [settings, setSettings] = useState<any>(null);
 
-    // تخزين البيانات الخام للفحص (Debug)
+    // Raw Data
     const [rawAttendance, setRawAttendance] = useState<AttendanceRecord[]>([]);
     const [rawLeaves, setRawLeaves] = useState<LeaveRequest[]>([]);
 
-    // حذفنا emailjs.init من هنا
     useEffect(() => { fetchData(); }, [month]); 
 
     const fetchData = async () => {
@@ -34,12 +33,7 @@ export default function SendReportsTab() {
 
         const { data: emps } = await supabase.from('employees').select('*').order('name');
         const { data: sett } = await supabase.from('general_settings').select('*').single();
-        
-        const { data: att } = await supabase.from('attendance')
-            .select('*')
-            .gte('date', startOfMonth)
-            .lte('date', endOfMonth);
-
+        const { data: att } = await supabase.from('attendance').select('*').gte('date', startOfMonth).lte('date', endOfMonth);
         const { data: lvs } = await supabase.from('leave_requests').select('*');
 
         if (emps) setEmployees(emps);
@@ -64,37 +58,10 @@ export default function SendReportsTab() {
         else setSelectedIds([...selectedIds, id]);
     };
 
-    // --- دوال مساعدة للمقارنة الآمنة ---
     const cleanId = (id: any) => String(id).trim();
     const cleanDate = (date: any) => String(date).substring(0, 10);
 
-    // --- زر الفحص (Debug Button) ---
-    const handleDebug = () => {
-        if (selectedIds.length === 0) return alert("اختر موظفاً واحداً للفحص");
-        const emp = employees.find(e => e.id === selectedIds[0]);
-        if (!emp) return;
-
-        const matchingAtt = rawAttendance.filter(a => cleanId(a.employee_id) === cleanId(emp.employee_id));
-        
-        let msg = `تقرير فحص البيانات للموظف: ${emp.name}\n`;
-        msg += `الكود (ID): "${emp.employee_id}"\n`;
-        msg += `------------------------------------------------\n`;
-        msg += `عدد البصمات الكلي في الشهر: ${rawAttendance.length}\n`;
-        msg += `عدد بصمات هذا الموظف المطابقة: ${matchingAtt.length}\n`;
-        
-        if (matchingAtt.length > 0) {
-            msg += `\nأول 3 بصمات تم العثور عليها:\n`;
-            matchingAtt.slice(0, 3).forEach(a => {
-                msg += `- التاريخ: ${a.date} | الوقت: ${a.times}\n`;
-            });
-        } else {
-            msg += `\n⚠️ مشكلة: لم يتم العثور على أي بصمة تطابق الكود "${emp.employee_id}"\n`;
-        }
-
-        alert(msg);
-    };
-
-    // --- توليد HTML (تم تحسين التصميم قليلاً) ---
+    // --- HTML Generator ---
     const generateEmailHTML = (emp: Employee, attendance: AttendanceRecord[], leaves: LeaveRequest[], monthStr: string) => {
         const daysInMonth = new Date(parseInt(monthStr.split('-')[0]), parseInt(monthStr.split('-')[1]), 0).getDate();
         let rowsHTML = '';
@@ -114,12 +81,10 @@ export default function SendReportsTab() {
             if (att) {
                 status = 'حضور'; rowColor = '#f0fdf4';
                 const timeMatches = att.times.match(/\d{1,2}:\d{2}/g);
-                
                 if (timeMatches && timeMatches.length > 0) {
                     inTime = timeMatches[0];
                     if (timeMatches.length > 1) outTime = timeMatches[timeMatches.length - 1];
                 }
-
                 if (inTime !== '--:--' && outTime !== '--:--') {
                     const [h1, m1] = inTime.split(':').map(Number);
                     const [h2, m2] = outTime.split(':').map(Number);
@@ -140,46 +105,46 @@ export default function SendReportsTab() {
             rowsHTML += `<tr style="background-color:${rowColor};border-bottom:1px solid #e5e7eb;"><td style="padding:10px;border:1px solid #e5e7eb;">${targetDate}</td><td style="padding:10px;border:1px solid #e5e7eb;">${inTime}</td><td style="padding:10px;border:1px solid #e5e7eb;font-weight:bold;">${status}</td><td style="padding:10px;border:1px solid #e5e7eb;">${outTime}</td><td style="padding:10px;border:1px solid #e5e7eb;">${workHours>0?workHours+' س':'-'}</td></tr>`;
         }
 
-        const requestsHTML = leaves.map(l => `<li style="margin-bottom:8px;padding:10px;background:#f8fafc;border-radius:6px;border-right:3px solid ${l.status==='مقبول'?'#22c55e':'#ef4444'};"><div style="display:flex;justify-content:space-between;"><strong>${l.type}</strong><span style="font-size:12px;background:${l.status==='مقبول'?'#dcfce7':'#fee2e2'};color:${l.status==='مقبول'?'#15803d':'#991b1b'};padding:2px 6px;rounded:4px;">${l.status}</span></div><div style="font-size:12px;color:#64748b;margin-top:4px;">من ${l.start_date} إلى ${l.end_date}</div></li>`).join('') || '<li style="color:#94a3b8;font-style:italic;">لا توجد طلبات</li>';
-
-        let linksHTML = '';
-        if (settings?.links_names && settings?.links_urls) {
-            linksHTML = settings.links_names.map((name:string, i:number) => {
-                if(!name || !settings.links_urls[i]) return '';
-                return `<a href="${settings.links_urls[i]}" target="_blank" style="display:block;margin:8px 0;padding:12px;background:#ecfdf5;color:#047857;text-decoration:none;font-weight:bold;border-radius:8px;text-align:center;border:1px solid #6ee7b7;">🔗 ${name}</a>`
-            }).join('');
-        }
-
-        return `<!DOCTYPE html><html dir="rtl" lang="ar"><head><style>body{font-family:'Cairo',sans-serif;background-color:#f1f5f9;margin:0;padding:0}.container{max-width:650px;margin:20px auto;background:white;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0}.header{background:#059669;color:white;padding:30px;text-align:center}.section{padding:25px;border-bottom:1px solid #f1f5f9}.section-title{font-size:18px;font-weight:bold;color:#0f766e;margin-bottom:15px;border-right:4px solid #0d9488;padding-right:12px}table{width:100%;border-collapse:collapse;font-size:13px;text-align:center}th{background:#f1f5f9;padding:12px}.stat-box{padding:10px;border-radius:8px;text-align:center;font-weight:bold}</style></head><body><div class="container"><div class="header"><h2 style="margin:0">تقرير ${monthStr}</h2><p>${emp.name}</p><p style="font-size:12px">${settings?.center_name||''}</p></div><div class="section"><div class="section-title">ملخص الأداء</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px"><div class="stat-box" style="background:#ecfdf5;color:#065f46">${totalPresent} حضور</div><div class="stat-box" style="background:#fef2f2;color:#991b1b">${totalAbsent} غياب</div><div class="stat-box" style="background:#fff7ed;color:#9a3412">${totalLeaves} إجازة</div><div class="stat-box" style="background:#eff6ff;color:#1e40af">${totalHours.toFixed(1)} س</div></div></div><div class="section"><div class="section-title">السجل اليومي</div><div style="overflow-x:auto"><table><thead><tr><th>التاريخ</th><th>دخول</th><th>الحالة</th><th>خروج</th><th>ساعات</th></tr></thead><tbody>${rowsHTML}</tbody></table></div></div><div class="section"><div class="section-title">الطلبات</div><ul style="list-style:none;padding:0">${requestsHTML}</ul></div>${linksHTML ? `<div class="section"><div class="section-title">روابط هامة</div>${linksHTML}</div>` : ''}</div></body></html>`;
+        return `<!DOCTYPE html><html dir="rtl" lang="ar"><body><div style="font-family:sans-serif;max-width:600px;margin:auto;">
+            <h2 style="text-align:center;color:#059669;">تقرير شهر ${monthStr}</h2>
+            <p><strong>الموظف:</strong> ${emp.name}</p>
+            <div style="background:#f3f4f6;padding:15px;margin-bottom:20px;border-radius:8px;">
+                <p><strong>أيام الحضور:</strong> ${totalPresent} | <strong>الغياب:</strong> ${totalAbsent} | <strong>ساعات العمل:</strong> ${totalHours.toFixed(1)}</p>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:center;">
+                <thead><tr style="background:#e5e7eb;"><th>التاريخ</th><th>دخول</th><th>خروج</th><th>الحالة</th></tr></thead>
+                <tbody>${rowsHTML}</tbody>
+            </table>
+        </div></body></html>`;
     };
 
-    // --- الاتصال بـ Brevo عبر Vercel API ---
-    // هذه هي الدالة الوحيدة التي سيتم استخدامها الآن
+    // --- دالة الإرسال عبر السيرفر (Brevo API Only) ---
     const sendViaServer = async (toEmail: string, toName: string, subject: string, htmlContent: string) => {
         try {
-            // نستخدم المسار النسبي، سيعمل تلقائياً على Vercel
+            console.log(`Sending to ${toEmail} via /api/send-email...`); // Debug Log
+            
             const response = await fetch('/api/send-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    toEmail, 
-                    toName, 
-                    subject, 
-                    htmlContent 
-                })
+                body: JSON.stringify({ toEmail, toName, subject, htmlContent })
             });
+
+            // التحقق من أن الاستجابة هي JSON
+            const contentType = response.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                throw new Error("Server response is not JSON. Check Vercel logs.");
+            }
 
             const data = await response.json();
             
             if (!response.ok) {
                 console.error("Brevo Server Error:", data);
-                // لا نظهر alert لكل فشل فردي كي لا نوقف الحلقة، نعتمد على الإحصاء النهائي
-                return false;
+                return { success: false, error: data.error || 'Unknown server error' };
             }
-            return true;
+            return { success: true };
         } catch (error: any) {
-            console.error("Network Error Calling API:", error);
-            return false;
+            console.error("Network/Client Error:", error);
+            return { success: false, error: error.message };
         }
     };
 
@@ -190,29 +155,29 @@ export default function SendReportsTab() {
         setSending(true);
         let successCount = 0;
         let failCount = 0;
+        let lastError = '';
 
         try {
             for (const empId of selectedIds) {
                 const emp = employees.find(e => e.id === empId);
-                // تحقق من وجود الإيميل
-                if (!emp || !emp.email) { 
-                    console.warn(`تجاهل الموظف ${empId} لعدم وجود بريد`);
-                    failCount++; 
-                    continue; 
-                }
+                if (!emp || !emp.email) { failCount++; continue; }
 
                 const empAtt = rawAttendance.filter(a => cleanId(a.employee_id) === cleanId(emp.employee_id));
                 const empLeaves = rawLeaves.filter(l => cleanId(l.employee_id) === cleanId(emp.employee_id));
-
                 const htmlContent = generateEmailHTML(emp, empAtt, empLeaves, month);
                 const subject = `تقرير شهر ${month} - ${emp.name}`;
 
-                // --- الإرسال عبر السيرفر ---
-                const isSent = await sendViaServer(emp.email, emp.name, subject, htmlContent);
+                // استدعاء دالة السيرفر
+                const result = await sendViaServer(emp.email, emp.name, subject, htmlContent);
                 
-                if (isSent) successCount++; else failCount++;
+                if (result.success) {
+                    successCount++;
+                } else {
+                    failCount++;
+                    lastError = result.error || 'Unknown';
+                }
             }
-            alert(`النتيجة:\n✅ تم الإرسال: ${successCount}\n❌ فشل: ${failCount}\n(تأكد من إعدادات Brevo Key في Vercel)`);
+            alert(`النتيجة:\n✅ تم الإرسال: ${successCount}\n❌ فشل: ${failCount}\n${lastError ? 'آخر خطأ: ' + lastError : ''}`);
         } catch (e: any) {
             alert('خطأ غير متوقع: ' + e.message);
         } finally {
@@ -237,17 +202,12 @@ export default function SendReportsTab() {
                     <button onClick={toggleSelectAll} className="flex items-center gap-2 font-bold text-gray-600 hover:text-emerald-600">
                         {selectedIds.length === filteredEmployees.length && filteredEmployees.length > 0 ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>} تحديد الكل ({filteredEmployees.length})
                     </button>
-                    <div className="flex gap-2">
-                         <button onClick={handleDebug} className="flex items-center gap-1 bg-amber-100 text-amber-800 px-3 py-1 rounded-lg text-xs font-bold hover:bg-amber-200 transition-colors">
-                            <Bug className="w-4 h-4"/> فحص البيانات
-                        </button>
-                        <div className="text-sm font-bold text-gray-500 pt-1">محدد: {selectedIds.length}</div>
-                    </div>
+                    <div className="text-sm font-bold text-gray-500 pt-1">محدد: {selectedIds.length}</div>
                 </div>
                 <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
                     <table className="w-full text-sm text-right min-w-[600px]">
                         <thead className="bg-gray-100 font-black text-gray-600 sticky top-0">
-                            <tr><th className="p-4 w-10"></th><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">البريد</th><th className="p-4 text-center">الحالة</th></tr>
+                            <tr><th className="p-4 w-10"></th><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">البريد</th><th className="p-4 text-center">أيام العمل</th></tr>
                         </thead>
                         <tbody>
                             {filteredEmployees.map(emp => (
@@ -256,7 +216,9 @@ export default function SendReportsTab() {
                                     <td className="p-4 font-mono font-bold">{emp.employee_id}</td>
                                     <td className="p-4 font-bold">{emp.name}</td>
                                     <td className="p-4 text-xs font-mono text-gray-500">{emp.email||'-'}</td>
-                                    <td className="p-4 text-center"><span className={`px-2 py-1 rounded text-xs font-bold ${emp.status==='نشط'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{emp.status}</span></td>
+                                    <td className="p-4 text-center text-xs">
+                                        {emp.work_days && emp.work_days.length > 0 ? (emp.work_days.length < 5 ? 'جزئي' : 'كامل') : 'افتراضي'}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
