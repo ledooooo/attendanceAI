@@ -105,14 +105,22 @@ export default function NewsManagementTab() {
     setSubmitting(false);
   };
 
-  const handleDelete = async (id: string) => {
+const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا الخبر؟')) return;
     
-    const { error } = await supabase.from('news_posts').delete().eq('id', id);
-    if (!error) {
-        fetchPosts();
-    } else {
-        alert('فشل الحذف');
+    try {
+        const { error } = await supabase.from('news_posts').delete().eq('id', id);
+        
+        if (error) {
+            console.error("Delete Error:", error);
+            throw error;
+        }
+
+        alert('تم الحذف بنجاح ✅');
+        fetchPosts(); // تحديث القائمة
+    } catch (error: any) {
+        // عرض رسالة الخطأ القادمة من قاعدة البيانات
+        alert('فشل الحذف: ' + (error.message || error.details || 'خطأ غير معروف'));
     }
   };
 
