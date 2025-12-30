@@ -6,7 +6,7 @@ import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import * as XLSX from 'xlsx';
 import { 
   Download, Users, ArrowRight, User, Clock, FileText, 
-  Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown 
+  Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -45,7 +45,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   const [empData, setEmpData] = useState<any>({ attendance: [], requests: [], evals: [], messages: [] });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  // --- دالة جلب بيانات الموظف (تم فصلها لاستخدامها عند التحديث) ---
+  // --- دالة جلب بيانات الموظف ---
   const fetchEmpData = async () => {
     if (!selectedEmp) return;
     const [att, req, evl, msg] = await Promise.all([
@@ -78,7 +78,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       let sortableItems = [...filtered];
       if (sortConfig.key !== null) {
           sortableItems.sort((a, b) => {
+              // @ts-ignore
               if (a[sortConfig.key!] < b[sortConfig.key!]) return sortConfig.direction === 'asc' ? -1 : 1;
+              // @ts-ignore
               if (a[sortConfig.key!] > b[sortConfig.key!]) return sortConfig.direction === 'asc' ? 1 : -1;
               return 0;
           });
@@ -91,8 +93,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       onRefresh();
   };
 
+  // اختصار لفتح الإحصائيات مباشرة
+  const openStats = (emp: Employee) => {
+      setSelectedEmp(emp);
+      setDetailTab('stats');
+  };
+
   const handleDownloadSample = () => {
-    // ... (نفس كود التحميل السابق) ...
     const sampleData = [
       { employee_id: '101', name: 'اسم الموظف', national_id: '29000000000000', specialty: 'طبيب عام', phone: '01000000000', email: 'employee@example.com', gender: 'ذكر', grade: 'أخصائي', photo_url: '', id_front_url: '', id_back_url: '', religion: 'مسلم', work_days: 'Sunday,Monday', start_time: '08:00', end_time: '14:00', leave_annual_balance: 21, leave_casual_balance: 7, total_absence: 0, remaining_annual: 21, remaining_casual: 7, admin_tasks: 'لا يوجد', status: 'نشط', join_date: '2023-01-01', center_id: centerId, training_courses: '', notes: '', maternity: '', role: 'user' }
     ];
@@ -103,7 +110,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   };
 
   const handleExcelImport = async (data: any[]) => {
-    // ... (نفس كود الاستيراد السابق) ...
     setIsProcessing(true);
     try {
         const payload = data.map((row) => ({
@@ -190,10 +196,18 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
               <div className="bg-white p-6 rounded-[30px] border shadow-sm min-h-[500px]">
                   {detailTab === 'profile' && <StaffProfile employee={selectedEmp} isEditable={true} onUpdate={onRefresh} />}
                   {detailTab === 'attendance' && <StaffAttendance attendance={empData.attendance} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={selectedEmp} />}
-                  {detailTab === 'stats' && <StaffStats attendance={empData.attendance} evals={empData.evals} requests={empData.requests} month={selectedMonth} />}
+                  
+                  {/* هنا التعديل: تمرير بيانات الموظف للحسابات */}
+                  {detailTab === 'stats' && <StaffStats 
+                        attendance={empData.attendance} 
+                        evals={empData.evals} 
+                        requests={empData.requests} 
+                        month={selectedMonth} 
+                        employee={selectedEmp} 
+                  />}
+                  
                   {detailTab === 'requests' && <StaffRequestsHistory requests={empData.requests} employee={selectedEmp} />}
                   
-                  {/* هنا التحديث: تمرير isAdmin و onUpdate و employee */}
                   {detailTab === 'evals' && (
                     <StaffEvaluations 
                         evals={empData.evals} 
@@ -209,14 +223,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                         employee={selectedEmp} 
                         currentUserId="admin" 
                     />
-                  )}              
+                  )}                  
               </div>
           </div>
       );
   }
 
   return (
-    // ... (باقي الكود الخاص بالقائمة الجدولية كما هو) ...
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
@@ -257,7 +270,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                           </div>
                       </th>
                       <th className="p-4 text-center">التخصص</th>
-                      <th className="p-4 text-center">تغيير الحالة</th>
+                      <th className="p-4 text-center">إجراءات</th>
                   </tr>
               </thead>
               <tbody>
@@ -273,7 +286,16 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                               </div>
                           </td>
                           <td onClick={() => setSelectedEmp(emp)} className="p-4 text-xs font-bold text-gray-500 text-center cursor-pointer">{emp.specialty}</td>
-                          <td className="p-4 text-center">
+                          <td className="p-4 text-center flex justify-center gap-2 items-center">
+                              {/* زر فتح الإحصائيات السريع */}
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); openStats(emp); }}
+                                className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                                title="عرض الإحصائيات والحصر"
+                              >
+                                  <PieChart className="w-4 h-4"/>
+                              </button>
+                              
                               <select 
                                 value={emp.status || 'نشط'} 
                                 onChange={(e) => updateStatus(emp.id, e.target.value)}
