@@ -12,6 +12,7 @@ interface EveningSchedule {
 export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { employeeId: string, employeeCode: string }) {
   const [schedules, setSchedules] = useState<EveningSchedule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [debugMsg, setDebugMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMySchedule();
@@ -21,7 +22,7 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
     setLoading(true);
     const today = new Date().toISOString().slice(0, 10);
 
-    // 1. جلب الجداول من اليوم وطالع (المستقبلية)
+    // 1. جلب كل الجداول المستقبلية
     const { data, error } = await supabase
       .from('evening_schedules')
       .select('*')
@@ -30,39 +31,53 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
 
     if (error) {
       console.error('Error fetching schedules:', error);
+      setDebugMsg('حدث خطأ في جلب البيانات: ' + error.message);
       setLoading(false);
       return;
     }
 
-    // 2. الفلترة: هل الموظف موجود داخل مصفوفة doctors؟
-    // نفترض أن JSON يخزن إما مصفوفة IDs ["101", "102"] أو كائنات [{id: "101", name: ".."}]
+    console.log("Raw Data from DB:", data); // فحص البيانات في الكونسول
+
+    // 2. الفلترة الذكية
     const myShifts = (data || []).filter((item: EveningSchedule) => {
-      const docs = item.doctors;
+      let docs = item.doctors;
       
-      if (!docs) return false;
-
-      // حالة 1: المصفوفة تحتوي على نصوص مباشرة (أكواد الموظفين)
-      if (Array.isArray(docs) && typeof docs[0] === 'string') {
-        return docs.includes(employeeId) || docs.includes(employeeCode);
+      // إذا كانت البيانات نصاً (Stringified JSON)، نحولها
+      if (typeof docs === 'string') {
+        try { docs = JSON.parse(docs); } catch (e) { return false; }
       }
 
-      // حالة 2: المصفوفة تحتوي على كائنات (نبحث داخل خاصية id أو employee_id)
-      if (Array.isArray(docs) && typeof docs[0] === 'object') {
-        return docs.some((d: any) => 
-            String(d.id) === String(employeeId) || 
-            String(d.employee_id) === String(employeeCode) ||
-            String(d.code) === String(employeeCode)
-        );
-      }
+      if (!Array.isArray(docs)) return false;
 
-      return false;
+      // البحث عن الموظف (سواء كان مخزناً كـ ID أو Code أو Object)
+      return docs.some((d: any) => {
+        // تنظيف القيم للمقارنة (تحويل كله لنصوص)
+        const val = String(d).trim();
+        const empIdStr = String(employeeId).trim();
+        const empCodeStr = String(employeeCode).trim();
+
+        // 1. مقارنة مباشرة (إذا كانت المصفوفة ["101", "102"])
+        if (val === empIdStr || val === empCodeStr) return true;
+
+        // 2. مقارنة كائنات (إذا كانت المصفوفة [{id: "...", name: "..."}])
+        if (typeof d === 'object' && d !== null) {
+          const objId = String(d.id || d.employee_id || d.code || '').trim();
+          return objId === empIdStr || objId === empCodeStr;
+        }
+
+        return false;
+      });
     });
 
     setSchedules(myShifts);
+    
+    if (data && data.length > 0 && myShifts.length === 0) {
+        setDebugMsg(`تم جلب ${data.length} نوبتجية من القاعدة، لكن لم يتم العثور على تطابق مع كودك (${employeeCode}). تأكد من أنك مضاف في الجدول.`);
+    }
+
     setLoading(false);
   };
 
-  // تنسيق التاريخ للعربية
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('ar-EG', {
       weekday: 'long',
@@ -72,7 +87,12 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
     });
   };
 
-  if (loading) return <div className="text-center py-10 text-gray-400">جاري تحميل الجدول...</div>;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center py-12 space-y-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <p className="text-gray-400">جاري البحث عن نوبتجياتك...</p>
+    </div>
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -85,6 +105,13 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
           <p className="text-xs text-gray-500">جدول نوبتجياتك القادمة في العيادة المسائية</p>
         </div>
       </div>
+
+      {/* رسالة تصحيح (تظهر فقط إذا كانت هناك مشكلة في الفلترة) */}
+      {debugMsg && schedules.length === 0 && (
+         <div className="bg-yellow-50 text-yellow-800 p-4 rounded-xl text-xs mb-4 border border-yellow-200">
+            <strong>ملاحظة للنظام:</strong> {debugMsg}
+         </div>
+      )}
 
       {schedules.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 bg-gray-50 rounded-3xl border border-dashed border-gray-300">
@@ -117,7 +144,7 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
               )}
 
               <div className="mt-4 pt-3 border-t flex justify-between items-center text-xs text-gray-400">
-                <span>تم الجدول: {new Date(shift.date).toLocaleDateString('en-GB')}</span>
+                <span>{new Date(shift.date).toLocaleDateString('en-GB')}</span>
                 <span className="flex items-center gap-1"><AlertCircle className="w-3 h-3"/> تأكد من الحضور</span>
               </div>
             </div>
