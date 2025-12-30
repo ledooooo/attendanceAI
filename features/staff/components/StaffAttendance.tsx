@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { 
     Clock, Calendar, CheckCircle2, XCircle, 
-    AlertTriangle, Star, Timer, Briefcase
+    AlertTriangle, Star, Timer, Briefcase, Info
 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRule } from '../../../types';
@@ -29,6 +29,15 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
     const [loading, setLoading] = useState(false);
     const [monthlyEval, setMonthlyEval] = useState<number | null>(null);
     const [selectedAbsenceDate, setSelectedAbsenceDate] = useState<string | null>(null);
+    const [lastUpdate, setLastUpdate] = useState<string>('');
+
+    // تحديد أيام العمل للموظف (الافتراضي: السبت-الخميس)
+    const workDays = employee.work_days && employee.work_days.length > 0 
+        ? employee.work_days 
+        : ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
+    
+    // هل هو دوام جزئي؟
+    const isPartTime = workDays.length < 5;
 
     // إحصائيات الشهر
     const [stats, setStats] = useState({
@@ -38,13 +47,19 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         totalHours: 0
     });
 
-    // 1. جلب البيانات والقواعد
+    // 1. جلب البيانات والقواعد وآخر تحديث
     useEffect(() => {
         const fetchData = async () => {
             if (!employee?.employee_id) return;
             setLoading(true);
 
-            // حساب آخر يوم في الشهر بدقة (لحل مشكلة نوفمبر)
+            // جلب تاريخ آخر تحديث
+            const { data: settings } = await supabase.from('general_settings').select('last_attendance_update').limit(1).maybeSingle();
+            if (settings && settings.last_attendance_update) {
+                setLastUpdate(new Date(settings.last_attendance_update).toLocaleString('ar-EG', { dateStyle: 'full', timeStyle: 'short' }));
+            }
+
+            // حساب تواريخ الشهر
             const [y, m] = viewMonth.split('-').map(Number);
             const daysInMonth = new Date(y, m, 0).getDate();
             const startOfMonth = `${viewMonth}-01`;
@@ -80,7 +95,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         fetchData();
     }, [viewMonth, employee]);
 
-    // 2. تحليل البيانات وتطبيق القواعد
+    // 2. تحليل اليوم (تطبيق القواعد)
     const analyzeDay = (attRecord: any, rulesList: AttendanceRule[]) => {
         const times = attRecord?.times?.match(/\d{1,2}:\d{2}/g) || [];
         const sortedTimes = times.sort(); 
@@ -119,29 +134,35 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         return { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours };
     };
 
-    // 3. حساب الإحصائيات
+    // 3. حساب الإحصائيات بناءً على أيام العمل الفعلية
     useEffect(() => {
         let present = 0;
         let late = 0;
         let totalHours = 0;
+        let requiredDays = 0;
+
         const [y, m] = viewMonth.split('-').map(Number);
         const daysInMonth = new Date(y, m, 0).getDate();
-        let validDays = 0;
 
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = `${viewMonth}-${String(i).padStart(2, '0')}`;
             const dateObj = new Date(dateStr);
-            if (dateObj.getDay() === 5) continue; // تخطي الجمعة
-            if (dateObj > new Date()) continue; // تخطي المستقبل
+            if (dateObj > new Date()) continue; // لا نحسب المستقبل
 
-            validDays++;
+            const dayName = DAYS_AR[dateObj.getDay()];
+            const isWorkDay = workDays.includes(dayName);
             const record = attendanceData.find(a => a.date === dateStr);
             
+            if (isWorkDay) {
+                requiredDays++; // هذا يوم عمل مطلوب
+            }
+
             if (record) {
-                present++;
+                present++; // حضر سواء كان يوم عمل أو إجازة
                 const info = analyzeDay(record, rules);
-                // احتساب التأخير إذا كان اللون برتقالي أو أحمر
-                if (info.inStatusColor === 'orange' || info.inStatusColor === 'red') {
+                
+                // احتساب التأخير فقط في أيام العمل الرسمية
+                if (isWorkDay && (info.inStatusColor === 'orange' || info.inStatusColor === 'red')) {
                     late++;
                 }
                 totalHours += info.hours;
@@ -149,13 +170,14 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         }
 
         setStats({
-            present,
-            absent: validDays - present,
+            present, // عدد أيام الحضور الفعلي
+            absent: Math.max(0, requiredDays - present), // الغياب = الأيام المطلوبة - الأيام التي حضرها (تقريبي)
+            // ملاحظة: الحساب الدقيق للغياب يتطلب طرح أيام الإجازات المقبولة، ولكن للتبسيط هنا
             late,
             totalHours
         });
 
-    }, [attendanceData, rules, viewMonth]);
+    }, [attendanceData, rules, viewMonth, workDays]);
 
     const handleMonthChange = (e: any) => {
         const val = e.target.value;
@@ -178,13 +200,21 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-20">
             
-            {/* Header: اختيار الشهر */}
-            <div className="flex justify-between items-center bg-white p-4 rounded-3xl border shadow-sm">
-                <h3 className="font-black text-gray-800 text-lg flex items-center gap-2">
-                    <Calendar className="text-emerald-600"/> تقرير الحضور
-                </h3>
-                <div className="relative group">
-                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 cursor-pointer hover:border-emerald-500 transition-colors">
+            {/* Header: اختيار الشهر وآخر تحديث */}
+            <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-3xl border shadow-sm gap-4">
+                <div>
+                    <h3 className="font-black text-gray-800 text-lg flex items-center gap-2">
+                        <Calendar className="text-emerald-600"/> تقرير الحضور
+                    </h3>
+                    {lastUpdate && (
+                        <div className="text-[10px] md:text-xs text-blue-600 font-bold mt-2 flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 w-fit">
+                            <Info className="w-3 h-3"/> آخر تحديث: {lastUpdate}
+                        </div>
+                    )}
+                </div>
+
+                <div className="relative group w-full md:w-auto">
+                    <div className="flex items-center justify-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 cursor-pointer hover:border-emerald-500 transition-colors">
                         <span className="text-sm font-bold text-gray-600">
                              {new Date(viewMonth).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}
                         </span>
@@ -203,12 +233,12 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                 <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
                     <div className="p-2 bg-green-50 text-green-600 rounded-full"><CheckCircle2 className="w-5 h-5"/></div>
                     <span className="text-xl font-black text-gray-800">{stats.present}</span>
-                    <span className="text-[10px] text-gray-400 font-bold">حضور</span>
+                    <span className="text-[10px] text-gray-400 font-bold">يوم حضور</span>
                 </div>
                 <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
                     <div className="p-2 bg-red-50 text-red-600 rounded-full"><XCircle className="w-5 h-5"/></div>
                     <span className="text-xl font-black text-gray-800">{stats.absent}</span>
-                    <span className="text-[10px] text-gray-400 font-bold">غياب</span>
+                    <span className="text-[10px] text-gray-400 font-bold">غياب (أيام عمل)</span>
                 </div>
                 <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
                     <div className="p-2 bg-orange-50 text-orange-600 rounded-full"><AlertTriangle className="w-5 h-5"/></div>
@@ -239,7 +269,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                 <th className="p-4">الانصراف</th>
                                 <th className="p-4">حالة الحضور</th>
                                 <th className="p-4">حالة الانصراف</th>
-                                <th className="p-4">الساعات</th>
+                                <th className="p-4">الحالة العامة</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -249,24 +279,30 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                 const day = i + 1;
                                 const dateStr = `${viewMonth}-${String(day).padStart(2, '0')}`;
                                 const dObj = new Date(dateStr);
-                                const isFriday = dObj.getDay() === 5;
                                 const att = attendanceData.find((a:any) => a.date === dateStr);
+                                
+                                // تحديد نوع اليوم
+                                const dayName = DAYS_AR[dObj.getDay()];
+                                const isWorkDay = workDays.includes(dayName);
+                                const isFuture = dObj > new Date();
+
                                 const { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours } = analyzeDay(att, rules);
 
-                                const isAbsent = !att && !isFriday && dObj < new Date();
+                                // تحديد حالة الغياب (فقط إذا كان يوم عمل ولم يحضر وليس في المستقبل)
+                                const isAbsent = !att && isWorkDay && !isFuture;
 
                                 return (
                                     <tr 
                                         key={dateStr} 
                                         className={`
-                                            ${isFriday ? 'bg-red-50/10' : 'hover:bg-gray-50'}
-                                            ${isAbsent ? 'bg-red-50/30 cursor-pointer hover:bg-red-100/30' : ''}
                                             transition-colors
+                                            ${!isWorkDay ? 'bg-gray-50/50' : 'hover:bg-gray-50'}
+                                            ${isAbsent ? 'bg-red-50/30 cursor-pointer hover:bg-red-100/30' : ''}
                                         `}
                                         onClick={() => isAbsent && setSelectedAbsenceDate(dateStr)}
                                     >
                                         <td className="p-4 font-bold text-gray-700">{dateStr}</td>
-                                        <td className={`p-4 font-bold ${isFriday ? 'text-red-400' : 'text-gray-500'}`}>{DAYS_AR[dObj.getDay()]}</td>
+                                        <td className={`p-4 font-bold ${!isWorkDay ? 'text-gray-400' : 'text-gray-600'}`}>{dayName}</td>
                                         
                                         <td className="p-4">
                                             {cin ? <span className="font-mono font-black text-gray-800">{cin}</span> : '--'}
@@ -285,6 +321,8 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                                 <span className="text-red-500 text-xs font-bold flex items-center gap-1">
                                                     <XCircle className="w-3 h-3"/> غياب
                                                 </span>
+                                            ) : !isWorkDay && !isFuture ? (
+                                                <span className="text-gray-400 text-[10px] font-bold">راحة</span>
                                             ) : '-'}
                                         </td>
 
@@ -297,7 +335,16 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                         </td>
 
                                         <td className="p-4 font-mono font-bold text-blue-600">
-                                            {hours > 0 ? hours + ' س' : '-'}
+                                            {hours > 0 ? (
+                                                <span>
+                                                    {hours} س 
+                                                    {!isWorkDay && <span className="text-[10px] text-orange-500 mr-1">(إضافي)</span>}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400 text-xs">
+                                                    {!isWorkDay && !isFuture ? (isPartTime ? 'غير مطالب' : 'عطلة') : '-'}
+                                                </span>
+                                            )}
                                         </td>
                                     </tr>
                                 );
