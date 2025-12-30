@@ -3,13 +3,17 @@ import { supabase } from '../../../supabaseClient';
 import { NewsPost } from '../../../types';
 import { 
   Plus, Trash2, Pin, Image as ImageIcon, 
-  Newspaper, Loader2, Save
+  Newspaper, Loader2, Save, Upload, Link as LinkIcon 
 } from 'lucide-react';
 
 export default function NewsManagementTab() {
   const [posts, setPosts] = useState<NewsPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // حالات الصورة
+  const [imageMode, setImageMode] = useState<'url' | 'upload'>('url');
+  const [imageFile, setImageFile] = useState<File | null>(null);
 
   // نموذج إضافة خبر جديد
   const [formData, setFormData] = useState({
@@ -34,21 +38,65 @@ export default function NewsManagementTab() {
     setLoading(false);
   };
 
+  // دالة رفع الصورة
+  const uploadImage = async (file: File): Promise<string | null> => {
+    try {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        // 1. الرفع
+        const { error: uploadError } = await supabase.storage
+            .from('news-images') // تأكد من إنشاء هذا الـ Bucket في Supabase
+            .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // 2. جلب الرابط
+        const { data } = supabase.storage
+            .from('news-images')
+            .getPublicUrl(filePath);
+
+        return data.publicUrl;
+    } catch (error) {
+        console.error('Upload Error:', error);
+        alert('فشل رفع الصورة، تأكد من إعدادات Storage في Supabase');
+        return null;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title || !formData.content) return alert('العنوان والمحتوى مطلوبان');
 
     setSubmitting(true);
+    
+    let finalImageUrl = formData.image_url;
+
+    // إذا كان الوضع "رفع صورة" وتم اختيار ملف
+    if (imageMode === 'upload' && imageFile) {
+        const uploadedUrl = await uploadImage(imageFile);
+        if (uploadedUrl) {
+            finalImageUrl = uploadedUrl;
+        } else {
+            setSubmitting(false);
+            return; // توقف إذا فشل الرفع
+        }
+    }
+
     const { error } = await supabase.from('news_posts').insert({
       title: formData.title,
       content: formData.content,
-      image_url: formData.image_url || null, // إذا كان فارغاً نرسل null
+      image_url: finalImageUrl || null,
       is_pinned: formData.is_pinned
     });
 
     if (!error) {
       alert('تم نشر الخبر بنجاح ✅');
+      // إعادة تعيين النموذج
       setFormData({ title: '', content: '', image_url: '', is_pinned: false });
+      setImageFile(null);
+      setImageMode('url');
       fetchPosts();
     } else {
       alert('خطأ في النشر: ' + error.message);
@@ -57,7 +105,7 @@ export default function NewsManagementTab() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('هل أنت متأكد من حذف هذا الخبر؟ سيتم حذف التعليقات المرتبطة به أيضاً.')) return;
+    if (!confirm('هل أنت متأكد من حذف هذا الخبر؟')) return;
     
     const { error } = await supabase.from('news_posts').delete().eq('id', id);
     if (!error) {
@@ -118,20 +166,51 @@ export default function NewsManagementTab() {
                             />
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1">رابط الصورة (اختياري)</label>
-                            <input 
-                                type="url" 
-                                className="w-full p-3 rounded-xl border bg-gray-50 outline-none focus:border-emerald-500 font-mono text-xs"
-                                placeholder="https://example.com/image.jpg"
-                                value={formData.image_url}
-                                onChange={e => setFormData({...formData, image_url: e.target.value})}
-                            />
-                            <p className="text-[10px] text-gray-400 mt-1">يفضل استخدام روابط صور مباشرة</p>
+                        {/* قسم اختيار الصورة */}
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                            <label className="block text-sm font-bold text-gray-700 mb-2">صورة الخبر (اختياري)</label>
+                            
+                            {/* أزرار التبديل */}
+                            <div className="flex gap-2 mb-3">
+                                <button 
+                                    type="button"
+                                    onClick={() => setImageMode('url')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors ${imageMode === 'url' ? 'bg-white shadow text-emerald-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                                >
+                                    <LinkIcon className="w-3 h-3"/> رابط خارجي
+                                </button>
+                                <button 
+                                    type="button"
+                                    onClick={() => setImageMode('upload')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors ${imageMode === 'upload' ? 'bg-white shadow text-emerald-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                                >
+                                    <Upload className="w-3 h-3"/> رفع صورة
+                                </button>
+                            </div>
+
+                            {/* حقل الإدخال حسب الوضع */}
+                            {imageMode === 'url' ? (
+                                <input 
+                                    type="url" 
+                                    className="w-full p-2 rounded-lg border outline-none focus:border-emerald-500 font-mono text-xs bg-white"
+                                    placeholder="https://example.com/image.jpg"
+                                    value={formData.image_url}
+                                    onChange={e => setFormData({...formData, image_url: e.target.value})}
+                                />
+                            ) : (
+                                <div className="relative">
+                                    <input 
+                                        type="file" 
+                                        accept="image/*"
+                                        onChange={e => setImageFile(e.target.files ? e.target.files[0] : null)}
+                                        className="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-2 cursor-pointer" onClick={() => setFormData({...formData, is_pinned: !formData.is_pinned})}>
-                            <div className={`w-5 h-5 rounded border flex items-center justify-center ${formData.is_pinned ? 'bg-emerald-600 border-emerald-600' : 'border-gray-300'}`}>
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${formData.is_pinned ? 'bg-emerald-600 border-emerald-600' : 'border-gray-300'}`}>
                                 {formData.is_pinned && <Pin className="w-3 h-3 text-white"/>}
                             </div>
                             <span className="text-sm font-bold text-gray-600">تثبيت الخبر في الأعلى</span>
@@ -140,10 +219,10 @@ export default function NewsManagementTab() {
                         <button 
                             type="submit" 
                             disabled={submitting}
-                            className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex justify-center items-center gap-2"
+                            className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 shadow-lg shadow-emerald-100"
                         >
                             {submitting ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>}
-                            نشر الخبر
+                            {imageMode === 'upload' && imageFile ? 'رفع الصورة ونشر الخبر' : 'نشر الخبر'}
                         </button>
                     </form>
                 </div>
@@ -160,9 +239,9 @@ export default function NewsManagementTab() {
                 ) : (
                     <div className="grid gap-4">
                         {posts.map(post => (
-                            <div key={post.id} className={`bg-white p-4 rounded-2xl border flex gap-4 ${post.is_pinned ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-100'}`}>
+                            <div key={post.id} className={`bg-white p-4 rounded-2xl border flex gap-4 transition-shadow hover:shadow-md ${post.is_pinned ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-100'}`}>
                                 {/* Image Thumbnail */}
-                                <div className="w-20 h-20 bg-gray-100 rounded-xl shrink-0 overflow-hidden">
+                                <div className="w-24 h-24 bg-gray-100 rounded-xl shrink-0 overflow-hidden border border-gray-200">
                                     {post.image_url ? (
                                         <img src={post.image_url} alt="post" className="w-full h-full object-cover"/>
                                     ) : (
@@ -173,30 +252,32 @@ export default function NewsManagementTab() {
                                 </div>
 
                                 {/* Content */}
-                                <div className="flex-1">
-                                    <div className="flex justify-between items-start">
-                                        <h4 className="font-black text-gray-800 text-lg">{post.title}</h4>
-                                        <div className="flex gap-1">
-                                            <button 
-                                                onClick={() => togglePin(post)}
-                                                className={`p-2 rounded-lg transition-colors ${post.is_pinned ? 'text-emerald-600 bg-emerald-100' : 'text-gray-400 hover:bg-gray-100'}`}
-                                                title={post.is_pinned ? "إلغاء التثبيت" : "تثبيت"}
-                                            >
-                                                <Pin className="w-4 h-4"/>
-                                            </button>
-                                            <button 
-                                                onClick={() => handleDelete(post.id)}
-                                                className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
-                                                title="حذف"
-                                            >
-                                                <Trash2 className="w-4 h-4"/>
-                                            </button>
+                                <div className="flex-1 flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex justify-between items-start">
+                                            <h4 className="font-black text-gray-800 text-lg line-clamp-1">{post.title}</h4>
+                                            <div className="flex gap-1">
+                                                <button 
+                                                    onClick={() => togglePin(post)}
+                                                    className={`p-2 rounded-lg transition-colors ${post.is_pinned ? 'text-emerald-600 bg-emerald-100' : 'text-gray-400 hover:bg-gray-100'}`}
+                                                    title={post.is_pinned ? "إلغاء التثبيت" : "تثبيت"}
+                                                >
+                                                    <Pin className="w-4 h-4"/>
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleDelete(post.id)}
+                                                    className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+                                                    title="حذف"
+                                                >
+                                                    <Trash2 className="w-4 h-4"/>
+                                                </button>
+                                            </div>
                                         </div>
+                                        <p className="text-sm text-gray-600 line-clamp-2 mt-1 leading-relaxed">{post.content}</p>
                                     </div>
-                                    <p className="text-sm text-gray-500 line-clamp-2 mt-1">{post.content}</p>
-                                    <div className="mt-3 flex items-center gap-4 text-xs text-gray-400 font-bold">
-                                        <span>{new Date(post.created_at).toLocaleDateString('ar-EG')}</span>
-                                        {post.is_pinned && <span className="text-emerald-600 flex items-center gap-1"><Pin className="w-3 h-3"/> مثبت</span>}
+                                    <div className="flex items-center gap-4 text-xs text-gray-400 font-bold mt-2">
+                                        <span>{new Date(post.created_at).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                        {post.is_pinned && <span className="text-emerald-600 flex items-center gap-1 bg-white px-2 py-0.5 rounded-full border border-emerald-100 shadow-sm"><Pin className="w-3 h-3"/> مثبت</span>}
                                     </div>
                                 </div>
                             </div>
