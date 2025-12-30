@@ -47,7 +47,7 @@ export default function NewsManagementTab() {
 
         // 1. الرفع
         const { error: uploadError } = await supabase.storage
-            .from('news-images') // تأكد من إنشاء هذا الـ Bucket في Supabase
+            .from('news-images')
             .upload(filePath, file);
 
         if (uploadError) throw uploadError;
@@ -60,7 +60,7 @@ export default function NewsManagementTab() {
         return data.publicUrl;
     } catch (error) {
         console.error('Upload Error:', error);
-        alert('فشل رفع الصورة، تأكد من إعدادات Storage في Supabase');
+        alert('فشل رفع الصورة، تأكد من إنشاء Bucket باسم news-images وجعله Public');
         return null;
     }
   };
@@ -73,17 +73,18 @@ export default function NewsManagementTab() {
     
     let finalImageUrl = formData.image_url;
 
-    // إذا كان الوضع "رفع صورة" وتم اختيار ملف
+    // رفع الصورة إذا وجدت
     if (imageMode === 'upload' && imageFile) {
         const uploadedUrl = await uploadImage(imageFile);
         if (uploadedUrl) {
             finalImageUrl = uploadedUrl;
         } else {
             setSubmitting(false);
-            return; // توقف إذا فشل الرفع
+            return;
         }
     }
 
+    // 1. إدخال الخبر فقط (سيقوم التريجر في قاعدة البيانات بإرسال الإشعارات تلقائياً)
     const { error } = await supabase.from('news_posts').insert({
       title: formData.title,
       content: formData.content,
@@ -135,7 +136,7 @@ export default function NewsManagementTab() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            {/* Form Section (New Post) */}
+            {/* Form Section */}
             <div className="lg:col-span-1">
                 <div className="bg-white p-6 rounded-[30px] border shadow-sm sticky top-4">
                     <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
@@ -166,11 +167,9 @@ export default function NewsManagementTab() {
                             />
                         </div>
 
-                        {/* قسم اختيار الصورة */}
+                        {/* قسم الصورة */}
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
                             <label className="block text-sm font-bold text-gray-700 mb-2">صورة الخبر (اختياري)</label>
-                            
-                            {/* أزرار التبديل */}
                             <div className="flex gap-2 mb-3">
                                 <button 
                                     type="button"
@@ -188,7 +187,6 @@ export default function NewsManagementTab() {
                                 </button>
                             </div>
 
-                            {/* حقل الإدخال حسب الوضع */}
                             {imageMode === 'url' ? (
                                 <input 
                                     type="url" 
@@ -198,14 +196,12 @@ export default function NewsManagementTab() {
                                     onChange={e => setFormData({...formData, image_url: e.target.value})}
                                 />
                             ) : (
-                                <div className="relative">
-                                    <input 
-                                        type="file" 
-                                        accept="image/*"
-                                        onChange={e => setImageFile(e.target.files ? e.target.files[0] : null)}
-                                        className="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
-                                    />
-                                </div>
+                                <input 
+                                    type="file" 
+                                    accept="image/*"
+                                    onChange={e => setImageFile(e.target.files ? e.target.files[0] : null)}
+                                    className="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                                />
                             )}
                         </div>
 
@@ -228,7 +224,7 @@ export default function NewsManagementTab() {
                 </div>
             </div>
 
-            {/* List Section (Previous Posts) */}
+            {/* List Section */}
             <div className="lg:col-span-2 space-y-4">
                 <h3 className="text-lg font-black text-gray-800 mb-2">الأخبار الحالية ({posts.length})</h3>
                 
@@ -240,7 +236,6 @@ export default function NewsManagementTab() {
                     <div className="grid gap-4">
                         {posts.map(post => (
                             <div key={post.id} className={`bg-white p-4 rounded-2xl border flex gap-4 transition-shadow hover:shadow-md ${post.is_pinned ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-100'}`}>
-                                {/* Image Thumbnail */}
                                 <div className="w-24 h-24 bg-gray-100 rounded-xl shrink-0 overflow-hidden border border-gray-200">
                                     {post.image_url ? (
                                         <img src={post.image_url} alt="post" className="w-full h-full object-cover"/>
@@ -250,8 +245,6 @@ export default function NewsManagementTab() {
                                         </div>
                                     )}
                                 </div>
-
-                                {/* Content */}
                                 <div className="flex-1 flex flex-col justify-between">
                                     <div>
                                         <div className="flex justify-between items-start">
