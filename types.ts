@@ -125,3 +125,26 @@ export interface GeneralSettings {
   links_urls?: string[];
   last_attendance_update?: string;
 }
+
+// ... (الأنواع السابقة)
+
+// تعريف الخبر
+export interface NewsPost {
+  id: string;
+  title: string;
+  content: string;
+  image_url?: string;
+  is_pinned: boolean;
+  created_at: string;
+  comments?: NewsComment[]; // لربط التعليقات عند العرض
+}
+
+// تعريف التعليق
+export interface NewsComment {
+  id: string;
+  post_id: string;
+  user_id: string;
+  user_name: string;
+  comment_text: string;
+  created_at: string;
+}
