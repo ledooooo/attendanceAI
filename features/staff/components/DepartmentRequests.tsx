@@ -12,7 +12,8 @@ interface LeaveRequest {
   status: 'قيد الانتظار' | 'مقبول' | 'مرفوض';
   notes: string;
   created_at: string;
-  employee?: { name: string; department: string }; // بيانات الموظف
+  // تم التعديل هنا: نطلب التخصص بدلاً من القسم
+  employee?: { name: string; specialty: string }; 
 }
 
 export default function DepartmentRequests({ hod }: { hod: Employee }) {
@@ -21,18 +22,18 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
 
   useEffect(() => {
     fetchDepartmentRequests();
-  }, []);
+  }, [hod]);
 
   const fetchDepartmentRequests = async () => {
     setLoading(true);
     
-    // جلب الطلبات وربطها بجدول الموظفين للتأكد من القسم
-    // نستخدم !inner لضمان جلب الطلبات التي ينتمي أصحابها لنفس قسم الرئيس
+    // تم التعديل: جلب specialty بدلاً من department
+    // ومقارنة التخصص بتخصص رئيس القسم (hod.specialty)
     const { data, error } = await supabase
       .from('leave_requests')
-      .select('*, employee:employees!inner(name, department)')
-      .eq('status', 'قيد الانتظار') // عرض المعلق فقط (اختياري)
-      .eq('employee.department', hod.department || hod.specialty) // مطابقة القسم
+      .select('*, employee:employees!inner(name, specialty)')
+      .eq('status', 'قيد الانتظار') 
+      .eq('employee.specialty', hod.specialty) // <--- التعديل هنا
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -51,14 +52,13 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
       .from('leave_requests')
       .update({ 
         status: newStatus,
-        // يمكن إضافة ملاحظة تلقائية
         notes: `تم ${newStatus} بواسطة رئيس القسم ${hod.name}`
       })
       .eq('id', id);
 
     if (!error) {
       alert(`تم ${newStatus} بنجاح`);
-      fetchDepartmentRequests(); // تحديث القائمة
+      fetchDepartmentRequests(); 
     } else {
       alert('حدث خطأ');
     }
@@ -73,7 +73,8 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
           <FileText className="w-6 h-6 text-purple-600" />
         </div>
         <div>
-          <h3 className="text-xl font-black text-gray-800">طلبات القسم ({hod.department || hod.specialty})</h3>
+          {/* تم التعديل: عرض التخصص */}
+          <h3 className="text-xl font-black text-gray-800">طلبات قسم ({hod.specialty})</h3>
           <p className="text-xs text-gray-500">إدارة الإجازات والطلبات الخاصة بأطباء القسم</p>
         </div>
       </div>
