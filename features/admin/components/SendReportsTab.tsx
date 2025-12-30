@@ -6,13 +6,30 @@ import { Send, CheckSquare, Square, Loader2, Mail, Bug } from 'lucide-react';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-// دالة لتحليل أيام العمل
+// --- دوال مساعدة قوية لمعالجة البيانات ---
+
+// 1. توحيد تنسيق التاريخ (YYYY-MM-DD) لضمان المطابقة
+const normalizeDate = (dateInput: any): string => {
+    if (!dateInput) return "";
+    try {
+        const d = new Date(dateInput);
+        if (isNaN(d.getTime())) return String(dateInput).substring(0, 10);
+        return d.toISOString().slice(0, 10);
+    } catch (e) {
+        return String(dateInput).substring(0, 10);
+    }
+};
+
+// 2. تحليل أيام العمل
 const parseWorkDays = (workDays: any): string[] => {
     if (!workDays) return ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
     if (Array.isArray(workDays)) return workDays;
     if (typeof workDays === 'string') return workDays.split(/[,،]/).map(d => d.trim());
     return [];
 };
+
+// 3. تنظيف النصوص للمقارنة
+const cleanId = (id: any) => String(id).trim();
 
 export default function SendReportsTab() {
     
@@ -35,12 +52,21 @@ export default function SendReportsTab() {
     useEffect(() => { fetchData(); }, [month]); 
 
     const fetchData = async () => {
+        // حساب أول وآخر يوم في الشهر بدقة
+        const [y, m] = month.split('-').map(Number);
+        const daysInMonth = new Date(y, m, 0).getDate();
         const startOfMonth = `${month}-01`;
-        const endOfMonth = `${month}-31`;
+        const endOfMonth = `${month}-${daysInMonth}`;
 
         const { data: emps } = await supabase.from('employees').select('*').order('name');
         const { data: sett } = await supabase.from('general_settings').select('*').single();
-        const { data: att } = await supabase.from('attendance').select('*').gte('date', startOfMonth).lte('date', endOfMonth);
+        
+        // جلب الحضور (معالجة التواريخ تتم لاحقاً)
+        const { data: att } = await supabase.from('attendance')
+            .select('*')
+            .gte('date', startOfMonth)
+            .lte('date', endOfMonth);
+
         const { data: lvs } = await supabase.from('leave_requests').select('*');
 
         if (emps) setEmployees(emps);
@@ -65,10 +91,7 @@ export default function SendReportsTab() {
         else setSelectedIds([...selectedIds, id]);
     };
 
-    const cleanId = (id: any) => String(id).trim();
-    const cleanDate = (date: any) => String(date).substring(0, 10);
-
-    // --- دالة توليد التقرير (التصميم الجديد) ---
+    // --- مولد التقرير (HTML) ---
     const generateEmailHTML = (emp: Employee, attendance: AttendanceRecord[], leaves: LeaveRequest[], monthStr: string) => {
         const daysInMonth = new Date(parseInt(monthStr.split('-')[0]), parseInt(monthStr.split('-')[1]), 0).getDate();
         let rowsHTML = '';
@@ -83,254 +106,199 @@ export default function SendReportsTab() {
         };
 
         const empWorkDays = parseWorkDays(emp.work_days);
-        // التاريخ الحالي لتجنب حساب أيام المستقبل كغياب
         const todayStr = new Date().toISOString().slice(0, 10);
 
         for (let d = 1; d <= daysInMonth; d++) {
             const dayString = String(d).padStart(2, '0');
             const targetDate = `${monthStr}-${dayString}`;
+            
+            // تخطي المستقبل
+            if (targetDate > todayStr && monthStr === todayStr.slice(0, 7)) continue;
+
             const dateObj = new Date(targetDate);
             const dayName = DAYS_AR[dateObj.getDay()];
-            
-            // هل هو يوم عمل لهذا الموظف؟
             const isWorkDay = empWorkDays.includes(dayName);
-            // هل التاريخ في المستقبل؟
-            const isFuture = targetDate > todayStr;
+            
+            // البحث عن البصمة باستخدام المطابقة القوية
+            const att = attendance.find(a => normalizeDate(a.date) === targetDate);
+            
+            const leave = leaves.find(l => 
+                l.status === 'مقبول' && 
+                normalizeDate(l.start_date) <= targetDate && 
+                normalizeDate(l.end_date) >= targetDate
+            );
 
-            // البحث عن البيانات
-            const att = attendance.find(a => cleanDate(a.date) === targetDate);
-            const leave = leaves.find(l => l.status === 'مقبول' && l.start_date <= targetDate && l.end_date >= targetDate);
-
-            // القيم الافتراضية للصف
+            // القيم الافتراضية
+            let statusText = 'غياب';
+            let rowColor = '#fee2e2'; // أحمر فاتح
+            let textColor = '#991b1b'; // أحمر غامق
             let inTime = '--:--';
             let outTime = '--:--';
-            let hours = 0;
-            let statusText = '';
-            let rowBg = '#ffffff'; // أبيض
-            let statusColor = '#374151'; // رمادي غامق
+            let dailyHours = 0;
 
-            // 1. منطق الحضور
-            if (att) {
-                // استخراج الوقت
+            // 1. حالة الحضور (الأولوية للبصمة)
+            if (att && att.times && att.times.trim().length > 0) {
                 const times = att.times.match(/\d{1,2}:\d{2}/g) || [];
+                
                 if (times.length > 0) {
                     inTime = times[0];
                     if (times.length > 1) {
                         outTime = times[times.length - 1];
+                        
                         // حساب الساعات
                         const [h1, m1] = inTime.split(':').map(Number);
                         const [h2, m2] = outTime.split(':').map(Number);
-                        let diff = (h2 * 60 + m2) - (h1 * 60 + m1);
-                        if (diff < 0) diff += 24 * 60;
-                        hours = parseFloat((diff / 60).toFixed(1));
+                        let diff = (new Date(0,0,0,h2,m2).getTime() - new Date(0,0,0,h1,m1).getTime()) / 3600000;
+                        if (diff < 0) diff += 24;
+                        dailyHours = parseFloat(diff.toFixed(2));
                     }
                 }
 
-                // تحديد الحالة (حضور / تأخير / عمل إضافي)
+                // تحديد الحالة
                 if (isWorkDay) {
-                    // حساب التأخير (مثال: بعد 8:30 يعتبر تأخير)
+                    // افتراض التأخير بعد 8:30
                     const [ih, im] = inTime.split(':').map(Number);
                     if (ih > 8 || (ih === 8 && im > 30)) {
                         statusText = 'تأخير';
-                        rowBg = '#fffbeb'; // أصفر فاتح
-                        statusColor = '#d97706'; // برتقالي
+                        rowColor = '#fffbeb'; // أصفر
+                        textColor = '#b45309';
                         stats.late++;
                     } else {
                         statusText = 'حضور';
-                        rowBg = '#f0fdf4'; // أخضر فاتح جداً
-                        statusColor = '#15803d'; // أخضر
+                        rowColor = '#ffffff'; // أبيض
+                        textColor = '#166534';
                     }
                 } else {
-                    statusText = 'عمل إضافي'; // حضر في يوم راحة
-                    rowBg = '#eff6ff'; // أزرق فاتح
-                    statusColor = '#1d4ed8';
+                    statusText = 'إضافي';
+                    rowColor = '#eff6ff'; // أزرق
+                    textColor = '#1e40af';
                 }
 
                 stats.present++;
-                stats.totalHours += hours;
+                stats.totalHours += dailyHours;
 
             } 
-            // 2. منطق الإجازات
+            // 2. حالة الإجازة
             else if (leave) {
                 statusText = `إجازة (${leave.type})`;
-                rowBg = '#faf5ff'; // بنفسجي فاتح
-                statusColor = '#7e22ce';
+                rowColor = '#dcfce7';
+                textColor = '#166534';
+                inTime = 'اجازة';
+                outTime = 'اجازة';
                 stats.leaves++;
-                inTime = 'إجازة';
-                outTime = 'إجازة';
-            }
-            // 3. منطق الغياب والعطلات
+            } 
+            // 3. حالة الراحة / العطلة
+            else if (!isWorkDay) {
+                statusText = 'راحة';
+                rowColor = '#f3f4f6';
+                textColor = '#6b7280';
+                inTime = '-';
+                outTime = '-';
+            } 
+            // 4. الغياب
             else {
-                if (isFuture) {
-                    statusText = '-';
-                    rowBg = '#ffffff';
-                } else if (!isWorkDay) {
-                    statusText = 'راحة أسبوعية';
-                    rowBg = '#f3f4f6'; // رمادي
-                    statusColor = '#6b7280';
-                } else {
-                    statusText = 'غياب';
-                    rowBg = '#fef2f2'; // أحمر فاتح
-                    statusColor = '#dc2626'; // أحمر
-                    stats.absent++;
-                }
+                stats.absent++;
+                // القيم الافتراضية (أحمر) تظل كما هي
             }
 
-            // بناء صف الجدول
             rowsHTML += `
-                <tr style="background-color: ${rowBg}; border-bottom: 1px solid #e5e7eb;">
-                    <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: right;">
-                        <span style="display:block; font-weight:bold; color:#111;">${targetDate}</span>
-                        <span style="font-size:11px; color:#666;">${dayName}</span>
+                <tr style="background-color: ${rowColor}; border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 8px; border-left: 1px solid #e2e8f0; text-align: right;">
+                        <div style="font-weight:bold; color:#1e293b;">${targetDate}</div>
+                        <div style="font-size:11px; color:#64748b;">${dayName}</div>
                     </td>
-                    <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; direction: ltr;">${inTime}</td>
-                    <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; direction: ltr;">${outTime}</td>
-                    <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; font-weight:bold;">${hours > 0 ? hours + ' س' : '-'}</td>
-                    <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: center; font-weight:bold; color: ${statusColor};">${statusText}</td>
+                    <td style="padding: 8px; text-align: center; border-left: 1px solid #e2e8f0; direction:ltr;">${inTime}</td>
+                    <td style="padding: 8px; text-align: center; border-left: 1px solid #e2e8f0; direction:ltr;">${outTime}</td>
+                    <td style="padding: 8px; text-align: center; border-left: 1px solid #e2e8f0; font-weight:bold;">${dailyHours > 0 ? dailyHours : '-'}</td>
+                    <td style="padding: 8px; text-align: center; font-weight:bold; color:${textColor};">${statusText}</td>
                 </tr>
             `;
         }
 
-        // --- قسم الطلبات ---
         const requestsHTML = leaves.length > 0 
-            ? leaves.map(l => `
-                <li style="margin-bottom: 8px; padding: 10px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                        <strong style="color:#334155;">${l.type}</strong>
-                        <span style="font-size:12px; background:${l.status==='مقبول'?'#dcfce7':'#fee2e2'}; color:${l.status==='مقبول'?'#15803d':'#991b1b'}; padding:2px 8px; rounded:99px;">${l.status}</span>
-                    </div>
-                    <div style="font-size:12px; color:#64748b;">من: ${l.start_date} | إلى: ${l.end_date}</div>
-                </li>
-            `).join('') 
-            : '<li style="color:#94a3b8; font-style:italic; padding:10px; text-align:center; background:#f9fafb; border-radius:6px;">لا توجد طلبات مسجلة لهذا الشهر</li>';
+            ? leaves.map(l => `<li style="margin-bottom:5px; padding:8px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:12px;"><strong>${l.type}</strong> (${l.status}) من ${l.start_date} إلى ${l.end_date}</li>`).join('') 
+            : '<li style="color:#94a3b8; font-style:italic; text-align:center;">لا توجد طلبات</li>';
 
-        // --- قسم الروابط الهامة ---
         let linksHTML = '';
         if (settings?.links_names && settings?.links_urls) {
             linksHTML = settings.links_names.map((name:string, i:number) => {
                 if(!name || !settings.links_urls[i]) return '';
-                return `
-                    <a href="${settings.links_urls[i]}" target="_blank" style="display: block; margin: 8px 0; padding: 12px; background: #fff; border: 1px solid #2563eb; color: #2563eb; text-decoration: none; font-weight: bold; border-radius: 8px; text-align: center;">
-                       🔗 ${name}
-                    </a>
-                `;
+                return `<a href="${settings.links_urls[i]}" target="_blank" style="display:block; margin-bottom:5px; padding:10px; background:#f0fdf4; color:#166534; text-decoration:none; font-weight:bold; border:1px solid #bbf7d0; border-radius:6px; text-align:center;">🔗 ${name}</a>`
             }).join('');
         }
 
-        // --- القالب النهائي للبريد ---
         return `
             <!DOCTYPE html>
             <html dir="rtl" lang="ar">
             <head>
                 <meta charset="UTF-8">
                 <style>
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; margin: 0; padding: 20px; direction: rtl; }
-                    .container { max-width: 800px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-                    
-                    /* Header */
-                    .header { background: linear-gradient(135deg, #059669 0%, #047857 100%); color: white; padding: 30px; text-align: center; }
-                    .header h1 { margin: 0; font-size: 24px; font-weight: 800; }
-                    .header p { margin: 5px 0 0; opacity: 0.9; }
-                    
-                    /* Employee Info */
-                    .emp-info { background: #ecfdf5; padding: 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; }
-                    .emp-details h2 { margin: 0; font-size: 18px; color: #064e3b; }
-                    .emp-details p { margin: 4px 0 0; font-size: 14px; color: #065f46; }
-                    
-                    /* Stats Grid */
-                    .stats { padding: 20px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; background: #fff; }
-                    .stat-box { background: #f8fafc; padding: 15px 10px; border-radius: 12px; text-align: center; border: 1px solid #e2e8f0; }
-                    .stat-val { display: block; font-size: 20px; font-weight: 900; color: #0f172a; margin-bottom: 4px; }
-                    .stat-lbl { font-size: 11px; color: #64748b; font-weight: bold; }
-                    
-                    /* Section Headers */
-                    .section-title { padding: 15px 20px; background: #f1f5f9; font-size: 16px; font-weight: 800; color: #334155; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px; }
-                    
-                    /* Table */
-                    .table-container { padding: 0; overflow-x: auto; }
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f5f9; margin: 0; padding: 20px; direction: rtl; }
+                    .container { max-width: 800px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }
+                    .header { background: #059669; color: white; padding: 30px; text-align: center; }
+                    .section { padding: 20px; border-bottom: 4px solid #f1f5f9; }
+                    .section-title { font-size: 16px; font-weight: 800; color: #334155; margin-bottom: 15px; border-right: 4px solid #059669; padding-right: 10px; }
                     table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                    th { background: #f8fafc; color: #475569; padding: 12px; text-align: center; border: 1px solid #e5e7eb; font-weight: 800; }
-                    
-                    /* Footer */
-                    .footer { background: #f8fafc; padding: 20px; text-align: center; color: #94a3b8; font-size: 11px; border-top: 1px solid #e2e8f0; }
+                    th { background: #f8fafc; color: #475569; padding: 10px; text-align: center; border: 1px solid #e2e8f0; font-weight: 800; }
+                    .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; text-align: center; }
+                    .stat-box { padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; }
+                    .stat-val { display: block; font-size: 18px; font-weight: 900; margin-bottom: 4px; }
+                    .stat-lbl { font-size: 11px; color: #64748b; font-weight: bold; }
                 </style>
             </head>
             <body>
                 <div class="container">
                     
                     <div class="header">
-                        <h1>تقرير الحضور والانصراف</h1>
-                        <p>${settings?.center_name || 'المركز الطبي'}</p>
+                        <h1 style="margin:0; font-size:24px;">تقرير الحضور الشهري</h1>
+                        <p style="margin:5px 0 0; opacity:0.9;">${monthStr}</p>
+                    </div>
+                    <div style="background:#ecfdf5; padding:15px 20px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h2 style="margin:0; font-size:18px; color:#064e3b;">${emp.name}</h2>
+                            <p style="margin:2px 0 0; font-size:13px; color:#065f46;">${emp.specialty} | كود: ${emp.employee_id}</p>
+                        </div>
+                        <div style="font-size:12px; font-weight:bold; color:#047857;">${settings?.center_name || 'المركز الطبي'}</div>
                     </div>
 
-                    <div class="emp-info">
-                        <div class="emp-details">
-                            <h2>${emp.name}</h2>
-                            <p>${emp.specialty} | كود: ${emp.employee_id}</p>
-                        </div>
-                        <div style="background:white; padding:8px 16px; border-radius:8px; font-weight:bold; color:#059669; border:1px solid #a7f3d0;">
-                            شهر: ${monthStr}
-                        </div>
-                    </div>
-
-                    <div class="section-title">📊 ملخص الأداء الشهري</div>
-                    <div class="stats">
-                        <div class="stat-box">
-                            <span class="stat-val" style="color:#16a34a">${stats.present}</span>
-                            <span class="stat-lbl">أيام حضور</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-val" style="color:#dc2626">${stats.absent}</span>
-                            <span class="stat-lbl">أيام غياب</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-val" style="color:#d97706">${stats.late}</span>
-                            <span class="stat-lbl">تأخيرات</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-val" style="color:#9333ea">${stats.leaves}</span>
-                            <span class="stat-lbl">إجازات</span>
-                        </div>
-                        <div class="stat-box">
-                            <span class="stat-val" style="color:#2563eb">${stats.totalHours.toFixed(1)}</span>
-                            <span class="stat-lbl">ساعات عمل</span>
+                    <div class="section">
+                        <div class="section-title">📊 ملخص الأداء</div>
+                        <div class="stats-grid">
+                            <div class="stat-box" style="background:#f0fdf4; color:#166534"><span class="stat-val">${stats.present}</span><span class="stat-lbl">حضور</span></div>
+                            <div class="stat-box" style="background:#fef2f2; color:#991b1b"><span class="stat-val">${stats.absent}</span><span class="stat-lbl">غياب</span></div>
+                            <div class="stat-box" style="background:#fffbeb; color:#b45309"><span class="stat-val">${stats.late}</span><span class="stat-lbl">تأخير</span></div>
+                            <div class="stat-box" style="background:#faf5ff; color:#7e22ce"><span class="stat-val">${stats.leaves}</span><span class="stat-lbl">إجازة</span></div>
+                            <div class="stat-box" style="background:#eff6ff; color:#1e40af"><span class="stat-val">${stats.totalHours}</span><span class="stat-lbl">ساعات</span></div>
                         </div>
                     </div>
 
-                    <div class="section-title">📅 سجل الحضور اليومي</div>
-                    <div class="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th style="width: 25%">التاريخ</th>
-                                    <th>الدخول</th>
-                                    <th>الخروج</th>
-                                    <th>ساعات</th>
-                                    <th>الحالة</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rowsHTML}</tbody>
-                        </table>
-                    </div>
-
-                    <div class="section-title">📝 الطلبات والإجازات</div>
-                    <div style="padding: 20px;">
-                        <ul style="list-style: none; padding: 0; margin: 0;">
-                            ${requestsHTML}
-                        </ul>
-                    </div>
-
-                    ${linksHTML ? `
-                        <div class="section-title">🔗 روابط هامة</div>
-                        <div style="padding: 20px;">
-                            ${linksHTML}
+                    <div class="section">
+                        <div class="section-title">📅 السجل اليومي</div>
+                        <div style="overflow-x:auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:25%">التاريخ</th>
+                                        <th>دخول</th>
+                                        <th>خروج</th>
+                                        <th>ساعات</th>
+                                        <th>الحالة</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${rowsHTML}</tbody>
+                            </table>
                         </div>
-                    ` : ''}
+                    </div>
 
-                    <div class="footer">
-                        تم استخراج هذا التقرير آلياً من نظام إدارة الموارد البشرية.
-                        <br/>
-                        التاريخ: ${new Date().toLocaleDateString('ar-EG')}
+                    <div class="section">
+                        <div class="section-title">📝 الطلبات والإجازات</div>
+                        <ul style="list-style:none; padding:0; margin:0;">${requestsHTML}</ul>
+                    </div>
+
+                    ${linksHTML ? `<div class="section"><div class="section-title">🔗 روابط هامة</div>${linksHTML}</div>` : ''}
+                    
+                    <div style="padding:20px; text-align:center; font-size:11px; color:#94a3b8; background:#f8fafc;">
+                        تم استخراج التقرير آلياً - ${new Date().toLocaleDateString('ar-EG')}
                     </div>
                 </div>
             </body>
@@ -367,6 +335,7 @@ export default function SendReportsTab() {
                 const emp = employees.find(e => e.id === empId);
                 if (!emp || !emp.email) { failCount++; continue; }
 
+                // تصفية قوية للبيانات المطابقة فقط
                 const empAtt = rawAttendance.filter(a => cleanId(a.employee_id) === cleanId(emp.employee_id));
                 const empLeaves = rawLeaves.filter(l => cleanId(l.employee_id) === cleanId(emp.employee_id));
                 
@@ -379,7 +348,7 @@ export default function SendReportsTab() {
                     successCount++;
                 } else {
                     failCount++;
-                    lastError = result.error || 'Unknown Error';
+                    lastError = result.error || 'Unknown';
                 }
             }
             alert(`النتيجة:\n✅ تم الإرسال: ${successCount}\n❌ فشل: ${failCount}\n${lastError ? 'آخر خطأ: ' + lastError : ''}`);
