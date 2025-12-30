@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
-import { useSwipeable } from 'react-swipeable'; // 1. استيراد المكتبة
+import { useSwipeable } from 'react-swipeable'; // استيراد مكتبة السحب
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
@@ -29,7 +29,7 @@ export default function AdminDashboard() {
   const [centerId, setCenterId] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // 2. إعدادات السحب (Swipe Handlers)
+  // إعدادات السحب (Swipe Handlers)
   const swipeHandlers = useSwipeable({
     // لأن القائمة في اليمين (RTL):
     // سحب لليسار (<--) يعني فتح القائمة
@@ -71,7 +71,7 @@ export default function AdminDashboard() {
   ];
 
   return (
-    // 3. ربط الـ handlers بالحاوية الرئيسية
+    // ربط الـ handlers بالحاوية الرئيسية
     <div {...swipeHandlers} className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right relative overflow-x-hidden" dir="rtl">
       
       {/* الشريط العلوي للموبايل فقط */}
