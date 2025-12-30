@@ -1,31 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Moon, Calendar, FileText, AlertCircle, Clock, Bug } from 'lucide-react';
+import { Moon, Calendar, FileText, AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
 
 interface EveningSchedule {
   id: string;
   date: string;
-  doctors: any; // JSON column
+  doctors: any[]; // Array of strings OR objects
   notes: string;
 }
 
-export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { employeeId: string, employeeCode: string }) {
+interface Props {
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+}
+
+export default function EmployeeEveningSchedule({ employeeId, employeeCode, employeeName }: Props) {
   const [schedules, setSchedules] = useState<EveningSchedule[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // متغيرات لتخزين البيانات الخام للفحص
-  const [rawData, setRawData] = useState<any[]>([]);
-  const [debugMsg, setDebugMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchMySchedule();
-  }, [employeeId]);
+    if (employeeId) {
+        fetchMySchedule();
+    }
+  }, [employeeId, employeeCode, employeeName]);
 
   const fetchMySchedule = async () => {
     setLoading(true);
     const today = new Date().toISOString().slice(0, 10);
 
-    // 1. جلب البيانات
+    // 1. جلب الجداول من اليوم وطالع
     const { data, error } = await supabase
       .from('evening_schedules')
       .select('*')
@@ -33,59 +37,49 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
       .order('date', { ascending: true });
 
     if (error) {
-      setDebugMsg('خطأ في الاتصال: ' + error.message);
+      console.error('Error fetching schedules:', error);
       setLoading(false);
       return;
     }
 
-    setRawData(data || []); // حفظ البيانات الخام للعرض
-
-    // 2. الفلترة المتقدمة
+    // 2. الفلترة الذكية (Smart Matching)
+    // هذه الدالة تتأكد من وجود الموظف سواء تم تخزينه كـ نص أو كائن
     const myShifts = (data || []).filter((item: EveningSchedule) => {
       let docs = item.doctors;
       
-      // تحويل النص إلى JSON إذا لزم الأمر
-      if (typeof docs === 'string') {
-        try { docs = JSON.parse(docs); } catch (e) { return false; }
-      }
-
+      // حماية ضد البيانات التالفة
       if (!Array.isArray(docs)) return false;
 
-      // البحث عن الموظف
+      // البحث داخل المصفوفة
       return docs.some((d: any) => {
-        const val = String(d).trim();
-        const empIdStr = String(employeeId).trim();   // UUID
-        const empCodeStr = String(employeeCode).trim(); // Code (80)
+        // تجهيز بيانات الموظف الحالي للمقارنة
+        const targetId = String(employeeId || '').trim();
+        const targetCode = String(employeeCode || '').trim();
+        const targetName = String(employeeName || '').trim();
 
-        // مقارنة مباشرة (أرقام أو نصوص)
-        if (val === empIdStr || val === empCodeStr) return true;
-
-        // مقارنة كائنات (Objects)
+        // الحالة 1: البيانات الجديدة (كائنات)
         if (typeof d === 'object' && d !== null) {
-          // فحص جميع الاحتمالات الممكنة لتخزين الكود
-          const objId = String(d.id || d.value || d.employee_id || d.code || d.user_id || '').trim();
-          return objId === empIdStr || objId === empCodeStr;
+          const storedId = String(d.id || '').trim();
+          const storedCode = String(d.code || '').trim();
+          const storedName = String(d.name || '').trim();
+
+          // تطابق بأي وسيلة (ID هو الأقوى، ثم الكود، ثم الاسم)
+          return (storedId && storedId === targetId) || 
+                 (storedCode && storedCode === targetCode) || 
+                 (storedName && storedName === targetName);
         }
 
-        return false;
+        // الحالة 2: البيانات القديمة (نصوص)
+        const val = String(d).trim();
+        return val === targetName || val === targetCode || val === targetId;
       });
     });
 
     setSchedules(myShifts);
-    
-    // رسالة التنبيه إذا وجد بيانات ولم يجد تطابق
-    if (data && data.length > 0 && myShifts.length === 0) {
-        // سنقوم بعرض عينة من البيانات المخزنة لنعرف الشكل
-        const sampleDoc = data[0].doctors;
-        const sampleStr = typeof sampleDoc === 'object' ? JSON.stringify(sampleDoc) : String(sampleDoc);
-        setDebugMsg(`أنت تبحث عن الكود: ( ${employeeCode} ) أو المعرف: ( ${employeeId} )\nلكن البيانات المخزنة في الجدول هي: \n${sampleStr}`);
-    } else {
-        setDebugMsg(null);
-    }
-
     setLoading(false);
   };
 
+  // تنسيق التاريخ للعربية
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('ar-EG', {
       weekday: 'long',
@@ -98,70 +92,72 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode }: { 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-12 space-y-4">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        <p className="text-gray-400">جاري تحميل الجدول...</p>
+        <p className="text-gray-400 font-medium">جاري البحث عن نوبتجياتك...</p>
     </div>
   );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex items-center gap-3 border-b pb-4 mb-4">
-        <div className="bg-indigo-100 p-2 rounded-xl">
+      
+      {/* Header Info */}
+      <div className="flex items-center gap-4 border-b pb-4 mb-4 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+        <div className="bg-white p-3 rounded-full shadow-sm">
           <Moon className="w-6 h-6 text-indigo-600" />
         </div>
         <div>
-          <h3 className="text-xl font-black text-gray-800">نوبتجيات المسائي</h3>
-          <p className="text-xs text-gray-500">جدول نوبتجياتك القادمة في العيادة المسائية</p>
+          <h3 className="text-lg font-black text-gray-800">جدولك المسائي</h3>
+          <p className="text-xs text-gray-500 font-bold mt-1">
+            يتم عرض النوبتجيات القادمة فقط. يرجى الالتزام بالمواعيد.
+          </p>
         </div>
       </div>
 
-      {/* --- منطقة التشخيص (تظهر فقط عند وجود مشكلة) --- */}
-      {debugMsg && (
-         <div className="bg-amber-50 text-amber-900 p-4 rounded-xl text-sm mb-6 border border-amber-200 shadow-sm" dir="ltr">
-            <div className="flex items-center gap-2 font-bold mb-2 text-amber-700 border-b border-amber-200 pb-2">
-                <Bug className="w-4 h-4"/> تقرير التشخيص (لماذا لا يظهر الجدول؟)
-            </div>
-            <pre className="whitespace-pre-wrap font-mono text-xs bg-white/50 p-2 rounded border border-amber-100">
-                {debugMsg}
-            </pre>
-            <p className="mt-2 text-xs text-right font-bold text-amber-600" dir="rtl">
-                * انسخ الكلام الموجود في المربع بالأعلى وأرسله لي لأقوم بتعديل كود الفلترة.
-            </p>
-         </div>
-      )}
-
       {schedules.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 bg-gray-50 rounded-3xl border border-dashed border-gray-300">
-          <Moon className="w-12 h-12 text-gray-300 mb-3" />
-          <p className="text-gray-500 font-bold">لا توجد نوبتجيات مسائية مسجلة لك قريباً</p>
+        <div className="flex flex-col items-center justify-center py-16 bg-white rounded-[30px] border border-dashed border-gray-300 text-center px-4">
+          <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+            <Moon className="w-8 h-8 text-gray-300" />
+          </div>
+          <h4 className="text-gray-800 font-bold text-lg">لا توجد نوبتجيات حالياً</h4>
+          <p className="text-gray-500 text-sm mt-2 max-w-xs">
+            لم يتم تسجيل أي نوبتجيات مسائية لك في الفترة القادمة. ستظهر هنا بمجرد إضافتها من قبل الإدارة.
+          </p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {schedules.map((shift) => (
-            <div key={shift.id} className="bg-white p-5 rounded-2xl border border-indigo-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-2 h-full bg-indigo-500 group-hover:bg-indigo-600 transition-colors"></div>
+            <div key={shift.id} className="bg-white p-5 rounded-2xl border border-indigo-100 shadow-sm hover:shadow-md transition-all duration-300 relative overflow-hidden group">
+              {/* شريط جانبي ملون */}
+              <div className="absolute top-0 right-0 w-1.5 h-full bg-indigo-500 group-hover:bg-indigo-600 transition-colors"></div>
               
               <div className="flex justify-between items-start mb-4 pr-3">
-                <div className="flex items-center gap-2 text-indigo-700 font-black text-lg">
-                  <Calendar className="w-5 h-5" />
-                  {formatDate(shift.date)}
+                <div className="flex items-center gap-2">
+                  <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600">
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="block text-xs text-gray-400 font-bold">التاريخ</span>
+                    <span className="block text-indigo-900 font-black text-sm md:text-base">{formatDate(shift.date)}</span>
+                  </div>
                 </div>
-                <div className="bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-lg font-bold flex items-center gap-1">
-                  <Clock className="w-3 h-3"/> مسائي
+                
+                <div className="bg-green-50 text-green-700 text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1 border border-green-100">
+                  <CheckCircle2 className="w-3 h-3"/> مسجلة لك
                 </div>
               </div>
 
               {shift.notes && (
-                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 pr-3">
-                  <p className="text-sm text-gray-600 flex gap-2">
+                <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 pr-3 mb-3">
+                  <p className="text-xs text-gray-500 font-bold mb-1">ملاحظات:</p>
+                  <p className="text-sm text-gray-700 flex gap-2 leading-relaxed">
                     <FileText className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
                     {shift.notes}
                   </p>
                 </div>
               )}
 
-              <div className="mt-4 pt-3 border-t flex justify-between items-center text-xs text-gray-400">
-                <span>{new Date(shift.date).toLocaleDateString('en-GB')}</span>
-                <span className="flex items-center gap-1"><AlertCircle className="w-3 h-3"/> تأكد من الحضور</span>
+              <div className="pt-3 border-t border-gray-100 flex justify-between items-center text-[10px] text-gray-400 font-mono">
+                <span>REF: {shift.id.slice(0,8)}</span>
+                <span className="flex items-center gap-1 font-sans font-bold text-orange-400"><AlertCircle className="w-3 h-3"/> فترة مسائية</span>
               </div>
             </div>
           ))}
