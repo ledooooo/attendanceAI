@@ -189,3 +189,13 @@ export interface AttendanceRule {
   end_time: string;
   color: string;
 }
+// ... الأنواع السابقة
+
+export interface AttendanceRule {
+  id: string;
+  name: string;
+  type: 'in' | 'out';
+  start_time: string;
+  end_time: string;
+  color: string;
+}
