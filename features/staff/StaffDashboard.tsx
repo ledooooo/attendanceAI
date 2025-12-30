@@ -16,6 +16,7 @@ import StaffRequestsHistory from './components/StaffRequestsHistory';
 import StaffEvaluations from './components/StaffEvaluations';
 import StaffMessages from './components/StaffMessages';
 import StaffStats from './components/StaffStats';
+import StaffNewsFeed from './components/StaffNewsFeed';
 
 interface Props {
   employee: Employee;
@@ -23,19 +24,19 @@ interface Props {
 
 export default function StaffDashboard({ employee }: Props) {
   const { signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState('profile');
+  
+  // جعل التبويب الافتراضي هو الأخبار (الرئيسية)
+  const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  // حالات المميزات الجديدة
+  // حالات التثبيت وال PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showInstallPopup, setShowInstallPopup] = useState(false);
-  
-  // حالة لمعرفة هل التطبيق يعمل كـ PWA (مثبت) أم في المتصفح
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    // التحقق: هل التطبيق مثبت ومفتوح كـ PWA؟
+    // 1. التحقق من وضع التطبيق (هل هو مثبت ومفتوح كـ PWA؟)
     const checkStandalone = () => {
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
                                (window.navigator as any).standalone === true;
@@ -43,24 +44,36 @@ export default function StaffDashboard({ employee }: Props) {
     };
     checkStandalone();
 
-    // الاستماع لحدث التثبيت
+    // الاستماع لتغير وضع العرض (في حال قام المستخدم بالتثبيت وهو في الصفحة)
+    const mediaQuery = window.matchMedia('(display-mode: standalone)');
+    const handleChange = (e: MediaQueryListEvent) => setIsStandalone(e.matches);
+    try { mediaQuery.addEventListener('change', handleChange); } catch (e) { /* Safari older support */ }
+
+    // 2. الاستماع لحدث التثبيت (beforeinstallprompt)
     const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      // إظهار النافذة المنبثقة فقط إذا كان الحدث متاحاً ولم يتم التثبيت بعد
+      e.preventDefault(); // منع المتصفح من إظهار الشريط الافتراضي
+      setDeferredPrompt(e); // حفظ الحدث
+      
+      // إظهار النافذة المنبثقة التلقائية فقط إذا لم يكن مثبتاً
       if (!isStandalone) {
+          // تأخير بسيط لجمالية الظهور
           setTimeout(() => setShowInstallPopup(true), 3000);
       }
     };
 
     window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+    
+    // تنظيف المستمعين
+    return () => {
+        window.removeEventListener('beforeinstallprompt', handler);
+        try { mediaQuery.removeEventListener('change', handleChange); } catch (e) {}
+    };
+  }, [isStandalone]);
 
-  // دالة التثبيت (الذكية)
+  // دالة التثبيت الذكية
   const handleInstallClick = async () => {
     if (deferredPrompt) {
-      // 1. إذا كان المتصفح جاهزاً للتثبيت التلقائي
+      // السيناريو 1: المتصفح جاهز للتثبيت التلقائي
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
@@ -68,9 +81,8 @@ export default function StaffDashboard({ employee }: Props) {
         setShowInstallPopup(false);
       }
     } else {
-      // 2. إذا لم يظهر الحدث (بسبب إلغاء التثبيت مؤخراً أو قيود المتصفح)
-      // نظهر تعليمات يدوية
-      alert("لإعادة تثبيت التطبيق:\n\n1️⃣ اضغط على أيقونة (⁝) أو السهم في أعلى المتصفح.\n2️⃣ اختر 'تثبيت التطبيق' (Install App) أو 'الإضافة للشاشة الرئيسية'.");
+      // السيناريو 2: المتصفح غير جاهز (تم إلغاء التثبيت مؤخراً أو iOS)
+      alert("لإعادة تثبيت التطبيق يدوياً:\n\n1️⃣ اضغط على قائمة المتصفح (⁝) أو زر المشاركة.\n2️⃣ اختر 'تثبيت التطبيق' (Install App) أو 'الإضافة للشاشة الرئيسية' (Add to Home Screen).");
     }
   };
 
@@ -90,6 +102,7 @@ export default function StaffDashboard({ employee }: Props) {
   };
 
   const menuItems = [
+    { id: 'news', label: 'الرئيسية', icon: LayoutDashboard }, // تم إضافة الرئيسية هنا
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
@@ -103,6 +116,7 @@ export default function StaffDashboard({ employee }: Props) {
   return (
     <div className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
+      {/* Overlay للموبايل */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
@@ -110,12 +124,14 @@ export default function StaffDashboard({ employee }: Props) {
         />
       )}
 
+      {/* القائمة الجانبية */}
       <aside className={`
           fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl 
           transform transition-transform duration-300 ease-in-out flex flex-col
           ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
           md:translate-x-0 md:static md:shadow-none
       `}>
+        {/* رأس القائمة */}
         <div className="h-24 flex items-center justify-between px-6 border-b shrink-0 bg-emerald-50/50">
            <div className="flex items-center gap-3">
                <div className="bg-white p-2 rounded-xl shadow-sm border border-emerald-100">
@@ -132,6 +148,7 @@ export default function StaffDashboard({ employee }: Props) {
            </button>
         </div>
 
+        {/* روابط التنقل */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -158,10 +175,14 @@ export default function StaffDashboard({ employee }: Props) {
           <div className="my-4 border-t border-gray-100"></div>
           
           <div className="space-y-1">
-             {/* زر التثبيت يظهر دائماً إذا لم نكن في وضع التطبيق (Standalone) */}
+             {/* زر التثبيت يظهر دائماً إذا لم يكن التطبيق في وضع PWA */}
              {!isStandalone && (
-                <button onClick={handleInstallClick} className="w-full flex items-center gap-4 px-4 py-2.5 rounded-xl text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors font-medium">
-                    {deferredPrompt ? <Download className="w-5 h-5 text-blue-500" /> : <HelpCircle className="w-5 h-5 text-gray-400"/>}
+                <button 
+                    onClick={handleInstallClick} 
+                    className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-xl transition-colors font-medium ${deferredPrompt ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                    {/* تغيير الأيقونة بناءً على توفر التثبيت التلقائي */}
+                    {deferredPrompt ? <Download className="w-5 h-5" /> : <HelpCircle className="w-5 h-5"/>}
                     <span className="text-sm">تثبيت التطبيق</span>
                 </button>
              )}
@@ -189,6 +210,7 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
       </aside>
 
+      {/* المحتوى الرئيسي */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-50/50">
         <header className="md:hidden h-16 bg-white border-b flex items-center justify-between px-4 sticky top-0 z-30 shadow-sm shrink-0">
             <div className="flex items-center gap-3">
@@ -213,6 +235,8 @@ export default function StaffDashboard({ employee }: Props) {
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
             <div className="max-w-5xl mx-auto space-y-6 pb-20 md:pb-0">
+                
+                {/* ترويسة الترحيب (للكمبيوتر فقط) */}
                 <div className="hidden md:flex justify-between items-end mb-8">
                     <div>
                         <h2 className="text-2xl font-black text-gray-800">أهلاً بك، {employee.name} 👋</h2>
@@ -226,6 +250,9 @@ export default function StaffDashboard({ employee }: Props) {
                 </div>
 
                 <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-5 md:p-8 min-h-[500px]">
+                    {/* إضافة المكون الجديد للأخبار هنا */}
+                    {activeTab === 'news' && <StaffNewsFeed employee={employee} />}
+
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
                     {activeTab === 'attendance' && (
                         <StaffAttendance 
@@ -246,7 +273,7 @@ export default function StaffDashboard({ employee }: Props) {
         </main>
       </div>
 
-      {/* النافذة المنبثقة للتثبيت التلقائي (تظهر فقط إذا كان التثبيت متاحاً فورياً) */}
+      {/* النافذة المنبثقة للتثبيت التلقائي (تظهر فقط إذا كان التثبيت متاحاً فورياً والتطبيق غير مثبت) */}
       {showInstallPopup && deferredPrompt && !isStandalone && (
           <div className="fixed bottom-0 left-0 right-0 z-[100] p-4 animate-in slide-in-from-bottom duration-500 md:hidden">
               <div className="bg-white rounded-[30px] shadow-2xl border border-gray-100 p-5 flex items-center justify-between gap-4">
