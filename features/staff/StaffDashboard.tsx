@@ -5,7 +5,7 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon // تمت إضافة Moon
+  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -19,7 +19,7 @@ import StaffMessages from './components/StaffMessages';
 import StaffStats from './components/StaffStats';
 import StaffNewsFeed from './components/StaffNewsFeed';
 import EOMVotingCard from './components/EOMVotingCard';
-import EmployeeEveningSchedule from './components/EmployeeEveningSchedule'; // تمت إضافة المكون الجديد
+import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
 
 interface Props {
   employee: Employee;
@@ -105,7 +105,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
-    { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon }, // تمت إضافة هذا العنصر
+    { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
@@ -261,11 +261,12 @@ export default function StaffDashboard({ employee }: Props) {
                         /> 
                     )}
                     
-                    {/* هنا يتم عرض جدول النوبتجيات المسائية */}
+                    {/* هنا تم التصحيح بإضافة employeeName */}
                     {activeTab === 'evening-schedule' && (
                         <EmployeeEveningSchedule 
                             employeeId={employee.id} 
                             employeeCode={employee.employee_id} 
+                            employeeName={employee.name}
                         />
                     )}
 
