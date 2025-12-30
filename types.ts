@@ -190,7 +190,20 @@ export interface AttendanceRule {
   color: string;
 }
 // ... الأنواع السابقة
+// أضف هذا داخل واجهة Employee في ملف src/types.ts
 
+export interface Employee {
+  // ... الحقول السابقة كما هي ...
+
+  // أرصدة الإجازات (تحديث)
+  leave_annual_balance?: number;       // رصيد اعتيادي
+  leave_casual_balance?: number;       // رصيد عارضة
+  leave_sick_balance?: number;         // رصيد مرضي (جديد)
+  leave_morning_perm_balance?: number; // رصيد إذن صباحي (جديد)
+  leave_evening_perm_balance?: number; // رصيد إذن مسائي (جديد)
+  
+  // ... باقي الحقول
+}
 export interface AttendanceRule {
   id: string;
   name: string;
