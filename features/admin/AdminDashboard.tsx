@@ -4,7 +4,8 @@ import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
-  Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart 
+  Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
+  Newspaper // 1. استيراد الأيقونة الجديدة
 } from 'lucide-react';
 
 // استيراد التبويبات
@@ -16,6 +17,7 @@ import EvaluationsTab from './components/EvaluationsTab';
 import SettingsTab from './components/SettingsTab';
 import ReportsTab from './components/ReportsTab';
 import SendReportsTab from './components/SendReportsTab';
+import NewsManagementTab from './components/NewsManagementTab'; // 2. استيراد مكون إدارة الأخبار
 import NotificationBell from '../../components/ui/NotificationBell';
 
 export default function AdminDashboard() {
@@ -24,7 +26,7 @@ export default function AdminDashboard() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [centerName, setCenterName] = useState('جاري التحميل...');
   const [centerId, setCenterId] = useState('');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // مغلقة افتراضياً للموبايل
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const fetchEmployees = async () => {
     const { data } = await supabase.from('employees').select('*').order('name');
@@ -46,6 +48,7 @@ export default function AdminDashboard() {
 
   const menuItems = [
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
+    { id: 'news', label: 'إدارة الأخبار', icon: Newspaper }, // 3. إضافة التبويب للقائمة
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
@@ -143,6 +146,7 @@ export default function AdminDashboard() {
         {/* منطقة التبويبات (قابلة للتمرير) */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-20 md:pb-8">
             {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={centerId} />}
+            {activeTab === 'news' && <NewsManagementTab />} {/* 4. عرض مكون الأخبار */}
             {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
             {activeTab === 'schedules' && <EveningSchedulesTab employees={employees} />}
             {activeTab === 'reports' && <ReportsTab />}
