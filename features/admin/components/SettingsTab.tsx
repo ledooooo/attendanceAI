@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Input } from '../../../components/ui/FormElements';
-import { Save, Building, Clock, MapPin, Calculator, Link as LinkIcon, Plus, Trash2, Loader2, Locate } from 'lucide-react';
+import { AttendanceRule } from '../../../types'; // تأكد من إضافة الواجهة في types.ts
+import {
+  Save, Building, Clock, MapPin, Calculator, Link as LinkIcon,
+  Plus, Trash2, Loader2, Locate, Settings2
+} from 'lucide-react';
 
 export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
 
+  // 1. بيانات الإعدادات العامة
   const [formData, setFormData] = useState({
     center_name: '',
     work_start_time: '08:00',
@@ -22,13 +27,21 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
     links_urls: [] as string[]
   });
 
+  // 2. بيانات قواعد الحضور (الجديدة)
+  const [rules, setRules] = useState<AttendanceRule[]>([]);
+  const [newRule, setNewRule] = useState({
+      name: '', type: 'in', start_time: '', end_time: '', color: 'emerald'
+  });
+
   useEffect(() => {
     fetchSettings();
+    fetchRules();
   }, []);
 
+  // --- جلب البيانات ---
   const fetchSettings = async () => {
     try {
-      const { data, error } = await supabase.from('general_settings').select('*').limit(1).maybeSingle();
+      const { data } = await supabase.from('general_settings').select('*').limit(1).maybeSingle();
       if (data) {
         setSettingsId(data.id);
         setFormData({
@@ -52,7 +65,12 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
     }
   };
 
-  // دوال الروابط
+  const fetchRules = async () => {
+      const { data } = await supabase.from('attendance_rules').select('*').order('start_time');
+      if (data) setRules(data);
+  };
+
+  // --- دوال الروابط (القديمة) ---
   const addLink = () => {
       setFormData(prev => ({
           ...prev,
@@ -76,6 +94,26 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
       else setFormData(prev => ({ ...prev, links_urls: list as string[] }));
   };
 
+  // --- دوال قواعد الحضور (الجديدة) ---
+  const addRule = async () => {
+      if(!newRule.name || !newRule.start_time || !newRule.end_time) return alert('البيانات ناقصة');
+      
+      const { error } = await supabase.from('attendance_rules').insert(newRule);
+      if(!error) {
+          setNewRule({ name: '', type: 'in', start_time: '', end_time: '', color: 'emerald' });
+          fetchRules();
+      } else {
+          alert(error.message);
+      }
+  };
+
+  const deleteRule = async (id: string) => {
+      if(!confirm('حذف القاعدة؟')) return;
+      await supabase.from('attendance_rules').delete().eq('id', id);
+      fetchRules();
+  };
+
+  // --- دوال أخرى ---
   const getCurrentLocation = () => {
       if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition((pos) => {
@@ -115,7 +153,7 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
   if (loading) return <div className="p-10 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto"/>جاري تحميل الإعدادات...</div>;
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto pb-20">
+    <div className="space-y-8 animate-in fade-in duration-500 max-w-6xl mx-auto pb-20">
         
         {/* Header */}
         <div className="flex justify-between items-center border-b pb-6 sticky top-0 bg-gray-50/95 backdrop-blur z-10 pt-4">
@@ -123,7 +161,7 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                 <h2 className="text-3xl font-black text-gray-800 flex items-center gap-3">
                     إعدادات النظام الشاملة
                 </h2>
-                <p className="text-gray-400 font-bold mt-1 text-sm">التحكم في بيانات المركز، المواعيد، الموقع، والروابط</p>
+                <p className="text-gray-400 font-bold mt-1 text-sm">التحكم في بيانات المركز، المواعيد، الموقع، الروابط، وقواعد الحضور</p>
             </div>
             <button 
                 onClick={handleSave} 
@@ -150,11 +188,11 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                 />
             </div>
 
-            {/* 2. المواعيد */}
+            {/* 2. المواعيد العامة */}
             <div className="bg-white p-6 rounded-[30px] border shadow-sm relative overflow-hidden group hover:border-purple-200 transition-all">
                 <div className="absolute top-0 left-0 w-full h-1 bg-purple-500"></div>
                 <h3 className="font-black text-lg text-gray-700 flex items-center gap-2 mb-4">
-                    <Clock className="w-5 h-5 text-purple-500"/> سياسات الوقت
+                    <Clock className="w-5 h-5 text-purple-500"/> سياسات الوقت الأساسية
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                     <Input label="بداية العمل" type="time" value={formData.work_start_time} onChange={(v:any)=>setFormData({...formData, work_start_time: v})} />
@@ -197,7 +235,76 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                 </div>
             </div>
 
-            {/* 5. الروابط الهامة (قسم جديد وموسع) */}
+            {/* 5. قواعد الحضور والانصراف (القسم الجديد) */}
+            <div className="lg:col-span-2 bg-white p-6 rounded-[30px] border border-gray-100 shadow-sm relative overflow-hidden group hover:border-blue-300 transition-all">
+                <div className="absolute top-0 left-0 w-full h-1 bg-blue-600"></div>
+                <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                    <Settings2 className="w-6 h-6 text-blue-600"/> قواعد ترجمة حالات الحضور
+                </h3>
+
+                {/* Form لإضافة قاعدة */}
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-6 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                    <div className="md:col-span-2">
+                        <label className="text-xs font-bold text-gray-500 mb-1 block">اسم الحالة</label>
+                        <input type="text" placeholder="مثال: تأخير صباحي" className="w-full p-2 rounded-lg border focus:ring-2 focus:ring-blue-200 outline-none" 
+                            value={newRule.name} onChange={e => setNewRule({...newRule, name: e.target.value})} />
+                    </div>
+                    <div>
+                         <label className="text-xs font-bold text-gray-500 mb-1 block">النوع</label>
+                         <select className="w-full p-2 rounded-lg border bg-white" value={newRule.type} onChange={e => setNewRule({...newRule, type: e.target.value as any})}>
+                             <option value="in">دخول</option>
+                             <option value="out">خروج</option>
+                         </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 mb-1 block">من</label>
+                        <input type="time" className="w-full p-2 rounded-lg border bg-white" 
+                            value={newRule.start_time} onChange={e => setNewRule({...newRule, start_time: e.target.value})} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 mb-1 block">إلى</label>
+                        <input type="time" className="w-full p-2 rounded-lg border bg-white" 
+                            value={newRule.end_time} onChange={e => setNewRule({...newRule, end_time: e.target.value})} />
+                    </div>
+                    <div>
+                         <label className="text-xs font-bold text-gray-500 mb-1 block">اللون</label>
+                         <select className="w-full p-2 rounded-lg border bg-white" value={newRule.color} onChange={e => setNewRule({...newRule, color: e.target.value})}>
+                             <option value="emerald">أخضر</option>
+                             <option value="orange">برتقالي</option>
+                             <option value="red">أحمر</option>
+                             <option value="blue">أزرق</option>
+                         </select>
+                    </div>
+                    <div className="md:col-span-6 flex justify-end">
+                        <button onClick={addRule} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2 shadow-sm">
+                            <Plus className="w-4 h-4"/> إضافة القاعدة
+                        </button>
+                    </div>
+                </div>
+
+                {/* قائمة القواعد */}
+                <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                    {rules.length === 0 ? (
+                        <p className="text-center text-gray-400 py-4 text-sm">لا توجد قواعد مضافة</p>
+                    ) : rules.map(rule => (
+                        <div key={rule.id} className="flex justify-between items-center p-3 bg-white border rounded-xl shadow-sm hover:bg-gray-50 transition-colors">
+                            <div className="flex items-center gap-3">
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${rule.type === 'in' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                    {rule.type === 'in' ? 'دخول' : 'خروج'}
+                                </span>
+                                <span className="font-bold text-gray-800 text-sm">{rule.name}</span>
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg dir-ltr font-mono">
+                                    {rule.start_time.slice(0,5)} - {rule.end_time.slice(0,5)}
+                                </span>
+                                <div className={`w-3 h-3 rounded-full bg-${rule.color}-500 border border-gray-200`}></div>
+                            </div>
+                            <button onClick={() => deleteRule(rule.id)} className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* 6. الروابط الهامة */}
             <div className="lg:col-span-2 bg-white p-8 rounded-[30px] border border-gray-100 shadow-sm relative overflow-hidden group hover:border-emerald-200 transition-all">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
                 <div className="flex justify-between items-center mb-6">
@@ -243,8 +350,8 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                     )}
                 </div>
             </div>
-
         </div>
+
     </div>
   );
 }
