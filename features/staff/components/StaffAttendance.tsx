@@ -153,11 +153,14 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
             const isWorkDay = workDays.includes(dayName);
             const record = attendanceData.find(a => a.date === dateStr);
             
+            // تحقق من وجود بصمة صالحة (حتى لو الصف موجود، يجب أن يكون فيه توقيت)
+            const hasTimes = record && record.times && record.times.trim().length > 0;
+
             if (isWorkDay) {
                 requiredDays++; // هذا يوم عمل مطلوب
             }
 
-            if (record) {
+            if (hasTimes) {
                 present++; // حضر سواء كان يوم عمل أو إجازة
                 const info = analyzeDay(record, rules);
                 
@@ -286,10 +289,13 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                 const isWorkDay = workDays.includes(dayName);
                                 const isFuture = dObj > new Date();
 
+                                // التحقق من وجود أوقات فعلية
+                                const hasTimes = att && att.times && att.times.trim().length > 0;
+
                                 const { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours } = analyzeDay(att, rules);
 
                                 // تحديد حالة الغياب (فقط إذا كان يوم عمل ولم يحضر وليس في المستقبل)
-                                const isAbsent = !att && isWorkDay && !isFuture;
+                                const isAbsent = !hasTimes && isWorkDay && !isFuture;
 
                                 return (
                                     <tr 
