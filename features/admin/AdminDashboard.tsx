@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
+import { useSwipeable } from 'react-swipeable'; // 1. استيراد المكتبة
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
-  Newspaper // 1. استيراد الأيقونة الجديدة
+  Newspaper 
 } from 'lucide-react';
 
 // استيراد التبويبات
@@ -17,7 +18,7 @@ import EvaluationsTab from './components/EvaluationsTab';
 import SettingsTab from './components/SettingsTab';
 import ReportsTab from './components/ReportsTab';
 import SendReportsTab from './components/SendReportsTab';
-import NewsManagementTab from './components/NewsManagementTab'; // 2. استيراد مكون إدارة الأخبار
+import NewsManagementTab from './components/NewsManagementTab';
 import NotificationBell from '../../components/ui/NotificationBell';
 
 export default function AdminDashboard() {
@@ -27,6 +28,17 @@ export default function AdminDashboard() {
   const [centerName, setCenterName] = useState('جاري التحميل...');
   const [centerId, setCenterId] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // 2. إعدادات السحب (Swipe Handlers)
+  const swipeHandlers = useSwipeable({
+    // لأن القائمة في اليمين (RTL):
+    // سحب لليسار (<--) يعني فتح القائمة
+    onSwipedLeft: () => setIsSidebarOpen(true),
+    // سحب لليمين (-->) يعني إغلاق القائمة
+    onSwipedRight: () => setIsSidebarOpen(false),
+    trackMouse: true, // للسماح بالتجربة بالماوس على الكمبيوتر أيضاً
+    delta: 50, // الحساسية: يجب سحب 50 بكسل على الأقل للتفعيل
+  });
 
   const fetchEmployees = async () => {
     const { data } = await supabase.from('employees').select('*').order('name');
@@ -48,7 +60,7 @@ export default function AdminDashboard() {
 
   const menuItems = [
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
-    { id: 'news', label: 'إدارة الأخبار', icon: Newspaper }, // 3. إضافة التبويب للقائمة
+    { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
@@ -59,9 +71,10 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right relative overflow-x-hidden" dir="rtl">
+    // 3. ربط الـ handlers بالحاوية الرئيسية
+    <div {...swipeHandlers} className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right relative overflow-x-hidden" dir="rtl">
       
-      {/* 1. الشريط العلوي للموبايل فقط */}
+      {/* الشريط العلوي للموبايل فقط */}
       <div className="md:hidden bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-40">
         <div className="flex items-center gap-3">
             <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
@@ -72,7 +85,7 @@ export default function AdminDashboard() {
         <NotificationBell />
       </div>
 
-      {/* 2. القائمة الجانبية (Sidebar) */}
+      {/* القائمة الجانبية (Sidebar) */}
       <aside className={`
           fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 ease-in-out
           ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
@@ -97,7 +110,7 @@ export default function AdminDashboard() {
               key={item.id}
               onClick={() => {
                   setActiveTab(item.id);
-                  setIsSidebarOpen(false); // إغلاق القائمة بعد الاختيار في الموبايل
+                  setIsSidebarOpen(false); 
               }}
               className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all duration-200 ${
                 activeTab === item.id 
@@ -123,7 +136,7 @@ export default function AdminDashboard() {
         </div>
       </aside>
 
-      {/* 3. خلفية مظللة للموبايل (Overlay) */}
+      {/* خلفية مظللة للموبايل (Overlay) */}
       {isSidebarOpen && (
         <div 
             className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
@@ -131,7 +144,7 @@ export default function AdminDashboard() {
         />
       )}
 
-      {/* 4. المحتوى الرئيسي */}
+      {/* المحتوى الرئيسي */}
       <main className="flex-1 flex flex-col h-[calc(100vh-64px)] md:h-screen overflow-hidden bg-gray-50/50">
         
         {/* هيدر الكمبيوتر */}
@@ -146,7 +159,7 @@ export default function AdminDashboard() {
         {/* منطقة التبويبات (قابلة للتمرير) */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-20 md:pb-8">
             {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={centerId} />}
-            {activeTab === 'news' && <NewsManagementTab />} {/* 4. عرض مكون الأخبار */}
+            {activeTab === 'news' && <NewsManagementTab />}
             {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
             {activeTab === 'schedules' && <EveningSchedulesTab employees={employees} />}
             {activeTab === 'reports' && <ReportsTab />}
