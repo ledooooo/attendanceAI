@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
-import { useSwipeable } from 'react-swipeable'; // استيراد مكتبة السحب
+import { useSwipeable } from 'react-swipeable';
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
-  Newspaper 
+  Newspaper, Trophy // أيقونة التحفيز
 } from 'lucide-react';
 
-// استيراد التبويبات
+// استيراد التبويبات والمكونات
 import DoctorsTab from './components/DoctorsTab';
 import AttendanceTab from './components/AttendanceTab';
 import EveningSchedulesTab from './components/EveningSchedulesTab';
@@ -19,6 +19,8 @@ import SettingsTab from './components/SettingsTab';
 import ReportsTab from './components/ReportsTab';
 import SendReportsTab from './components/SendReportsTab';
 import NewsManagementTab from './components/NewsManagementTab';
+import BirthdayWidget from './components/BirthdayWidget'; // استيراد أعياد الميلاد
+import EOMManager from './components/EOMManager'; // استيراد إدارة الموظف المثالي
 import NotificationBell from '../../components/ui/NotificationBell';
 
 export default function AdminDashboard() {
@@ -29,15 +31,12 @@ export default function AdminDashboard() {
   const [centerId, setCenterId] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // إعدادات السحب (Swipe Handlers)
+  // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
-    // لأن القائمة في اليمين (RTL):
-    // سحب لليسار (<--) يعني فتح القائمة
     onSwipedLeft: () => setIsSidebarOpen(true),
-    // سحب لليمين (-->) يعني إغلاق القائمة
     onSwipedRight: () => setIsSidebarOpen(false),
-    trackMouse: true, // للسماح بالتجربة بالماوس على الكمبيوتر أيضاً
-    delta: 50, // الحساسية: يجب سحب 50 بكسل على الأقل للتفعيل
+    trackMouse: true,
+    delta: 50,
   });
 
   const fetchEmployees = async () => {
@@ -61,6 +60,7 @@ export default function AdminDashboard() {
   const menuItems = [
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
+    { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy }, // التبويب الجديد
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
@@ -71,7 +71,6 @@ export default function AdminDashboard() {
   ];
 
   return (
-    // ربط الـ handlers بالحاوية الرئيسية
     <div {...swipeHandlers} className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right relative overflow-x-hidden" dir="rtl">
       
       {/* الشريط العلوي للموبايل فقط */}
@@ -91,19 +90,16 @@ export default function AdminDashboard() {
           ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
           md:translate-x-0 md:static md:shadow-none md:flex md:flex-col
       `}>
-        {/* رأس القائمة */}
         <div className="p-6 border-b flex items-center justify-between h-20 shrink-0">
            <div className="flex items-center gap-2 text-emerald-700">
                <LayoutDashboard className="w-8 h-8"/>
                <h1 className="text-xl font-black">لوحة التحكم</h1>
            </div>
-           {/* زر إغلاق للموبايل */}
            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 bg-gray-50 rounded-full hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors">
                <X className="w-5 h-5"/>
            </button>
         </div>
 
-        {/* عناصر القائمة */}
         <nav className="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
           {menuItems.map(item => (
             <button
@@ -124,7 +120,6 @@ export default function AdminDashboard() {
           ))}
         </nav>
 
-        {/* تذييل القائمة */}
         <div className="p-4 border-t bg-gray-50 shrink-0">
            <button 
              onClick={signOut} 
@@ -136,7 +131,7 @@ export default function AdminDashboard() {
         </div>
       </aside>
 
-      {/* خلفية مظللة للموبايل (Overlay) */}
+      {/* خلفية مظللة للموبايل */}
       {isSidebarOpen && (
         <div 
             className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
@@ -147,7 +142,6 @@ export default function AdminDashboard() {
       {/* المحتوى الرئيسي */}
       <main className="flex-1 flex flex-col h-[calc(100vh-64px)] md:h-screen overflow-hidden bg-gray-50/50">
         
-        {/* هيدر الكمبيوتر */}
         <header className="hidden md:flex h-20 bg-white border-b justify-between items-center px-8 shadow-sm shrink-0">
             <div>
                 <h2 className="text-xl font-black text-gray-800">{centerName}</h2>
@@ -156,10 +150,18 @@ export default function AdminDashboard() {
             <NotificationBell />
         </header>
 
-        {/* منطقة التبويبات (قابلة للتمرير) */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-20 md:pb-8">
             {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={centerId} />}
             {activeTab === 'news' && <NewsManagementTab />}
+            
+            {/* عرض تبويب التحفيز والجوائز */}
+            {activeTab === 'motivation' && (
+               <div className="space-y-6 max-w-4xl mx-auto">
+                   <BirthdayWidget employees={employees} />
+                   <EOMManager />
+               </div>
+            )}
+            
             {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
             {activeTab === 'schedules' && <EveningSchedulesTab employees={employees} />}
             {activeTab === 'reports' && <ReportsTab />}
