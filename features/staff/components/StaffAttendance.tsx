@@ -9,14 +9,13 @@ import StaffNewRequest from './StaffNewRequest';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-// تحويل الوقت "HH:MM" إلى دقائق للحسابات
+// دوال مساعدة للوقت
 const toMinutes = (timeStr: string) => {
     if (!timeStr) return 0;
     const [h, m] = timeStr.split(':').map(Number);
     return h * 60 + m;
 };
 
-// حساب الفرق بالساعات
 const calcHours = (t1: string, t2: string) => {
     if (!t1 || !t2) return 0;
     const diff = toMinutes(t2) - toMinutes(t1);
@@ -36,7 +35,6 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         present: 0,
         absent: 0,
         late: 0,
-        leaves: 0, // سنعتبر الإجازات من جدول الطلبات المقبولة (إذا توفرت) أو الحالة
         totalHours: 0
     });
 
@@ -46,11 +44,13 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
             if (!employee?.employee_id) return;
             setLoading(true);
 
-            // أ) جلب بصمات الشهر
-            // تصحيح: نضمن أننا نجلب كل أيام الشهر
+            // حساب آخر يوم في الشهر بدقة (لحل مشكلة نوفمبر)
+            const [y, m] = viewMonth.split('-').map(Number);
+            const daysInMonth = new Date(y, m, 0).getDate();
             const startOfMonth = `${viewMonth}-01`;
-            const endOfMonth = `${viewMonth}-31`; // SQL سيتعامل بذكاء مع الأيام الزائدة
+            const endOfMonth = `${viewMonth}-${daysInMonth}`;
 
+            // أ) جلب بصمات الشهر
             const { data: attData } = await supabase
                 .from('attendance')
                 .select('*')
@@ -80,57 +80,9 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         fetchData();
     }, [viewMonth, employee]);
 
-    // 2. حساب الإحصائيات بعد تحميل البيانات
-    useEffect(() => {
-        let present = 0;
-        let late = 0;
-        let totalHours = 0;
-        
-        // نحتاج لحساب عدد أيام الشهر الحالية لمعرفة الغياب
-        const daysInMonth = new Date(Number(viewMonth.split('-')[0]), Number(viewMonth.split('-')[1]), 0).getDate();
-        let validDays = 0;
-
-        // نقوم بعمل Loop لحساب الغياب بدقة
-        for (let i = 1; i <= daysInMonth; i++) {
-            const dateStr = `${viewMonth}-${String(i).padStart(2, '0')}`;
-            const dateObj = new Date(dateStr);
-            if (dateObj.getDay() === 5) continue; // تخطي الجمعة
-            if (dateObj > new Date()) continue; // تخطي المستقبل
-
-            validDays++;
-            const record = attendanceData.find(a => a.date === dateStr);
-            
-            if (record) {
-                present++;
-                const info = analyzeDay(record, rules);
-                if (info.inStatus.includes('تأخير') || info.inStatusColor === 'orange' || info.inStatusColor === 'red') {
-                    late++;
-                }
-                totalHours += info.hours;
-            }
-        }
-
-        setStats({
-            present,
-            absent: validDays - present, // أيام العمل الماضية - أيام الحضور
-            late,
-            leaves: 0, // يمكن ربطها بجدول الإجازات لاحقاً
-            totalHours
-        });
-
-    }, [attendanceData, rules, viewMonth]);
-
-    const handleMonthChange = (e: any) => {
-        const val = e.target.value;
-        setViewMonth(val);
-        if (setSelectedMonth) setSelectedMonth(val);
-    };
-
-    // 3. دالة تحليل اليوم بناءً على القواعد
+    // 2. تحليل البيانات وتطبيق القواعد
     const analyzeDay = (attRecord: any, rulesList: AttendanceRule[]) => {
         const times = attRecord?.times?.match(/\d{1,2}:\d{2}/g) || [];
-        // نفترض أن أول وقت هو دخول وآخر وقت هو خروج
-        // ملاحظة: قد تحتاج لترتيب الأوقات if they come unsorted
         const sortedTimes = times.sort(); 
         const cin = sortedTimes[0];
         const cout = sortedTimes.length > 1 ? sortedTimes[sortedTimes.length - 1] : null;
@@ -143,13 +95,12 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
 
         if (cin) {
             const cinMins = toMinutes(cin);
-            // البحث عن القاعدة المناسبة
             const rule = rulesList.find(r => r.type === 'in' && cinMins >= toMinutes(r.start_time) && cinMins <= toMinutes(r.end_time));
             if (rule) {
                 inStatus = rule.name;
                 inStatusColor = rule.color;
             } else {
-                inStatus = 'خارج النطاق';
+                inStatus = 'خارج القواعد';
             }
         }
 
@@ -160,7 +111,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                 outStatus = rule.name;
                 outStatusColor = rule.color;
             } else {
-                outStatus = 'خارج النطاق';
+                outStatus = 'خارج القواعد';
             }
             hours = calcHours(cin, cout);
         }
@@ -168,7 +119,50 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         return { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours };
     };
 
-    // دالة مساعدة للألوان
+    // 3. حساب الإحصائيات
+    useEffect(() => {
+        let present = 0;
+        let late = 0;
+        let totalHours = 0;
+        const [y, m] = viewMonth.split('-').map(Number);
+        const daysInMonth = new Date(y, m, 0).getDate();
+        let validDays = 0;
+
+        for (let i = 1; i <= daysInMonth; i++) {
+            const dateStr = `${viewMonth}-${String(i).padStart(2, '0')}`;
+            const dateObj = new Date(dateStr);
+            if (dateObj.getDay() === 5) continue; // تخطي الجمعة
+            if (dateObj > new Date()) continue; // تخطي المستقبل
+
+            validDays++;
+            const record = attendanceData.find(a => a.date === dateStr);
+            
+            if (record) {
+                present++;
+                const info = analyzeDay(record, rules);
+                // احتساب التأخير إذا كان اللون برتقالي أو أحمر
+                if (info.inStatusColor === 'orange' || info.inStatusColor === 'red') {
+                    late++;
+                }
+                totalHours += info.hours;
+            }
+        }
+
+        setStats({
+            present,
+            absent: validDays - present,
+            late,
+            totalHours
+        });
+
+    }, [attendanceData, rules, viewMonth]);
+
+    const handleMonthChange = (e: any) => {
+        const val = e.target.value;
+        setViewMonth(val);
+        if (setSelectedMonth) setSelectedMonth(val);
+    };
+
     const getColorClass = (colorName: string) => {
         const map: any = {
             'emerald': 'bg-emerald-50 text-emerald-700',
@@ -190,7 +184,6 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                     <Calendar className="text-emerald-600"/> تقرير الحضور
                 </h3>
                 <div className="relative group">
-                     {/* تنسيق مخصص لمدخل الشهر */}
                     <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 cursor-pointer hover:border-emerald-500 transition-colors">
                         <span className="text-sm font-bold text-gray-600">
                              {new Date(viewMonth).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}
@@ -254,14 +247,12 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                 <tr><td colSpan={7} className="p-10 text-center text-gray-400">جاري تحميل البيانات...</td></tr>
                             ) : Array.from({ length: new Date(Number(viewMonth.split('-')[0]), Number(viewMonth.split('-')[1]), 0).getDate() }, (_, i) => {
                                 const day = i + 1;
-                                // BUG FIX: padStart ensures '05' instead of '5'
                                 const dateStr = `${viewMonth}-${String(day).padStart(2, '0')}`;
                                 const dObj = new Date(dateStr);
                                 const isFriday = dObj.getDay() === 5;
                                 const att = attendanceData.find((a:any) => a.date === dateStr);
                                 const { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours } = analyzeDay(att, rules);
 
-                                // حالة الغياب
                                 const isAbsent = !att && !isFriday && dObj < new Date();
 
                                 return (
