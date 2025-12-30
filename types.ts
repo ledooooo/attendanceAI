@@ -179,3 +179,13 @@ export const getBirthDateFromNationalID = (nid: string): Date | null => {
   const date = new Date(year, month, day);
   return isNaN(date.getTime()) ? null : date;
 };
+
+
+export interface AttendanceRule {
+  id: string;
+  name: string;
+  type: 'in' | 'out';
+  start_time: string;
+  end_time: string;
+  color: string;
+}
