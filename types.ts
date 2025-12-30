@@ -148,3 +148,34 @@ export interface NewsComment {
   comment_text: string;
   created_at: string;
 }
+
+
+// ... (الأنواع السابقة)
+
+export interface EOMCycle {
+  id: string;
+  month: string;
+  status: 'voting' | 'completed' | 'announced';
+  winner_id?: string;
+}
+
+export interface EOMNominee {
+  id: string;
+  employee_id: string;
+  votes_count: number;
+  employee_name?: string; // للعرض
+  photo_url?: string;
+}
+
+// --- دالة مساعدة: استخراج تاريخ الميلاد من الرقم القومي المصري ---
+export const getBirthDateFromNationalID = (nid: string): Date | null => {
+  if (!nid || nid.length !== 14) return null;
+  
+  const century = nid[0] === '2' ? 1900 : 2000;
+  const year = century + parseInt(nid.substring(1, 3));
+  const month = parseInt(nid.substring(3, 5)) - 1; // JS months are 0-11
+  const day = parseInt(nid.substring(5, 7));
+  
+  const date = new Date(year, month, day);
+  return isNaN(date.getTime()) ? null : date;
+};
