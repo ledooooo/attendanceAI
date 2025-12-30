@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Employee } from '../../types';
-import { useSwipeable } from 'react-swipeable'; // 1. استيراد المكتبة
+import { useSwipeable } from 'react-swipeable'; // استيراد مكتبة السحب
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
@@ -34,7 +34,7 @@ export default function StaffDashboard({ employee }: Props) {
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // 2. إعدادات السحب (Swipe Handlers)
+  // إعدادات السحب (Swipe Handlers)
   const swipeHandlers = useSwipeable({
     // لأن القائمة في اليمين (RTL):
     // سحب لليسار (<--) يعني فتح القائمة
@@ -113,7 +113,7 @@ export default function StaffDashboard({ employee }: Props) {
   ];
 
   return (
-    // 3. ربط الـ handlers بالحاوية الرئيسية
+    // ربط الـ handlers بالحاوية الرئيسية
     <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
       {isSidebarOpen && (
