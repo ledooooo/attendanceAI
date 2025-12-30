@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Employee } from '../../types';
-import { useSwipeable } from 'react-swipeable'; // استيراد مكتبة السحب
+import { useSwipeable } from 'react-swipeable';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
@@ -18,6 +18,7 @@ import StaffEvaluations from './components/StaffEvaluations';
 import StaffMessages from './components/StaffMessages';
 import StaffStats from './components/StaffStats';
 import StaffNewsFeed from './components/StaffNewsFeed';
+import EOMVotingCard from './components/EOMVotingCard'; // استيراد كارت التصويت
 
 interface Props {
   employee: Employee;
@@ -26,6 +27,7 @@ interface Props {
 export default function StaffDashboard({ employee }: Props) {
   const { signOut } = useAuth();
   
+  // الصفحة الافتراضية هي الرئيسية (الأخبار)
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
@@ -34,15 +36,12 @@ export default function StaffDashboard({ employee }: Props) {
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // إعدادات السحب (Swipe Handlers)
+  // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
-    // لأن القائمة في اليمين (RTL):
-    // سحب لليسار (<--) يعني فتح القائمة
     onSwipedLeft: () => setIsSidebarOpen(true),
-    // سحب لليمين (-->) يعني إغلاق القائمة
     onSwipedRight: () => setIsSidebarOpen(false),
-    trackMouse: true, // للسماح بالتجربة بالماوس
-    delta: 50, // الحساسية
+    trackMouse: true,
+    delta: 50,
   });
 
   useEffect(() => {
@@ -113,7 +112,6 @@ export default function StaffDashboard({ employee }: Props) {
   ];
 
   return (
-    // ربط الـ handlers بالحاوية الرئيسية
     <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
       {isSidebarOpen && (
@@ -243,7 +241,14 @@ export default function StaffDashboard({ employee }: Props) {
                 </div>
 
                 <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-5 md:p-8 min-h-[500px]">
-                    {activeTab === 'news' && <StaffNewsFeed employee={employee} />}
+                    {/* هنا التغيير: عرض كارت التصويت + الأخبار في الصفحة الرئيسية */}
+                    {activeTab === 'news' && (
+                        <>
+                            <EOMVotingCard employee={employee} />
+                            <StaffNewsFeed employee={employee} />
+                        </>
+                    )}
+                    
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
                     {activeTab === 'attendance' && (
                         <StaffAttendance 
