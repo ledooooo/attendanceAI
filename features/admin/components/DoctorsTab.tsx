@@ -6,7 +6,7 @@ import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import * as XLSX from 'xlsx';
 import { 
   Download, Users, ArrowRight, User, Clock, FileText, 
-  Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, RefreshCw
+  Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, RefreshCw, FileSpreadsheet
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -39,14 +39,14 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
   const [fSpec, setFSpec] = useState('all');
   const [fStatus, setFStatus] = useState('all');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false); // حالة زر المزامنة
+  const [isSyncing, setIsSyncing] = useState(false); 
+  const [isExporting, setIsExporting] = useState(false); // حالة التصدير
   const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'employee_id' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [detailTab, setDetailTab] = useState('profile');
   const [empData, setEmpData] = useState<any>({ attendance: [], requests: [], evals: [], messages: [] });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  // --- دالة جلب بيانات الموظف ---
   const fetchEmpData = async () => {
     if (!selectedEmp) return;
     const [att, req, evl, msg] = await Promise.all([
@@ -99,7 +99,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       setDetailTab('stats');
   };
 
-  // --- دالة المزامنة الجديدة ---
   const handleSyncBalances = async () => {
       if (!confirm('هل تريد إعادة حساب أرصدة الإجازات لجميع الموظفين بناءً على الطلبات المقبولة؟')) return;
       setIsSyncing(true);
@@ -107,11 +106,64 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
           const { error } = await supabase.rpc('recalculate_all_balances');
           if (error) throw error;
           alert('تم تحديث جميع الأرصدة بنجاح ✅');
-          onRefresh(); // إعادة تحميل بيانات الجدول
+          onRefresh(); 
       } catch (err: any) {
           alert('حدث خطأ: ' + err.message);
       } finally {
           setIsSyncing(false);
+      }
+  };
+
+  // --- دالة تصدير جميع الموظفين ---
+  const handleExportEmployees = async () => {
+      setIsExporting(true);
+      try {
+          // جلب أحدث البيانات من القاعدة لضمان الدقة
+          const { data: allEmployees, error } = await supabase
+              .from('employees')
+              .select('*')
+              .order('employee_id', { ascending: true });
+
+          if (error) throw error;
+          if (!allEmployees || allEmployees.length === 0) return alert('لا توجد بيانات للتصدير');
+
+          // تحضير البيانات للإكسيل (ترجمة العناوين)
+          const exportData = allEmployees.map(emp => ({
+              'كود الموظف': emp.employee_id,
+              'الاسم': emp.name,
+              'الرقم القومي': emp.national_id,
+              'التخصص': emp.specialty,
+              'رقم الهاتف': emp.phone,
+              'البريد الإلكتروني': emp.email,
+              'النوع': emp.gender,
+              'الدرجة الوظيفية': emp.grade,
+              'الديانة': emp.religion,
+              'أيام العمل': emp.work_days,
+              'وقت الحضور': emp.start_time,
+              'وقت الانصراف': emp.end_time,
+              'رصيد اعتيادي': emp.leave_annual_balance,
+              'رصيد عارضة': emp.leave_casual_balance,
+              'متبقي اعتيادي': emp.remaining_annual,
+              'متبقي عارضة': emp.remaining_casual,
+              'إجمالي الغياب': emp.total_absence,
+              'المهام الإدارية': emp.admin_tasks,
+              'حالة القيد': emp.status,
+              'تاريخ التعيين': emp.join_date,
+              'الدورات التدريبية': emp.training_courses,
+              'ملاحظات': emp.notes,
+              'إجازة وضع': emp.maternity,
+              'الصلاحية': emp.role
+          }));
+
+          const ws = XLSX.utils.json_to_sheet(exportData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Employees_Data");
+          XLSX.writeFile(wb, `All_Employees_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+      } catch (err: any) {
+          alert('فشل التصدير: ' + err.message);
+      } finally {
+          setIsExporting(false);
       }
   };
 
@@ -249,7 +301,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
       <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
         <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
         <div className="flex flex-wrap gap-2 justify-center">
-            {/* زر المزامنة الجديد */}
+            
             <button 
                 onClick={handleSyncBalances}
                 disabled={isSyncing}
@@ -258,6 +310,16 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             >
                 <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`}/> 
                 {isSyncing ? 'جاري الحساب...' : 'مزامنة الأرصدة'}
+            </button>
+
+            {/* زر تصدير جميع الموظفين (جديد) */}
+            <button 
+                onClick={handleExportEmployees}
+                disabled={isExporting}
+                className="bg-green-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 transition-all shadow-lg shadow-green-200 text-sm"
+            >
+                <FileSpreadsheet className={`w-4 h-4 ${isExporting ? 'animate-spin' : ''}`}/>
+                {isExporting ? 'جاري التصدير...' : 'تحميل قاعدة البيانات'}
             </button>
 
             <button 
@@ -313,7 +375,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                           </td>
                           <td onClick={() => setSelectedEmp(emp)} className="p-4 text-xs font-bold text-gray-500 text-center cursor-pointer">{emp.specialty}</td>
                           <td className="p-4 text-center flex justify-center gap-2 items-center">
-                              {/* زر فتح الإحصائيات السريع */}
                               <button 
                                 onClick={(e) => { e.stopPropagation(); openStats(emp); }}
                                 className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
