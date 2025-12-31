@@ -6,7 +6,7 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
-  Newspaper, Trophy // أيقونة التحفيز
+  Newspaper, Trophy, MessageCircle // تم استبدال Mail بـ MessageCircle للرسائل العامة
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
@@ -19,9 +19,10 @@ import SettingsTab from './components/SettingsTab';
 import ReportsTab from './components/ReportsTab';
 import SendReportsTab from './components/SendReportsTab';
 import NewsManagementTab from './components/NewsManagementTab';
-import BirthdayWidget from './components/BirthdayWidget'; // استيراد أعياد الميلاد
-import EOMManager from './components/EOMManager'; // استيراد إدارة الموظف المثالي
+import BirthdayWidget from './components/BirthdayWidget';
+import EOMManager from './components/EOMManager';
 import NotificationBell from '../../components/ui/NotificationBell';
+import AdminMessagesTab from './components/AdminMessagesTab'; // <-- استيراد التبويب الجديد
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
@@ -60,13 +61,14 @@ export default function AdminDashboard() {
   const menuItems = [
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
-    { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy }, // التبويب الجديد
+    { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
+    { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle }, // <-- التبويب الجديد
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
     { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
     { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
-    { id: 'send_reports', label: 'إرسال التقارير', icon: Mail },
+    { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
     { id: 'settings', label: 'إعدادات النظام', icon: Settings },
   ];
 
@@ -154,13 +156,15 @@ export default function AdminDashboard() {
             {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={centerId} />}
             {activeTab === 'news' && <NewsManagementTab />}
             
-            {/* عرض تبويب التحفيز والجوائز */}
             {activeTab === 'motivation' && (
                <div className="space-y-6 max-w-4xl mx-auto">
                    <BirthdayWidget employees={employees} />
                    <EOMManager />
                </div>
             )}
+
+            {/* عرض تبويب الرسائل الجديد */}
+            {activeTab === 'all_messages' && <AdminMessagesTab employees={employees} />}
             
             {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
             {activeTab === 'schedules' && <EveningSchedulesTab employees={employees} />}
