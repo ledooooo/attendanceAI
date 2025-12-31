@@ -1,26 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Send, User, Reply, Inbox, ArrowUpRight, ArrowDownLeft, Check, CheckCheck } from 'lucide-react';
+import { Send, Inbox, Check, CheckCheck } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, InternalMessage } from '../../../types';
 
 interface Props {
     messages: InternalMessage[];
     employee: Employee;
-    currentUserId: string; // 'admin' or employee_id
+    currentUserId: string;
 }
 
 export default function StaffMessages({ messages, employee, currentUserId }: Props) {
     const [newMessage, setNewMessage] = useState('');
     const [filter, setFilter] = useState<'all' | 'inbox' | 'sent'>('all');
-    const [localMessages, setLocalMessages] = useState<InternalMessage[]>(messages);
+    const [localMessages, setLocalMessages] = useState<any[]>(messages); // استخدام any مؤقتاً لتجنب أخطاء Typescript إذا لم تعدل الواجهة
     const [sending, setSending] = useState(false);
 
-    // تحديث الرسائل عند تغير الـ props
     useEffect(() => {
         setLocalMessages(messages);
     }, [messages]);
 
-    // تعليم الرسائل كمقروءة عند فتحها
     useEffect(() => {
         const markAsRead = async () => {
             const unreadIds = localMessages
@@ -29,7 +27,6 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
 
             if (unreadIds.length > 0) {
                 await supabase.from('messages').update({ is_read: true }).in('id', unreadIds);
-                // تحديث الحالة محلياً
                 setLocalMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, is_read: true } : m));
             }
         };
@@ -44,10 +41,11 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
         const fromUser = currentUserId === 'admin' ? 'admin' : employee.employee_id;
         const toUser = currentUserId === 'admin' ? employee.employee_id : 'admin';
 
+        // 1. التعديل هنا: استخدام content بدلاً من message
         const payload = {
             from_user: fromUser,
-            to_user: toUser,
-            message: newMessage,
+            to_user: toUser, // تأكد أن العمود في القاعدة to_user (بدون مسافة)
+            content: newMessage, 
             is_read: false
         };
 
@@ -68,7 +66,7 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
         
         if (filter === 'inbox') return isInbox;
         if (filter === 'sent') return isSent;
-        return true; // all
+        return true; 
     });
 
     return (
@@ -92,7 +90,6 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
                     </div>
                 </div>
                 
-                {/* Filters */}
                 <div className="flex bg-white rounded-xl p-1 border shadow-sm">
                     <button onClick={() => setFilter('all')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${filter === 'all' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>الكل</button>
                     <button onClick={() => setFilter('inbox')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${filter === 'inbox' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}>وارد</button>
@@ -118,7 +115,8 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
                                         ? 'bg-blue-600 text-white rounded-br-none' 
                                         : 'bg-white border border-gray-100 text-gray-700 rounded-bl-none'
                                     }`}>
-                                        {msg.message}
+                                        {/* 2. التعديل هنا: عرض content بدلاً من message */}
+                                        {msg.content || msg.message} 
                                     </div>
                                     <div className="flex items-center gap-1 mt-1 px-1">
                                         <span className="text-[10px] font-bold text-gray-400">
