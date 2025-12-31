@@ -5,17 +5,17 @@ export interface Employee {
   name: string;          // الاسم الرباعي
   national_id: string;   // الرقم القومي
   specialty: string;     // التخصص الوظيفي
-  status: string;        // حالة الموظف ('نشط' | 'موقوف' | 'إجازة' | ...)
-  join_date: string;     // تاريخ التعيين (YYYY-MM-DD)
+  status?: string;        // حالة الموظف ('نشط' | 'موقوف' | 'إجازة' | ...)
+  join_date?: string;     // تاريخ التعيين (YYYY-MM-DD)
   center_id?: string;    // كود المركز الطبي التابع له
   photo_url?: string;    // رابط الصورة الشخصية
   phone?: string;        // رقم الهاتف
   
   // --- حقول المصادقة ---
   email?: string;        // البريد الإلكتروني
-  role?: string;         // الصلاحية ('admin' | 'user')
+  role?: string;         // الصلاحية ('admin' | 'user' | 'head_of_dept')
 
-  // --- بيانات إضافية (التي كانت تسبب الخطأ) ---
+  // --- بيانات إضافية ---
   gender?: string;
   grade?: string;
   religion?: string;
@@ -26,12 +26,16 @@ export interface Employee {
   end_time?: string;
 
   // أرصدة الإجازات
-  leave_annual_balance?: number; // رصيد الاعتيادي (أصل)
-  leave_casual_balance?: number; // رصيد العارضة (أصل)
-  remaining_annual?: number;     // المتبقي اعتيادي
-  remaining_casual?: number;     // المتبقي عارضة
-  total_absence?: number;        // إجمالي الغياب
-  maternity?: boolean;           // إجازة وضع
+  leave_annual_balance: number; // رصيد الاعتيادي (أصل)
+  leave_casual_balance: number; // رصيد العارضة (أصل)
+  remaining_annual: number;     // المتبقي اعتيادي
+  remaining_casual: number;     // المتبقي عارضة
+  leave_sick_balance?: number;         // رصيد مرضي
+  leave_morning_perm_balance?: number; // رصيد إذن صباحي
+  leave_evening_perm_balance?: number; // رصيد إذن مسائي
+  
+  total_absence: number;        // إجمالي الغياب
+  maternity?: string | boolean;           // إجازة وضع
 
   // معلومات أخرى
   admin_tasks?: string;
@@ -68,10 +72,12 @@ export interface LeaveRequest {
   end_date: string;
   back_date?: string;    // تاريخ العودة
   backup_person?: string; // الموظف البديل
-  status: 'معلق' | 'مقبول' | 'مرفوض';
+  status: 'معلق' | 'مقبول' | 'مرفوض' | 'قيد الانتظار';
   notes?: string;
-  created_at: string;
+  created_at?: string;
   employee_name?: string; // للعرض
+  // تمت إضافة employee للسماح بالوصول لبيانات الموظف عند العرض
+  employee?: { name: string; specialty: string; department?: string };
 }
 
 // تعريف التقييم الشهري
@@ -80,13 +86,19 @@ export interface Evaluation {
   employee_id: string;
   month: string;         // YYYY-MM
   year?: number;
-  score_appearance: number;
-  score_attendance: number;
-  score_quality: number;
-  score_infection: number;
-  score_training: number;
-  score_records: number;
-  score_tasks: number;
+  score_appearance?: number;
+  score_attendance?: number;
+  score_quality?: number;
+  score_infection?: number;
+  score_training?: number;
+  score_records?: number;
+  score_tasks?: number;
+  // أحياناً يتم استخدام score_1, score_2... بدلاً من الأسماء الوصفية
+  score_1?: number;
+  score_2?: number;
+  score_3?: number;
+  score_4?: number;
+  
   total_score: number;   
   notes?: string;
 }
@@ -94,18 +106,29 @@ export interface Evaluation {
 // تعريف الرسائل الداخلية
 export interface InternalMessage {
   id: string;
-  from_user: string;     
-  to_user: string;       
-  message: string;       // لاحظ: الاسم قد يكون message أو content حسب الجدول
   created_at: string;
+  from_user: string;
+  to_user: string;
+  content: string; // تم توحيد الاسم ليكون content
   is_read: boolean;
+  message?: string; // (اختياري) لدعم الكود القديم إذا وجد
+}
+
+// تعريف قاعدة الحضور والانصراف
+export interface AttendanceRule {
+  id: string;
+  type: 'in' | 'out'; // حضور أو انصراف
+  start_time: string;
+  end_time: string;
+  name: string; // "حضور مبكر", "تأخير", etc.
+  color: string; // "green", "red", "orange", etc.
 }
 
 // تعريف جدول النوبتجيات المسائية
 export interface EveningSchedule {
   id: string;
   date: string;
-  doctors: string[];     
+  doctors: any[]; // تم تعديله ليقبل مصفوفة كائنات أو نصوص
   notes?: string;
 }
 
@@ -124,9 +147,8 @@ export interface GeneralSettings {
   links_names?: string[];
   links_urls?: string[];
   last_attendance_update?: string;
+  center_name?: string;
 }
-
-// ... (الأنواع السابقة)
 
 // تعريف الخبر
 export interface NewsPost {
@@ -134,7 +156,7 @@ export interface NewsPost {
   title: string;
   content: string;
   image_url?: string;
-  is_pinned: boolean;
+  is_pinned?: boolean;
   created_at: string;
   comments?: NewsComment[]; // لربط التعليقات عند العرض
 }
@@ -148,9 +170,6 @@ export interface NewsComment {
   comment_text: string;
   created_at: string;
 }
-
-
-// ... (الأنواع السابقة)
 
 export interface EOMCycle {
   id: string;
@@ -179,36 +198,3 @@ export const getBirthDateFromNationalID = (nid: string): Date | null => {
   const date = new Date(year, month, day);
   return isNaN(date.getTime()) ? null : date;
 };
-
-
-export interface AttendanceRule {
-  id: string;
-  name: string;
-  type: 'in' | 'out';
-  start_time: string;
-  end_time: string;
-  color: string;
-}
-// ... الأنواع السابقة
-// أضف هذا داخل واجهة Employee في ملف src/types.ts
-
-export interface Employee {
-  // ... الحقول السابقة كما هي ...
-
-  // أرصدة الإجازات (تحديث)
-  leave_annual_balance?: number;       // رصيد اعتيادي
-  leave_casual_balance?: number;       // رصيد عارضة
-  leave_sick_balance?: number;         // رصيد مرضي (جديد)
-  leave_morning_perm_balance?: number; // رصيد إذن صباحي (جديد)
-  leave_evening_perm_balance?: number; // رصيد إذن مسائي (جديد)
-  
-  // ... باقي الحقول
-}
-export interface AttendanceRule {
-  id: string;
-  name: string;
-  type: 'in' | 'out';
-  start_time: string;
-  end_time: string;
-  color: string;
-}
