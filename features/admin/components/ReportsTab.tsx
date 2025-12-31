@@ -2,10 +2,21 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-import { Printer, Search, Calendar, UserX, CheckCircle, Clock, Filter, FileBarChart } from 'lucide-react';
+import { Printer, Calendar, Filter, FileSpreadsheet, Download, RefreshCw } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
+import * as XLSX from 'xlsx';
 
 type ReportType = 'daily' | 'monthly' | 'absence';
+
+// تعريفات البيانات المحسوبة
+interface ReportRow {
+    id: string;
+    employee_id: string;
+    name: string;
+    specialty: string;
+    jobStatus: string; // حالة القيد (نشط/موقوف)
+    [key: string]: any; // للحقول الإضافية
+}
 
 export default function ReportsTab() {
   const [activeReport, setActiveReport] = useState<ReportType>('daily');
@@ -15,14 +26,14 @@ export default function ReportsTab() {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
 
   // فلاتر البحث
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]); // لليومي والغياب
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7)); // للشهري
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [filterName, setFilterName] = useState('');
   const [filterSpecialty, setFilterSpecialty] = useState('all');
-  const [filterAttendanceStatus, setFilterAttendanceStatus] = useState('all'); // حضور، غياب، إجازة (الخاصة باليوم)
-  const [filterJobStatus, setFilterJobStatus] = useState('all'); // نشط، موقوف (الخاصة بجدول الموظفين)
+  const [filterAttendanceStatus, setFilterAttendanceStatus] = useState('all');
+  const [filterJobStatus, setFilterJobStatus] = useState('all');
 
-  const componentRef = useRef(null); // مرجع للطباعة
+  const componentRef = useRef(null);
 
   // دالة الطباعة
   const handlePrint = useReactToPrint({
@@ -30,7 +41,48 @@ export default function ReportsTab() {
     documentTitle: `تقرير_${activeReport}_${activeReport === 'monthly' ? month : date}`,
   });
 
-  // جلب البيانات الأساسية
+  // دالة التصدير للإكسيل
+  const handleExportExcel = () => {
+    let dataToExport: any[] = [];
+    let fileName = '';
+
+    if (activeReport === 'daily') {
+        dataToExport = dailyData.map(row => ({
+            'الكود': row.employee_id,
+            'الاسم': row.name,
+            'التخصص': row.specialty,
+            'حالة القيد': row.jobStatus,
+            'حضور': row.inTime,
+            'انصراف': row.outTime,
+            'الحالة': row.reportStatus === 'إجازة' ? row.leaveType : row.reportStatus
+        }));
+        fileName = `Daily_Report_${date}`;
+    } else if (activeReport === 'monthly') {
+        dataToExport = monthlyData.map(row => ({
+            'الكود': row.employee_id,
+            'الاسم': row.name,
+            'التخصص': row.specialty,
+            'أيام الحضور': row.daysPresent,
+            'عدد الإجازات': row.daysLeaves
+        }));
+        fileName = `Monthly_Report_${month}`;
+    } else {
+        dataToExport = absenceData.map(row => ({
+            'الكود': row.employee_id,
+            'الاسم': row.name,
+            'التخصص': row.specialty,
+            'حالة القيد': row.jobStatus,
+            'الحالة': 'غياب غير مبرر'
+        }));
+        fileName = `Absence_Report_${date}`;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `${fileName}.xlsx`);
+  };
+
   useEffect(() => {
     fetchData();
   }, [date, month, activeReport]);
@@ -38,11 +90,11 @@ export default function ReportsTab() {
   const fetchData = async () => {
     setLoading(true);
     
-    // 1. جلب الموظفين (تم إزالة شرط neq status موقوف لكي يظهروا في الفلتر إذا أردنا ذلك)
+    // 1. جلب الموظفين
     const { data: emps } = await supabase.from('employees').select('*').order('name');
     if (emps) setEmployees(emps);
 
-    // 2. جلب الحضور والإجازات حسب نوع التقرير
+    // 2. جلب الحضور والإجازات
     if (activeReport === 'daily' || activeReport === 'absence') {
         const { data: att } = await supabase.from('attendance').select('*').eq('date', date);
         const { data: lvs } = await supabase.from('leave_requests').select('*')
@@ -55,13 +107,15 @@ export default function ReportsTab() {
 
     } else if (activeReport === 'monthly') {
         const startOfMonth = `${month}-01`;
-        const endOfMonth = `${month}-31`;
+        // حساب آخر يوم في الشهر المختار
+        const d = new Date(month);
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        const endOfMonth = `${month}-${lastDay}`;
         
         const { data: att } = await supabase.from('attendance').select('*')
             .gte('date', startOfMonth)
             .lte('date', endOfMonth);
         
-        // الإجازات التي تتقاطع مع هذا الشهر
         const { data: lvs } = await supabase.from('leave_requests').select('*')
             .eq('status', 'مقبول')
             .or(`start_date.gte.${startOfMonth},end_date.lte.${endOfMonth}`);
@@ -72,7 +126,7 @@ export default function ReportsTab() {
     setLoading(false);
   };
 
-  // --- معالجة البيانات للتقرير اليومي ---
+  // --- معالجة البيانات: التقرير اليومي ---
   const dailyData = useMemo(() => {
       return employees.map(emp => {
           const empAtt = attendance.find(a => a.employee_id === emp.employee_id);
@@ -84,7 +138,7 @@ export default function ReportsTab() {
 
           if (empAtt) {
               reportStatus = 'حضور';
-              const times = empAtt.times.split(/\s+/).filter(t => t.includes(':'));
+              const times = empAtt.times ? empAtt.times.split(/\s+/).filter(t => t.includes(':')) : [];
               if (times.length > 0) inTime = times[0];
               if (times.length > 1) outTime = times[times.length - 1];
           } else if (empLeave) {
@@ -93,56 +147,50 @@ export default function ReportsTab() {
 
           return { 
               ...emp, 
-              reportStatus, // حالة الحضور اليومي
-              jobStatus: emp.status, // حالة الموظف الأصلية من قاعدة البيانات
+              jobStatus: emp.status,
+              reportStatus,
               inTime, 
               outTime, 
               leaveType: empLeave?.type 
           };
-      }).filter(item => {
+      }).filter((item: any) => {
           if (filterName && !item.name.includes(filterName)) return false;
           if (filterSpecialty !== 'all' && item.specialty !== filterSpecialty) return false;
+          if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
           
-          // فلتر حالة الحضور (حضور/غياب/إجازة)
           if (filterAttendanceStatus !== 'all') {
               if (filterAttendanceStatus === 'حضور' && item.reportStatus !== 'حضور') return false;
               if (filterAttendanceStatus === 'غياب' && item.reportStatus !== 'غياب') return false;
               if (filterAttendanceStatus === 'إجازة' && item.reportStatus !== 'إجازة') return false;
           }
-
-          // فلتر حالة الموظف الوظيفية (نشط/موقوف)
-          if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
-
           return true;
       });
   }, [employees, attendance, leaves, filterName, filterSpecialty, filterAttendanceStatus, filterJobStatus]);
 
-  // --- معالجة البيانات لتقرير الغياب ---
+  // --- معالجة البيانات: تقرير الغياب ---
   const absenceData = useMemo(() => {
       return employees.map(emp => {
           const hasAtt = attendance.some(a => a.employee_id === emp.employee_id);
           const hasLeave = leaves.some(l => l.employee_id === emp.employee_id);
           
+          // شرط الغياب: لا حضور + لا إجازة + حالته نشط (اختياري حسب سياستك)
           if (!hasAtt && !hasLeave) {
               return { 
                   ...emp, 
-                  reportStatus: 'غياب غير مبرر',
-                  jobStatus: emp.status // الاحتفاظ بالحالة الأصلية
+                  jobStatus: emp.status,
+                  reportStatus: 'غياب غير مبرر'
               };
           }
           return null;
-      }).filter(Boolean).filter((item:any) => {
+      }).filter(Boolean).filter((item: any) => {
            if (filterName && !item.name.includes(filterName)) return false;
            if (filterSpecialty !== 'all' && item.specialty !== filterSpecialty) return false;
-           
-           // فلتر حالة الموظف الوظيفية
            if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
-
            return true;
       });
   }, [employees, attendance, leaves, filterName, filterSpecialty, filterJobStatus]);
 
-  // --- معالجة البيانات للتقرير الشهري ---
+  // --- معالجة البيانات: التقرير الشهري ---
   const monthlyData = useMemo(() => {
       return employees.map(emp => {
           const empAtts = attendance.filter(a => a.employee_id === emp.employee_id);
@@ -150,29 +198,26 @@ export default function ReportsTab() {
 
           return {
               ...emp,
+              jobStatus: emp.status,
               daysPresent: empAtts.length,
               daysLeaves: empLeaves,
           };
-      }).filter(item => {
+      }).filter((item: any) => {
            if (filterName && !item.name.includes(filterName)) return false;
            if (filterSpecialty !== 'all' && item.specialty !== filterSpecialty) return false;
-           
-           // فلتر حالة الموظف الوظيفية (هنا item.status هي الحالة الأصلية لأنه لم يتم استبدالها)
-           if (filterJobStatus !== 'all' && item.status !== filterJobStatus) return false;
-           
+           if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
            return true;
       });
   }, [employees, attendance, leaves, filterName, filterSpecialty, filterJobStatus]);
 
-
-  // الإحصائيات العامة
+  // --- الإحصائيات ---
   const stats = useMemo(() => {
       if (activeReport === 'daily') {
           return {
               total: employees.length,
-              present: dailyData.filter(d => d.reportStatus === 'حضور').length,
-              absent: dailyData.filter(d => d.reportStatus === 'غياب').length,
-              leave: dailyData.filter(d => d.reportStatus === 'إجازة').length
+              present: dailyData.filter((d: any) => d.reportStatus === 'حضور').length,
+              absent: dailyData.filter((d: any) => d.reportStatus === 'غياب').length,
+              leave: dailyData.filter((d: any) => d.reportStatus === 'إجازة').length
           };
       } else if (activeReport === 'absence') {
           return { total: absenceData.length };
@@ -180,194 +225,220 @@ export default function ReportsTab() {
       return { total: monthlyData.length };
   }, [dailyData, absenceData, monthlyData, activeReport, employees]);
 
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
         
-        {/* Header & Controls */}
-        <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4 no-print">
-            <div className="flex gap-2 bg-gray-100 p-1 rounded-xl">
-                <button onClick={() => setActiveReport('daily')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeReport === 'daily' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>تقرير يومي</button>
-                <button onClick={() => setActiveReport('monthly')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeReport === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>تقرير شهري</button>
-                <button onClick={() => setActiveReport('absence')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeReport === 'absence' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500'}`}>تقرير الغياب</button>
+        {/* Controls Bar */}
+        <div className="flex flex-col xl:flex-row justify-between items-center border-b pb-4 gap-4 no-print">
+            <div className="flex bg-gray-100 p-1.5 rounded-xl shadow-inner overflow-x-auto max-w-full">
+                <button onClick={() => setActiveReport('daily')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${activeReport === 'daily' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}>تقرير يومي</button>
+                <button onClick={() => setActiveReport('monthly')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${activeReport === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}>تقرير شهري</button>
+                <button onClick={() => setActiveReport('absence')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${activeReport === 'absence' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}>تقرير الغياب</button>
             </div>
             
-            <button onClick={handlePrint} className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-900">
-                <Printer className="w-5 h-5"/> طباعة التقرير
-            </button>
+            <div className="flex gap-2 w-full xl:w-auto">
+                <button onClick={() => fetchData()} disabled={loading} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50">
+                    <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`}/>
+                </button>
+                <button onClick={handleExportExcel} className="flex-1 xl:flex-none justify-center bg-green-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-lg shadow-green-200 transition-all">
+                    <FileSpreadsheet className="w-5 h-5"/> تصدير Excel
+                </button>
+                <button onClick={handlePrint} className="flex-1 xl:flex-none justify-center bg-gray-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-900 shadow-lg shadow-gray-300 transition-all">
+                    <Printer className="w-5 h-5"/> طباعة
+                </button>
+            </div>
         </div>
 
         {/* Filters Bar */}
-        <div className="bg-white p-4 rounded-2xl border shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4 no-print">
+        <div className="bg-white p-5 rounded-2xl border shadow-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 no-print">
+            <div className="flex items-center gap-2 col-span-1 md:col-span-2 lg:col-span-5 text-gray-500 font-bold border-b pb-2 mb-2">
+                <Filter className="w-4 h-4"/> أدوات الفلترة والبحث
+            </div>
+            
             {activeReport !== 'monthly' ? (
                 <Input type="date" label="التاريخ" value={date} onChange={setDate} />
             ) : (
                 <Input type="month" label="الشهر" value={month} onChange={setMonth} />
             )}
-            <Input label="اسم الموظف" placeholder="بحث..." value={filterName} onChange={setFilterName} />
+            
+            <Input label="بحث بالاسم" placeholder="اسم الموظف..." value={filterName} onChange={setFilterName} />
+            
             <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e => e.specialty)))]} value={filterSpecialty} onChange={setFilterSpecialty} />
             
-            {/* فلتر حالة الموظف الوظيفية (جديد) */}
-            <Select label="حالة الموظف (الوظيفية)" options={['all', 'نشط', 'موقوف', 'إجازة', 'خارج المركز']} value={filterJobStatus} onChange={setFilterJobStatus} />
+            <Select label="حالة القيد" options={['all', 'نشط', 'موقوف']} value={filterJobStatus} onChange={setFilterJobStatus} />
 
-            {/* فلتر حالة الحضور (يظهر فقط في اليومي) */}
             {activeReport === 'daily' && (
-                <Select label="حالة الحضور (اليوم)" options={['all', 'حضور', 'غياب', 'إجازة']} value={filterAttendanceStatus} onChange={setFilterAttendanceStatus} />
+                <Select label="حالة الحضور" options={['all', 'حضور', 'غياب', 'إجازة']} value={filterAttendanceStatus} onChange={setFilterAttendanceStatus} />
             )}
         </div>
 
         {/* --- Report Content (Printable Area) --- */}
-        <div ref={componentRef} className="bg-white p-8 rounded-[30px] border shadow-sm min-h-[600px] print:p-0 print:border-0 print:shadow-none print:w-full">
+        <div ref={componentRef} className="bg-white p-8 rounded-[30px] border shadow-sm min-h-[600px] print:p-4 print:border-0 print:shadow-none print:w-full">
             
             {/* Print Header */}
-            <div className="hidden print:flex flex-col items-center mb-8 border-b pb-4">
-                <h1 className="text-2xl font-black">المركز الطبي الذكي</h1>
-                <h2 className="text-xl font-bold mt-2">
-                    {activeReport === 'daily' ? `تقرير الحضور والانصراف اليومي (${date})` : 
+            <div className="hidden print:flex flex-col items-center mb-8 border-b-2 border-gray-800 pb-4">
+                <h1 className="text-3xl font-black text-gray-900">المركز الطبي الذكي</h1>
+                <h2 className="text-xl font-bold mt-2 text-gray-700">
+                    {activeReport === 'daily' ? `تقرير الحضور والانصراف اليومي (${new Date(date).toLocaleDateString('ar-EG')})` : 
                      activeReport === 'monthly' ? `تقرير الحضور الشهري (${month})` : 
-                     `تقرير الغياب اليومي (${date})`}
+                     `تقرير المتغيبين (${new Date(date).toLocaleDateString('ar-EG')})`}
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">تاريخ الطباعة: {new Date().toLocaleString('ar-EG')}</p>
+                <div className="flex justify-between w-full mt-4 text-xs text-gray-500 font-mono">
+                    <span>تاريخ الطباعة: {new Date().toLocaleString('ar-EG')}</span>
+                    <span>المستخدم: الإدارة</span>
+                </div>
             </div>
 
             {/* Statistics Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 {activeReport === 'daily' && (
                     <>
-                        <div className="bg-gray-50 p-4 rounded-xl border text-center print:border-gray-300">
-                            <span className="block text-2xl font-black text-blue-600">{stats.total}</span>
+                        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-center print:border-gray-300">
+                            <span className="block text-3xl font-black text-blue-600">{stats.total}</span>
                             <span className="text-xs font-bold text-gray-500">إجمالي الموظفين</span>
                         </div>
-                        <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center print:border-gray-300">
-                            <span className="block text-2xl font-black text-green-600">{stats.present}</span>
+                        <div className="bg-green-50 p-4 rounded-2xl border border-green-100 text-center print:border-gray-300">
+                            <span className="block text-3xl font-black text-green-600">{stats.present}</span>
                             <span className="text-xs font-bold text-green-700">حضور</span>
                         </div>
-                        <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-center print:border-gray-300">
-                            <span className="block text-2xl font-black text-red-600">{stats.absent}</span>
+                        <div className="bg-red-50 p-4 rounded-2xl border border-red-100 text-center print:border-gray-300">
+                            <span className="block text-3xl font-black text-red-600">{stats.absent}</span>
                             <span className="text-xs font-bold text-red-700">غياب</span>
                         </div>
-                        <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 text-center print:border-gray-300">
-                            <span className="block text-2xl font-black text-orange-600">{stats.leave}</span>
+                        <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 text-center print:border-gray-300">
+                            <span className="block text-3xl font-black text-orange-600">{stats.leave}</span>
                             <span className="text-xs font-bold text-orange-700">إجازات</span>
                         </div>
                     </>
                 )}
                 {activeReport === 'absence' && (
-                    <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-center print:border-gray-300 col-span-4">
-                        <span className="block text-3xl font-black text-red-600">{stats.total}</span>
-                        <span className="text-sm font-bold text-red-700">موظف متغيب بدون إذن</span>
+                    <div className="bg-red-50 p-6 rounded-2xl border border-red-200 text-center print:border-gray-300 col-span-4 shadow-sm">
+                        <span className="block text-4xl font-black text-red-600 mb-1">{stats.total}</span>
+                        <span className="text-sm font-bold text-red-800">موظف متغيب بدون إذن مسبق</span>
                     </div>
                 )}
                 {activeReport === 'monthly' && (
-                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center print:border-gray-300 col-span-4">
-                        <span className="block text-3xl font-black text-blue-600">{stats.total}</span>
-                        <span className="text-sm font-bold text-blue-700">إجمالي الموظفين في التقرير</span>
+                     <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-200 text-center print:border-gray-300 col-span-4 shadow-sm">
+                        <span className="block text-4xl font-black text-indigo-600 mb-1">{stats.total}</span>
+                        <span className="text-sm font-bold text-indigo-800">إجمالي الموظفين في التقرير</span>
                     </div>
                 )}
             </div>
 
-            {/* --- Tables --- */}
+            {/* --- Tables Section --- */}
             
             {/* 1. Daily Table */}
-{activeReport === 'daily' && (
-    <div className="overflow-x-auto"> {/* تأكد من وجود هذا الغلاف */}
-        <table className="w-full text-sm text-right border-collapse min-w-[700px]"> {/* أضف min-w */}                    <thead>
-                        <tr className="bg-gray-100 text-gray-700 print:bg-gray-200">
-                            <th className="p-3 border">الكود</th>
-                            <th className="p-3 border">الاسم</th>
-                            <th className="p-3 border">التخصص</th>
-                            <th className="p-3 border">حالة الموظف</th>
-                            <th className="p-3 border text-center">حضور</th>
-                            <th className="p-3 border text-center">انصراف</th>
-                            <th className="p-3 border text-center">حالة اليوم</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {dailyData.map((row:any) => (
-                            <tr key={row.id} className="border-b print:border-gray-300">
-                                <td className="p-3 border font-mono">{row.employee_id}</td>
-                                <td className="p-3 border font-bold">{row.name}</td>
-                                <td className="p-3 border text-gray-600">{row.specialty}</td>
-                                <td className="p-3 border text-xs">{row.jobStatus}</td>
-                                <td className="p-3 border text-center font-mono">{row.inTime}</td>
-                                <td className="p-3 border text-center font-mono">{row.outTime}</td>
-                                <td className="p-3 border text-center">
-                                    <span className={`px-2 py-1 rounded-md text-xs font-black ${
-                                        row.reportStatus === 'حضور' ? 'bg-green-100 text-green-700 print:bg-transparent print:text-black' :
-                                        row.reportStatus === 'غياب' ? 'bg-red-100 text-red-700 print:bg-transparent print:text-black' :
-                                        'bg-orange-100 text-orange-700 print:bg-transparent print:text-black'
-                                    }`}>
-                                        {row.reportStatus === 'إجازة' && row.leaveType ? row.leaveType : row.reportStatus}
-                                    </span>
-                                </td>
+            {activeReport === 'daily' && (
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                    <table className="w-full text-sm text-right border-collapse min-w-[800px]">
+                        <thead>
+                            <tr className="bg-gray-100 text-gray-700 print:bg-gray-200 border-b-2 border-gray-200">
+                                <th className="p-4 border-l">الكود</th>
+                                <th className="p-4 border-l">الاسم</th>
+                                <th className="p-4 border-l">التخصص</th>
+                                <th className="p-4 border-l">حالة القيد</th>
+                                <th className="p-4 border-l text-center">وقت الحضور</th>
+                                <th className="p-4 border-l text-center">وقت الانصراف</th>
+                                <th className="p-4 text-center">الحالة</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
-      </div>
+                        </thead>
+                        <tbody>
+                            {dailyData.map((row: any, index: number) => (
+                                <tr key={row.id} className={`hover:bg-gray-50 border-b last:border-0 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                                    <td className="p-3 border-l font-mono text-gray-500">{row.employee_id}</td>
+                                    <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
+                                    <td className="p-3 border-l text-gray-600">{row.specialty}</td>
+                                    <td className="p-3 border-l">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] ${row.jobStatus === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                            {row.jobStatus}
+                                        </span>
+                                    </td>
+                                    <td className="p-3 border-l text-center font-mono text-blue-600 font-bold" dir="ltr">{row.inTime}</td>
+                                    <td className="p-3 border-l text-center font-mono text-red-600 font-bold" dir="ltr">{row.outTime}</td>
+                                    <td className="p-3 text-center">
+                                        <span className={`px-3 py-1 rounded-full text-xs font-black inline-flex items-center gap-1 ${
+                                            row.reportStatus === 'حضور' ? 'bg-green-100 text-green-700 print:border print:border-green-600' :
+                                            row.reportStatus === 'غياب' ? 'bg-red-100 text-red-700 print:border print:border-red-600' :
+                                            'bg-orange-100 text-orange-700 print:border print:border-orange-600'
+                                        }`}>
+                                            {row.reportStatus === 'إجازة' && row.leaveType ? row.leaveType : row.reportStatus}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                            {dailyData.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-gray-400">لا توجد بيانات للعرض</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
             )}
 
             {/* 2. Monthly Table */}
-{activeReport === 'daily' && (
-    <div className="overflow-x-auto"> {/* تأكد من وجود هذا الغلاف */}
-        <table className="w-full text-sm text-right border-collapse min-w-[700px]"> {/* أضف min-w */}                    <thead>
-                        <tr className="bg-gray-100 text-gray-700 print:bg-gray-200">
-                            <th className="p-3 border">الكود</th>
-                            <th className="p-3 border">الاسم</th>
-                            <th className="p-3 border">التخصص</th>
-                            <th className="p-3 border">حالة الموظف</th>
-                            <th className="p-3 border text-center">أيام الحضور</th>
-                            <th className="p-3 border text-center">الإجازات المقبولة</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {monthlyData.map((row:any) => (
-                            <tr key={row.id} className="border-b print:border-gray-300">
-                                <td className="p-3 border font-mono">{row.employee_id}</td>
-                                <td className="p-3 border font-bold">{row.name}</td>
-                                <td className="p-3 border text-gray-600">{row.specialty}</td>
-                                <td className="p-3 border text-xs">{row.status}</td>
-                                <td className="p-3 border text-center font-bold text-green-600">{row.daysPresent}</td>
-                                <td className="p-3 border text-center font-bold text-orange-600">{row.daysLeaves}</td>
+            {activeReport === 'monthly' && (
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                    <table className="w-full text-sm text-right border-collapse min-w-[800px]">
+                        <thead>
+                            <tr className="bg-gray-100 text-gray-700 print:bg-gray-200 border-b-2 border-gray-200">
+                                <th className="p-4 border-l">الكود</th>
+                                <th className="p-4 border-l">الاسم</th>
+                                <th className="p-4 border-l">التخصص</th>
+                                <th className="p-4 border-l">حالة القيد</th>
+                                <th className="p-4 border-l text-center">أيام الحضور</th>
+                                <th className="p-4 text-center">الإجازات</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
-  </div>
+                        </thead>
+                        <tbody>
+                            {monthlyData.map((row: any, index: number) => (
+                                <tr key={row.id} className={`hover:bg-gray-50 border-b last:border-0 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                                    <td className="p-3 border-l font-mono text-gray-500">{row.employee_id}</td>
+                                    <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
+                                    <td className="p-3 border-l text-gray-600">{row.specialty}</td>
+                                    <td className="p-3 border-l text-xs">{row.jobStatus}</td>
+                                    <td className="p-3 border-l text-center">
+                                        <span className="inline-block w-8 h-8 rounded-full bg-green-100 text-green-700 leading-8 font-black">{row.daysPresent}</span>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                        <span className={`inline-block w-8 h-8 rounded-full leading-8 font-black ${row.daysLeaves > 0 ? 'bg-orange-100 text-orange-700' : 'text-gray-300'}`}>
+                                            {row.daysLeaves}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                            {monthlyData.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-400">لا توجد بيانات للعرض</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
             )}
 
             {/* 3. Absence Table */}
-{activeReport === 'daily' && (
-    <div className="overflow-x-auto"> {/* تأكد من وجود هذا الغلاف */}
-        <table className="w-full text-sm text-right border-collapse min-w-[700px]"> {/* أضف min-w */}                    <thead>
-                        <tr className="bg-red-50 text-red-800 print:bg-gray-200 print:text-black">
-                            <th className="p-3 border">الكود</th>
-                            <th className="p-3 border">الاسم</th>
-                            <th className="p-3 border">التخصص</th>
-                            <th className="p-3 border">حالة الموظف</th>
-                            <th className="p-3 border text-center">الحالة اليوم</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {absenceData.map((row:any) => (
-                            <tr key={row.id} className="border-b print:border-gray-300">
-                                <td className="p-3 border font-mono">{row.employee_id}</td>
-                                <td className="p-3 border font-bold">{row.name}</td>
-                                <td className="p-3 border text-gray-600">{row.specialty}</td>
-                                <td className="p-3 border text-xs">{row.jobStatus}</td>
-                                <td className="p-3 border text-center font-black text-red-600">غياب غير مبرر</td>
+            {activeReport === 'absence' && (
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                    <table className="w-full text-sm text-right border-collapse min-w-[800px]">
+                        <thead>
+                            <tr className="bg-red-50 text-red-900 print:bg-gray-200 border-b-2 border-red-100">
+                                <th className="p-4 border-l border-red-100">الكود</th>
+                                <th className="p-4 border-l border-red-100">الاسم</th>
+                                <th className="p-4 border-l border-red-100">التخصص</th>
+                                <th className="p-4 border-l border-red-100">حالة القيد</th>
+                                <th className="p-4 text-center">الحالة</th>
                             </tr>
-                        ))}
-                        {absenceData.length === 0 && (
-                            <tr><td colSpan={5} className="p-8 text-center text-green-600 font-bold">لا يوجد غياب اليوم!</td></tr>
-                        )}
-                    </tbody>
-                </table>
-  </div>
+                        </thead>
+                        <tbody>
+                            {absenceData.map((row: any, index: number) => (
+                                <tr key={row.id} className={`hover:bg-red-50/30 border-b last:border-0 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                                    <td className="p-3 border-l font-mono text-gray-500">{row.employee_id}</td>
+                                    <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
+                                    <td className="p-3 border-l text-gray-600">{row.specialty}</td>
+                                    <td className="p-3 border-l text-xs">{row.jobStatus}</td>
+                                    <td className="p-3 text-center font-black text-red-600 bg-red-50">غياب غير مبرر</td>
+                                </tr>
+                            ))}
+                            {absenceData.length === 0 && <tr><td colSpan={5} className="p-12 text-center text-green-600 font-bold text-lg bg-green-50">✨ لا يوجد غياب اليوم! ✨</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
             )}
 
         </div>
     </div>
   );
-
 }
