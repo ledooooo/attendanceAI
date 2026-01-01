@@ -62,7 +62,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     if (existing) {
         const mappedDoctors: DoctorObj[] = (existing.doctors || []).map((d: any) => {
             if (typeof d === 'string') {
-                const found = employees.find(e => e.name === d);
+                const found = employees.find(e => e.name === d || e.employee_id === d);
                 return found 
                     ? { id: found.id, name: found.name, code: found.employee_id } 
                     : { id: 'unknown', name: d, code: '?' };
@@ -90,31 +90,22 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     setLoading(false);
   };
 
-  // --- تحديث: نموذج العينة الجديد ---
+  // --- تحديث 1: نموذج العينة ليعكس الترتيب المطلوب ---
   const handleDownloadSample = () => {
-    const sampleData = [
-      {
-        'التاريخ': '2023-11-01',
-        'طبيب 1': 'د. أحمد محمد',
-        'طبيب 2': 'د. سارة علي',
-        'طبيب 3': '',
-        'ملاحظات': 'نوبتجية طوارئ'
-      },
-      {
-        'التاريخ': '2023-11-02',
-        'طبيب 1': 'د. محمد حسن',
-        'طبيب 2': '',
-        'طبيب 3': '',
-        'ملاحظات': ''
-      }
+    // نستخدم مصفوفة مصفوفات (Array of Arrays) لضمان ترتيب الأعمدة عند الإنشاء
+    const headers = ["التاريخ", "طبيب 1", "طبيب 2", "طبيب 3", "ملاحظات"];
+    const data = [
+        ["2023-11-01", "101", "د. سارة علي", "", "مثال: كود واسم"],
+        ["2023-11-02", "د. محمد حسن", "102", "103", ""]
     ];
-    const ws = XLSX.utils.json_to_sheet(sampleData);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Schedules");
     XLSX.writeFile(wb, "نموذج_جداول_النوبتجية.xlsx");
   };
 
-  // --- تحديث: معالجة ملف الإكسيل الجديد ---
+  // --- تحديث 2: معالجة الملف للبحث بالاسم أو الكود ---
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     let inserted = 0, updated = 0, skipped = 0;
@@ -134,33 +125,39 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             if (processedDates.has(date)) continue;
             processedDates.add(date);
 
-            // 2. استخراج الأطباء (ديناميكياً من الأعمدة المتعددة)
-            const doctorsNames: string[] = [];
+            // 2. استخراج الأطباء (ديناميكياً)
+            const inputValues: string[] = [];
             
-            // نمر على كل مفاتيح الصف (أسماء الأعمدة)
             Object.keys(row).forEach(key => {
-                // نتجاهل أعمدة التاريخ والملاحظات
-                if (key === 'التاريخ' || key === 'date' || key === 'ملاحظات' || key === 'notes') return;
+                // تجاهل أعمدة التاريخ والملاحظات
+                if (['التاريخ', 'date', 'Date', 'ملاحظات', 'notes', 'Notes'].includes(key)) return;
                 
-                // أي عمود آخر نعتبره اسم طبيب إذا كان له قيمة
                 const val = String(row[key]).trim();
-                if (val && val.length > 2) { // تأكد أن الاسم ليس فارغاً
-                    doctorsNames.push(val);
+                if (val && val.length >= 1) { // قبول أي قيمة غير فارغة
+                    inputValues.push(val);
                 }
             });
             
-            // 3. تحويل الأسماء إلى كائنات
-            const doctorsObjects = doctorsNames.map(name => {
-                const emp = employees.find(e => e.name.trim() === name.trim());
+            // 3. المطابقة (اسم أو كود)
+            const doctorsObjects = inputValues.map(val => {
+                // تنظيف المدخل
+                const cleanVal = val.trim();
+                
+                // البحث في الموظفين: هل الاسم يطابق؟ أو الكود يطابق؟
+                const emp = employees.find(e => 
+                    e.name.trim() === cleanVal || 
+                    String(e.employee_id).trim() === cleanVal
+                );
+
                 if (emp) return { id: emp.id, name: emp.name, code: emp.employee_id };
                 return null; 
             }).filter(Boolean);
 
-            if (doctorsObjects.length === 0 && doctorsNames.length > 0) {
-                 console.warn(`لم يتم العثور على تطابق لأسماء الأطباء في تاريخ ${date}: ${doctorsNames.join(', ')}`);
+            if (doctorsObjects.length === 0 && inputValues.length > 0) {
+                 console.warn(`لم يتم العثور على أطباء في تاريخ ${date} للقيم: ${inputValues.join(', ')}`);
             }
 
-            const rowNotes = String(row['ملاحظات'] || row['notes'] || '').trim();
+            const rowNotes = String(row['ملاحظات'] || row['notes'] || row['Notes'] || '').trim();
 
             const payload = {
                 date: date,
