@@ -39,33 +39,46 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
 
   const fetchData = async () => {
     setLoading(true);
-    // جلب التقييمات للشهر المحدد
-    const { data, error } = await supabase
+    
+    // 1. جلب التقييمات (بدون Join لتجنب الأخطاء إذا لم تكن العلاقة مربوطة)
+    const { data: evalsData, error } = await supabase
       .from('evaluations')
-      .select('*, employees(name, specialty, employee_id)') // تأكد من جلب employee_id أيضاً من جدول الموظفين للربط
+      .select('*')
       .ilike('month', `${fMonth}%`)
       .order('total_score', { ascending: false });
 
     if (error) {
-        console.error("Error fetching evaluations:", error);
+        console.error("Error fetching evaluations:", error.message);
     }
 
-    if (data) {
-      setEvaluations(data.map(e => ({
-        ...e,
-        // التأكد من وجود البيانات وتوفير قيم افتراضية
-        employee_name: e.employees?.name || 'غير معروف',
-        employee_specialty: e.employees?.specialty || '-',
-        // ضمان أن الأرقام ليست null
-        score_appearance: e.score_appearance || 0,
-        score_attendance: e.score_attendance || 0,
-        score_quality: e.score_quality || 0,
-        score_infection: e.score_infection || 0,
-        score_training: e.score_training || 0,
-        score_records: e.score_records || 0,
-        score_tasks: e.score_tasks || 0,
-        total_score: e.total_score || 0
-      })));
+    // 2. جلب بيانات الموظفين لدمج الأسماء
+    // نستخدم القائمة الممررة في الـ props أو نجلبها إذا لزم الأمر، 
+    // هنا سنعتمد على دمج البيانات برمجياً لضمان ظهور التقييم حتى لو فشل الربط
+    
+    if (evalsData) {
+      const mergedData = evalsData.map(e => {
+        // البحث عن الموظف باستخدام employee_id (الكود الوظيفي)
+        const emp = employees.find(emp => emp.employee_id === e.employee_id);
+        
+        return {
+          ...e,
+          // إذا وجدنا الموظف نضع اسمه، وإلا نضع الكود كبديل
+          employee_name: emp ? emp.name : `${e.employee_id} (غير مسجل)`,
+          employee_specialty: emp ? emp.specialty : '-',
+          
+          // ضمان وجود قيم رقمية
+          score_appearance: e.score_appearance || 0,
+          score_attendance: e.score_attendance || 0,
+          score_quality: e.score_quality || 0,
+          score_infection: e.score_infection || 0,
+          score_training: e.score_training || 0,
+          score_records: e.score_records || 0,
+          score_tasks: e.score_tasks || 0,
+          total_score: e.total_score || 0
+        };
+      });
+      
+      setEvaluations(mergedData);
     } else {
         setEvaluations([]);
     }
@@ -83,7 +96,7 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
         'مكافحة العدوى': 10,
         'التدريب': 10,
         'الملفات الطبية': 10,
-        'أداء الأعمال': 40, // تم تعديل المثال ليتوافق مع المجموع 100 حسب الكود
+        'أداء الأعمال': 40, 
         'ملاحظات': 'أداء ممتاز'
       }
     ];
@@ -140,15 +153,8 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
 
             const existingRecord = dbEvals.find(e => e.employee_id === empId && e.month === month);
             if (existingRecord) {
-                // التحقق من التغيير لتجنب التحديث غير الضروري
                 const isChanged = 
-                    existingRecord.score_appearance !== payload.score_appearance ||
-                    existingRecord.score_attendance !== payload.score_attendance ||
-                    existingRecord.score_quality !== payload.score_quality ||
-                    existingRecord.score_infection !== payload.score_infection ||
-                    existingRecord.score_training !== payload.score_training ||
-                    existingRecord.score_records !== payload.score_records ||
-                    existingRecord.score_tasks !== payload.score_tasks ||
+                    existingRecord.total_score !== payload.total_score ||
                     existingRecord.notes !== payload.notes;
 
                 if (isChanged) {
@@ -196,7 +202,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
       };
 
       try {
-          // التحقق أولاً للحصول على الـ ID في حالة التحديث
           const { data: existing } = await supabase.from('evaluations')
             .select('id')
             .eq('employee_id', formData.employee_id)
@@ -212,7 +217,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
           alert("تم حفظ التقييم بنجاح");
           setShowModal(false);
           fetchData();
-          // تصفير النموذج
           setFormData({
             employee_id: '',
             month: new Date().toISOString().slice(0, 7),
@@ -225,21 +229,17 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
       }
   };
 
-  // دالة لحذف التقييم
   const handleDelete = async (id: string) => {
       if (!confirm("هل أنت متأكد من حذف هذا التقييم؟")) return;
-      
       const { error } = await supabase.from('evaluations').delete().eq('id', id);
-      if (error) {
-          alert("خطأ في الحذف: " + error.message);
-      } else {
-          fetchData();
-      }
+      if (error) alert("خطأ في الحذف: " + error.message);
+      else fetchData();
   };
 
   // تصفية للعرض
   const filteredEvals = evaluations.filter(e => 
-    (e.employee_name.toLowerCase().includes(fEmployee.toLowerCase()) || e.employee_id.includes(fEmployee))
+    (e.employee_name && e.employee_name.toLowerCase().includes(fEmployee.toLowerCase())) || 
+    (e.employee_id && e.employee_id.includes(fEmployee))
   );
 
   return (
@@ -298,7 +298,7 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
                         <th className="p-4 text-center">الأعمال (40)</th>
                         <th className="p-4 text-center text-purple-600">الإجمالي</th>
                         <th className="p-4">ملاحظات</th>
-                        <th className="p-4 text-center">إجراءات</th> {/* عمود جديد للحذف والتعديل */}
+                        <th className="p-4 text-center">إجراءات</th>
                     </tr>
                 </thead>
                 <tbody>
