@@ -9,7 +9,6 @@ import {
   Trash2, CheckCircle2, AlertCircle, Calendar, Loader2
 } from 'lucide-react';
 
-// تعريف واجهة الطبيب المختصرة للحفظ
 interface DoctorObj {
   id: string;
   name: string;
@@ -19,11 +18,10 @@ interface DoctorObj {
 interface EveningSchedule {
   id: string;
   date: string;
-  doctors: any[]; // يقبل كائنات أو نصوص (للتوافق مع القديم)
+  doctors: any[]; 
   notes: string;
 }
 
-// --- دالة مساعدة لتنسيق التاريخ ---
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
@@ -46,15 +44,10 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
   const [isProcessing, setIsProcessing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // حالة النموذج الحالي
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  
-  // التغيير الرئيسي: تخزين كائنات بدلاً من نصوص
   const [selectedDoctors, setSelectedDoctors] = useState<DoctorObj[]>([]);
-  
   const [notes, setNotes] = useState('');
 
-  // فلاتر الموظفين
   const [fName, setFName] = useState('');
   const [fId, setFId] = useState('');
   const [fSpec, setFSpec] = useState('all');
@@ -64,20 +57,17 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     fetchSchedules();
   }, []);
 
-  // عند تغيير التاريخ، ملء البيانات (مع مراعاة التوافق مع البيانات القديمة)
   useEffect(() => {
     const existing = schedules.find(s => s.date === selectedDate);
     if (existing) {
-        // تحويل البيانات القديمة (نصوص) إلى كائنات إذا لزم الأمر
         const mappedDoctors: DoctorObj[] = (existing.doctors || []).map((d: any) => {
             if (typeof d === 'string') {
-                // محاولة العثور على الموظف
                 const found = employees.find(e => e.name === d);
                 return found 
                     ? { id: found.id, name: found.name, code: found.employee_id } 
                     : { id: 'unknown', name: d, code: '?' };
             }
-            return d; // هو بالفعل كائن
+            return d;
         });
         
         setSelectedDoctors(mappedDoctors);
@@ -100,13 +90,22 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     setLoading(false);
   };
 
-  // --- 1. تحميل نموذج العينة ---
+  // --- تحديث: نموذج العينة الجديد ---
   const handleDownloadSample = () => {
     const sampleData = [
       {
         'التاريخ': '2023-11-01',
-        'الأطباء': 'د. أحمد محمد, د. سارة علي',
-        'ملاحظات': 'أسماء الأطباء يجب أن تطابق المسجل في النظام'
+        'طبيب 1': 'د. أحمد محمد',
+        'طبيب 2': 'د. سارة علي',
+        'طبيب 3': '',
+        'ملاحظات': 'نوبتجية طوارئ'
+      },
+      {
+        'التاريخ': '2023-11-02',
+        'طبيب 1': 'د. محمد حسن',
+        'طبيب 2': '',
+        'طبيب 3': '',
+        'ملاحظات': ''
       }
     ];
     const ws = XLSX.utils.json_to_sheet(sampleData);
@@ -115,7 +114,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     XLSX.writeFile(wb, "نموذج_جداول_النوبتجية.xlsx");
   };
 
-  // --- 2. رفع ملف الإكسيل (Smart Mapping) ---
+  // --- تحديث: معالجة ملف الإكسيل الجديد ---
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     let inserted = 0, updated = 0, skipped = 0;
@@ -127,37 +126,51 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         const processedDates = new Set();
 
         for (const row of data) {
-            const date = formatDateForDB(row['التاريخ'] || row.date);
+            // 1. استخراج التاريخ
+            const dateVal = row['التاريخ'] || row['date'] || row['Date'];
+            const date = formatDateForDB(dateVal);
+            
             if (!date) continue;
             if (processedDates.has(date)) continue;
             processedDates.add(date);
 
-            const doctorsStr = String(row['الأطباء'] || row.doctors || '').trim();
-            const doctorsNames = doctorsStr ? doctorsStr.split(',').map(d => d.trim()).filter(Boolean) : [];
+            // 2. استخراج الأطباء (ديناميكياً من الأعمدة المتعددة)
+            const doctorsNames: string[] = [];
             
-            // *** التحويل الذكي: من أسماء إلى كائنات كاملة ***
+            // نمر على كل مفاتيح الصف (أسماء الأعمدة)
+            Object.keys(row).forEach(key => {
+                // نتجاهل أعمدة التاريخ والملاحظات
+                if (key === 'التاريخ' || key === 'date' || key === 'ملاحظات' || key === 'notes') return;
+                
+                // أي عمود آخر نعتبره اسم طبيب إذا كان له قيمة
+                const val = String(row[key]).trim();
+                if (val && val.length > 2) { // تأكد أن الاسم ليس فارغاً
+                    doctorsNames.push(val);
+                }
+            });
+            
+            // 3. تحويل الأسماء إلى كائنات
             const doctorsObjects = doctorsNames.map(name => {
-                const emp = employees.find(e => e.name === name);
+                const emp = employees.find(e => e.name.trim() === name.trim());
                 if (emp) return { id: emp.id, name: emp.name, code: emp.employee_id };
-                return null; // تجاهل الأسماء غير الموجودة
+                return null; 
             }).filter(Boolean);
 
             if (doctorsObjects.length === 0 && doctorsNames.length > 0) {
-                 console.warn(`لم يتم العثور على تطابق لأسماء الأطباء في تاريخ ${date}`);
+                 console.warn(`لم يتم العثور على تطابق لأسماء الأطباء في تاريخ ${date}: ${doctorsNames.join(', ')}`);
             }
 
-            const rowNotes = String(row['ملاحظات'] || row.notes || '').trim();
+            const rowNotes = String(row['ملاحظات'] || row['notes'] || '').trim();
 
             const payload = {
                 date: date,
-                doctors: doctorsObjects, // تخزين الكائنات
+                doctors: doctorsObjects,
                 notes: rowNotes
             };
 
             const existingRecord = dbSchedules.find(s => s.date === date);
 
             if (existingRecord) {
-                // مقارنة بسيطة للتحديث
                 const isDiff = JSON.stringify(payload.doctors) !== JSON.stringify(existingRecord.doctors) || 
                                payload.notes !== existingRecord.notes;
                 
@@ -182,13 +195,12 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         fetchSchedules();
 
     } catch (err: any) {
-        alert('خطأ: ' + err.message);
+        alert('خطأ أثناء المعالجة: ' + err.message);
     } finally {
         setIsProcessing(false);
     }
   };
 
-  // حفظ يدوي للجدول
   const handleSave = async () => {
       if (!selectedDate) return alert("اختر التاريخ");
       if (selectedDoctors.length === 0) return alert("اختر طبيباً واحداً على الأقل");
@@ -197,7 +209,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
 
       const payload = {
           date: selectedDate,
-          doctors: selectedDoctors, // يتم الحفظ الآن كقائمة كائنات
+          doctors: selectedDoctors,
           notes: notes
       };
 
@@ -217,19 +229,16 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
 
   const handleDelete = async (id: string) => {
       if (!confirm("هل أنت متأكد من حذف هذا الجدول؟")) return;
-      await supabase.from('evening_schedules').delete().eq('id', id);
-      fetchSchedules();
+      const { error } = await supabase.from('evening_schedules').delete().eq('id', id);
+      if (!error) fetchSchedules();
+      else alert(error.message);
   };
 
-  // *** التعديل هنا: التبديل بناءً على الكائن ***
   const toggleDoctor = (emp: Employee) => {
       const exists = selectedDoctors.find(d => d.id === emp.id);
-      
       if (exists) {
-          // حذف
           setSelectedDoctors(prev => prev.filter(d => d.id !== emp.id));
       } else {
-          // إضافة بيانات كاملة
           setSelectedDoctors(prev => [...prev, {
               id: emp.id,
               name: emp.name,
@@ -238,7 +247,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
       }
   };
 
-  // دالة لحذف طبيب من القائمة المختارة بالأعلى
   const removeSelectedDoctor = (docId: string) => {
       setSelectedDoctors(prev => prev.filter(d => d.id !== docId));
   };
@@ -327,7 +335,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                     </div>
                     <div className="overflow-y-auto custom-scrollbar p-2 grid grid-cols-1 md:grid-cols-2 gap-2 content-start">
                         {filteredEmployees.map(emp => {
-                            // التحقق إذا كان الموظف مختاراً عن طريق ID
                             const isSelected = selectedDoctors.some(d => d.id === emp.id);
                             return (
                                 <div 
@@ -375,7 +382,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                                 <td className="p-4">
                                     <div className="flex flex-wrap gap-1">
                                         {sch.doctors && sch.doctors.map((d: any, i: number) => {
-                                            // عرض ذكي سواء كان نص (قديم) أو كائن (جديد)
                                             const name = typeof d === 'string' ? d : d.name;
                                             const code = typeof d === 'object' && d.code ? ` (${d.code})` : '';
                                             return (
