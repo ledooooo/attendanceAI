@@ -55,7 +55,7 @@ export interface AttendanceRecord {
   times: string; // "08:00 14:00"
 }
 
-// تعريف طلب الإجازة (الموحد)
+// تعريف طلب الإجازة
 export interface LeaveRequest {
   id: string;
   employee_id: string;
@@ -68,6 +68,7 @@ export interface LeaveRequest {
   notes?: string;
   created_at?: string;
   employee_name?: string; // للعرض
+  employee_specialty?: string; // ✅ (تمت الإضافة) تخصص الموظف للعرض والفلترة
   employee?: { name: string; specialty: string; department?: string }; // تفاصيل الموظف
   approved_by?: string;   // اسم من قام بالموافقة (رئيس القسم)
 }
@@ -95,6 +96,7 @@ export interface Evaluation {
   score_training?: number;
   score_records?: number;
   score_tasks?: number;
+  // أحياناً يتم استخدام score_1, score_2... بدلاً من الأسماء الوصفية
   score_1?: number;
   score_2?: number;
   score_3?: number;
