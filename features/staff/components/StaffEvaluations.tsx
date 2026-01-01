@@ -1,16 +1,20 @@
-import React, { useState } from 'react';
-import { Award, Star, TrendingUp, Plus, Save, X, Edit, Trash2, CheckSquare } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Award, Star, TrendingUp, Plus, Save, X, Edit, Trash2, CheckSquare, Loader2 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
-import { Employee } from '../../../types';
+import { Employee, Evaluation } from '../../../types';
 
 interface Props {
-    evals: any[];
+    evals: Evaluation[]; // استخدام النوع الصحيح بدلاً من any
     employee?: Employee;
     isAdmin?: boolean;
     onUpdate?: () => void;
 }
 
-export default function StaffEvaluations({ evals, employee, isAdmin = false, onUpdate }: Props) {
+export default function StaffEvaluations({ evals: initialEvals, employee, isAdmin = false, onUpdate }: Props) {
+    // حالة لتخزين التقييمات (سواء من Props أو من القاعدة)
+    const [evals, setEvals] = useState<Evaluation[]>(initialEvals || []);
+    const [loadingData, setLoadingData] = useState(false);
+
     const [showForm, setShowForm] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [currentEvalId, setCurrentEvalId] = useState<string | null>(null);
@@ -19,17 +23,46 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
     // الحالة الأولية للنموذج
     const initialFormState = {
         month: new Date().toISOString().slice(0, 7),
-        score_appearance: 0, // 10
-        score_attendance: 0, // 20
-        score_quality: 0,    // 10
-        score_infection: 0,  // 10
-        score_training: 0,   // 20
-        score_records: 0,    // 20
-        score_tasks: 0,      // 10
+        score_appearance: 0,
+        score_attendance: 0,
+        score_quality: 0,
+        score_infection: 0,
+        score_training: 0,
+        score_records: 0,
+        score_tasks: 0,
         notes: ''
     };
 
     const [formData, setFormData] = useState(initialFormState);
+
+    // --- جلب البيانات إذا لم يتم تمريرها (للموظف) ---
+    useEffect(() => {
+        // إذا كان هناك بيانات قادمة من Props (كما في صفحة المدير)، استخدمها
+        if (initialEvals && initialEvals.length > 0) {
+            setEvals(initialEvals);
+            return;
+        }
+
+        // إذا لم تكن هناك بيانات (صفحة الموظف)، اجلبها من القاعدة
+        const fetchEvaluations = async () => {
+            if (!employee?.employee_id) return;
+            setLoadingData(true);
+            
+            const { data, error } = await supabase
+                .from('evaluations')
+                .select('*')
+                .eq('employee_id', employee.employee_id)
+                .order('month', { ascending: false });
+
+            if (!error && data) {
+                // @ts-ignore
+                setEvals(data);
+            }
+            setLoadingData(false);
+        };
+
+        fetchEvaluations();
+    }, [employee?.employee_id, initialEvals]);
 
     // دالة لفتح وضع التعديل
     const openEdit = (evalItem: any) => {
@@ -47,17 +80,15 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
         setCurrentEvalId(evalItem.id);
         setEditMode(true);
         setShowForm(true);
-        // سكرول للنموذج
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    // دالة الحفظ (إضافة أو تعديل)
+    // دالة الحفظ
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!employee) return;
         setLoading(true);
 
-        // حساب المجموع تلقائياً
         const total = 
             Number(formData.score_appearance) + 
             Number(formData.score_attendance) + 
@@ -85,11 +116,9 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
         try {
             let error;
             if (editMode && currentEvalId) {
-                // تعديل
                 const res = await supabase.from('evaluations').update(payload).eq('id', currentEvalId);
                 error = res.error;
             } else {
-                // إضافة جديد
                 const res = await supabase.from('evaluations').insert(payload);
                 error = res.error;
             }
@@ -101,6 +130,9 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
             setEditMode(false);
             setFormData(initialFormState);
             if (onUpdate) onUpdate();
+            
+            // تحديث القائمة المحلية أيضاً في حالة المدير ليرى التغيير فوراً
+            // (اختياري، لأن onUpdate غالباً سيعيد تحميل الصفحة)
 
         } catch (err: any) {
             alert('حدث خطأ: ' + err.message);
@@ -109,14 +141,12 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
         }
     };
 
-    // دالة لحذف التقييم (اختياري)
     const handleDelete = async (id: string) => {
         if (!confirm('هل أنت متأكد من حذف هذا التقييم؟')) return;
         const { error } = await supabase.from('evaluations').delete().eq('id', id);
         if (!error && onUpdate) onUpdate();
     };
 
-    // حساب المجموع الحالي للعرض المباشر أثناء الكتابة
     const currentTotal = 
         Number(formData.score_appearance) + 
         Number(formData.score_attendance) + 
@@ -126,8 +156,12 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
         Number(formData.score_records) + 
         Number(formData.score_tasks);
 
+    if (loadingData && !evals.length) {
+        return <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600"/></div>;
+    }
+
     return (
-        <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
+        <div className="space-y-6 animate-in slide-in-from-bottom duration-500 pb-20">
             {/* Header */}
             <div className="flex justify-between items-center border-b pb-4">
                 <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800">
@@ -172,18 +206,18 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
                                     className="w-full p-3 rounded-xl border border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 outline-none transition-all font-bold text-gray-700" 
                                     value={formData.month} 
                                     onChange={e => setFormData({...formData, month: e.target.value})} 
-                                    disabled={editMode} // منع تغيير التاريخ عند التعديل لمنع التضارب
+                                    disabled={editMode}
                                 />
                             </div>
                             
-                            <InputGroup label="المظهر العام (10)" max={10} val={formData.score_appearance} setVal={(v)=>setFormData({...formData, score_appearance: v})} />
-                            <InputGroup label="لجان الجودة (10)" max={10} val={formData.score_quality} setVal={(v)=>setFormData({...formData, score_quality: v})} />
-                            <InputGroup label="مكافحة العدوى (10)" max={10} val={formData.score_infection} setVal={(v)=>setFormData({...formData, score_infection: v})} />
+                            <InputGroup label="المظهر العام (10)" max={10} val={formData.score_appearance} setVal={(v:any)=>setFormData({...formData, score_appearance: v})} />
+                            <InputGroup label="لجان الجودة (10)" max={10} val={formData.score_quality} setVal={(v:any)=>setFormData({...formData, score_quality: v})} />
+                            <InputGroup label="مكافحة العدوى (10)" max={10} val={formData.score_infection} setVal={(v:any)=>setFormData({...formData, score_infection: v})} />
                             
-                            <InputGroup label="الحضور والغياب (20)" max={20} val={formData.score_attendance} setVal={(v)=>setFormData({...formData, score_attendance: v})} />
-                            <InputGroup label="التدريب (20)" max={20} val={formData.score_training} setVal={(v)=>setFormData({...formData, score_training: v})} />
-                            <InputGroup label="الملفات الطبية (20)" max={20} val={formData.score_records} setVal={(v)=>setFormData({...formData, score_records: v})} />
-                            <InputGroup label="أداء الأعمال (10)" max={10} val={formData.score_tasks} setVal={(v)=>setFormData({...formData, score_tasks: v})} />
+                            <InputGroup label="الحضور والغياب (20)" max={20} val={formData.score_attendance} setVal={(v:any)=>setFormData({...formData, score_attendance: v})} />
+                            <InputGroup label="التدريب (20)" max={20} val={formData.score_training} setVal={(v:any)=>setFormData({...formData, score_training: v})} />
+                            <InputGroup label="الملفات الطبية (20)" max={20} val={formData.score_records} setVal={(v:any)=>setFormData({...formData, score_records: v})} />
+                            <InputGroup label="أداء الأعمال (10)" max={10} val={formData.score_tasks} setVal={(v:any)=>setFormData({...formData, score_tasks: v})} />
                         </div>
 
                         <div className="flex flex-col md:flex-row gap-4 items-stretch">
@@ -223,14 +257,12 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
                     </div>
                 ) : evals.map((ev) => (
                     <div key={ev.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col lg:flex-row gap-6 relative group overflow-hidden transition-all hover:shadow-md">
-                        {/* الشريط الملون للدرجة */}
                         <div className={`absolute top-0 right-0 w-2 h-full transition-colors ${
                             ev.total_score >= 90 ? 'bg-emerald-500' : 
                             ev.total_score >= 75 ? 'bg-blue-500' : 
                             ev.total_score >= 50 ? 'bg-yellow-500' : 'bg-red-500'
                         }`}></div>
 
-                        {/* قسم الدرجة والتاريخ */}
                         <div className="flex lg:flex-col items-center justify-between lg:justify-center min-w-[120px] lg:border-l lg:pl-6 border-gray-100 pb-4 lg:pb-0 border-b lg:border-b-0">
                             <div className="text-center">
                                 <span className="text-4xl font-black text-gray-800 block">{ev.total_score}</span>
@@ -241,17 +273,15 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
                             </div>
                         </div>
 
-                        {/* التفاصيل */}
                         <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            <ScoreItem label="المظهر" val={ev.score_appearance} max={10} color="orange"/>
-                            <ScoreItem label="الحضور" val={ev.score_attendance} max={20} color="purple"/>
-                            <ScoreItem label="الجودة" val={ev.score_quality} max={10} color="blue"/>
-                            <ScoreItem label="العدوى" val={ev.score_infection} max={10} color="red"/>
-                            <ScoreItem label="التدريب" val={ev.score_training} max={20} color="green"/>
-                            <ScoreItem label="الملفات" val={ev.score_records} max={20} color="indigo"/>
-                            <ScoreItem label="الأعمال" val={ev.score_tasks} max={10} color="pink"/>
+                            <ScoreItem label="المظهر" val={ev.score_appearance || 0} max={10} color="orange"/>
+                            <ScoreItem label="الحضور" val={ev.score_attendance || 0} max={20} color="purple"/>
+                            <ScoreItem label="الجودة" val={ev.score_quality || 0} max={10} color="blue"/>
+                            <ScoreItem label="العدوى" val={ev.score_infection || 0} max={10} color="red"/>
+                            <ScoreItem label="التدريب" val={ev.score_training || 0} max={20} color="green"/>
+                            <ScoreItem label="الملفات" val={ev.score_records || 0} max={20} color="indigo"/>
+                            <ScoreItem label="الأعمال" val={ev.score_tasks || 0} max={10} color="pink"/>
                             
-                            {/* الملاحظات */}
                             {ev.notes && (
                                 <div className="col-span-2 sm:col-span-3 md:col-span-4 bg-gray-50 p-3 rounded-2xl mt-2 border border-gray-100">
                                     <p className="text-xs text-gray-500 font-medium leading-relaxed">
@@ -262,7 +292,6 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
                             )}
                         </div>
 
-                        {/* أزرار التحكم للمدير */}
                         {isAdmin && (
                             <div className="flex lg:flex-col gap-2 justify-end items-center border-t lg:border-t-0 lg:border-r lg:pr-6 pt-4 lg:pt-0 border-gray-100">
                                 <button 
@@ -288,7 +317,6 @@ export default function StaffEvaluations({ evals, employee, isAdmin = false, onU
     );
 }
 
-// مكونات صغيرة للتنظيم
 const InputGroup = ({ label, max, val, setVal }: any) => (
     <div>
         <label className="block text-[10px] font-bold text-gray-400 mb-1 flex justify-between">
