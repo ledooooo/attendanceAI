@@ -22,6 +22,15 @@ interface EveningSchedule {
   notes: string;
 }
 
+// دالة تنظيف ومطابقة مرنة
+const normalizeString = (str: string) => {
+    if (!str) return '';
+    // تحويل الأرقام العربية إلى إنجليزية
+    const englishDigits = str.replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
+    // إزالة المسافات وتحويل لحروف صغيرة
+    return String(englishDigits).trim().toLowerCase();
+};
+
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
@@ -57,6 +66,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     fetchSchedules();
   }, []);
 
+  // تحديث النموذج عند اختيار تاريخ موجود مسبقاً
   useEffect(() => {
     const existing = schedules.find(s => s.date === selectedDate);
     if (existing) {
@@ -90,12 +100,11 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     setLoading(false);
   };
 
-  // --- تحديث 1: نموذج العينة ليعكس الترتيب المطلوب ---
+  // --- تحميل نموذج العينة ---
   const handleDownloadSample = () => {
-    // نستخدم مصفوفة مصفوفات (Array of Arrays) لضمان ترتيب الأعمدة عند الإنشاء
     const headers = ["التاريخ", "طبيب 1", "طبيب 2", "طبيب 3", "ملاحظات"];
     const data = [
-        ["2023-11-01", "101", "د. سارة علي", "", "مثال: كود واسم"],
+        ["2023-11-01", "101", "د. سارة علي", "", "مثال: كود أو اسم"],
         ["2023-11-02", "د. محمد حسن", "102", "103", ""]
     ];
 
@@ -105,10 +114,11 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     XLSX.writeFile(wb, "نموذج_جداول_النوبتجية.xlsx");
   };
 
-  // --- تحديث 2: معالجة الملف للبحث بالاسم أو الكود ---
+  // --- معالجة ملف الإكسيل (محسنة) ---
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     let inserted = 0, updated = 0, skipped = 0;
+    let errors: string[] = [];
 
     try {
         const { data: currentDbSchedules } = await supabase.from('evening_schedules').select('*');
@@ -118,46 +128,49 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
 
         for (const row of data) {
             // 1. استخراج التاريخ
-            const dateVal = row['التاريخ'] || row['date'] || row['Date'];
+            // نبحث عن أي مفتاح يحتوي على كلمة date أو تاريخ
+            const dateKey = Object.keys(row).find(k => k.includes('تاريخ') || k.toLowerCase().includes('date'));
+            const dateVal = dateKey ? row[dateKey] : (row['التاريخ'] || row['date'] || row['Date']);
             const date = formatDateForDB(dateVal);
             
             if (!date) continue;
             if (processedDates.has(date)) continue;
             processedDates.add(date);
 
-            // 2. استخراج الأطباء (ديناميكياً)
+            // 2. استخراج الأطباء
             const inputValues: string[] = [];
             
             Object.keys(row).forEach(key => {
                 // تجاهل أعمدة التاريخ والملاحظات
-                if (['التاريخ', 'date', 'Date', 'ملاحظات', 'notes', 'Notes'].includes(key)) return;
+                const lowerKey = key.toLowerCase();
+                if (lowerKey.includes('تاريخ') || lowerKey.includes('date') || lowerKey.includes('ملاحظات') || lowerKey.includes('note')) return;
                 
-                const val = String(row[key]).trim();
-                if (val && val.length >= 1) { // قبول أي قيمة غير فارغة
-                    inputValues.push(val);
+                const val = row[key];
+                if (val !== undefined && val !== null && String(val).trim() !== '') {
+                    inputValues.push(String(val));
                 }
             });
             
-            // 3. المطابقة (اسم أو كود)
+            // 3. المطابقة (كود أو اسم - مع تطبيع النصوص)
             const doctorsObjects = inputValues.map(val => {
-                // تنظيف المدخل
-                const cleanVal = val.trim();
+                const searchVal = normalizeString(val);
                 
-                // البحث في الموظفين: هل الاسم يطابق؟ أو الكود يطابق؟
                 const emp = employees.find(e => 
-                    e.name.trim() === cleanVal || 
-                    String(e.employee_id).trim() === cleanVal
+                    normalizeString(e.name) === searchVal || 
+                    normalizeString(e.employee_id) === searchVal
                 );
 
                 if (emp) return { id: emp.id, name: emp.name, code: emp.employee_id };
                 return null; 
             }).filter(Boolean);
 
+            // تنبيه إذا لم يتم العثور على أطباء رغم وجود مدخلات
             if (doctorsObjects.length === 0 && inputValues.length > 0) {
-                 console.warn(`لم يتم العثور على أطباء في تاريخ ${date} للقيم: ${inputValues.join(', ')}`);
+                 errors.push(`تاريخ ${date}: لم يتم التعرف على الأكواد/الأسماء: ${inputValues.join(', ')}`);
             }
 
-            const rowNotes = String(row['ملاحظات'] || row['notes'] || row['Notes'] || '').trim();
+            const notesKey = Object.keys(row).find(k => k.includes('ملاحظات') || k.toLowerCase().includes('note'));
+            const rowNotes = notesKey ? String(row[notesKey]).trim() : '';
 
             const payload = {
                 date: date,
@@ -188,7 +201,11 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             if (error) throw error;
         }
 
-        alert(`النتيجة:\n✅ إضافة: ${inserted}\n🔄 تحديث: ${updated}\n⏭️ تجاهل: ${skipped}`);
+        let msg = `النتيجة:\n✅ إضافة: ${inserted}\n🔄 تحديث: ${updated}\n⏭️ تجاهل: ${skipped}`;
+        if (errors.length > 0) {
+            msg += `\n\n⚠️ تنبيهات:\n` + errors.slice(0, 3).join('\n') + (errors.length > 3 ? `\n...و ${errors.length - 3} آخرين` : '');
+        }
+        alert(msg);
         fetchSchedules();
 
     } catch (err: any) {
