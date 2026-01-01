@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Inbox, Check, CheckCheck } from 'lucide-react';
+import { Send, Inbox, Check, CheckCheck, Loader2 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, InternalMessage } from '../../../types';
 
@@ -9,22 +9,45 @@ interface Props {
     currentUserId: string;
 }
 
-export default function StaffMessages({ messages, employee, currentUserId }: Props) {
+export default function StaffMessages({ messages: initialMessages, employee, currentUserId }: Props) {
     const [newMessage, setNewMessage] = useState('');
     const [filter, setFilter] = useState<'all' | 'inbox' | 'sent'>('all');
-    // استخدام النوع الصحيح بدلاً من any
-    const [localMessages, setLocalMessages] = useState<InternalMessage[]>(messages); 
+    const [localMessages, setLocalMessages] = useState<InternalMessage[]>(initialMessages);
     const [sending, setSending] = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null); // مرجع للتمرير التلقائي لأسفل
+    const [loading, setLoading] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // تحديث الرسائل عند تغير الـ Props
-    useEffect(() => {
-        setLocalMessages(messages);
-    }, [messages]);
+    // دالة لجلب الرسائل من قاعدة البيانات
+    const fetchMessages = async () => {
+        // إذا كنت أنا الأدمن، فأنا أعتمد على البيانات القادمة من الـ Props (لأن الأدمن لديه صفحة خاصة تجلب كل شيء)
+        // أما إذا كنت موظفاً (currentUserId ليس admin)، فيجب علي جلب رسائلي بنفسي
+        if (currentUserId === 'admin') {
+            setLocalMessages(initialMessages);
+            return;
+        }
 
-    // --- إضافة الاشتراك اللحظي (Real-time) ---
+        setLoading(true);
+        const myId = employee.employee_id;
+
+        const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .or(`from_user.eq.${myId},to_user.eq.${myId}`)
+            .order('created_at', { ascending: false });
+
+        if (data) {
+            setLocalMessages(data as any);
+        }
+        setLoading(false);
+    };
+
+    // جلب الرسائل عند فتح الصفحة أو تغير المستخدم
     useEffect(() => {
-        // تحديد هوية المستخدم الحالي (سواء كان موظف أو أدمن)
+        fetchMessages();
+    }, [employee.employee_id, currentUserId, initialMessages]); // أضفنا initialMessages للتحديث إذا تغيرت من الخارج
+
+    // الاشتراك اللحظي (Real-time)
+    useEffect(() => {
         const myId = currentUserId === 'admin' ? 'admin' : employee.employee_id;
 
         const channel = supabase
@@ -35,10 +58,9 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
                     event: 'INSERT',
                     schema: 'public',
                     table: 'messages',
-                    filter: `to_user=eq.${myId}`, // استمع فقط للرسائل الموجهة لي
+                    filter: `to_user=eq.${myId}`, 
                 },
                 (payload) => {
-                    // عند وصول رسالة جديدة، أضفها للقائمة
                     const newMsg = payload.new as InternalMessage;
                     setLocalMessages((prev) => [newMsg, ...prev]);
                 }
@@ -59,11 +81,15 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
 
             if (unreadIds.length > 0) {
                 await supabase.from('messages').update({ is_read: true }).in('id', unreadIds);
+                // تحديث الحالة المحلية لتظهر كمقروءة فوراً
                 setLocalMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, is_read: true } : m));
             }
         };
-        if (localMessages.length > 0) markAsRead();
-    }, [localMessages, currentUserId, employee]);
+        
+        if (localMessages.length > 0) {
+            markAsRead();
+        }
+    }, [localMessages.length, currentUserId, employee]); // الاعتماد على length يقلل التكرار
 
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -83,7 +109,7 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
         const { data, error } = await supabase.from('messages').insert(payload).select().single();
 
         if (!error && data) {
-            setLocalMessages([data, ...localMessages]);
+            setLocalMessages([data as any, ...localMessages]);
             setNewMessage('');
         } else {
             alert('فشل الإرسال: ' + error?.message);
@@ -109,6 +135,7 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
                         <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-sm border-2 border-white ${currentUserId === 'admin' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
                             {currentUserId === 'admin' ? employee.name.charAt(0) : 'A'}
                         </div>
+                        {/* حالة الاتصال (وهمية حالياً) */}
                         <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                     </div>
                     <div>
@@ -130,7 +157,12 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
 
             {/* Messages List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar bg-gray-50/30 flex flex-col-reverse">
-                {filteredMessages.length === 0 ? (
+                {loading ? (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                        <Loader2 className="w-8 h-8 animate-spin mb-2"/>
+                        <p>جاري تحميل الرسائل...</p>
+                    </div>
+                ) : filteredMessages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-gray-300">
                         <Inbox className="w-16 h-16 mb-2 opacity-50"/>
                         <p className="font-bold">لا توجد رسائل</p>
@@ -146,8 +178,8 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
                                         ? 'bg-blue-600 text-white rounded-br-none' 
                                         : 'bg-white border border-gray-100 text-gray-700 rounded-bl-none'
                                     }`}>
-                                        {/* التعامل الآمن مع المحتوى */}
-                                        {msg.content || msg.message || <span className="italic opacity-50">رسالة فارغة</span>} 
+                                        {/* دعم الأسماء القديمة والجديدة للحقل */}
+                                        {msg.content || msg.message || <span className="italic opacity-50">...</span>} 
                                     </div>
                                     <div className="flex items-center gap-1 mt-1 px-1">
                                         <span className="text-[10px] font-bold text-gray-400">
