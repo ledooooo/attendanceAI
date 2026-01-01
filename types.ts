@@ -61,7 +61,7 @@ export interface LeaveRequest {
   type: string;
   start_date: string;
   end_date: string;
-  status: 'معلق' | 'مقبول' | 'مرفوض' | 'قيد الانتظار';
+  status: 'معلق' | 'مقبول' | 'مرفوض' | 'قيد الانتظار' | 'موافقة_رئيس_القسم';
   notes?: string;
   employee_name?: string;
   
