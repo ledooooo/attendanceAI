@@ -39,18 +39,35 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
 
   const fetchData = async () => {
     setLoading(true);
-    const { data } = await supabase
+    // جلب التقييمات للشهر المحدد
+    const { data, error } = await supabase
       .from('evaluations')
-      .select('*, employees(name, specialty)')
+      .select('*, employees(name, specialty, employee_id)') // تأكد من جلب employee_id أيضاً من جدول الموظفين للربط
       .ilike('month', `${fMonth}%`)
       .order('total_score', { ascending: false });
+
+    if (error) {
+        console.error("Error fetching evaluations:", error);
+    }
 
     if (data) {
       setEvaluations(data.map(e => ({
         ...e,
+        // التأكد من وجود البيانات وتوفير قيم افتراضية
         employee_name: e.employees?.name || 'غير معروف',
-        employee_specialty: e.employees?.specialty || '-'
+        employee_specialty: e.employees?.specialty || '-',
+        // ضمان أن الأرقام ليست null
+        score_appearance: e.score_appearance || 0,
+        score_attendance: e.score_attendance || 0,
+        score_quality: e.score_quality || 0,
+        score_infection: e.score_infection || 0,
+        score_training: e.score_training || 0,
+        score_records: e.score_records || 0,
+        score_tasks: e.score_tasks || 0,
+        total_score: e.total_score || 0
       })));
+    } else {
+        setEvaluations([]);
     }
     setLoading(false);
   };
@@ -64,9 +81,9 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
         'الحضور': 20,
         'الجودة': 10,
         'مكافحة العدوى': 10,
-        'التدريب': 20,
-        'الملفات الطبية': 20,
-        'أداء الأعمال': 10,
+        'التدريب': 10,
+        'الملفات الطبية': 10,
+        'أداء الأعمال': 40, // تم تعديل المثال ليتوافق مع المجموع 100 حسب الكود
         'ملاحظات': 'أداء ممتاز'
       }
     ];
@@ -123,6 +140,7 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
 
             const existingRecord = dbEvals.find(e => e.employee_id === empId && e.month === month);
             if (existingRecord) {
+                // التحقق من التغيير لتجنب التحديث غير الضروري
                 const isChanged = 
                     existingRecord.score_appearance !== payload.score_appearance ||
                     existingRecord.score_attendance !== payload.score_attendance ||
@@ -178,9 +196,7 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
       };
 
       try {
-          // استخدام Upsert للسماح بالتحديث إذا كان التقييم موجوداً لنفس الشهر
-          // نحتاج للتحقق أولاً للحصول على الـ ID في حالة التحديث، أو يمكن الاعتماد على constraint فريد في قاعدة البيانات
-          // هنا سأقوم بالتحقق البسيط يدوياً
+          // التحقق أولاً للحصول على الـ ID في حالة التحديث
           const { data: existing } = await supabase.from('evaluations')
             .select('id')
             .eq('employee_id', formData.employee_id)
@@ -209,9 +225,21 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
       }
   };
 
+  // دالة لحذف التقييم
+  const handleDelete = async (id: string) => {
+      if (!confirm("هل أنت متأكد من حذف هذا التقييم؟")) return;
+      
+      const { error } = await supabase.from('evaluations').delete().eq('id', id);
+      if (error) {
+          alert("خطأ في الحذف: " + error.message);
+      } else {
+          fetchData();
+      }
+  };
+
   // تصفية للعرض
   const filteredEvals = evaluations.filter(e => 
-    (e.employee_name.includes(fEmployee) || e.employee_id.includes(fEmployee))
+    (e.employee_name.toLowerCase().includes(fEmployee.toLowerCase()) || e.employee_id.includes(fEmployee))
   );
 
   return (
@@ -270,6 +298,7 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
                         <th className="p-4 text-center">الأعمال (40)</th>
                         <th className="p-4 text-center text-purple-600">الإجمالي</th>
                         <th className="p-4">ملاحظات</th>
+                        <th className="p-4 text-center">إجراءات</th> {/* عمود جديد للحذف والتعديل */}
                     </tr>
                 </thead>
                 <tbody>
@@ -297,10 +326,40 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
                                 </span>
                             </td>
                             <td className="p-4 text-gray-500 text-xs truncate max-w-[150px]" title={ev.notes}>{ev.notes || '-'}</td>
+                            <td className="p-4 flex justify-center gap-2">
+                                <button 
+                                    onClick={() => {
+                                        setFormData({
+                                            employee_id: ev.employee_id,
+                                            month: ev.month,
+                                            score_appearance: ev.score_appearance,
+                                            score_attendance: ev.score_attendance,
+                                            score_quality: ev.score_quality,
+                                            score_infection: ev.score_infection,
+                                            score_training: ev.score_training,
+                                            score_records: ev.score_records,
+                                            score_tasks: ev.score_tasks,
+                                            notes: ev.notes || ''
+                                        });
+                                        setShowModal(true);
+                                    }}
+                                    className="text-blue-500 hover:text-blue-700 p-1"
+                                    title="تعديل"
+                                >
+                                    <Edit className="w-4 h-4"/>
+                                </button>
+                                <button 
+                                    onClick={() => handleDelete(ev.id)} 
+                                    className="text-red-500 hover:text-red-700 p-1"
+                                    title="حذف"
+                                >
+                                    <Trash2 className="w-4 h-4"/>
+                                </button>
+                            </td>
                         </tr>
                     ))}
                     {filteredEvals.length === 0 && (
-                        <tr><td colSpan={10} className="p-8 text-center text-gray-400">لا توجد تقييمات لهذا الشهر</td></tr>
+                        <tr><td colSpan={11} className="p-8 text-center text-gray-400">لا توجد تقييمات لهذا الشهر</td></tr>
                     )}
                 </tbody>
             </table>
