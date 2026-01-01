@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { 
     Clock, Calendar, CheckCircle2, XCircle, 
-    AlertTriangle, Star, Timer, Briefcase, Info, FileCheck
+    AlertTriangle, Star, Timer, Briefcase, Info, FileCheck, PartyPopper // أيقونة العطلات
 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRule } from '../../../types';
@@ -27,6 +27,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
     const [attendanceData, setAttendanceData] = useState<any[]>(initialAttendance || []);
     const [rules, setRules] = useState<AttendanceRule[]>([]);
     const [leaves, setLeaves] = useState<any[]>([]); 
+    const [holidays, setHolidays] = useState<{name: string, date: string}[]>([]); // state للعطلات الرسمية
     const [viewMonth, setViewMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7));
     const [loading, setLoading] = useState(false);
     const [monthlyEval, setMonthlyEval] = useState<number | null>(null);
@@ -54,10 +55,21 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
             if (!employee?.employee_id) return;
             setLoading(true);
 
-            // جلب الإعدادات
-            const { data: settings } = await supabase.from('general_settings').select('last_attendance_update').limit(1).maybeSingle();
-            if (settings?.last_attendance_update) {
-                setLastUpdate(new Date(settings.last_attendance_update).toLocaleString('ar-EG', { dateStyle: 'full', timeStyle: 'short' }));
+            // جلب الإعدادات والعطلات
+            const { data: settings } = await supabase.from('general_settings').select('last_attendance_update, holidays_name, holidays_date').limit(1).maybeSingle();
+            if (settings) {
+                if (settings.last_attendance_update) {
+                    setLastUpdate(new Date(settings.last_attendance_update).toLocaleString('ar-EG', { dateStyle: 'full', timeStyle: 'short' }));
+                }
+                
+                // دمج العطلات في مصفوفة كائنات
+                if (settings.holidays_name && settings.holidays_date) {
+                    const h = settings.holidays_name.map((name: string, i: number) => ({
+                        name: name,
+                        date: settings.holidays_date[i]
+                    }));
+                    setHolidays(h);
+                }
             }
 
             const [y, m] = viewMonth.split('-').map(Number);
@@ -75,8 +87,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
             
             if (attData) setAttendanceData(attData);
 
-            // ب) الطلبات المقبولة (إصلاح النطاق الزمني)
-            // نبحث عن أي إجازة تبدأ قبل نهاية الشهر وتنتهي بعد بداية الشهر (تداخل)
+            // ب) الطلبات المقبولة
             const { data: leavesData, error: leavesError } = await supabase
                 .from('leave_requests')
                 .select('*')
@@ -88,7 +99,6 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
             if (leavesError) {
                 console.error("Error fetching leaves:", leavesError);
             } else {
-                console.log("Fetched Leaves:", leavesData); // للتأكد في الكونسول
                 setLeaves(leavesData || []);
             }
 
@@ -142,7 +152,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         return { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours };
     };
 
-    // 3. حساب الجدول والإحصائيات (المنطق المصحح)
+    // 3. حساب الجدول والإحصائيات
     useEffect(() => {
         let present = 0;
         let absent = 0;
@@ -156,27 +166,27 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = `${viewMonth}-${String(i).padStart(2, '0')}`;
             
-            // تحويل التواريخ للمقارنة بدون توقيت
             const currentDate = new Date(dateStr);
             currentDate.setHours(0,0,0,0);
 
-            const isFuture = currentDate > new Date(); // لا نحسب المستقبل
+            const isFuture = currentDate > new Date();
 
             const dayName = DAYS_AR[currentDate.getDay()];
             const isWorkDay = workDays.includes(dayName);
             const record = attendanceData.find(a => a.date === dateStr);
             const hasTimes = record && record.times && record.times.trim().length > 0;
 
-            // --- إصلاح كشف الإجازة ---
+            // التحقق من الإجازة
             const matchingLeave = leaves.find(l => {
                 const start = new Date(l.start_date);
                 start.setHours(0,0,0,0);
-                
                 const end = new Date(l.end_date);
                 end.setHours(0,0,0,0);
-
                 return currentDate >= start && currentDate <= end;
             });
+
+            // التحقق من العطلة الرسمية
+            const officialHoliday = holidays.find(h => h.date === dateStr);
 
             if (hasTimes) {
                 present++;
@@ -187,6 +197,8 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                 totalHours += info.hours;
             } else if (matchingLeave) {
                 leavesCount++; 
+            } else if (officialHoliday) {
+                // العطلة الرسمية لا تحسب غياب
             } else if (isWorkDay && !isFuture) {
                 absent++;
             }
@@ -194,7 +206,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
 
         setStats({ present, absent, late, totalHours, leavesCount });
 
-    }, [attendanceData, rules, viewMonth, workDays, leaves]);
+    }, [attendanceData, rules, viewMonth, workDays, leaves, holidays]);
 
     const handleMonthChange = (e: any) => {
         const val = e.target.value;
@@ -296,12 +308,10 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                 const dayName = DAYS_AR[currentDate.getDay()];
                                 const isWorkDay = workDays.includes(dayName);
                                 
-                                // البحث عن البصمة
                                 const att = attendanceData.find((a:any) => a.date === dateStr);
                                 const hasTimes = att && att.times && att.times.trim().length > 0;
                                 const { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours } = analyzeDay(att, rules);
 
-                                // البحث عن الطلب (إجازة/مأمورية)
                                 const matchingLeave = leaves.find(l => {
                                     const start = new Date(l.start_date);
                                     start.setHours(0,0,0,0);
@@ -310,8 +320,9 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                     return currentDate >= start && currentDate <= end;
                                 });
 
-                                // حالة الغياب (غياب حقيقي = يوم عمل + لا بصمة + لا إجازة + ليس مستقبل)
-                                const isAbsent = !hasTimes && isWorkDay && !matchingLeave && !isFuture;
+                                const officialHoliday = holidays.find(h => h.date === dateStr);
+
+                                const isAbsent = !hasTimes && isWorkDay && !matchingLeave && !officialHoliday && !isFuture;
 
                                 return (
                                     <tr 
@@ -321,6 +332,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                             ${!isWorkDay ? 'bg-gray-50/50' : 'hover:bg-gray-50'}
                                             ${isAbsent ? 'bg-red-50/30 cursor-pointer hover:bg-red-100/30' : ''}
                                             ${matchingLeave ? 'bg-purple-50/30' : ''}
+                                            ${officialHoliday ? 'bg-orange-50/30' : ''}
                                         `}
                                         onClick={() => isAbsent && setSelectedAbsenceDate(dateStr)}
                                     >
@@ -335,6 +347,10 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                             ) : matchingLeave ? (
                                                 <span className="text-purple-600 text-[10px] font-bold flex items-center gap-1">
                                                     <FileCheck className="w-3 h-3"/> {matchingLeave.type}
+                                                </span>
+                                            ) : officialHoliday ? (
+                                                <span className="text-orange-600 text-[10px] font-bold flex items-center gap-1">
+                                                    <PartyPopper className="w-3 h-3"/> {officialHoliday.name}
                                                 </span>
                                             ) : isAbsent ? (
                                                 <span className="text-red-500 text-xs font-bold flex items-center gap-1"><XCircle className="w-3 h-3"/> غياب</span>
@@ -352,6 +368,8 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                                                 <span>{hours} س {!isWorkDay && <span className="text-[10px] text-orange-500 mr-1">(إضافي)</span>}</span>
                                             ) : matchingLeave ? (
                                                 <span className="text-purple-400 text-xs">طلب مقبول</span>
+                                            ) : officialHoliday ? (
+                                                <span className="text-orange-400 text-xs">عطلة رسمية</span>
                                             ) : (
                                                 <span className="text-gray-400 text-xs">
                                                     {!isWorkDay && !isFuture ? (isPartTime ? 'غير مطالب' : 'عطلة') : '-'}
