@@ -40,7 +40,7 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
   const fetchData = async () => {
     setLoading(true);
     
-    // 1. جلب التقييمات (بدون Join لتجنب الأخطاء إذا لم تكن العلاقة مربوطة)
+    // 1. جلب التقييمات فقط (بدون Join لتجنب المشاكل)
     const { data: evalsData, error } = await supabase
       .from('evaluations')
       .select('*')
@@ -51,33 +51,27 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
         console.error("Error fetching evaluations:", error.message);
     }
 
-    // 2. جلب بيانات الموظفين لدمج الأسماء
-    // نستخدم القائمة الممررة في الـ props أو نجلبها إذا لزم الأمر، 
-    // هنا سنعتمد على دمج البيانات برمجياً لضمان ظهور التقييم حتى لو فشل الربط
-    
+    // 2. دمج التقييمات مع أسماء الموظفين يدوياً
     if (evalsData) {
-      const mergedData = evalsData.map(e => {
-        // البحث عن الموظف باستخدام employee_id (الكود الوظيفي)
-        const emp = employees.find(emp => emp.employee_id === e.employee_id);
+      const mergedData = evalsData.map(ev => {
+        // البحث عن الموظف في القائمة الممررة (employees props)
+        const emp = employees.find(e => e.employee_id === ev.employee_id);
         
         return {
-          ...e,
-          // إذا وجدنا الموظف نضع اسمه، وإلا نضع الكود كبديل
-          employee_name: emp ? emp.name : `${e.employee_id} (غير مسجل)`,
+          ...ev,
+          employee_name: emp ? emp.name : `${ev.employee_id} (غير مسجل)`,
           employee_specialty: emp ? emp.specialty : '-',
-          
-          // ضمان وجود قيم رقمية
-          score_appearance: e.score_appearance || 0,
-          score_attendance: e.score_attendance || 0,
-          score_quality: e.score_quality || 0,
-          score_infection: e.score_infection || 0,
-          score_training: e.score_training || 0,
-          score_records: e.score_records || 0,
-          score_tasks: e.score_tasks || 0,
-          total_score: e.total_score || 0
+          // ضمان القيم الرقمية
+          score_appearance: ev.score_appearance || 0,
+          score_attendance: ev.score_attendance || 0,
+          score_quality: ev.score_quality || 0,
+          score_infection: ev.score_infection || 0,
+          score_training: ev.score_training || 0,
+          score_records: ev.score_records || 0,
+          score_tasks: ev.score_tasks || 0,
+          total_score: ev.total_score || 0
         };
       });
-      
       setEvaluations(mergedData);
     } else {
         setEvaluations([]);
@@ -153,10 +147,7 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
 
             const existingRecord = dbEvals.find(e => e.employee_id === empId && e.month === month);
             if (existingRecord) {
-                const isChanged = 
-                    existingRecord.total_score !== payload.total_score ||
-                    existingRecord.notes !== payload.notes;
-
+                const isChanged = existingRecord.total_score !== payload.total_score || existingRecord.notes !== payload.notes;
                 if (isChanged) {
                     rowsToUpsert.push({ ...payload, id: existingRecord.id });
                     updated++;
@@ -182,7 +173,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
     }
   };
 
-  // --- دالة حفظ التقييم اليدوي ---
   const handleManualSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!formData.employee_id) return alert("الرجاء اختيار الموظف");
@@ -236,7 +226,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
       else fetchData();
   };
 
-  // تصفية للعرض
   const filteredEvals = evaluations.filter(e => 
     (e.employee_name && e.employee_name.toLowerCase().includes(fEmployee.toLowerCase())) || 
     (e.employee_id && e.employee_id.includes(fEmployee))
@@ -245,7 +234,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
   return (
     <div className="space-y-6 animate-in fade-in duration-500 relative">
         
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
             <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800">
                 <Award className="w-7 h-7 text-purple-600"/> التقييمات الشهرية
@@ -267,7 +255,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
             </div>
         </div>
 
-        {/* Filters */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-3xl border border-gray-100 shadow-inner">
             <Input label="بحث (اسم/كود)" value={fEmployee} onChange={setFEmployee} placeholder="اسم الموظف..." />
             <Input type="month" label="شهر التقييم" value={fMonth} onChange={setFMonth} />
@@ -283,7 +270,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
             </div>
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm max-h-[600px] custom-scrollbar">
             <table className="w-full text-sm text-right min-w-[1200px]">
                 <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
@@ -365,7 +351,6 @@ export default function EvaluationsTab({ employees }: { employees: Employee[] })
             </table>
         </div>
 
-        {/* --- Modal إضافة تقييم يدوي --- */}
         {showModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in duration-300">
