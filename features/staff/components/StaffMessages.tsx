@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Send, Inbox, Check, CheckCheck } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, InternalMessage } from '../../../types';
@@ -12,13 +12,45 @@ interface Props {
 export default function StaffMessages({ messages, employee, currentUserId }: Props) {
     const [newMessage, setNewMessage] = useState('');
     const [filter, setFilter] = useState<'all' | 'inbox' | 'sent'>('all');
-    const [localMessages, setLocalMessages] = useState<any[]>(messages); // استخدام any مؤقتاً لتجنب أخطاء Typescript إذا لم تعدل الواجهة
+    // استخدام النوع الصحيح بدلاً من any
+    const [localMessages, setLocalMessages] = useState<InternalMessage[]>(messages); 
     const [sending, setSending] = useState(false);
+    const messagesEndRef = useRef<HTMLDivElement>(null); // مرجع للتمرير التلقائي لأسفل
 
+    // تحديث الرسائل عند تغير الـ Props
     useEffect(() => {
         setLocalMessages(messages);
     }, [messages]);
 
+    // --- إضافة الاشتراك اللحظي (Real-time) ---
+    useEffect(() => {
+        // تحديد هوية المستخدم الحالي (سواء كان موظف أو أدمن)
+        const myId = currentUserId === 'admin' ? 'admin' : employee.employee_id;
+
+        const channel = supabase
+            .channel('staff_messages_channel')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `to_user=eq.${myId}`, // استمع فقط للرسائل الموجهة لي
+                },
+                (payload) => {
+                    // عند وصول رسالة جديدة، أضفها للقائمة
+                    const newMsg = payload.new as InternalMessage;
+                    setLocalMessages((prev) => [newMsg, ...prev]);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [currentUserId, employee]);
+
+    // تحديد الرسائل كمقروءة
     useEffect(() => {
         const markAsRead = async () => {
             const unreadIds = localMessages
@@ -30,7 +62,7 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
                 setLocalMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, is_read: true } : m));
             }
         };
-        markAsRead();
+        if (localMessages.length > 0) markAsRead();
     }, [localMessages, currentUserId, employee]);
 
     const handleSend = async (e: React.FormEvent) => {
@@ -41,10 +73,9 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
         const fromUser = currentUserId === 'admin' ? 'admin' : employee.employee_id;
         const toUser = currentUserId === 'admin' ? employee.employee_id : 'admin';
 
-        // 1. التعديل هنا: استخدام content بدلاً من message
         const payload = {
             from_user: fromUser,
-            to_user: toUser, // تأكد أن العمود في القاعدة to_user (بدون مسافة)
+            to_user: toUser,
             content: newMessage, 
             is_read: false
         };
@@ -115,8 +146,8 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
                                         ? 'bg-blue-600 text-white rounded-br-none' 
                                         : 'bg-white border border-gray-100 text-gray-700 rounded-bl-none'
                                     }`}>
-                                        {/* 2. التعديل هنا: عرض content بدلاً من message */}
-                                        {msg.content || msg.message} 
+                                        {/* التعامل الآمن مع المحتوى */}
+                                        {msg.content || msg.message || <span className="italic opacity-50">رسالة فارغة</span>} 
                                     </div>
                                     <div className="flex items-center gap-1 mt-1 px-1">
                                         <span className="text-[10px] font-bold text-gray-400">
@@ -131,6 +162,7 @@ export default function StaffMessages({ messages, employee, currentUserId }: Pro
                         );
                     })
                 )}
+                <div ref={messagesEndRef} />
             </div>
 
             {/* Input Area */}
