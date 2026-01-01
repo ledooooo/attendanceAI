@@ -1,3 +1,5 @@
+// src/types.ts
+
 // تعريف بيانات الموظف
 export interface Employee {
   id: string;            // المعرف الفريد في قاعدة البيانات (UUID)
@@ -52,33 +54,8 @@ export interface AttendanceRecord {
   date: string;
   times: string; // "08:00 14:00"
 }
-// features/types.ts
 
-export interface LeaveRequest {
-  // ... الحقول السابقة
-  id: string;
-  employee_id: string;
-  type: string;
-  start_date: string;
-  end_date: string;
-  status: 'معلق' | 'مقبول' | 'مرفوض' | 'قيد الانتظار' | 'موافقة_رئيس_القسم';
-  notes?: string;
-  employee_name?: string;
-  
-  // ✅ أضف هذا السطر الجديد
-  approved_by?: string; 
-}
-// تعريف الإشعارات
-export interface AppNotification {
-  id: string;
-  user_id: string;
-  title: string;
-  message: string;
-  is_read: boolean;
-  created_at: string;
-}
-
-// تعريف طلب الإجازة
+// تعريف طلب الإجازة (الموحد)
 export interface LeaveRequest {
   id: string;
   employee_id: string;
@@ -87,12 +64,22 @@ export interface LeaveRequest {
   end_date: string;
   back_date?: string;    // تاريخ العودة
   backup_person?: string; // الموظف البديل
-  status: 'معلق' | 'مقبول' | 'مرفوض' | 'قيد الانتظار';
+  status: 'معلق' | 'مقبول' | 'مرفوض' | 'قيد الانتظار' | 'موافقة_رئيس_القسم';
   notes?: string;
   created_at?: string;
   employee_name?: string; // للعرض
-  // تمت إضافة employee للسماح بالوصول لبيانات الموظف عند العرض
-  employee?: { name: string; specialty: string; department?: string };
+  employee?: { name: string; specialty: string; department?: string }; // تفاصيل الموظف
+  approved_by?: string;   // اسم من قام بالموافقة (رئيس القسم)
+}
+
+// تعريف الإشعارات
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
 }
 
 // تعريف التقييم الشهري
@@ -108,7 +95,6 @@ export interface Evaluation {
   score_training?: number;
   score_records?: number;
   score_tasks?: number;
-  // أحياناً يتم استخدام score_1, score_2... بدلاً من الأسماء الوصفية
   score_1?: number;
   score_2?: number;
   score_3?: number;
@@ -124,9 +110,9 @@ export interface InternalMessage {
   created_at: string;
   from_user: string;
   to_user: string;
-  content: string; // تم توحيد الاسم ليكون content
+  content: string; 
   is_read: boolean;
-  message?: string; // (اختياري) لدعم الكود القديم إذا وجد
+  message?: string; // لدعم الكود القديم
 }
 
 // تعريف قاعدة الحضور والانصراف
@@ -163,6 +149,9 @@ export interface GeneralSettings {
   links_urls?: string[];
   last_attendance_update?: string;
   center_name?: string;
+  // حقول العطلات الجديدة
+  holidays_name?: string[];
+  holidays_date?: string[];
 }
 
 // تعريف الخبر
