@@ -21,6 +21,12 @@ import StaffNewsFeed from './components/StaffNewsFeed';
 import EOMVotingCard from './components/EOMVotingCard';
 import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
 import DepartmentRequests from './components/DepartmentRequests'; // تم استيراد مكون إدارة القسم
+import StaffLinksTab from './components/StaffLinksTab'; // <-- استيراد المكون الجديد
+import { 
+  LogOut, User, Clock, Printer, FilePlus, 
+  List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
+  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, Link as LinkIcon // <-- إضافة LinkIcon
+} from 'lucide-react';
 
 interface Props {
   employee: Employee;
@@ -118,6 +124,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
+    { id: 'links', label: 'روابط هامة', icon: LinkIcon }, // <--- التبويب الجديد هنا
     { id: 'requests-history', label: 'سجل الطلبات', icon: List },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
     { id: 'messages', label: 'الرسائل', icon: Inbox },
@@ -289,6 +296,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={[]} employee={employee} />}
                     {activeTab === 'evaluations' && <StaffEvaluations evals={[]} employee={employee} />}
+                  {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'messages' && <StaffMessages messages={[]} employee={employee} currentUserId={employee.employee_id} />}
                 </div>
             </div>
