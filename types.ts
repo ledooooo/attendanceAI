@@ -52,7 +52,22 @@ export interface AttendanceRecord {
   date: string;
   times: string; // "08:00 14:00"
 }
+// features/types.ts
 
+export interface LeaveRequest {
+  // ... الحقول السابقة
+  id: string;
+  employee_id: string;
+  type: string;
+  start_date: string;
+  end_date: string;
+  status: 'معلق' | 'مقبول' | 'مرفوض' | 'قيد الانتظار';
+  notes?: string;
+  employee_name?: string;
+  
+  // ✅ أضف هذا السطر الجديد
+  approved_by?: string; 
+}
 // تعريف الإشعارات
 export interface AppNotification {
   id: string;
