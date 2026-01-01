@@ -6,7 +6,7 @@ import { FilePlus, Send, Calendar, UserCheck } from 'lucide-react';
 import { useNotifications } from '../../../context/NotificationContext';
 
 const LEAVE_TYPES = [
-  "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورة تدريبية", "خط سير", "مأمورية", "اذن صباحى", "اذن مسائي", "تأمين صحي"
+  "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورة تدريبية", "خط سير", "مأمورية", "بدل راحة", "اذن صباحى", "اذن مسائي", "تأمين صحي"
 ];
 
 // 1. تحديث الواجهة لتقبل initialDate (اختياري)
@@ -180,3 +180,4 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         </div>
     );
 }
+
