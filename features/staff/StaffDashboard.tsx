@@ -5,7 +5,7 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText // تم إضافة FileText
+  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -20,14 +20,7 @@ import StaffStats from './components/StaffStats';
 import StaffNewsFeed from './components/StaffNewsFeed';
 import EOMVotingCard from './components/EOMVotingCard';
 import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
-import DepartmentRequests from './components/DepartmentRequests'; // تم استيراد مكون إدارة القسم
 import StaffLinksTab from './components/StaffLinksTab'; // <-- استيراد المكون الجديد
-import { 
-  LogOut, User, Clock, Printer, FilePlus, 
-  List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, Link as LinkIcon // <-- إضافة LinkIcon
-} from 'lucide-react';
-
 interface Props {
   employee: Employee;
 }
@@ -113,14 +106,6 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
-    
-    // إضافة تبويب "إدارة القسم" فقط لرؤساء الأقسام
-    ...(employee.role === 'head_of_dept' ? [{ 
-        id: 'dept-requests', 
-        label: 'إدارة القسم', 
-        icon: FileText 
-    }] : []),
-
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
@@ -277,18 +262,13 @@ export default function StaffDashboard({ employee }: Props) {
                         /> 
                     )}
                     
-                    {/* تم التصحيح: تمرير employeeName لإصلاح خطأ البناء */}
+                    {/* هنا تم التصحيح بإضافة employeeName */}
                     {activeTab === 'evening-schedule' && (
                         <EmployeeEveningSchedule 
                             employeeId={employee.id} 
                             employeeCode={employee.employee_id} 
                             employeeName={employee.name}
                         />
-                    )}
-
-                    {/* عرض مكون إدارة القسم لرؤساء الأقسام فقط */}
-                    {activeTab === 'dept-requests' && employee.role === 'head_of_dept' && (
-                        <DepartmentRequests hod={employee} />
                     )}
 
                     {activeTab === 'stats' && <StaffStats attendance={[]} evals={[]} requests={[]} month={new Date().toISOString().slice(0, 7)} />} 
