@@ -6,7 +6,7 @@ import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import * as XLSX from 'xlsx';
 import { 
   ClipboardList, CheckCircle, XCircle, Clock, 
-  Search, Filter, Download, Trash2, Edit, Save, X 
+  Search, Filter, Download, Trash2, Edit, Save, X, UserCheck 
 } from 'lucide-react';
 
 // دالة تنسيق التاريخ
@@ -28,7 +28,7 @@ const formatDateForDB = (val: any): string | null => {
 
 export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
+  const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -211,8 +211,7 @@ const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
           return;
       }
 
-      // 2. إرسال إشعار للموظف (Insert Notification)
-      // نفترض أن جدول notifications تم إنشاؤه كما اتفقنا
+      // 2. إرسال إشعار للموظف
       const { error: notifError } = await supabase
           .from('notifications')
           .insert({
@@ -224,7 +223,6 @@ const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
 
       if (notifError) {
           console.error("فشل إرسال الإشعار:", notifError);
-          // لا نوقف العملية لأن التحديث تم بالفعل، فقط نسجل الخطأ
       }
 
       // 3. تحديث البيانات في الشاشة
@@ -269,6 +267,7 @@ const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
                         <th className="p-4">إلى</th>
                         <th className="p-4">المدة</th>
                         <th className="p-4">البديل</th>
+                        <th className="p-4">بواسطة</th> {/* العمود الجديد */}
                         <th className="p-4 text-center">الحالة</th>
                         <th className="p-4">إجراءات</th>
                     </tr>
@@ -289,10 +288,19 @@ const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
                                 <td className="p-4 font-mono">{req.end_date}</td>
                                 <td className="p-4 font-bold text-blue-600">{days} يوم</td>
                                 <td className="p-4 text-gray-500">{req.backup_person || '-'}</td>
+                                
+                                {/* عرض اسم من قام بالموافقة */}
+                                <td className="p-4 text-xs font-bold text-purple-600">
+                                    {req.approved_by ? (
+                                        <div className="flex items-center gap-1">
+                                            <UserCheck className="w-3 h-3"/> {req.approved_by}
+                                        </div>
+                                    ) : '-'}
+                                </td>
+
                                 <td className="p-4 text-center">
                                     <select 
                                         value={req.status}
-                                        // هنا نمرر الكائن req بالكامل بدلاً من req.id فقط
                                         onChange={(e) => updateStatus(req, e.target.value)}
                                         className={`px-2 py-1 rounded-lg text-xs font-bold border outline-none cursor-pointer ${
                                             req.status === 'مقبول' ? 'bg-green-100 text-green-700 border-green-200' :
@@ -303,6 +311,7 @@ const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
                                         <option value="معلق">معلق</option>
                                         <option value="مقبول">مقبول</option>
                                         <option value="مرفوض">مرفوض</option>
+                                        <option value="قيد الانتظار">قيد الانتظار</option>
                                     </select>
                                 </td>
                                 <td className="p-4 flex gap-2">
@@ -314,7 +323,7 @@ const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
                         );
                     })}
                     {filteredLeaves.length === 0 && (
-                        <tr><td colSpan={8} className="p-8 text-center text-gray-400">لا توجد طلبات مطابقة</td></tr>
+                        <tr><td colSpan={9} className="p-8 text-center text-gray-400">لا توجد طلبات مطابقة</td></tr>
                     )}
                 </tbody>
             </table>
