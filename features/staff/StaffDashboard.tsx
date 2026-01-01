@@ -43,7 +43,7 @@ export default function StaffDashboard({ employee }: Props) {
     onSwipedLeft: () => setIsSidebarOpen(true),
     onSwipedRight: () => setIsSidebarOpen(false),
     trackMouse: true,
-    delta: 50,
+    delta: 80,
   });
 
   useEffect(() => {
