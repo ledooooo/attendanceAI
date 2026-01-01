@@ -11,21 +11,21 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
     const [loading, setLoading] = useState(true);
 
     // --- حالات الفلترة ---
-    const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7)); // الشهر الحالي افتراضياً
-    const [filterStatus, setFilterStatus] = useState('all'); // all, قيد الانتظار, مقبول, مرفوض
-    const [filterType, setFilterType] = useState('all'); // all, إجازة, مأمورية, ...
-    const [searchTerm, setSearchTerm] = useState(''); // للبحث بالاسم أو الكود
+    const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [filterType, setFilterType] = useState('all');
+    const [searchTerm, setSearchTerm] = useState('');
 
     // جلب الطلبات
     const fetchDeptRequests = async () => {
         setLoading(true);
         try {
-            // 1. جلب موظفي القسم (نفس التخصص)
+            // 1. جلب موظفي القسم (نفس التخصص) مع استبعاد رئيس القسم
             const { data: deptEmployees } = await supabase
                 .from('employees')
                 .select('employee_id, name')
                 .eq('specialty', hod.specialty)
-                .neq('employee_id', hod.employee_id); // استبعاد رئيس القسم
+                .neq('employee_id', hod.employee_id);
 
             if (!deptEmployees || deptEmployees.length === 0) {
                 setRequests([]);
@@ -36,19 +36,18 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
             const empIds = deptEmployees.map(e => e.employee_id);
 
             // 2. جلب الطلبات بناءً على الشهر المحدد
-            // ملاحظة: نبحث في start_date ليكون ضمن الشهر المختار
             const startOfMonth = `${filterMonth}-01`;
-            const endOfMonth = `${filterMonth}-31`; // تقريبياً لنهاية الشهر
+            const endOfMonth = `${filterMonth}-31`;
 
             const { data: reqs } = await supabase
                 .from('leave_requests')
                 .select('*')
                 .in('employee_id', empIds)
-                .gte('start_date', startOfMonth) // بداية الشهر
-                .lte('start_date', endOfMonth)   // نهاية الشهر
+                .gte('start_date', startOfMonth)
+                .lte('start_date', endOfMonth)
                 .order('created_at', { ascending: false });
 
-            // 3. دمج أسماء الموظفين مع الطلبات
+            // 3. دمج أسماء الموظفين
             const enrichedRequests = (reqs || []).map(r => {
                 const emp = deptEmployees.find(e => e.employee_id === r.employee_id);
                 return { 
@@ -68,40 +67,39 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
 
     useEffect(() => {
         if (hod) fetchDeptRequests();
-    }, [hod, filterMonth]); // إعادة الجلب عند تغيير الشهر أو رئيس القسم
+    }, [hod, filterMonth]);
 
-    // تنفيذ الفلترة المحلية (Client-side filtering)
+    // تنفيذ الفلترة المحلية
     const filteredRequests = requests.filter(req => {
-        // فلتر الحالة
         if (filterStatus !== 'all' && req.status !== filterStatus) return false;
-        
-        // فلتر النوع
         if (filterType !== 'all' && req.type !== filterType) return false;
-
-        // فلتر البحث (اسم أو كود)
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
             const nameMatch = req.employee_name?.toLowerCase().includes(term);
             const codeMatch = req.employee_code?.toLowerCase().includes(term);
             if (!nameMatch && !codeMatch) return false;
         }
-
         return true;
     });
 
-    // دالة اتخاذ القرار
-    const handleAction = async (id: string, status: 'مقبول' | 'مرفوض') => {
-        if (!confirm(`هل أنت متأكد من ${status === 'مقبول' ? 'قبول' : 'رفض'} هذا الطلب؟`)) return;
+    // دالة اتخاذ القرار (تعديل الحالة إلى "موافقة رئيس القسم")
+    const handleAction = async (id: string, action: 'approve' | 'reject') => {
+        const newStatus = action === 'approve' ? 'موافقة_رئيس_القسم' : 'مرفوض';
+        const confirmMsg = action === 'approve' ? 'الموافقة المبدئية ورفعه للمدير' : 'رفض الطلب نهائياً';
+
+        if (!confirm(`هل أنت متأكد من ${confirmMsg}؟`)) return;
 
         const { error } = await supabase
             .from('leave_requests')
-            .update({ status: status })
+            .update({ 
+                status: newStatus,
+                approved_by: hod.name // تسجيل اسم رئيس القسم
+            })
             .eq('id', id);
 
         if (!error) {
-            // تحديث الحالة محلياً
-            setRequests(prev => prev.map(r => r.id === id ? { ...r, status: status } : r));
-            alert(`تم ${status === 'مقبول' ? 'قبول' : 'رفض'} الطلب بنجاح`);
+            setRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus, approved_by: hod.name } : r));
+            alert('تم تسجيل الإجراء بنجاح');
         } else {
             alert('حدث خطأ أثناء التحديث');
         }
@@ -112,13 +110,14 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
         switch (status) {
             case 'مقبول': return 'bg-green-100 text-green-700 border-green-200';
             case 'مرفوض': return 'bg-red-100 text-red-700 border-red-200';
+            case 'موافقة_رئيس_القسم': return 'bg-blue-100 text-blue-700 border-blue-200';
             default: return 'bg-yellow-100 text-yellow-700 border-yellow-200';
         }
     };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-            {/* Header */}
+            {/* Header & Filters */}
             <div className="bg-white p-6 rounded-[30px] border border-gray-100 shadow-sm">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                     <div>
@@ -130,7 +129,6 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                         </p>
                     </div>
                     
-                    {/* الشهر */}
                     <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-xl border border-gray-200">
                         <Calendar className="w-4 h-4 text-gray-400"/>
                         <input 
@@ -142,7 +140,6 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                     </div>
                 </div>
 
-                {/* Filters Bar */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div className="relative">
                         <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
@@ -163,8 +160,9 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                             className="w-full pr-9 pl-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-100 outline-none appearance-none"
                         >
                             <option value="all">كل الحالات</option>
-                            <option value="قيد الانتظار">قيد الانتظار (المعلقة)</option>
-                            <option value="مقبول">مقبول</option>
+                            <option value="قيد الانتظار">قيد الانتظار (جديد)</option>
+                            <option value="موافقة_رئيس_القسم">موافقة رئيس القسم</option>
+                            <option value="مقبول">مقبول نهائي</option>
                             <option value="مرفوض">مرفوض</option>
                         </select>
                     </div>
@@ -177,11 +175,8 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                             className="w-full pr-9 pl-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-100 outline-none appearance-none"
                         >
                             <option value="all">كل الأنواع</option>
-                            <option value="إجازة اعتيادية">خط سير</option>
-                            <option value="بدل راحة">بدل راحة</option>
-                            <option value="عارضة">عارضة</option>
-                            <option value="اعتيادى">اعتيادى</option>
-                            <option value="دورة تدريبية">دورة تدريبية</option>
+                            <option value="إجازة اعتيادية">إجازة اعتيادية</option>
+                            <option value="إجازة عارضة">إجازة عارضة</option>
                             <option value="مأمورية">مأمورية</option>
                             <option value="مرضي">مرضي</option>
                         </select>
@@ -221,7 +216,7 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
                                     <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${getStatusColor(req.status)}`}>
-                                        {req.status}
+                                        {req.status === 'موافقة_رئيس_القسم' ? 'موافقة مبدئية' : req.status}
                                     </span>
                                     <span className="text-[10px] text-gray-500 font-bold">{req.type}</span>
                                 </div>
@@ -248,16 +243,16 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                             )}
 
                             {/* Actions (Only for pending requests) */}
-                            {req.status === 'قيد الانتظار' ? (
+                            {(req.status === 'قيد الانتظار' || req.status === 'معلق') ? (
                                 <div className="flex gap-2 pt-2 border-t border-gray-50">
                                     <button 
-                                        onClick={() => handleAction(req.id, 'مقبول')}
+                                        onClick={() => handleAction(req.id, 'approve')}
                                         className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-700 flex items-center justify-center gap-1 transition-all shadow-sm active:scale-95"
                                     >
-                                        <Check className="w-4 h-4"/> قبول
+                                        <Check className="w-4 h-4"/> موافقة ورفع للمدير
                                     </button>
                                     <button 
-                                        onClick={() => handleAction(req.id, 'مرفوض')}
+                                        onClick={() => handleAction(req.id, 'reject')}
                                         className="flex-1 bg-white text-red-600 border border-red-100 py-2.5 rounded-xl text-xs font-bold hover:bg-red-50 flex items-center justify-center gap-1 transition-all active:scale-95"
                                     >
                                         <X className="w-4 h-4"/> رفض
@@ -266,7 +261,7 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                             ) : (
                                 <div className="pt-2 border-t border-gray-50 text-center">
                                     <span className="text-[10px] text-gray-400 font-bold">
-                                        تم اتخاذ الإجراء ({req.status})
+                                        تم اتخاذ الإجراء ({req.status === 'موافقة_رئيس_القسم' ? 'بانتظار المدير' : req.status})
                                     </span>
                                 </div>
                             )}
