@@ -115,9 +115,9 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
+    { id: 'requests-history', label: 'سجل الطلبات', icon: List },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon }, // <--- التبويب الجديد هنا
-    { id: 'requests-history', label: 'سجل الطلبات', icon: List },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
     { id: 'messages', label: 'الرسائل', icon: Inbox },
   ];
