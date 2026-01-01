@@ -5,8 +5,9 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon
-} from 'lucide-react';
+  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, 
+  Link as LinkIcon // <--- هذا هو الاستيراد الناقص الذي سبب الخطأ
+  } from 'lucide-react';
 
 // استيراد المكونات الفرعية
 import StaffProfile from './components/StaffProfile';
