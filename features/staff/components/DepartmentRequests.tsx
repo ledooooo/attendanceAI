@@ -177,8 +177,11 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                             className="w-full pr-9 pl-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-100 outline-none appearance-none"
                         >
                             <option value="all">كل الأنواع</option>
-                            <option value="إجازة اعتيادية">إجازة اعتيادية</option>
-                            <option value="إجازة عارضة">إجازة عارضة</option>
+                            <option value="إجازة اعتيادية">خط سير</option>
+                            <option value="بدل راحة">بدل راحة</option>
+                            <option value="عارضة">عارضة</option>
+                            <option value="اعتيادى">اعتيادى</option>
+                            <option value="دورة تدريبية">دورة تدريبية</option>
                             <option value="مأمورية">مأمورية</option>
                             <option value="مرضي">مرضي</option>
                         </select>
