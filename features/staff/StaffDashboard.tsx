@@ -6,8 +6,8 @@ import {
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, 
-  Link as LinkIcon // <--- هذا هو الاستيراد الناقص الذي سبب الخطأ
-  } from 'lucide-react';
+  Link as LinkIcon 
+} from 'lucide-react';
 
 // استيراد المكونات الفرعية
 import StaffProfile from './components/StaffProfile';
@@ -21,7 +21,9 @@ import StaffStats from './components/StaffStats';
 import StaffNewsFeed from './components/StaffNewsFeed';
 import EOMVotingCard from './components/EOMVotingCard';
 import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
-import StaffLinksTab from './components/StaffLinksTab'; // <-- استيراد المكون الجديد
+import DepartmentRequests from './components/DepartmentRequests'; // تأكد من الاستيراد
+import StaffLinksTab from './components/StaffLinksTab';
+
 interface Props {
   employee: Employee;
 }
@@ -29,7 +31,6 @@ interface Props {
 export default function StaffDashboard({ employee }: Props) {
   const { signOut } = useAuth();
   
-  // الصفحة الافتراضية هي الرئيسية (الأخبار)
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
@@ -41,13 +42,11 @@ export default function StaffDashboard({ employee }: Props) {
   // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => {
-      // التحقق أن السحب بدأ في النصف الأيمن من الشاشة
-      // window.innerWidth / 2 تعني منتصف الشاشة
       if (eventData.initial[0] > window.innerWidth / 2) { 
         setIsSidebarOpen(true);
       }
     },
-    onSwipedRight: () => setIsSidebarOpen(false), // الإغلاق يعمل من أي مكان
+    onSwipedRight: () => setIsSidebarOpen(false),
     trackMouse: true,
     delta: 50,
   });
@@ -113,11 +112,19 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
+    
+    // ✅ تصحيح: إضافة شرط رئيس القسم هنا
+    ...(employee.role === 'head_of_dept' ? [{ 
+        id: 'dept-requests', 
+        label: 'إدارة القسم', 
+        icon: FileText 
+    }] : []),
+
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
     { id: 'requests-history', label: 'سجل الطلبات', icon: List },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
-    { id: 'links', label: 'روابط هامة', icon: LinkIcon }, // <--- التبويب الجديد هنا
+    { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
     { id: 'messages', label: 'الرسائل', icon: Inbox },
   ];
@@ -269,7 +276,6 @@ export default function StaffDashboard({ employee }: Props) {
                         /> 
                     )}
                     
-                    {/* هنا تم التصحيح بإضافة employeeName */}
                     {activeTab === 'evening-schedule' && (
                         <EmployeeEveningSchedule 
                             employeeId={employee.id} 
@@ -278,12 +284,17 @@ export default function StaffDashboard({ employee }: Props) {
                         />
                     )}
 
+                    {/* ✅ تصحيح: إضافة عرض المكون إذا كان الدور رئيس قسم */}
+                    {activeTab === 'dept-requests' && employee.role === 'head_of_dept' && (
+                        <DepartmentRequests hod={employee} />
+                    )}
+
                     {activeTab === 'stats' && <StaffStats attendance={[]} evals={[]} requests={[]} month={new Date().toISOString().slice(0, 7)} />} 
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={()=>{}} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
+                    {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={[]} employee={employee} />}
                     {activeTab === 'evaluations' && <StaffEvaluations evals={[]} employee={employee} />}
-                  {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'messages' && <StaffMessages messages={[]} employee={employee} currentUserId={employee.employee_id} />}
                 </div>
             </div>
