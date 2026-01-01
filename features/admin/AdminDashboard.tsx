@@ -34,8 +34,14 @@ export default function AdminDashboard() {
 
   // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
-    onSwipedLeft: () => setIsSidebarOpen(true),
-    onSwipedRight: () => setIsSidebarOpen(false),
+    onSwipedLeft: (eventData) => {
+      // التحقق أن السحب بدأ في النصف الأيمن من الشاشة
+      // window.innerWidth / 2 تعني منتصف الشاشة
+      if (eventData.initial[0] > window.innerWidth / 2) { 
+        setIsSidebarOpen(true);
+      }
+    },
+    onSwipedRight: () => setIsSidebarOpen(false), // الإغلاق يعمل من أي مكان
     trackMouse: true,
     delta: 50,
   });
