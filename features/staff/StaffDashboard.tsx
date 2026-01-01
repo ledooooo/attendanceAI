@@ -21,7 +21,7 @@ import StaffStats from './components/StaffStats';
 import StaffNewsFeed from './components/StaffNewsFeed';
 import EOMVotingCard from './components/EOMVotingCard';
 import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
-import DepartmentRequests from './components/DepartmentRequests'; // تأكد من الاستيراد
+import DepartmentRequests from './components/DepartmentRequests';
 import StaffLinksTab from './components/StaffLinksTab';
 
 interface Props {
@@ -39,7 +39,7 @@ export default function StaffDashboard({ employee }: Props) {
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // إعدادات السحب (Swipe)
+  // إعدادات السحب (Swipe) - محسنة للعمل من الحافة اليمنى فقط
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => {
       if (eventData.initial[0] > window.innerWidth / 2) { 
@@ -113,7 +113,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     
-    // ✅ تصحيح: إضافة شرط رئيس القسم هنا
+    // إظهار تبويب إدارة القسم فقط لرئيس القسم
     ...(employee.role === 'head_of_dept' ? [{ 
         id: 'dept-requests', 
         label: 'إدارة القسم', 
@@ -284,7 +284,7 @@ export default function StaffDashboard({ employee }: Props) {
                         />
                     )}
 
-                    {/* ✅ تصحيح: إضافة عرض المكون إذا كان الدور رئيس قسم */}
+                    {/* تبويب إدارة القسم */}
                     {activeTab === 'dept-requests' && employee.role === 'head_of_dept' && (
                         <DepartmentRequests hod={employee} />
                     )}
