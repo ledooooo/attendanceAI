@@ -5,7 +5,7 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, 
+  Share2, Download, Info, Heart, Smartphone, AlertTriangle, HelpCircle, Moon, FileText, 
   Link as LinkIcon 
 } from 'lucide-react';
 
