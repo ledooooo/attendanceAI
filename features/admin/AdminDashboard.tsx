@@ -64,7 +64,7 @@ export default function AdminDashboard() {
       const { count } = await supabase
           .from('ovr_reports')
           .select('*', { count: 'exact', head: true })
-          .neq('status', 'new'); // كل ما هو ليس جديد (أي تم إغلاقه أو الرد عليه)
+          .neq('status', 'new'); // الشرط: الحالة ليست "جديد"
       
       setQualityAlerts(count || 0);
   };
