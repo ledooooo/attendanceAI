@@ -23,7 +23,7 @@ import BirthdayWidget from './components/BirthdayWidget';
 import EOMManager from './components/EOMManager';
 import NotificationBell from '../../components/ui/NotificationBell';
 import AdminMessagesTab from './components/AdminMessagesTab'; // <-- استيراد التبويب الجديد
-
+import QualityDashboard from './components/QualityDashboard';
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
   const [activeTab, setActiveTab] = useState('doctors');
@@ -75,6 +75,7 @@ export default function AdminDashboard() {
     { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
     { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
     { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
+    { id: 'quality', label: 'إدارة الجودة (OVR)', icon: AlertTriangle }, // تأكد من استيراد AlertTriangle
     { id: 'settings', label: 'إعدادات النظام', icon: Settings },
   ];
 
@@ -178,6 +179,7 @@ export default function AdminDashboard() {
             {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
             {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
+          {activeTab === 'quality' && <QualityDashboard />}
             {activeTab === 'send_reports' && <SendReportsTab />}
         </div>
       </main>
