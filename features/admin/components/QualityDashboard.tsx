@@ -14,11 +14,18 @@ export default function QualityDashboard() {
         checkUserRoleAndFetch();
     }, []);
 
-    const checkUserRoleAndFetch = async () => {
-        // معرفة دور المستخدم الحالي
+const checkUserRoleAndFetch = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-            const { data: emp } = await supabase.from('employees').select('role').eq('id', user.id).single();
+            // ✅ استخدام maybeSingle لتجنب خطأ 406
+            const { data: emp, error } = await supabase
+                .from('employees')
+                .select('role')
+                .eq('id', user.id)
+                .maybeSingle();
+            
+            if (error) console.error("Error fetching role:", error.message);
+
             const role = emp?.role || 'user';
             setUserRole(role);
             fetchReports(role);
