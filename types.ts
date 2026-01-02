@@ -105,7 +105,25 @@ export interface Evaluation {
   total_score: number;   
   notes?: string;
 }
+// في ملف types.ts
 
+// تحديث الـ Employee Role ليشمل مسؤول الجودة
+// role?: 'admin' | 'user' | 'head_of_dept' | 'quality_manager';
+
+// واجهة تقرير OVR
+export interface OVRReport {
+  id: string;
+  reporter_id: string;
+  reporter_name: string;
+  incident_date: string;
+  incident_time: string;
+  location: string;
+  description: string;
+  action_taken?: string;
+  quality_response?: string;
+  status: 'new' | 'reviewed' | 'closed';
+  created_at: string;
+}
 // تعريف الرسائل الداخلية
 export interface InternalMessage {
   id: string;
