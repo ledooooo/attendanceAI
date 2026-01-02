@@ -159,7 +159,22 @@ export interface Center {
   name: string;
   password?: string; 
 }
+// src/types.ts
 
+export interface OVRReport {
+  id: string;
+  reporter_id: string;
+  reporter_name: string;
+  incident_date: string;
+  incident_time: string;
+  location: string;
+  description: string;
+  action_taken?: string;
+  quality_response?: string;
+  status: 'new' | 'reviewed' | 'closed';
+  created_at: string;
+  is_anonymous?: boolean; // ✅ الحقل الجديد
+}
 // تعريف الإعدادات العامة
 export interface GeneralSettings {
   id: string;
