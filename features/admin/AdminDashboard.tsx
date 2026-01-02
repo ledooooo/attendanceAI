@@ -6,7 +6,7 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
-  Newspaper, Trophy, MessageCircle // تم استبدال Mail بـ MessageCircle للرسائل العامة
+  Newspaper, Trophy, AlertTriangle, MessageCircle // تم استبدال Mail بـ MessageCircle للرسائل العامة
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
