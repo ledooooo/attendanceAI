@@ -23,7 +23,7 @@ import EOMVotingCard from './components/EOMVotingCard';
 import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
 import DepartmentRequests from './components/DepartmentRequests';
 import StaffLinksTab from './components/StaffLinksTab';
-
+import StaffOVR from './components/StaffOVR';
 interface Props {
   employee: Employee;
 }
@@ -126,6 +126,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
+    { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle }, // تأكد من استيراد AlertTriangle من lucide-react
     { id: 'messages', label: 'الرسائل', icon: Inbox },
   ];
 
@@ -295,6 +296,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={[]} employee={employee} />}
                     {activeTab === 'evaluations' && <StaffEvaluations evals={[]} employee={employee} />}
+                  {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'messages' && <StaffMessages messages={[]} employee={employee} currentUserId={employee.employee_id} />}
                 </div>
             </div>
