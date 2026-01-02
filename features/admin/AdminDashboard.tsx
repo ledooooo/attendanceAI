@@ -6,7 +6,7 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
-  Newspaper, Trophy, AlertTriangle, MessageCircle // تم استبدال Mail بـ MessageCircle للرسائل العامة
+  Newspaper, Trophy, AlertTriangle, MessageCircle 
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
@@ -22,8 +22,9 @@ import NewsManagementTab from './components/NewsManagementTab';
 import BirthdayWidget from './components/BirthdayWidget';
 import EOMManager from './components/EOMManager';
 import NotificationBell from '../../components/ui/NotificationBell';
-import AdminMessagesTab from './components/AdminMessagesTab'; // <-- استيراد التبويب الجديد
+import AdminMessagesTab from './components/AdminMessagesTab';
 import QualityDashboard from './components/QualityDashboard';
+
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
   const [activeTab, setActiveTab] = useState('doctors');
@@ -31,17 +32,16 @@ export default function AdminDashboard() {
   const [centerName, setCenterName] = useState('جاري التحميل...');
   const [centerId, setCenterId] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [qualityAlerts, setQualityAlerts] = useState(0); // عدد التنبيهات للجودة
 
   // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => {
-      // التحقق أن السحب بدأ في النصف الأيمن من الشاشة
-      // window.innerWidth / 2 تعني منتصف الشاشة
       if (eventData.initial[0] > window.innerWidth / 2) { 
         setIsSidebarOpen(true);
       }
     },
-    onSwipedRight: () => setIsSidebarOpen(false), // الإغلاق يعمل من أي مكان
+    onSwipedRight: () => setIsSidebarOpen(false),
     trackMouse: true,
     delta: 50,
   });
@@ -59,30 +59,59 @@ export default function AdminDashboard() {
       }
   };
 
+  // جلب عدد تقارير الجودة التي تم الرد عليها (تنبيه للمدير)
+  const fetchQualityAlerts = async () => {
+      const { count } = await supabase
+          .from('ovr_reports')
+          .select('*', { count: 'exact', head: true })
+          .neq('status', 'new'); // كل ما هو ليس جديد (أي تم إغلاقه أو الرد عليه)
+      
+      setQualityAlerts(count || 0);
+  };
+
   useEffect(() => {
     fetchEmployees();
     fetchSettings();
+    fetchQualityAlerts();
+
+    // اشتراك لحظي لتحديث التنبيهات
+    const subscription = supabase
+        .channel('admin_ovr_watch')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ovr_reports' }, () => {
+            fetchQualityAlerts();
+        })
+        .subscribe();
+
+    return () => { supabase.removeChannel(subscription); };
   }, []);
 
   const menuItems = [
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
     { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
-    { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle }, // <-- التبويب الجديد
+    { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
     { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
     { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
+    
+    // زر إدارة الجودة مع التنبيه
+    { 
+        id: 'quality', 
+        label: 'إدارة الجودة (OVR)', 
+        icon: AlertTriangle,
+        badge: qualityAlerts 
+    },
+
     { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
-    { id: 'quality', label: 'إدارة الجودة (OVR)', icon: AlertTriangle }, // تأكد من استيراد AlertTriangle
     { id: 'settings', label: 'إعدادات النظام', icon: Settings },
   ];
 
   return (
     <div {...swipeHandlers} className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-right relative overflow-x-hidden" dir="rtl">
       
-      {/* الشريط العلوي للموبايل فقط */}
+      {/* الشريط العلوي للموبايل */}
       <div className="md:hidden bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-40">
         <div className="flex items-center gap-3">
             <button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
@@ -99,17 +128,18 @@ export default function AdminDashboard() {
           ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
           md:translate-x-0 md:static md:shadow-none md:flex md:flex-col
       `}>
-        <div className="p-6 border-b flex items-center justify-between h-20 shrink-0">
+        <div className="p-5 border-b flex items-center justify-between h-20 shrink-0">
            <div className="flex items-center gap-2 text-emerald-700">
-               <LayoutDashboard className="w-8 h-8"/>
-               <h1 className="text-xl font-black">لوحة التحكم</h1>
+               <LayoutDashboard className="w-7 h-7"/>
+               <h1 className="text-lg font-black">لوحة التحكم</h1>
            </div>
            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 bg-gray-50 rounded-full hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors">
                <X className="w-5 h-5"/>
            </button>
         </div>
 
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
+        {/* تم تقليل المسافات هنا (p-3 بدل p-4 و space-y-1 بدل space-y-2) */}
+        <nav className="p-3 space-y-1 flex-1 overflow-y-auto custom-scrollbar">
           {menuItems.map(item => (
             <button
               key={item.id}
@@ -117,14 +147,21 @@ export default function AdminDashboard() {
                   setActiveTab(item.id);
                   setIsSidebarOpen(false); 
               }}
-              className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all duration-200 ${
+              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 relative group ${
                 activeTab === item.id 
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 font-bold translate-x-[-5px]' 
-                  : 'text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 font-medium'
+                  ? 'bg-emerald-600 text-white shadow-md font-bold translate-x-[-3px]' 
+                  : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 font-medium'
               }`}
             >
-              <item.icon className="w-5 h-5 shrink-0" />
-              <span>{item.label}</span>
+              <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
+              <span className="text-sm">{item.label}</span>
+              
+              {/* Badge التنبيهات */}
+              {item.badge && item.badge > 0 && (
+                  <span className="absolute left-3 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm animate-pulse min-w-[18px] text-center">
+                      {item.badge}
+                  </span>
+              )}
             </button>
           ))}
         </nav>
@@ -132,9 +169,9 @@ export default function AdminDashboard() {
         <div className="p-4 border-t bg-gray-50 shrink-0">
            <button 
              onClick={signOut} 
-             className="w-full flex items-center justify-center gap-2 text-red-500 p-3 rounded-xl hover:bg-red-100 transition-all font-bold bg-white border border-gray-100 shadow-sm"
+             className="w-full flex items-center justify-center gap-2 text-red-500 p-2.5 rounded-xl hover:bg-red-50 transition-all font-bold border border-red-100 shadow-sm text-sm"
            >
-             <LogOut className="w-5 h-5 shrink-0" />
+             <LogOut className="w-4 h-4 shrink-0" />
              تسجيل خروج
            </button>
         </div>
@@ -170,7 +207,6 @@ export default function AdminDashboard() {
                </div>
             )}
 
-            {/* عرض تبويب الرسائل الجديد */}
             {activeTab === 'all_messages' && <AdminMessagesTab employees={employees} />}
             
             {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
@@ -178,8 +214,10 @@ export default function AdminDashboard() {
             {activeTab === 'reports' && <ReportsTab />}
             {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
             {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
+            
+            {activeTab === 'quality' && <QualityDashboard />}
+
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
-          {activeTab === 'quality' && <QualityDashboard />}
             {activeTab === 'send_reports' && <SendReportsTab />}
         </div>
       </main>
