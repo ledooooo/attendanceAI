@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Moon, Calendar, FileText, AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
+import { Moon, Calendar, FileText, AlertCircle, CheckCircle2, ArrowLeftRight, Loader2 } from 'lucide-react';
+import ShiftSwapModal from './ShiftSwapModal'; // ✅ استدعاء المودال
 
 interface EveningSchedule {
   id: string;
@@ -13,11 +14,16 @@ interface Props {
   employeeId: string;
   employeeCode: string;
   employeeName: string;
+  specialty?: string; // ✅ أضفنا التخصص لأنه ضروري لجلب الزملاء في المودال
 }
 
-export default function EmployeeEveningSchedule({ employeeId, employeeCode, employeeName }: Props) {
+export default function EmployeeEveningSchedule({ employeeId, employeeCode, employeeName, specialty }: Props) {
   const [schedules, setSchedules] = useState<EveningSchedule[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // ✅ حالات المودال الخاصة بالتبديل
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [selectedDateForSwap, setSelectedDateForSwap] = useState('');
 
   useEffect(() => {
     if (employeeId) {
@@ -43,16 +49,12 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode, empl
     }
 
     // 2. الفلترة الذكية (Smart Matching)
-    // هذه الدالة تتأكد من وجود الموظف سواء تم تخزينه كـ نص أو كائن
     const myShifts = (data || []).filter((item: EveningSchedule) => {
       let docs = item.doctors;
       
-      // حماية ضد البيانات التالفة
       if (!Array.isArray(docs)) return false;
 
-      // البحث داخل المصفوفة
       return docs.some((d: any) => {
-        // تجهيز بيانات الموظف الحالي للمقارنة
         const targetId = String(employeeId || '').trim();
         const targetCode = String(employeeCode || '').trim();
         const targetName = String(employeeName || '').trim();
@@ -60,10 +62,9 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode, empl
         // الحالة 1: البيانات الجديدة (كائنات)
         if (typeof d === 'object' && d !== null) {
           const storedId = String(d.id || '').trim();
-          const storedCode = String(d.code || '').trim();
+          const storedCode = String(d.code || d.employee_id || '').trim(); // d.employee_id احتياطياً
           const storedName = String(d.name || '').trim();
 
-          // تطابق بأي وسيلة (ID هو الأقوى، ثم الكود، ثم الاسم)
           return (storedId && storedId === targetId) || 
                  (storedCode && storedCode === targetCode) || 
                  (storedName && storedName === targetName);
@@ -91,7 +92,7 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode, empl
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-12 space-y-4">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <Loader2 className="animate-spin h-8 w-8 text-indigo-600" />
         <p className="text-gray-400 font-medium">جاري البحث عن نوبتجياتك...</p>
     </div>
   );
@@ -155,13 +156,38 @@ export default function EmployeeEveningSchedule({ employeeId, employeeCode, empl
                 </div>
               )}
 
-              <div className="pt-3 border-t border-gray-100 flex justify-between items-center text-[10px] text-gray-400 font-mono">
-                <span>REF: {shift.id.slice(0,8)}</span>
-                <span className="flex items-center gap-1 font-sans font-bold text-orange-400"><AlertCircle className="w-3 h-3"/> فترة مسائية</span>
+              <div className="pt-3 border-t border-gray-100 flex justify-between items-center mb-3">
+                <span className="text-[10px] text-gray-400 font-mono">REF: {shift.id.slice(0,8)}</span>
+                <span className="flex items-center gap-1 text-[10px] font-bold text-orange-400"><AlertCircle className="w-3 h-3"/> فترة مسائية</span>
               </div>
+
+              {/* ✅ زر طلب التبديل */}
+              <button 
+                onClick={() => {
+                    setSelectedDateForSwap(shift.date);
+                    setShowSwapModal(true);
+                }}
+                className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-95"
+              >
+                  <ArrowLeftRight className="w-4 h-4" /> طلب تبديل النوبتجية
+              </button>
             </div>
           ))}
         </div>
+      )}
+
+      {/* ✅ نافذة طلب التبديل (Modal) */}
+      {showSwapModal && (
+        <ShiftSwapModal 
+            currentUser={{ 
+                id: employeeId, 
+                employee_id: employeeCode, 
+                name: employeeName, 
+                specialty: specialty || 'عام' // تمرير التخصص ضروري
+            } as any}
+            targetDate={selectedDateForSwap}
+            onClose={() => setShowSwapModal(false)}
+        />
       )}
     </div>
   );
