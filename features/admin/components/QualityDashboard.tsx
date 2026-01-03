@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { OVRReport } from '../../../types';
-import { AlertTriangle, CheckCircle2, Clock, MessageSquare, Send, User, EyeOff } from 'lucide-react';
+import { AlertTriangle, Clock, MessageSquare, Send, User, EyeOff, ArrowRight } from 'lucide-react';
 
 export default function QualityDashboard() {
     const [reports, setReports] = useState<OVRReport[]>([]);
@@ -14,10 +14,9 @@ export default function QualityDashboard() {
         checkUserRoleAndFetch();
     }, []);
 
-const checkUserRoleAndFetch = async () => {
+    const checkUserRoleAndFetch = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-            // ✅ استخدام maybeSingle لتجنب خطأ 406
             const { data: emp, error } = await supabase
                 .from('employees')
                 .select('role')
@@ -35,12 +34,11 @@ const checkUserRoleAndFetch = async () => {
     const fetchReports = async (role: string) => {
         let query = supabase.from('ovr_reports').select('*').order('created_at', { ascending: false });
 
-        // إذا كان مديراً، يرى فقط ما تم الرد عليه (حسب طلبك)
-        // ملاحظة: RLS في القاعدة يضمن ذلك أيضاً، لكن الفلترة هنا للواجهة
-        if (role === 'admin') {
-            query = query.neq('status', 'new');
-        }
-
+        // المدير يرى كل شيء أيضاً (وخاصة المغلق)، لذلك لا نقوم بفلترة صارمة هنا 
+        // ونعتمد على التمييز البصري، أو يمكن تفعيل الفلتر حسب رغبتك.
+        // الكود السابق كان يفلتر: if (role === 'admin') query = query.neq('status', 'new');
+        // سنتركه مفتوحاً ليرى المدير كل شيء، أو يمكنك إعادة تفعيل السطر أعلاه.
+        
         const { data } = await query;
         if (data) setReports(data as any);
     };
@@ -60,7 +58,7 @@ const checkUserRoleAndFetch = async () => {
         if (!error) {
             // إشعار للموظف
             await supabase.from('notifications').insert({
-                user_id: selectedReport.reporter_id, // هنا نستخدم الكود الوظيفي للإشعار حتى لو كان مجهولاً
+                user_id: selectedReport.reporter_id,
                 title: 'تم الرد على تقرير OVR',
                 message: 'قام قسم الجودة بالرد على التقرير الذي أرسلته. يرجى المراجعة.',
                 is_read: false
@@ -68,7 +66,7 @@ const checkUserRoleAndFetch = async () => {
 
             alert('تم اعتماد الرد بنجاح ✅');
             setResponse('');
-            setSelectedReport(null);
+            setSelectedReport(null); // العودة للقائمة
             fetchReports(userRole);
         } else {
             alert('حدث خطأ: ' + error.message);
@@ -83,14 +81,15 @@ const checkUserRoleAndFetch = async () => {
                 <div>
                     <h2 className="text-2xl font-black text-gray-800">إدارة الجودة (OVR)</h2>
                     <p className="text-xs text-gray-500 font-bold">
-                        {userRole === 'admin' ? 'عرض أرشيف الحوادث التي تم التعامل معها' : 'مراجعة والرد على الحوادث الجديدة'}
+                        {userRole === 'admin' ? 'عرض أرشيف الحوادث والتقارير' : 'مراجعة والرد على الحوادث الجديدة'}
                     </p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* قائمة التقارير */}
-                <div className="space-y-3 h-[600px] overflow-y-auto custom-scrollbar pr-2">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
+                
+                {/* 1. قائمة التقارير (تختفي في الموبايل عند اختيار تقرير) */}
+                <div className={`space-y-3 h-[600px] overflow-y-auto custom-scrollbar pr-2 ${selectedReport ? 'hidden lg:block' : 'block'}`}>
                     {reports.length === 0 && <p className="text-gray-400 text-center py-10">لا توجد تقارير للعرض</p>}
                     {reports.map(rep => (
                         <div key={rep.id} onClick={() => setSelectedReport(rep)} 
@@ -101,7 +100,7 @@ const checkUserRoleAndFetch = async () => {
                             <div className="flex justify-between items-start mb-2">
                                 <span className="font-bold text-gray-800 flex items-center gap-2">
                                     {rep.is_anonymous ? (
-                                        <><EyeOff className="w-4 h-4 text-gray-400"/> فاعل خير (مجهول)</>
+                                        <><EyeOff className="w-4 h-4 text-gray-400"/> فاعل خير</>
                                     ) : (
                                         <><User className="w-4 h-4 text-blue-500"/> {rep.reporter_name}</>
                                     )}
@@ -119,13 +118,21 @@ const checkUserRoleAndFetch = async () => {
                     ))}
                 </div>
 
-                {/* تفاصيل التقرير والرد */}
-                <div className="bg-white p-6 rounded-[30px] border shadow-sm h-fit sticky top-4">
+                {/* 2. تفاصيل التقرير والرد (يظهر فوق القائمة في الموبايل) */}
+                <div className={`bg-white p-6 rounded-[30px] border shadow-sm h-fit sticky top-4 ${selectedReport ? 'block' : 'hidden lg:block'}`}>
                     {selectedReport ? (
                         <>
+                            {/* زر الرجوع للموبايل */}
+                            <button 
+                                onClick={() => setSelectedReport(null)} 
+                                className="lg:hidden flex items-center gap-2 text-gray-500 hover:text-gray-800 mb-4 text-sm font-bold"
+                            >
+                                <ArrowRight className="w-4 h-4"/> رجوع للقائمة
+                            </button>
+
                             <div className="border-b pb-4 mb-4">
                                 <h3 className="font-black text-lg text-gray-800 mb-2">تفاصيل الواقعة</h3>
-                                <div className="flex gap-2 mb-4">
+                                <div className="flex gap-2 mb-4 flex-wrap">
                                     <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-xs font-bold">{selectedReport.incident_date}</span>
                                     <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-xs font-bold">{selectedReport.incident_time}</span>
                                     <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-xs font-bold">{selectedReport.location}</span>
@@ -146,13 +153,13 @@ const checkUserRoleAndFetch = async () => {
                                     <MessageSquare className="w-5 h-5 text-emerald-600"/> رد / إجراء إدارة الجودة
                                 </h4>
                                 {selectedReport.status !== 'new' ? (
-                                    <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-emerald-800 text-sm font-medium">
+                                    <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-emerald-800 text-sm font-medium animate-in fade-in">
                                         {selectedReport.quality_response}
                                     </div>
                                 ) : (
                                     <>
-                                        {/* زر الرد يظهر فقط لمسؤول الجودة (أو الأدمن إذا أردت السماح له أيضاً) */}
-                                        {userRole !== 'user' && (
+                                        {/* يظهر للمدير ومسؤول الجودة */}
+                                        {(userRole === 'quality_manager' || userRole === 'admin') && (
                                             <>
                                                 <textarea 
                                                     className="w-full p-4 rounded-xl border-2 border-gray-100 focus:border-emerald-500 outline-none text-sm h-32 resize-none transition-all"
@@ -163,7 +170,7 @@ const checkUserRoleAndFetch = async () => {
                                                 <button 
                                                     onClick={handleSubmitResponse}
                                                     disabled={loading || !response}
-                                                    className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 shadow-lg shadow-emerald-200"
+                                                    className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 shadow-lg shadow-emerald-200 active:scale-95"
                                                 >
                                                     <Send className="w-4 h-4 rtl:rotate-180"/> اعتماد الرد وإغلاق التقرير
                                                 </button>
@@ -174,7 +181,7 @@ const checkUserRoleAndFetch = async () => {
                             </div>
                         </>
                     ) : (
-                        <div className="text-center py-20 text-gray-400">
+                        <div className="text-center py-20 text-gray-400 hidden lg:block">
                             <AlertTriangle className="w-16 h-16 mx-auto mb-4 opacity-20"/>
                             <p>اختر تقريراً من القائمة لعرض التفاصيل</p>
                         </div>
