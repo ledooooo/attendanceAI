@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../supabaseClient'; // نحتاج سوبر بيس هنا لفحص التقارير الجديدة
+import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
 import { useSwipeable } from 'react-swipeable';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, 
-  Link as LinkIcon, AlertTriangle, ShieldCheck // ✅ أضفنا ShieldCheck لمسؤول الجودة
+  Link as LinkIcon, AlertTriangle, ShieldCheck
 } from 'lucide-react';
 
-// استيراد المكونات الفرعية
 import StaffProfile from './components/StaffProfile';
 import StaffAttendance from './components/StaffAttendance';
 import StaffNewRequest from './components/StaffNewRequest';
@@ -25,9 +24,6 @@ import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
 import DepartmentRequests from './components/DepartmentRequests';
 import StaffLinksTab from './components/StaffLinksTab';
 import StaffOVR from './components/StaffOVR';
-
-// ✅ استيراد لوحة الجودة (تأكد من صحة المسار حسب مجلداتك)
-// نفترض أنها موجودة في features/admin/components/QualityDashboard
 import QualityDashboard from '../admin/components/QualityDashboard'; 
 
 interface Props {
@@ -39,14 +35,13 @@ export default function StaffDashboard({ employee }: Props) {
   
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [ovrCount, setOvrCount] = useState(0); // ✅ عدد التقارير الجديدة للجودة
+  const [ovrCount, setOvrCount] = useState(0);
   
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // إعدادات السحب
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => {
       if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true);
@@ -56,26 +51,23 @@ export default function StaffDashboard({ employee }: Props) {
     delta: 50,
   });
 
-  // ✅ فحص التقارير الجديدة لمسؤول الجودة
   useEffect(() => {
     if (employee.role === 'quality_manager') {
         const checkNewReports = async () => {
             const { count } = await supabase
                 .from('ovr_reports')
                 .select('*', { count: 'exact', head: true })
-                .eq('status', 'new'); // عد التقارير الجديدة فقط
+                .eq('status', 'new');
             
             setOvrCount(count || 0);
         };
 
         checkNewReports();
         
-        // اشتراك لحظي (اختياري) لتحديث الرقم عند وصول تقرير جديد
         const subscription = supabase
             .channel('ovr_count_watch')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ovr_reports' }, () => {
                 checkNewReports();
-                // يمكن إضافة صوت تنبيه هنا
                 alert('⚠️ تنبيه لمسؤول الجودة: وصل تقرير OVR جديد!');
             })
             .subscribe();
@@ -84,7 +76,6 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.role]);
 
-  // PWA Installation Logic
   useEffect(() => {
     const checkStandalone = () => {
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
@@ -116,30 +107,27 @@ export default function StaffDashboard({ employee }: Props) {
     } catch (err) { console.error(err); }
   };
 
-  // --- قائمة الموظف ---
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     
-    // ✅ تبويب خاص بمسؤول الجودة فقط
     ...(employee.role === 'quality_manager' ? [{ 
         id: 'quality-manager-tab', 
         label: 'مسؤول الجودة', 
         icon: ShieldCheck,
-        badge: ovrCount // تمرير عدد التقارير الجديدة
+        badge: ovrCount 
     }] : []),
 
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     
-    // تبويب رئيس القسم
     ...(employee.role === 'head_of_dept' ? [{ 
         id: 'dept-requests', label: 'إدارة القسم', icon: FileText 
     }] : []),
 
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
-    { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle }, // للموظف العادي للإرسال
+    { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle },
     { id: 'requests-history', label: 'سجل الطلبات', icon: List },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
@@ -200,7 +188,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 transition-transform group-hover:scale-110 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* ✅ Badge لعدد التقارير الجديدة */}
                 {item.id === 'quality-manager-tab' && item.badge && item.badge > 0 && (
                     <span className="absolute left-4 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-sm">
                         {item.badge} جديد
@@ -209,38 +196,48 @@ export default function StaffDashboard({ employee }: Props) {
               </button>
             );
           })}
-
-          <div className="my-4 border-t border-gray-100"></div>
-          
-          <div className="space-y-1">
-             {!isStandalone && (
-                <button 
-                    onClick={handleInstallClick} 
-                    className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-xl transition-colors font-medium ${deferredPrompt ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                    {deferredPrompt ? <Download className="w-5 h-5" /> : <HelpCircle className="w-5 h-5"/>}
-                    <span className="text-sm">تثبيت التطبيق</span>
-                </button>
-             )}
-             <button onClick={handleShareApp} className="w-full flex items-center gap-4 px-4 py-2.5 rounded-xl text-gray-600 hover:bg-purple-50 hover:text-purple-600 transition-colors font-medium">
-                 <Share2 className="w-5 h-5 text-purple-500" />
-                 <span className="text-sm">مشاركة التطبيق</span>
-             </button>
-             <button onClick={() => setShowAboutModal(true)} className="w-full flex items-center gap-4 px-4 py-2.5 rounded-xl text-gray-600 hover:bg-orange-50 hover:text-orange-600 transition-colors font-medium">
-                 <Info className="w-5 h-5 text-orange-500" />
-                 <span className="text-sm">عن التطبيق</span>
-             </button>
-          </div>
         </nav>
 
-        <div className="p-4 border-t bg-gray-50 shrink-0">
-          <button
-            onClick={signOut}
-            className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 text-red-500 px-4 py-3 rounded-xl hover:bg-red-50 hover:border-red-100 transition-all font-bold shadow-sm text-sm"
-          >
-            <LogOut size={18} />
-            تسجيل خروج
-          </button>
+        {/* ✅ الجزء السفلي المعدل: أيقونات أفقية للوظائف الثانوية */}
+        <div className="p-3 border-t bg-gray-50 shrink-0 flex items-center justify-around">
+            
+            {/* تثبيت التطبيق (يظهر فقط إذا لم يكن مثبتاً) */}
+            {!isStandalone && (
+                <button 
+                    onClick={handleInstallClick} 
+                    className="p-3 rounded-xl text-gray-500 hover:bg-blue-100 hover:text-blue-600 transition-colors tooltip relative group"
+                    title={deferredPrompt ? "تثبيت التطبيق" : "تعليمات التثبيت"}
+                >
+                    {deferredPrompt ? <Download className="w-5 h-5" /> : <HelpCircle className="w-5 h-5"/>}
+                </button>
+            )}
+
+            {/* مشاركة التطبيق */}
+            <button 
+                onClick={handleShareApp} 
+                className="p-3 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors"
+                title="مشاركة التطبيق"
+            >
+                <Share2 className="w-5 h-5" />
+            </button>
+
+            {/* عن التطبيق */}
+            <button 
+                onClick={() => setShowAboutModal(true)} 
+                className="p-3 rounded-xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors"
+                title="عن التطبيق"
+            >
+                <Info className="w-5 h-5" />
+            </button>
+
+            {/* تسجيل خروج (مميز باللون الأحمر) */}
+            <button 
+                onClick={signOut} 
+                className="p-3 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors border border-transparent hover:border-red-200"
+                title="تسجيل خروج"
+            >
+                <LogOut className="w-5 h-5" />
+            </button>
         </div>
       </aside>
 
@@ -310,7 +307,6 @@ export default function StaffDashboard({ employee }: Props) {
                         <DepartmentRequests hod={employee} />
                     )}
 
-                    {/* ✅ عرض مكون مسؤول الجودة هنا */}
                     {activeTab === 'quality-manager-tab' && employee.role === 'quality_manager' && (
                         <QualityDashboard />
                     )}
