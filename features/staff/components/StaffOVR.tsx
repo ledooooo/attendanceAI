@@ -19,16 +19,16 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
     useEffect(() => {
         fetchMyReports();
     }, []);
-
-    const fetchMyReports = async () => {
-        // جلب التقارير الخاصة بهذا الموظف فقط
-        const { data } = await supabase
-            .from('ovr_reports')
-            .select('*')
-            .eq('reporter_id', employee.employee_id)
-            .order('created_at', { ascending: false });
-        if (data) setMyReports(data as any);
-    };
+const fetchMyReports = async () => {
+    // تأكد أن employee.employee_id يحتوي على قيمة صحيحة (مثلاً "101")
+    const { data } = await supabase
+        .from('ovr_reports')
+        .select('*')
+        .eq('reporter_id', employee.employee_id) 
+        .order('created_at', { ascending: false });
+        
+    if (data) setMyReports(data as any);
+};
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
