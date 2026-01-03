@@ -6,10 +6,11 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
-  Newspaper, Trophy, AlertTriangle, MessageCircle 
+  Newspaper, Trophy, AlertTriangle, MessageCircle, Home 
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
+import HomeTab from './components/HomeTab'; // ✅ استيراد صفحة الاستقبال الجديدة
 import DoctorsTab from './components/DoctorsTab';
 import AttendanceTab from './components/AttendanceTab';
 import EveningSchedulesTab from './components/EveningSchedulesTab';
@@ -27,12 +28,15 @@ import QualityDashboard from './components/QualityDashboard';
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
-  const [activeTab, setActiveTab] = useState('doctors');
+  
+  // ✅ جعل الصفحة الافتراضية هي الرئيسية (Home)
+  const [activeTab, setActiveTab] = useState('home');
+  
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [centerName, setCenterName] = useState('جاري التحميل...');
   const [centerId, setCenterId] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [qualityAlerts, setQualityAlerts] = useState(0); // عدد التنبيهات للجودة
+  const [qualityAlerts, setQualityAlerts] = useState(0); 
 
   // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
@@ -59,16 +63,14 @@ export default function AdminDashboard() {
       }
   };
 
-  // جلب عدد تقارير الجودة التي تم الرد عليها (تنبيه للمدير)
-// في ملف features/admin/AdminDashboard.tsx
-
+  // ✅ جلب عدد تقارير الجودة التي تم الرد عليها (تنبيه للمدير)
   const fetchQualityAlerts = async () => {
-      // حساب عدد التقارير التي حالتها "مغلق" أو تم الرد عليها
-      // لاحظ: تأكد أن الحالة التي يحفظها مسؤول الجودة هي 'closed'
+      // نعد التقارير التي تم الرد عليها (أي حالتها ليست "جديد")
+      // هذا يشمل closed أو reviewed
       const { count } = await supabase
           .from('ovr_reports')
           .select('*', { count: 'exact', head: true })
-          .eq('status', 'closed'); // عد التقارير المغلقة فقط لتنبيه المدير بمراجعتها
+          .neq('status', 'new'); 
       
       setQualityAlerts(count || 0);
   };
@@ -90,6 +92,8 @@ export default function AdminDashboard() {
   }, []);
 
   const menuItems = [
+    // ✅ إضافة زر الرئيسية في البداية
+    { id: 'home', label: 'الرئيسية', icon: Home },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
     { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
@@ -142,7 +146,7 @@ export default function AdminDashboard() {
            </button>
         </div>
 
-        {/* تم تقليل المسافات هنا (p-3 بدل p-4 و space-y-1 بدل space-y-2) */}
+        {/* ✅ تم تقليل المسافات لتجنب السكرول */}
         <nav className="p-3 space-y-1 flex-1 overflow-y-auto custom-scrollbar">
           {menuItems.map(item => (
             <button
@@ -201,6 +205,10 @@ export default function AdminDashboard() {
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-20 md:pb-8">
+            
+            {/* ✅ عرض صفحة الاستقبال (Home) */}
+            {activeTab === 'home' && <HomeTab employees={employees} setActiveTab={setActiveTab} />}
+            
             {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={centerId} />}
             {activeTab === 'news' && <NewsManagementTab />}
             
