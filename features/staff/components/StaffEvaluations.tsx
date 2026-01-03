@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Award, Star, TrendingUp, Plus, Save, X, Edit, Trash2, CheckSquare, Loader2 } from 'lucide-react';
+import { Award, Star, TrendingUp, Plus, Save, X, Edit, Trash2, CheckSquare, Loader2, Calendar, Search } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, Evaluation } from '../../../types';
 
 interface Props {
-    evals: Evaluation[]; // استخدام النوع الصحيح بدلاً من any
+    evals: Evaluation[]; 
     employee?: Employee;
     isAdmin?: boolean;
     onUpdate?: () => void;
 }
 
 export default function StaffEvaluations({ evals: initialEvals, employee, isAdmin = false, onUpdate }: Props) {
-    // حالة لتخزين التقييمات (سواء من Props أو من القاعدة)
+    // حالة لتخزين التقييمات
     const [evals, setEvals] = useState<Evaluation[]>(initialEvals || []);
     const [loadingData, setLoadingData] = useState(false);
+
+    // ✅ حالة جديدة: شهر العرض المختار
+    const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
     const [showForm, setShowForm] = useState(false);
     const [editMode, setEditMode] = useState(false);
@@ -35,15 +38,13 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
 
     const [formData, setFormData] = useState(initialFormState);
 
-    // --- جلب البيانات إذا لم يتم تمريرها (للموظف) ---
+    // --- جلب البيانات ---
     useEffect(() => {
-        // إذا كان هناك بيانات قادمة من Props (كما في صفحة المدير)، استخدمها
         if (initialEvals && initialEvals.length > 0) {
             setEvals(initialEvals);
             return;
         }
 
-        // إذا لم تكن هناك بيانات (صفحة الموظف)، اجلبها من القاعدة
         const fetchEvaluations = async () => {
             if (!employee?.employee_id) return;
             setLoadingData(true);
@@ -63,6 +64,9 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
 
         fetchEvaluations();
     }, [employee?.employee_id, initialEvals]);
+
+    // ✅ تصفية التقييمات بناءً على الشهر المختار
+    const filteredEvals = evals.filter(ev => ev.month === selectedMonth);
 
     // دالة لفتح وضع التعديل
     const openEdit = (evalItem: any) => {
@@ -130,9 +134,6 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
             setEditMode(false);
             setFormData(initialFormState);
             if (onUpdate) onUpdate();
-            
-            // تحديث القائمة المحلية أيضاً في حالة المدير ليرى التغيير فوراً
-            // (اختياري، لأن onUpdate غالباً سيعيد تحميل الصفحة)
 
         } catch (err: any) {
             alert('حدث خطأ: ' + err.message);
@@ -162,26 +163,40 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
 
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom duration-500 pb-20">
-            {/* Header */}
-            <div className="flex justify-between items-center border-b pb-4">
+            {/* Header with Month Filter */}
+            <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
                 <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800">
                     <Award className="text-purple-600 w-7 h-7" /> التقييمات الشهرية
                 </h3>
-                {isAdmin && !showForm && (
-                    <button 
-                        onClick={() => { 
-                            setEditMode(false); 
-                            setFormData(initialFormState); 
-                            setShowForm(true); 
-                        }} 
-                        className="bg-purple-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg hover:shadow-purple-200"
-                    >
-                        <Plus className="w-5 h-5"/> تقييم جديد
-                    </button>
-                )}
+                
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                    {/* ✅ فلتر اختيار الشهر */}
+                    <div className="relative flex-1 md:w-48">
+                        <input 
+                            type="month" 
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 bg-white font-bold text-gray-700 focus:border-purple-500 outline-none shadow-sm"
+                        />
+                        <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+
+                    {isAdmin && !showForm && (
+                        <button 
+                            onClick={() => { 
+                                setEditMode(false); 
+                                setFormData(initialFormState); 
+                                setShowForm(true); 
+                            }} 
+                            className="bg-purple-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-purple-700 transition-all shadow-lg hover:shadow-purple-200 text-sm whitespace-nowrap"
+                        >
+                            <Plus className="w-4 h-4"/> إضافة
+                        </button>
+                    )}
+                </div>
             </div>
 
-            {/* Form */}
+            {/* Form (Admin Only) */}
             {showForm && isAdmin && (
                 <div className="bg-gray-50 border border-purple-200 rounded-[2.5rem] p-6 mb-8 shadow-sm relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-20 h-20 bg-purple-100 rounded-bl-full opacity-50 pointer-events-none"></div>
@@ -250,13 +265,16 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
 
             {/* List */}
             <div className="grid gap-4">
-                {evals.length === 0 ? (
-                    <div className="text-center py-12 bg-gray-50 rounded-[2.5rem] border border-dashed border-gray-200">
-                        <Award className="w-12 h-12 text-gray-300 mx-auto mb-3"/>
-                        <p className="text-gray-400 font-bold">لا توجد تقييمات مسجلة لهذا الموظف بعد</p>
+                {filteredEvals.length === 0 ? (
+                    <div className="text-center py-12 bg-gray-50 rounded-[2.5rem] border border-dashed border-gray-200 animate-in fade-in">
+                        <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Search className="w-8 h-8 text-gray-400"/>
+                        </div>
+                        <p className="text-gray-500 font-bold mb-1">لا يوجد تقييم لشهر <span dir="ltr">{selectedMonth}</span></p>
+                        <p className="text-xs text-gray-400">يرجى اختيار شهر آخر أو انتظار التقييم</p>
                     </div>
-                ) : evals.map((ev) => (
-                    <div key={ev.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col lg:flex-row gap-6 relative group overflow-hidden transition-all hover:shadow-md">
+                ) : filteredEvals.map((ev) => (
+                    <div key={ev.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col lg:flex-row gap-6 relative group overflow-hidden transition-all hover:shadow-md animate-in slide-in-from-bottom-2">
                         <div className={`absolute top-0 right-0 w-2 h-full transition-colors ${
                             ev.total_score >= 90 ? 'bg-emerald-500' : 
                             ev.total_score >= 75 ? 'bg-blue-500' : 
