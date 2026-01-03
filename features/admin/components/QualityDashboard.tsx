@@ -31,16 +31,23 @@ export default function QualityDashboard() {
         }
     };
 
-    const fetchReports = async (role: string) => {
-        let query = supabase.from('ovr_reports').select('*').order('created_at', { ascending: false });
+const fetchReports = async (role: string) => {
+        // المدير ومسؤول الجودة يجب أن يروا كافة التقارير (الجديدة والمغلقة)
+        // الفلترة السابقة كانت تسبب اخفاء التقارير أحياناً
+        let query = supabase
+            .from('ovr_reports')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-        // المدير يرى كل شيء أيضاً (وخاصة المغلق)، لذلك لا نقوم بفلترة صارمة هنا 
-        // ونعتمد على التمييز البصري، أو يمكن تفعيل الفلتر حسب رغبتك.
-        // الكود السابق كان يفلتر: if (role === 'admin') query = query.neq('status', 'new');
-        // سنتركه مفتوحاً ليرى المدير كل شيء، أو يمكنك إعادة تفعيل السطر أعلاه.
+        const { data, error } = await query;
         
-        const { data } = await query;
-        if (data) setReports(data as any);
+        if (error) {
+            console.error("Error fetching OVR reports:", error.message);
+        }
+        
+        if (data) {
+            setReports(data as any);
+        }
     };
 
     const handleSubmitResponse = async () => {
