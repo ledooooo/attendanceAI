@@ -17,12 +17,13 @@ export default function QualityDashboard() {
     const checkUserRoleAndFetch = async () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-            const { data: emp } = await supabase
+            const { data: emp, error } = await supabase
                 .from('employees')
                 .select('role')
                 .eq('id', user.id)
                 .maybeSingle();
             
+            // في حالة وجود خطأ في الصلاحيات، سنفترض أنه مستخدم عادي
             const role = emp?.role || 'user';
             setUserRole(role);
             fetchReports(role);
@@ -30,9 +31,17 @@ export default function QualityDashboard() {
     };
 
     const fetchReports = async (role: string) => {
-        // المدير ومسؤول الجودة يرون كل شيء (الجديد والمغلق)
-        let query = supabase.from('ovr_reports').select('*').order('created_at', { ascending: false });
-        const { data } = await query;
+        // المدير ومسؤول الجودة يرون كل التقارير (الجديدة والمغلقة)
+        let query = supabase
+            .from('ovr_reports')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        // ملاحظة: قمت بإزالة شرط إخفاء التقارير الجديدة عن المدير
+        // من الأفضل أن يرى المدير كل شيء
+        
+        const { data, error } = await query;
+        if (error) console.error("Error fetching reports:", error);
         if (data) setReports(data as any);
     };
 
@@ -40,7 +49,7 @@ export default function QualityDashboard() {
         if (!selectedReport || !response) return;
         setLoading(true);
 
-        // 1. تحديث التقرير
+        // 1. تحديث التقرير ليصبح مغلقاً
         const { error } = await supabase
             .from('ovr_reports')
             .update({
@@ -54,12 +63,12 @@ export default function QualityDashboard() {
             await supabase.from('notifications').insert({
                 user_id: selectedReport.reporter_id,
                 title: 'تم الرد على تقرير OVR',
-                message: 'قام قسم الجودة بالرد على التقرير الذي أرسلته. يرجى المراجعة.',
+                message: 'قام قسم الجودة بالرد على التقرير الذي أرسلته.',
                 is_read: false
             });
 
-            // 3. ✅ إشعار للمدير (Admin) بأن هناك تقرير تم إغلاقه
-            // نجلب كل المديرين
+            // 3. إشعار للمدير (Admin)
+            // نجلب قائمة المديرين
             const { data: admins } = await supabase
                 .from('employees')
                 .select('employee_id')
@@ -68,14 +77,16 @@ export default function QualityDashboard() {
             if (admins && admins.length > 0) {
                 const adminNotifications = admins.map(admin => ({
                     user_id: admin.employee_id,
-                    title: 'تقرير جودة مكتمل',
-                    message: `قام مسؤول الجودة بالرد وإغلاق التقرير الخاص بـ ${selectedReport.is_anonymous ? 'فاعل خير' : selectedReport.reporter_name}. يرجى الاطلاع.`,
+                    title: '🔴 تقرير جودة تم إغلاقه',
+                    message: `قام مسؤول الجودة بالرد على واقعة ${selectedReport.is_anonymous ? 'مجهولة' : selectedReport.reporter_name}.`,
                     is_read: false
                 }));
+                
+                // إرسال التنبيهات للمديرين
                 await supabase.from('notifications').insert(adminNotifications);
             }
 
-            alert('تم اعتماد الرد وتنبيه المدير والموظف ✅');
+            alert('تم اعتماد الرد وتنبيه الأطراف المعنية ✅');
             setResponse('');
             setSelectedReport(null);
             fetchReports(userRole);
@@ -86,31 +97,31 @@ export default function QualityDashboard() {
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in">
+        <div className="space-y-6 animate-in fade-in duration-500">
             <div className="flex items-center gap-3">
-                <div className="bg-red-100 p-2 rounded-full">
+                <div className="bg-red-100 p-2.5 rounded-full shadow-sm">
                     <AlertTriangle className="w-6 h-6 text-red-600"/> 
                 </div>
                 <div>
                     <h2 className="text-2xl font-black text-gray-800">إدارة الجودة (OVR)</h2>
-                    <p className="text-xs text-gray-500 font-bold">
-                        {userRole === 'admin' ? 'متابعة الحوادث والتقارير المكتملة' : 'مراجعة والرد على الحوادث الجديدة'}
+                    <p className="text-xs text-gray-500 font-bold mt-1">
+                        {userRole === 'admin' ? 'الأرشيف والمتابعة' : 'مراجعة الحوادث والرد عليها'}
                     </p>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
                 
-                {/* القائمة */}
-                <div className={`space-y-3 h-[600px] overflow-y-auto custom-scrollbar pr-2 ${selectedReport ? 'hidden lg:block' : 'block'}`}>
+                {/* 1. القائمة الجانبية (تختفي في الموبايل عند اختيار تقرير) */}
+                <div className={`space-y-3 h-[600px] overflow-y-auto custom-scrollbar pr-2 pb-20 ${selectedReport ? 'hidden lg:block' : 'block'}`}>
                     {reports.length === 0 && (
                         <div className="text-center py-10 bg-gray-50 rounded-2xl border border-dashed">
-                            <p className="text-gray-400 font-bold">لا توجد تقارير للعرض</p>
+                            <p className="text-gray-400 font-bold">لا توجد تقارير حالياً</p>
                         </div>
                     )}
                     {reports.map(rep => (
                         <div key={rep.id} onClick={() => setSelectedReport(rep)} 
-                             className={`p-4 rounded-2xl border cursor-pointer transition-all relative group hover:shadow-md ${selectedReport?.id === rep.id ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white hover:border-red-200'}`}>
+                             className={`p-4 rounded-2xl border cursor-pointer transition-all relative group hover:shadow-md ${selectedReport?.id === rep.id ? 'border-red-500 bg-red-50 shadow-md' : 'border-gray-200 bg-white hover:border-red-200'}`}>
                             
                             <div className="flex justify-between items-start mb-2">
                                 <span className="font-bold text-gray-800 flex items-center gap-2 text-sm">
@@ -133,11 +144,15 @@ export default function QualityDashboard() {
                     ))}
                 </div>
 
-                {/* التفاصيل والرد */}
-                <div className={`bg-white p-6 rounded-[30px] border shadow-sm h-fit sticky top-4 ${selectedReport ? 'block' : 'hidden lg:block'}`}>
+                {/* 2. تفاصيل التقرير والرد (يظهر فوق القائمة في الموبايل) */}
+                <div className={`bg-white p-6 rounded-[30px] border shadow-sm h-fit sticky top-4 animate-in slide-in-from-bottom-5 duration-300 ${selectedReport ? 'block' : 'hidden lg:block'}`}>
                     {selectedReport ? (
                         <>
-                            <button onClick={() => setSelectedReport(null)} className="lg:hidden flex items-center gap-2 text-gray-500 hover:text-gray-800 mb-4 text-sm font-bold">
+                            {/* زر الرجوع للموبايل */}
+                            <button 
+                                onClick={() => setSelectedReport(null)} 
+                                className="lg:hidden w-full py-3 mb-4 bg-gray-100 rounded-xl flex items-center justify-center gap-2 text-gray-600 font-bold hover:bg-gray-200"
+                            >
                                 <ArrowRight className="w-4 h-4"/> رجوع للقائمة
                             </button>
 
@@ -146,14 +161,16 @@ export default function QualityDashboard() {
                                     <h3 className="font-black text-lg text-gray-800">تفاصيل الواقعة</h3>
                                     <span className="text-[10px] bg-gray-100 px-2 py-1 rounded text-gray-500 font-mono">#{selectedReport.id.slice(0,6)}</span>
                                 </div>
+                                
                                 <div className="flex gap-2 mb-4 flex-wrap">
                                     <span className="bg-orange-50 text-orange-700 px-3 py-1 rounded-lg text-xs font-bold border border-orange-100">{selectedReport.incident_date}</span>
-                                    <span className="bg-orange-50 text-orange-700 px-3 py-1 rounded-lg text-xs font-bold border border-orange-100">{selectedReport.incident_time}</span>
                                     <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-xs font-bold">{selectedReport.location}</span>
                                 </div>
+                                
                                 <p className="text-sm text-gray-700 leading-loose bg-gray-50 p-4 rounded-xl border border-gray-200 mb-4">
                                     {selectedReport.description}
                                 </p>
+                                
                                 {selectedReport.action_taken && (
                                     <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
                                         <span className="text-xs font-bold text-blue-600 block mb-1">الإجراء الفوري من الموظف:</span>
@@ -166,6 +183,7 @@ export default function QualityDashboard() {
                                 <h4 className="font-bold text-gray-800 flex items-center gap-2">
                                     <MessageSquare className="w-5 h-5 text-emerald-600"/> رد / إجراء إدارة الجودة
                                 </h4>
+                                
                                 {selectedReport.status !== 'new' ? (
                                     <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-emerald-900 text-sm font-medium leading-relaxed relative overflow-hidden">
                                         <div className="absolute top-0 right-0 w-1 h-full bg-emerald-500"></div>
@@ -173,11 +191,12 @@ export default function QualityDashboard() {
                                     </div>
                                 ) : (
                                     <>
+                                        {/* يظهر فقط للمدير ومسؤول الجودة */}
                                         {(userRole === 'quality_manager' || userRole === 'admin') ? (
-                                            <>
+                                            <div className="animate-in fade-in zoom-in-95">
                                                 <textarea 
-                                                    className="w-full p-4 rounded-xl border-2 border-gray-200 focus:border-emerald-500 outline-none text-sm h-32 resize-none transition-all focus:bg-emerald-50/10"
-                                                    placeholder="اكتب الإجراء التصحيحي واعتمده..."
+                                                    className="w-full p-4 rounded-xl border-2 border-gray-200 focus:border-emerald-500 outline-none text-sm h-32 resize-none transition-all focus:bg-emerald-50/10 mb-3"
+                                                    placeholder="اكتب الإجراء التصحيحي هنا لاعتماده وإغلاق التقرير..."
                                                     value={response}
                                                     onChange={e => setResponse(e.target.value)}
                                                 ></textarea>
@@ -188,9 +207,11 @@ export default function QualityDashboard() {
                                                 >
                                                     {loading ? 'جاري الحفظ...' : <><Send className="w-4 h-4 rtl:rotate-180"/> اعتماد الرد وإغلاق التقرير</>}
                                                 </button>
-                                            </>
+                                            </div>
                                         ) : (
-                                            <p className="text-center text-xs text-gray-400 bg-gray-50 p-2 rounded">بانتظار رد مسؤول الجودة...</p>
+                                            <p className="text-center text-xs text-gray-400 bg-gray-50 p-4 rounded-xl border border-dashed">
+                                                بانتظار مراجعة واعتماد مسؤول الجودة...
+                                            </p>
                                         )}
                                     </>
                                 )}
