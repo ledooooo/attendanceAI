@@ -7,9 +7,10 @@ import {
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, 
-  Link as LinkIcon, AlertTriangle, ShieldCheck
+  Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight // ✅ تمت إضافة أيقونة التبديل
 } from 'lucide-react';
 
+// استيراد المكونات الفرعية
 import StaffProfile from './components/StaffProfile';
 import StaffAttendance from './components/StaffAttendance';
 import StaffNewRequest from './components/StaffNewRequest';
@@ -24,6 +25,9 @@ import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
 import DepartmentRequests from './components/DepartmentRequests';
 import StaffLinksTab from './components/StaffLinksTab';
 import StaffOVR from './components/StaffOVR';
+import ShiftRequestsTab from './components/ShiftRequestsTab'; // ✅ استيراد صفحة طلبات التبديل
+
+// استيراد لوحة الجودة
 import QualityDashboard from '../admin/components/QualityDashboard'; 
 
 interface Props {
@@ -37,11 +41,13 @@ export default function StaffDashboard({ employee }: Props) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
   
+  // حالات PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
+  // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => {
       if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true);
@@ -51,6 +57,7 @@ export default function StaffDashboard({ employee }: Props) {
     delta: 50,
   });
 
+  // فحص تقارير الجودة الجديدة (لمسؤول الجودة فقط)
   useEffect(() => {
     if (employee.role === 'quality_manager') {
         const checkNewReports = async () => {
@@ -76,6 +83,7 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.role]);
 
+  // منطق تثبيت التطبيق (PWA)
   useEffect(() => {
     const checkStandalone = () => {
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
@@ -107,10 +115,12 @@ export default function StaffDashboard({ employee }: Props) {
     } catch (err) { console.error(err); }
   };
 
+  // --- قائمة الموظف ---
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     
+    // تبويب مسؤول الجودة
     ...(employee.role === 'quality_manager' ? [{ 
         id: 'quality-manager-tab', 
         label: 'مسؤول الجودة', 
@@ -121,6 +131,10 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     
+    // ✅ تبويب طلبات التبديل الجديد
+    { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight },
+
+    // تبويب رئيس القسم
     ...(employee.role === 'head_of_dept' ? [{ 
         id: 'dept-requests', label: 'إدارة القسم', icon: FileText 
     }] : []),
@@ -152,6 +166,7 @@ export default function StaffDashboard({ employee }: Props) {
           ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
           md:translate-x-0 md:static md:shadow-none
       `}>
+        {/* ترويسة القائمة */}
         <div className="h-24 flex items-center justify-between px-6 border-b shrink-0 bg-emerald-50/50">
            <div className="flex items-center gap-3">
                <div className="bg-white p-2 rounded-xl shadow-sm border border-emerald-100">
@@ -168,6 +183,7 @@ export default function StaffDashboard({ employee }: Props) {
            </button>
         </div>
 
+        {/* عناصر القائمة */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -198,10 +214,9 @@ export default function StaffDashboard({ employee }: Props) {
           })}
         </nav>
 
-        {/* ✅ الجزء السفلي المعدل: أيقونات أفقية للوظائف الثانوية */}
+        {/* ✅ الجزء السفلي المعدل (أيقونات أفقية) */}
         <div className="p-3 border-t bg-gray-50 shrink-0 flex items-center justify-around">
             
-            {/* تثبيت التطبيق (يظهر فقط إذا لم يكن مثبتاً) */}
             {!isStandalone && (
                 <button 
                     onClick={handleInstallClick} 
@@ -212,7 +227,6 @@ export default function StaffDashboard({ employee }: Props) {
                 </button>
             )}
 
-            {/* مشاركة التطبيق */}
             <button 
                 onClick={handleShareApp} 
                 className="p-3 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors"
@@ -221,7 +235,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <Share2 className="w-5 h-5" />
             </button>
 
-            {/* عن التطبيق */}
             <button 
                 onClick={() => setShowAboutModal(true)} 
                 className="p-3 rounded-xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors"
@@ -230,7 +243,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <Info className="w-5 h-5" />
             </button>
 
-            {/* تسجيل خروج (مميز باللون الأحمر) */}
             <button 
                 onClick={signOut} 
                 className="p-3 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors border border-transparent hover:border-red-200"
@@ -300,7 +312,13 @@ export default function StaffDashboard({ employee }: Props) {
                             employeeId={employee.id} 
                             employeeCode={employee.employee_id} 
                             employeeName={employee.name}
+                            specialty={employee.specialty} // مهم لفلترة الزملاء عند التبديل
                         />
+                    )}
+
+                    {/* ✅ عرض تبويب طلبات التبديل */}
+                    {activeTab === 'shift-requests' && (
+                        <ShiftRequestsTab employee={employee} />
                     )}
 
                     {activeTab === 'dept-requests' && employee.role === 'head_of_dept' && (
