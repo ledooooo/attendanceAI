@@ -54,7 +54,20 @@ export interface AttendanceRecord {
   date: string;
   times: string; // "08:00 14:00"
 }
+// src/types.ts
 
+export interface ShiftSwapRequest {
+  id: string;
+  requester_id: string;
+  recipient_id: string;
+  schedule_date: string;
+  status: 'pending_recipient' | 'pending_hod' | 'approved' | 'rejected';
+  created_at: string;
+  
+  // حقول اختيارية للعرض (Join)
+  requester_name?: string;
+  recipient_name?: string;
+}
 // تعريف طلب الإجازة
 export interface LeaveRequest {
   id: string;
