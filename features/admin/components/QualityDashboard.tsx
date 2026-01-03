@@ -30,20 +30,16 @@ export default function QualityDashboard() {
         }
     };
 
-    const fetchReports = async (role: string) => {
-        // المدير ومسؤول الجودة يرون كل التقارير (الجديدة والمغلقة)
-        let query = supabase
-            .from('ovr_reports')
-            .select('*')
-            .order('created_at', { ascending: false });
+const fetchReports = async (role: string) => {
+    // هذا الكود يجلب كل شيء (جديد ومغلق)
+    let query = supabase
+        .from('ovr_reports')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-        // ملاحظة: قمت بإزالة شرط إخفاء التقارير الجديدة عن المدير
-        // من الأفضل أن يرى المدير كل شيء
-        
-        const { data, error } = await query;
-        if (error) console.error("Error fetching reports:", error);
-        if (data) setReports(data as any);
-    };
+    const { data } = await query;
+    if (data) setReports(data as any);
+};
 
     const handleSubmitResponse = async () => {
         if (!selectedReport || !response) return;
