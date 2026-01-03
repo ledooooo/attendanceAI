@@ -60,11 +60,15 @@ export default function AdminDashboard() {
   };
 
   // جلب عدد تقارير الجودة التي تم الرد عليها (تنبيه للمدير)
+// في ملف features/admin/AdminDashboard.tsx
+
   const fetchQualityAlerts = async () => {
+      // حساب عدد التقارير التي حالتها "مغلق" أو تم الرد عليها
+      // لاحظ: تأكد أن الحالة التي يحفظها مسؤول الجودة هي 'closed'
       const { count } = await supabase
           .from('ovr_reports')
           .select('*', { count: 'exact', head: true })
-          .neq('status', 'new'); // الشرط: الحالة ليست "جديد"
+          .eq('status', 'closed'); // عد التقارير المغلقة فقط لتنبيه المدير بمراجعتها
       
       setQualityAlerts(count || 0);
   };
