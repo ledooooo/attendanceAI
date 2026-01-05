@@ -13,29 +13,34 @@ import {
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
   
-  // إذا كان التاريخ نصاً مثل "Jan 10, 2026"
-  if (typeof val === 'string') {
-    const d = new Date(val);
-    if (!isNaN(d.getTime())) {
-      // إضافة 12 ساعة لتجنب ارتداد التاريخ بسبب التوقيت العالمي
-      d.setHours(d.getHours() + 12); 
-      return d.toISOString().split('T')[0];
-    }
+  // 1. معالجة إذا كان كائن تاريخ جاهز
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    // إضافة إزاحة التوقيت المحلي لضمان بقاء التاريخ صحيحاً عند تحويله لـ ISO
+    const localDate = new Date(val.getTime() - (val.getTimezoneOffset() * 60000));
+    return localDate.toISOString().split('T')[0];
   }
 
-  // معالجة أرقام إكسيل التسلسلية
+  // 2. معالجة أرقام إكسيل التسلسلية (مثل 46030)
   const num = Number(val);
   if (!isNaN(num) && num > 30000 && num < 60000) {
-    // إضافة كسر بسيط لضمان عدم الارتداد لليوم السابق
     const d = new Date(Math.round((num - 25569) * 86400 * 1000));
-    d.setHours(d.getHours() + 12); 
+    // إضافة 12 ساعة كأمان لتجنب أي ارتداد لليوم السابق بسبب التوقيت
+    d.setHours(12, 0, 0, 0);
     return d.toISOString().split('T')[0];
   }
-  
-  // ... باقي التحققات الموجودة في كودك
+
+  // 3. معالجة النصوص مثل "Jan 10, 2026" أو "10/01/2026"
+  const str = String(val).trim();
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    // تعيين الساعة يدوياً لمنتصف النهار لضمان استقرار التاريخ
+    d.setHours(12, 0, 0, 0);
+    return d.toISOString().split('T')[0];
+  }
+
   return null;
 };
-
 
 export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
