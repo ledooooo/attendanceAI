@@ -3,8 +3,8 @@ import { supabase } from '../../../supabaseClient';
 import { NewsPost, NewsComment, Employee } from '../../../types';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, ThumbsUp, 
-    Reply, AtSign, Trash2, Smile, PartyPopper, X 
-} from 'lucide-react'; // ✅ تأكد من وجود X هنا
+    Reply, AtSign, Trash2, Smile, PartyPopper, X, MoreHorizontal
+} from 'lucide-react';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const [posts, setPosts] = useState<any[]>([]);
@@ -12,7 +12,19 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
     const [replyTo, setReplyTo] = useState<{postId: string, commentId: string, name: string, userId: string} | null>(null);
     const [expandedPost, setExpandedPost] = useState<string | null>(null);
+    
+    // حالات التحكم في القوائم العائمة
     const [showPostReactions, setShowPostReactions] = useState<string | null>(null);
+    const [showCommentReactions, setShowCommentReactions] = useState<string | null>(null);
+
+    // الأيقونات الموحدة
+    const REACTION_OPTIONS = [
+        { e: '❤️', l: 'حب' },
+        { e: '😊', l: 'سمايل' },
+        { e: '😂', l: 'ضحك' },
+        { e: '👏', l: 'تصفيق' },
+        { e: '👍', l: 'تمام' }
+    ];
 
     useEffect(() => { fetchNews(); }, []);
 
@@ -70,6 +82,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             sendNotification(targetUserId, 'reaction', id, `تفاعل ${employee.name} بـ ${emoji} على ${type === 'post' ? 'منشورك' : 'تعليقك'}`);
         }
         setShowPostReactions(null);
+        setShowCommentReactions(null);
         fetchNews();
     };
 
@@ -138,10 +151,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
 
                                 {showPostReactions === post.id && (
                                     <div className="absolute bottom-full mb-2 right-0 bg-white shadow-2xl border border-gray-100 rounded-full p-2 flex gap-3 animate-in slide-in-from-bottom-2 z-50">
-                                        {[
-                                            {e: '❤️', l: 'حب'}, {e: '👏', l: 'تصفيق'}, 
-                                            {e: '😊', l: 'سمايل'}, {e: '👍', l: 'تمام'}
-                                        ].map(item => (
+                                        {REACTION_OPTIONS.map(item => (
                                             <button 
                                                 key={item.e} 
                                                 onClick={() => handleReaction(post.id, item.e, 'post', post.created_by)}
@@ -185,19 +195,32 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                             onClick={() => setReplyTo({postId: post.id, commentId: comment.id, name: comment.user_name, userId: comment.user_id})} 
                                                             className="text-xs font-black text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
                                                         >
-                                                            رد على التعليق
+                                                            رد
                                                         </button>
                                                         
-                                                        <div className="flex gap-3 pr-2 border-r border-gray-100">
-                                                            {['❤️', '👍'].map(emoji => (
-                                                                <button 
-                                                                    key={emoji} 
-                                                                    onClick={() => handleReaction(comment.id, emoji, 'comment', comment.user_id)} 
-                                                                    className="text-lg hover:scale-125 transition-transform"
-                                                                >
-                                                                    {emoji}
-                                                                </button>
-                                                            ))}
+                                                        {/* التفاعل العائم للتعليق */}
+                                                        <div className="relative">
+                                                            <button 
+                                                                onClick={() => setShowCommentReactions(showCommentReactions === comment.id ? null : comment.id)}
+                                                                className="text-xs font-black text-gray-500 flex items-center gap-1 hover:text-pink-600 transition-colors"
+                                                            >
+                                                                <Heart size={14} className={comment.reactions?.some((r:any)=>r.user_id === employee.employee_id) ? "fill-pink-500 text-pink-500" : ""} />
+                                                                تفاعل
+                                                            </button>
+
+                                                            {showCommentReactions === comment.id && (
+                                                                <div className="absolute bottom-full mb-2 right-0 bg-white shadow-xl border border-gray-100 rounded-full p-1.5 flex gap-2 animate-in slide-in-from-bottom-1 z-50">
+                                                                    {REACTION_OPTIONS.map(item => (
+                                                                        <button 
+                                                                            key={item.e} 
+                                                                            onClick={() => handleReaction(comment.id, item.e, 'comment', comment.user_id)}
+                                                                            className="text-xl hover:scale-150 transition-transform active:scale-90"
+                                                                        >
+                                                                            {item.e}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -205,16 +228,39 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                             </div>
                                         </div>
 
+                                        {/* الردود */}
                                         {comment.replies?.map((rep: any) => (
                                             <div key={rep.id} className="mr-12 flex gap-3">
                                                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-black text-gray-600 shrink-0">{rep.user_name[0]}</div>
                                                 <div className="flex-1">
-                                                    <div className="bg-white/80 p-3 rounded-2xl border border-gray-100 shadow-xs">
+                                                    <div className="bg-white/80 p-3 rounded-2xl border border-gray-100 shadow-xs relative">
                                                         <p className="text-[10px] font-black text-gray-700 mb-1">{rep.user_name}</p>
                                                         <p className="text-xs text-gray-600">{rep.comment_text}</p>
                                                         
-                                                        <div className="mt-2 pt-2 border-t border-gray-50 flex gap-2">
-                                                            <button onClick={() => handleReaction(rep.id, '❤️', 'comment', rep.user_id)} className="text-xs">❤️</button>
+                                                        <div className="mt-2 pt-2 border-t border-gray-50 flex gap-4">
+                                                             <div className="relative">
+                                                                <button 
+                                                                    onClick={() => setShowCommentReactions(showCommentReactions === rep.id ? null : rep.id)}
+                                                                    className="text-[10px] font-black text-gray-400 hover:text-pink-600 flex items-center gap-1"
+                                                                >
+                                                                    <Heart size={12} className={rep.reactions?.some((r:any)=>r.user_id === employee.employee_id) ? "fill-pink-500 text-pink-500" : ""} />
+                                                                    تفاعل
+                                                                </button>
+
+                                                                {showCommentReactions === rep.id && (
+                                                                    <div className="absolute bottom-full mb-2 right-0 bg-white shadow-xl border border-gray-100 rounded-full p-1 flex gap-1.5 animate-in slide-in-from-bottom-1 z-50">
+                                                                        {REACTION_OPTIONS.map(item => (
+                                                                            <button 
+                                                                                key={item.e} 
+                                                                                onClick={() => handleReaction(rep.id, item.e, 'comment', rep.user_id)}
+                                                                                className="text-lg hover:scale-150 transition-transform"
+                                                                            >
+                                                                                {item.e}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <ReactionBadges reactions={rep.reactions} />
