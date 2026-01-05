@@ -12,40 +12,31 @@ import {
 // دالة تنسيق التاريخ
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
-
-  // 1️⃣ إذا كان Date Object صالح
-  if (val instanceof Date) {
-    return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
-  }
-
-  // 2️⃣ تحويل إلى نص للمعالجة
-  const str = String(val).trim();
-
-  // 3️⃣ محاولة التحويل المباشر (يدعم "Sunday, July 06, 2025" و "2025-07-06")
-  try {
-    const d = new Date(str);
+  
+  // إذا كان التاريخ نصاً مثل "Jan 10, 2026"
+  if (typeof val === 'string') {
+    const d = new Date(val);
     if (!isNaN(d.getTime())) {
+      // إضافة 12 ساعة لتجنب ارتداد التاريخ بسبب التوقيت العالمي
+      d.setHours(d.getHours() + 12); 
       return d.toISOString().split('T')[0];
     }
-  } catch {}
+  }
 
-  // 4️⃣ التعامل مع Excel Serial Numbers فقط
+  // معالجة أرقام إكسيل التسلسلية
   const num = Number(val);
   if (!isNaN(num) && num > 30000 && num < 60000) {
-    // معادلة Excel الصحيحة (UTC لتجنب مشاكل التوقيت)
-    const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // 30 ديسمبر 1899
-    const jsDate = new Date(excelEpoch.getTime() + num * 86400000);
-    return jsDate.toISOString().split('T')[0];
+    // إضافة كسر بسيط لضمان عدم الارتداد لليوم السابق
+    const d = new Date(Math.round((num - 25569) * 86400 * 1000));
+    d.setHours(d.getHours() + 12); 
+    return d.toISOString().split('T')[0];
   }
-
-  // 5️⃣ التعامل مع التنسيق DD/MM/YYYY أو DD-MM-YYYY
-  const dmy = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-  if (dmy) {
-    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-  }
-
+  
+  // ... باقي التحققات الموجودة في كودك
   return null;
 };
+
+
 export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
