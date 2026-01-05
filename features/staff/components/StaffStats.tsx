@@ -1,11 +1,9 @@
 import React, { useMemo } from 'react';
 import { 
-    PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid 
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip as RechartsTooltip, Cell 
 } from 'recharts';
 import { 
-    Clock, Calendar, CheckCircle2, XCircle, AlertTriangle, 
-    Briefcase, Activity, FileText, Calculator 
+    Clock, Calendar, AlertTriangle, Briefcase, Activity, FileText, Calculator, Star, Coffee 
 } from 'lucide-react';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../../types';
 
@@ -13,26 +11,33 @@ interface Props {
     attendance: AttendanceRecord[];
     evals: Evaluation[];
     requests: LeaveRequest[];
-    month: string;
+    month: string; // الشهر المختار حالياً للعرض الشهري
     employee?: Employee;
 }
 
 const COLORS = ['#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#8B5CF6'];
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-// دالة توحيد مسميات الإجازات (الحصر الذكي)
+// دالة تحديد نطاق السنة المالية الحالية (1 يوليو - 30 يونيو)
+const getFiscalYearRange = () => {
+    const now = new Date();
+    let startYear = now.getFullYear();
+    if (now.getMonth() < 6) { // إذا كنا قبل شهر يوليو (0-5)
+        startYear -= 1;
+    }
+    const startDate = `${startYear}-07-01`;
+    const endDate = `${startYear + 1}-06-30`;
+    return { startDate, endDate, startYear };
+};
+
 const normalizeLeaveType = (type: string) => {
     const t = type?.trim().toLowerCase() || '';
     if (t.match(/عارض/)) return 'casual';
     if (t.match(/اعتياد/)) return 'annual';
     if (t.match(/مرض/)) return 'sick';
-    if (t.match(/صباح/)) return 'morning';
-    if (t.match(/مسائ/)) return 'evening';
-    if (t.match(/وضع/)) return 'maternity';
     return 'other';
 };
 
-// دالة مساعدة لحساب فرق الساعات بدقة
 const calcHours = (t1: string, t2: string) => {
     if (!t1 || !t2) return 0;
     const [h1, m1] = t1.split(':').map(Number);
@@ -42,172 +47,144 @@ const calcHours = (t1: string, t2: string) => {
 };
 
 export default function StaffStats({ attendance, evals, requests, month, employee }: Props) {
-    
-    // 1. حساب حصر الإجازات والأرصدة مع معالجة إزاحة التاريخ
-    const leavesStats = useMemo(() => {
+    const { startDate, endDate, startYear } = useMemo(() => getFiscalYearRange(), []);
+
+    // 1. حصر الإجازات التراكمي (للسنة المالية كاملة)
+    const fiscalLeaves = useMemo(() => {
         const stats = {
             annual: { used: 0, balance: employee?.leave_annual_balance || 21, label: 'اعتيادي' },
-            casual: { used: 0, balance: employee?.leave_casual_balance || 7, label: 'عارضة' },
-            sick: { used: 0, balance: employee?.leave_sick_balance || 0, label: 'مرضي' },
-            morning: { used: 0, balance: employee?.leave_morning_perm_balance || 0, label: 'إذن صباحي' },
-            evening: { used: 0, balance: employee?.leave_evening_perm_balance || 0, label: 'إذن مسائي' },
-            other: { used: 0, balance: 0, label: 'أخرى' }
+            casual: { used: 0, balance: employee?.leave_casual_balance || 7, label: 'عارضة' }
         };
 
-        requests.filter(r => r.status === 'مقبول').forEach(req => {
-            const typeKey = normalizeLeaveType(req.type) as keyof typeof stats;
-            
-            let count = 1;
-            if (req.start_date && req.end_date) {
+        requests.filter(r => 
+            r.status === 'مقبول' && 
+            r.start_date >= startDate && 
+            r.start_date <= endDate
+        ).forEach(req => {
+            const typeKey = normalizeLeaveType(req.type) as 'annual' | 'casual';
+            if (stats[typeKey]) {
                 const start = new Date(req.start_date);
                 const end = new Date(req.end_date);
-                
-                // تصحيح إزاحة المنطقة الزمنية لضمان حساب الأيام بشكل صحيح
-                const diffTime = Math.abs(end.getTime() - start.getTime());
-                count = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
-            }
-
-            if (stats[typeKey]) {
+                const count = Math.floor(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
                 stats[typeKey].used += count;
             }
         });
-
         return stats;
-    }, [requests, employee]);
+    }, [requests, employee, startDate, endDate]);
 
-    // 2. حساب إحصائيات الحضور (ربطها بموعد حضور الموظف الفعلي)
+    // 2. إحصائيات الحضور (شهرية + بدل الراحة)
     const attendanceStats = useMemo(() => {
         let totalHours = 0;
         let lateCount = 0;
-        let overtimeDays = 0; 
-        let presentDays = 0;
+        let holidayWorkDays = 0; 
+        let restAllowanceDays = 0; // أيام تخطت 9 ساعات عمل
         
-        // جلب وقت الحضور الرسمي من بيانات الموظف (الافتراضي 08:30)
-        const officialStartTime = employee?.start_time || "08:30";
-        const [offH, offM] = officialStartTime.split(':').map(Number);
+        const officialStart = employee?.start_time || "08:30";
+        const [offH, offM] = officialStart.split(':').map(Number);
+        const workDays = employee?.work_days || ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
 
-        const workDays = employee?.work_days && employee.work_days.length > 0 
-            ? employee.work_days 
-            : ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
-
-        attendance.forEach(att => {
+        // تصفية الحضور للشهر المختار فقط
+        attendance.filter(a => a.date.startsWith(month)).forEach(att => {
             const times = att.times.match(/\d{1,2}:\d{2}/g) || [];
             if (times.length >= 2) {
                 const hours = calcHours(times[0], times[times.length - 1]);
                 totalHours += hours;
-                
-                // حساب التأخير بناءً على وقت الموظف الخاص
+                if (hours > 9) restAllowanceDays++; // استحقاق بدل راحة
+
                 const [h, m] = times[0].split(':').map(Number);
                 if (h > offH || (h === offH && m > offM)) lateCount++;
             }
 
-            const dateObj = new Date(att.date);
-            const dayName = DAYS_AR[dateObj.getDay()];
-            if (!workDays.includes(dayName)) {
-                overtimeDays++;
-            }
-
-            presentDays++;
+            const dayName = DAYS_AR[new Date(att.date).getDay()];
+            if (!workDays.includes(dayName)) holidayWorkDays++;
         });
 
-        return { totalHours, lateCount, overtimeDays, presentDays };
-    }, [attendance, employee]);
+        return { totalHours, lateCount, holidayWorkDays, restAllowanceDays, presentDays: attendance.length };
+    }, [attendance, employee, month]);
 
-    // تجهيز بيانات الرسم البياني
-    const chartData = useMemo(() => [
-        { name: 'حضور فعلي', value: attendanceStats.presentDays },
-        { name: 'أيام إجازة', value: Object.values(leavesStats).reduce((acc, curr) => acc + (curr.label !== 'أخرى' ? curr.used : 0), 0) },
-        { name: 'غياب/غير مسجل', value: Math.max(0, 30 - attendanceStats.presentDays - (leavesStats.annual.used + leavesStats.casual.used)) },
-    ], [attendanceStats, leavesStats]);
-
-    const currentEval = evals.find(e => e.month === month);
+    const chartData = [
+        { name: 'حضور الشهر', value: attendanceStats.presentDays },
+        { name: 'إجازات (سنة)', value: fiscalLeaves.annual.used + fiscalLeaves.casual.used },
+        { name: 'بدل راحة', value: attendanceStats.restAllowanceDays },
+    ];
 
     return (
-        <div className="space-y-6 animate-in slide-in-from-bottom duration-500 text-right" dir="rtl">
+        <div className="space-y-6 animate-in fade-in duration-700 text-right" dir="rtl">
             
-            {/* بطاقات الأرصدة */}
-            <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100">
-                <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                    <Calculator className="w-5 h-5 text-purple-600"/> حصر أرصدة الإجازات المتبقية
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Object.entries(leavesStats).map(([key, stat]) => (
-                        key !== 'other' && (
-                            <div key={key} className="bg-gray-50 rounded-2xl p-4 border border-gray-100 relative overflow-hidden group hover:bg-white transition-colors">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="text-sm font-bold text-gray-500">{stat.label}</span>
-                                    {key === 'annual' && <Briefcase className="w-4 h-4 text-emerald-500"/>}
-                                    {key === 'casual' && <Activity className="w-4 h-4 text-orange-500"/>}
-                                    {key === 'sick' && <AlertTriangle className="w-4 h-4 text-red-500"/>}
-                                    {(key === 'morning' || key === 'evening') && <Clock className="w-4 h-4 text-blue-500"/>}
+            {/* قسم أرصدة السنة المالية */}
+            <div className="bg-gradient-to-l from-indigo-900 to-indigo-800 p-6 rounded-[35px] shadow-2xl relative overflow-hidden text-white">
+                <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+                    <Calculator className="w-64 h-64 -ml-20 -mt-20 rotate-12"/>
+                </div>
+                <div className="relative z-10">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-black flex items-center gap-2">
+                            <Briefcase className="w-6 h-6 text-indigo-300"/> 
+                            الأرصدة التراكمية ({startYear} - {startYear + 1})
+                        </h3>
+                        <span className="bg-indigo-700/50 px-4 py-1 rounded-full text-xs font-bold border border-indigo-500">سنة مالية</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {Object.values(fiscalLeaves).map((stat, i) => (
+                            <div key={i} className="bg-white/10 backdrop-blur-md rounded-3xl p-5 border border-white/10">
+                                <div className="flex justify-between items-center mb-4">
+                                    <span className="font-bold">{stat.label}</span>
+                                    <span className="text-2xl font-black">{stat.balance - stat.used} <small className="text-xs opacity-60">متبقي</small></span>
                                 </div>
-                                <div className="flex justify-between items-end">
-                                    <div>
-                                        <div className="text-2xl font-black text-gray-800">
-                                            {Math.max(0, stat.balance - stat.used)}
-                                        </div>
-                                        <div className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">المتبقي</div>
-                                    </div>
-                                    <div className="text-left">
-                                        <div className="text-sm font-bold text-red-500">-{stat.used}</div>
-                                        <div className="text-[10px] text-gray-400">مستهلك</div>
-                                    </div>
-                                    <div className="text-left border-r pr-3 mr-3 border-gray-200">
-                                        <div className="text-sm font-bold text-emerald-600">{stat.balance}</div>
-                                        <div className="text-[10px] text-gray-400">الرصيد</div>
-                                    </div>
-                                </div>
-                                <div className="absolute bottom-0 left-0 w-full h-1 bg-gray-100">
+                                <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
                                     <div 
-                                        className={`h-full transition-all duration-1000 ${stat.used > stat.balance ? 'bg-red-500' : 'bg-emerald-500'}`} 
-                                        style={{ width: `${Math.min(100, (stat.used / (stat.balance || 1)) * 100)}%` }}
+                                        className="h-full bg-indigo-400 transition-all duration-1000" 
+                                        style={{ width: `${(stat.used / stat.balance) * 100}%` }}
                                     ></div>
                                 </div>
+                                <div className="flex justify-between mt-3 text-[10px] font-bold opacity-80 uppercase">
+                                    <span>مستهلك: {stat.used}</span>
+                                    <span>الإجمالي: {stat.balance}</span>
+                                </div>
                             </div>
-                        )
-                    ))}
+                        ))}
+                    </div>
                 </div>
             </div>
 
-            {/* الإحصائيات الرقمية */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* الإحصائيات الشهرية التفصيلية */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                     { label: 'ساعات العمل', value: attendanceStats.totalHours.toFixed(0), icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
-                    { label: 'مرات التأخير', value: attendanceStats.lateCount, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50' },
-                    { label: 'عمل بالعطلات', value: attendanceStats.overtimeDays, icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-50' },
-                    { label: 'تقييم الشهر', value: currentEval?.total_score ? `${currentEval.total_score}%` : '-', icon: FileText, color: 'text-yellow-600', bg: 'bg-yellow-50' }
+                    { label: 'تأخيرات الشهر', value: attendanceStats.lateCount, icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50' },
+                    { label: 'بدل راحة استحقاق', value: attendanceStats.restAllowanceDays, icon: Coffee, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                    { label: 'عمل بالعطلات', value: attendanceStats.holidayWorkDays, icon: Calendar, color: 'text-purple-600', bg: 'bg-purple-50' }
                 ].map((item, i) => (
-                    <div key={i} className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 text-center">
-                        <div className={`w-10 h-10 ${item.bg} rounded-full flex items-center justify-center mx-auto mb-2 ${item.color}`}>
-                            <item.icon className="w-5 h-5"/>
+                    <div key={i} className="bg-white p-5 rounded-[30px] shadow-sm border border-gray-100 transition-transform hover:scale-105">
+                        <div className={`w-12 h-12 ${item.bg} rounded-2xl flex items-center justify-center mb-3 ${item.color}`}>
+                            <item.icon className="w-6 h-6"/>
                         </div>
-                        <div className="text-2xl font-black text-gray-800">{item.value}</div>
-                        <div className="text-xs text-gray-500 font-bold">{item.label}</div>
+                        <div className="text-3xl font-black text-gray-800">{item.value}</div>
+                        <div className="text-xs text-gray-500 font-bold mt-1">{item.label}</div>
                     </div>
                 ))}
             </div>
 
-            {/* الرسم البياني */}
-            <div className="bg-white p-6 rounded-[30px] shadow-sm border border-gray-100 h-80">
-                <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-blue-600"/> تحليل النشاط الشهري (30 يوم)
+            {/* التحليل البياني */}
+            <div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100">
+                <h3 className="text-lg font-black text-gray-800 mb-8 flex items-center gap-2">
+                    <Activity className="w-6 h-6 text-indigo-600"/> تحليل الأداء العام
                 </h3>
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                        <XAxis type="number" hide />
-                        <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12, fontWeight: 'bold', fill: '#6b7280'}} />
-                        <RechartsTooltip 
-                            contentStyle={{ borderRadius: '15px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', textAlign: 'right' }}
-                            cursor={{fill: '#f9fafb'}}
-                        />
-                        <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={35}>
-                            {chartData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                        </Bar>
-                    </BarChart>
-                </ResponsiveContainer>
+                <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} barGap={20}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 'bold'}} />
+                            <YAxis hide />
+                            <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.05)'}} />
+                            <Bar dataKey="value" radius={[15, 15, 0, 0]} barSize={50}>
+                                {chartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
             </div>
         </div>
     );
