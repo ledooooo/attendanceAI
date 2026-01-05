@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, EOMCycle, EOMNominee } from '../../../types';
-import { Trophy, ThumbsUp, CheckCircle2, Star } from 'lucide-react';
+import { Trophy, ThumbsUp, CheckCircle2, Star, User } from 'lucide-react';
 
 interface EnrichedNominee extends EOMNominee {
     employee_name?: string;
@@ -53,7 +53,7 @@ export default function EOMVotingCard({ employee }: { employee: Employee }) {
 
                         return {
                             ...n,
-                            employee_name: empData?.name || 'موظف',
+                            employee_name: empData?.name || 'موظف غير معروف',
                             specialty: empData?.specialty,
                             admin_tasks: empData?.admin_tasks,
                             photo_url: finalPhotoUrl
@@ -79,7 +79,7 @@ export default function EOMVotingCard({ employee }: { employee: Employee }) {
 
     const handleVote = async (nomineeId: string) => {
         if (!cycle || hasVoted) return;
-        if (!confirm('تأكيد تصويتك؟')) return;
+        if (!confirm('هل تريد تأكيد صوتك لهذا الزميل؟')) return;
 
         const { error } = await supabase.from('eom_votes').insert({
             cycle_id: cycle.id,
@@ -100,81 +100,108 @@ export default function EOMVotingCard({ employee }: { employee: Employee }) {
             }
             
             setHasVoted(true);
+            alert('تم تسجيل صوتك بنجاح! شكراً لمشاركتك.');
+        } else {
+            alert('عذراً، حدث خطأ أثناء تسجيل الصوت.');
         }
+    };
+
+    // دالة لاستخراج الاسم الثلاثي فقط
+    const getTripleName = (fullName: string) => {
+        const parts = fullName.trim().split(/\s+/);
+        return parts.slice(0, 3).join(' ');
     };
 
     if (loading || !cycle || nominees.length === 0) return null;
 
     return (
-        <div className="bg-white rounded-[24px] p-4 border border-gray-100 shadow-sm mb-6 relative overflow-hidden text-right" dir="rtl">
+        <div className="bg-white rounded-[32px] p-5 border border-gray-100 shadow-xl shadow-indigo-50/50 mb-8 relative overflow-hidden text-right" dir="rtl">
+            {/* الخلفية التجميلية */}
+            <div className="absolute top-0 left-0 w-32 h-32 bg-indigo-50 rounded-full -ml-16 -mt-16 opacity-50 blur-3xl"></div>
+
             <div className="relative z-10">
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-1.5">
-                        <Trophy className="w-5 h-5 text-yellow-600 animate-pulse"/>
-                        <h3 className="text-sm font-black text-gray-900 tracking-tight">الموظف المثالي</h3>
+                <div className="flex justify-between items-center mb-6">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <div className="bg-yellow-100 p-1.5 rounded-xl">
+                                <Trophy className="w-5 h-5 text-yellow-600"/>
+                            </div>
+                            <h3 className="text-lg font-black text-gray-900 tracking-tight">الموظف المثالي</h3>
+                        </div>
                     </div>
                     {hasVoted && (
-                        <div className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100 text-[9px] font-black flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3"/> تم التصويت
+                        <div className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full border border-emerald-100 text-[10px] font-black flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5"/> تم التصويت
                         </div>
                     )}
                 </div>
 
-                {/* 5 Columns Grid on all screens */}
-                <div className="grid grid-cols-5 gap-2">
+                {/* Grid: 2 Columns */}
+                <div className="grid grid-cols-2 gap-4">
                     {nominees.map(n => (
-                        <div key={n.id} className="flex flex-col items-center group">
-                            <div className="relative mb-1.5">
-                                {/* أصوات الموظف تظهر كـ Badge فوق الصورة عند انتهاء التصويت */}
-                                {hasVoted && (
-                                    <div className="absolute -top-1 -right-1 z-10 bg-indigo-600 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-sm border border-white">
-                                        {n.votes_count}
-                                    </div>
-                                )}
+                        <div 
+                            key={n.id} 
+                            className={`relative bg-white rounded-[24px] p-3 border-2 transition-all duration-300 ${
+                                hasVoted 
+                                ? 'border-gray-50' 
+                                : 'border-gray-100 hover:border-indigo-400 hover:shadow-lg active:scale-95 cursor-pointer'
+                            }`}
+                            onClick={() => !hasVoted && handleVote(n.id)}
+                        >
+                            {/* عداد الأصوات كـ Badge فوق الصورة */}
+                            {hasVoted && (
+                                <div className="absolute top-2 right-2 z-20 bg-indigo-600 text-white text-[10px] font-black h-5 min-w-[20px] px-1 rounded-lg flex items-center justify-center shadow-lg border border-white">
+                                    {n.votes_count}
+                                </div>
+                            )}
 
-                                <button 
-                                    disabled={hasVoted}
-                                    onClick={() => handleVote(n.id)}
-                                    className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl border-2 transition-all overflow-hidden ${
-                                        hasVoted 
-                                        ? 'border-gray-50 opacity-80' 
-                                        : 'border-white shadow-sm hover:border-indigo-400 active:scale-90 shadow-indigo-100'
-                                    }`}
-                                >
-                                    <img 
-                                        src={n.photo_url} 
-                                        onError={(e) => {
-                                            (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${n.employee_name}&background=6366f1&color=fff&bold=true`;
-                                        }}
-                                        className="w-full h-full object-cover"
-                                        alt={n.employee_name}
-                                    />
+                            <div className="flex flex-col items-center">
+                                {/* صورة الموظف بحجم متوسط */}
+                                <div className="relative w-20 h-20 mb-3">
+                                    <div className="w-20 h-20 rounded-2xl border-2 border-white shadow-md overflow-hidden bg-gray-50">
+                                        <img 
+                                            src={n.photo_url} 
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${n.employee_name}&background=6366f1&color=fff&bold=true`;
+                                            }}
+                                            className={`w-full h-full object-cover ${hasVoted ? 'grayscale-[0.3]' : ''}`}
+                                            alt={n.employee_name}
+                                        />
+                                    </div>
                                     {!hasVoted && (
-                                        <div className="absolute inset-0 bg-indigo-600/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                            <ThumbsUp className="w-4 h-4 text-white" />
+                                        <div className="absolute -bottom-1 -left-1 bg-white p-1 rounded-lg shadow-md border border-gray-100">
+                                            <ThumbsUp className="w-3 h-3 text-indigo-600" />
                                         </div>
                                     )}
-                                </button>
-                            </div>
+                                </div>
 
-                            <div className="text-center w-full">
-                                {/* عرض الاسم الأول فقط لتوفير مساحة */}
-                                <h4 className="text-[9px] font-black text-gray-800 leading-none truncate mb-1">
-                                    {n.employee_name?.split(' ')[0]}
-                                </h4>
-                                
-                                {!hasVoted && (
-                                    <button 
-                                        onClick={() => handleVote(n.id)}
-                                        className="text-indigo-600 hover:text-indigo-800 transition-colors"
-                                    >
-                                        <Star className="w-4 h-4 mx-auto" />
-                                    </button>
-                                )}
+                                <div className="text-center w-full space-y-1">
+                                    {/* الاسم الثلاثي بخط واضح */}
+                                    <h4 className="text-xs font-black text-gray-800 leading-tight min-h-[32px] flex items-center justify-center">
+                                        {getTripleName(n.employee_name || '')}
+                                    </h4>
+                                    
+                                    {/* التخصص */}
+                                    <p className="text-[10px] text-indigo-600 font-bold opacity-80">
+                                        {n.specialty || 'عضو فريق'}
+                                    </p>
+                                    
+                                    {!hasVoted && (
+                                        <div className="mt-2 text-[10px] font-black text-white bg-indigo-600 py-1.5 rounded-xl shadow-md shadow-indigo-100">
+                                            إختر الآن
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     ))}
                 </div>
+                
+                {!hasVoted && (
+                    <p className="text-center text-[10px] text-gray-400 mt-5 font-bold italic">
+                        * اضغط على كارت الزميل لتأكيد اختيارك
+                    </p>
+                )}
             </div>
         </div>
     );
