@@ -12,20 +12,40 @@ import {
 // دالة تنسيق التاريخ
 const formatDateForDB = (val: any): string | null => {
   if (!val) return null;
-  if (val instanceof Date) return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
-  const num = Number(val);
-  if (!isNaN(num) && num > 30000 && num < 60000) {
-    return new Date(Math.round((num - 25569) * 86400 * 1000)).toISOString().split('T')[0];
+
+  // 1️⃣ إذا كان Date Object صالح
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : val.toISOString().split('T')[0];
   }
+
+  // 2️⃣ تحويل إلى نص للمعالجة
   const str = String(val).trim();
-  const dmy = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+
+  // 3️⃣ محاولة التحويل المباشر (يدعم "Sunday, July 06, 2025" و "2025-07-06")
   try {
     const d = new Date(str);
-    return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
-  } catch { return null; }
-};
+    if (!isNaN(d.getTime())) {
+      return d.toISOString().split('T')[0];
+    }
+  } catch {}
 
+  // 4️⃣ التعامل مع Excel Serial Numbers فقط
+  const num = Number(val);
+  if (!isNaN(num) && num > 30000 && num < 60000) {
+    // معادلة Excel الصحيحة (UTC لتجنب مشاكل التوقيت)
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30)); // 30 ديسمبر 1899
+    const jsDate = new Date(excelEpoch.getTime() + num * 86400000);
+    return jsDate.toISOString().split('T')[0];
+  }
+
+  // 5️⃣ التعامل مع التنسيق DD/MM/YYYY أو DD-MM-YYYY
+  const dmy = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+
+  return null;
+};
 export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
