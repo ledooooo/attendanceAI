@@ -17,19 +17,19 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
     const [upcomingBirthdays, setUpcomingBirthdays] = useState<any[]>([]);
     const [totalVotes, setTotalVotes] = useState(0);
     
-    // حالات الفلترة
-    const [statusFilter, setStatusFilter] = useState<string>('all');
+    // ✅ جعل الحالة الافتراضية هي "نشط"
+    const [statusFilter, setStatusFilter] = useState<string>('active');
     const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => {
         fetchEOMStatus();
     }, [employees]);
 
+    // ✅ تحديث القائمة عند تغيير الفلتر أو البحث أو بيانات الموظفين
     useEffect(() => {
         processBirthdays();
     }, [employees, statusFilter, searchTerm]);
 
-    // 1. معالجة أعياد الميلاد مع نظام الفلترة
     const processBirthdays = () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -38,9 +38,8 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
 
         const list = employees
             .filter(emp => {
-                // فلترة الحالة
+                // ✅ منطق الفلترة: إذا كان 'all' يظهر الكل، غير ذلك يطابق الحالة المختارة
                 const matchStatus = statusFilter === 'all' || emp.status === statusFilter;
-                // فلترة البحث بالاسم
                 const matchSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase());
                 return matchStatus && matchSearch;
             })
@@ -67,7 +66,6 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
         setUpcomingBirthdays(list);
     };
 
-    // 2. جلب بيانات التصويت
     const fetchEOMStatus = async () => {
         const currentMonth = new Date().toISOString().slice(0, 7);
         const { data: cyc } = await supabase.from('eom_cycles')
@@ -92,7 +90,6 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
         }
     };
 
-    // 3. إنهاء التصويت
     const handleEndVoting = async () => {
         if (!cycle || nominees.length === 0) return;
         if (!confirm('هل أنت متأكد من إغلاق التصويت وإعلان الفائز؟')) return;
@@ -103,13 +100,7 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
             .eq('id', cycle.id);
 
         if (!error) {
-            if (confirm('هل تريد نشر بوست تهنئة تلقائي؟')) {
-                await supabase.from('news_posts').insert({
-                    title: `🏆 موظف الشهر: ${winner.employee_name}`,
-                    content: `نهنئ الزميل المتميز ${winner.employee_name} لحصوله على لقب موظف الشهر. 🎉`,
-                    is_pinned: true
-                });
-            }
+            alert('تم إنهاء التصويت بنجاح');
             fetchEOMStatus();
         }
     };
@@ -127,7 +118,7 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
                         <p className="text-gray-500 font-bold mt-1">إجمالي المشاركين: {totalVotes} صوت</p>
                     </div>
                     {cycle?.status === 'voting' && (
-                        <button onClick={handleEndVoting} className="bg-red-50 text-red-600 px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-red-100">
+                        <button onClick={handleEndVoting} className="bg-red-50 text-red-600 px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-red-100 transition-colors">
                             <StopCircle className="w-5 h-5"/> إنهاء وإعلان النتائج
                         </button>
                     )}
@@ -147,7 +138,7 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
                                     </div>
                                     <span className="text-indigo-600 font-black">{nom.votes_count} صوت ({percentage}%)</span>
                                 </div>
-                                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
+                                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden border border-gray-50">
                                     <div 
                                         className={`h-full transition-all duration-1000 ${index === 0 ? 'bg-indigo-600' : 'bg-indigo-300'}`}
                                         style={{ width: `${percentage}%` }}
@@ -161,33 +152,34 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
 
             {/* قسم أعياد الميلاد مع الفلترة */}
             <div className="bg-white rounded-[35px] p-8 shadow-sm border border-pink-100">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
                     <h3 className="text-2xl font-black text-gray-800 flex items-center gap-3">
                         <Cake className="text-pink-600 w-8 h-8"/> أعياد الميلاد (30 يوم قادم)
                     </h3>
                     
-                    {/* شريط الأدوات: بحث وفلتر */}
-                    <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                        <div className="relative flex-1 md:w-64">
+                    <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                        {/* البحث */}
+                        <div className="relative flex-1 min-w-[200px]">
                             <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                             <input 
                                 type="text" 
                                 placeholder="بحث بالاسم..." 
-                                className="w-full pr-10 pl-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:ring-2 focus:ring-pink-200 outline-none transition-all"
+                                className="w-full pr-10 pl-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-pink-200"
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
-                        <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-100">
-                            <Filter className="w-4 h-4 text-gray-400 mr-2" />
+                        {/* فلتر الحالة */}
+                        <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-xl border border-gray-100">
+                            <Filter className="w-4 h-4 text-gray-400" />
                             <select 
-                                className="bg-transparent text-sm font-bold text-gray-600 outline-none p-1 cursor-pointer"
+                                className="bg-transparent text-sm font-bold text-gray-600 outline-none cursor-pointer"
                                 value={statusFilter}
                                 onChange={(e) => setStatusFilter(e.target.value)}
                             >
-                                <option value="all">كل الحالات</option>
-                                <option value="active">نشط</option>
+                                <option value="active">عرض الموظفين النشطين</option>
                                 <option value="on_leave">خارج المركز</option>
                                 <option value="suspended">موقوف</option>
+                                <option value="all">عرض الكل (بدون فلترة)</option>
                             </select>
                         </div>
                     </div>
@@ -195,32 +187,32 @@ export default function MotivationTab({ employees }: { employees: Employee[] }) 
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {upcomingBirthdays.length > 0 ? upcomingBirthdays.map((emp) => (
-                        <div key={emp.id} className={`p-4 rounded-3xl border flex justify-between items-center transition-all ${emp.daysRemaining === 0 ? 'bg-red-50 border-red-100 shadow-md shadow-red-50' : 'bg-gray-50 border-gray-100'}`}>
+                        <div key={emp.id} className={`p-4 rounded-3xl border flex justify-between items-center transition-all ${emp.daysRemaining === 0 ? 'bg-red-50 border-red-100 shadow-sm' : 'bg-gray-50/50 border-gray-100'}`}>
                             <div className="flex items-center gap-4">
                                 <div className="relative">
-                                    <div className="w-12 h-12 rounded-2xl bg-white border flex items-center justify-center overflow-hidden">
+                                    <div className="w-12 h-12 rounded-2xl bg-white border border-gray-100 flex items-center justify-center overflow-hidden">
                                         {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover"/> : <Users className="text-gray-300"/>}
                                     </div>
-                                    <div className={`absolute -bottom-1 -left-1 w-4 h-4 rounded-full border-2 border-white ${emp.status === 'active' ? 'bg-emerald-500' : 'bg-gray-400'}`}></div>
+                                    <div className={`absolute -bottom-1 -left-1 w-3.5 h-3.5 rounded-full border-2 border-white ${emp.status === 'active' ? 'bg-emerald-500' : 'bg-gray-400'}`}></div>
                                 </div>
                                 <div>
                                     <p className="font-black text-gray-800 text-sm">{emp.name}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
                                         <p className="text-[10px] text-pink-600 font-bold">{emp.formattedDate}</p>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${emp.daysRemaining === 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-white text-gray-500'}`}>
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${emp.daysRemaining === 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-white text-gray-500 border'}`}>
                                             {emp.daysRemaining === 0 ? 'اليوم! 🎉' : `بعد ${emp.daysRemaining} يوم`}
                                         </span>
                                     </div>
                                 </div>
                             </div>
-                            <button className="p-2.5 bg-white text-gray-400 rounded-xl hover:text-pink-600 shadow-sm border border-gray-100 transition-colors">
+                            <button className="p-2.5 bg-white text-gray-400 rounded-xl hover:text-pink-600 border border-gray-100 transition-colors shadow-sm">
                                 <Send className="w-4 h-4"/>
                             </button>
                         </div>
                     )) : (
-                        <div className="col-span-full py-10 text-center bg-gray-50 rounded-3xl border border-dashed border-gray-200">
-                            <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                            <p className="text-gray-400 font-bold">لا توجد نتائج مطابقة للبحث</p>
+                        <div className="col-span-full py-12 text-center bg-gray-50 rounded-[30px] border border-dashed border-gray-200">
+                            <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-500 font-bold">لا يوجد موظفون بهذه الحالة حالياً</p>
                         </div>
                     )}
                 </div>
