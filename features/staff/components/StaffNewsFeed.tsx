@@ -3,8 +3,8 @@ import { supabase } from '../../../supabaseClient';
 import { NewsPost, NewsComment, Employee } from '../../../types';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, ThumbsUp, 
-    Reply, AtSign, Trash2, Smile, ThumbsUp as LikeIcon, PartyPopper
-} from 'lucide-react';
+    Reply, AtSign, Trash2, Smile, PartyPopper, X 
+} from 'lucide-react'; // ✅ تأكد من وجود X هنا
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const [posts, setPosts] = useState<any[]>([]);
@@ -127,7 +127,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                         <p className="text-gray-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap">{post.content}</p>
                         
                         <div className="flex items-center gap-4 border-t pt-4 relative">
-                            {/* زر الرياكشن المطور للبوست */}
                             <div className="relative">
                                 <button 
                                     onClick={() => setShowPostReactions(showPostReactions === post.id ? null : post.id)}
@@ -137,7 +136,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                     <span>تفاعل</span>
                                 </button>
 
-                                {/* القائمة العائمة للرياكشنات */}
                                 {showPostReactions === post.id && (
                                     <div className="absolute bottom-full mb-2 right-0 bg-white shadow-2xl border border-gray-100 rounded-full p-2 flex gap-3 animate-in slide-in-from-bottom-2 z-50">
                                         {[
@@ -148,7 +146,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                 key={item.e} 
                                                 onClick={() => handleReaction(post.id, item.e, 'post', post.created_by)}
                                                 className="text-2xl hover:scale-150 transition-transform active:scale-90"
-                                                title={item.l}
                                             >
                                                 {item.e}
                                             </button>
@@ -157,7 +154,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                 )}
                             </div>
 
-                            {/* عرض عدادات الرياكشن */}
                             <div className="flex gap-1">
                                 {Array.from(new Set(post.reactions?.map((r: any) => r.emoji))).map((emoji: any) => (
                                     <div key={emoji} className="bg-indigo-50 px-2 py-1 rounded-full text-[10px] font-black text-indigo-600 border border-indigo-100">
@@ -184,7 +180,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                     <p className="text-xs font-black text-gray-800 mb-1">{comment.user_name}</p>
                                                     <p className="text-sm text-gray-600 mb-3">{comment.comment_text}</p>
                                                     
-                                                    {/* ✅ حل مشكلة التداخل: فصل الأزرار في سطر مستقل واضح */}
                                                     <div className="flex items-center gap-6 border-t border-gray-50 pt-3">
                                                         <button 
                                                             onClick={() => setReplyTo({postId: post.id, commentId: comment.id, name: comment.user_name, userId: comment.user_id})} 
@@ -232,9 +227,11 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
 
                             <div className="mt-6">
                                 {replyTo && (
-                                    <div className="flex justify-between items-center mb-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black animate-bounce">
+                                    <div className="flex justify-between items-center mb-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black">
                                         <span>جاري الرد على: {replyTo.name}</span>
-                                        <button onClick={() => setReplyTo(null)} className="bg-white/20 p-1 rounded-full"><X size={14}/></button>
+                                        <button onClick={() => setReplyTo(null)} className="bg-white/20 p-1 rounded-full hover:bg-white/30 transition-colors">
+                                            <X size={14}/>
+                                        </button>
                                     </div>
                                 )}
                                 <div className="flex gap-2">
