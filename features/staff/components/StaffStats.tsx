@@ -18,100 +18,131 @@ interface Props {
 const COLORS = ['#10B981', '#F59E0B', '#EF4444', '#3B82F6', '#8B5CF6'];
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-const getFiscalYearRange = () => {
-    const now = new Date();
-    let startYear = now.getFullYear();
-    if (now.getMonth() < 6) startYear -= 1;
-    const startDate = new Date(startYear, 6, 1, 0, 0, 0);
-    const endDate = new Date(startYear + 1, 5, 30, 23, 59, 59);
-    return { startDate, endDate, startYear };
-};
-
-const parseDate = (d: any) => {
-    if (!d) return null;
-    const parsed = new Date(d);
-    return isNaN(parsed.getTime()) ? null : parsed;
+/**
+ * دالة حساب فرق الساعات
+ */
+const calcHours = (t1: string, t2: string) => {
+    if (!t1 || !t2) return 0;
+    const [h1, m1] = t1.split(':').map(Number);
+    const [h2, m2] = t2.split(':').map(Number);
+    let diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+    return diff > 0 ? diff / 60 : 0;
 };
 
 export default function StaffStats({ attendance, evals, requests, month, employee }: Props) {
-    const { startDate, endDate, startYear } = useMemo(() => getFiscalYearRange(), []);
-
-    // الحصر الشامل للأرصدة
+    
+    // الحسابات الشاملة (حل جذري وموحد)
     const stats = useMemo(() => {
         const data = {
             annual: { used: 0, balance: employee?.leave_annual_balance || 21 },
             casual: { used: 0, balance: employee?.leave_casual_balance || 7 },
-            restRequested: 0,
-            restEarned: 0,
-            lateCount: 0,
-            monthlyHours: 0,
-            presentDays: 0
+            rest: { earned: 0, requested: 0 },
+            attendance: {
+                monthlyHours: 0,
+                weeklyHours: 0,
+                lateCount: 0,
+                presentDays: 0,
+                absenceDays: 0
+            }
         };
 
-        // 1. حساب الإجازات (السنة المالية)
+        // 1. حصر الإجازات (بناءً على الكود الوظيفي وحالة "مقبول")
+        // ملاحظة: السنة المالية تبدأ من شهر 01 في نظامك (يوليو)
         requests.forEach(req => {
-            const isApproved = req.status?.includes('مقبول');
-            const s = parseDate(req.start_date);
-            const e = parseDate(req.end_date);
-            
-            if (isApproved && s && s >= startDate && s <= endDate) {
-                const diff = Math.ceil(Math.abs((e?.getTime() || s.getTime()) - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                if (req.type?.includes('اعتياد')) data.annual.used += diff;
-                else if (req.type?.includes('عارض')) data.casual.used += diff;
-                else if (req.type?.includes('راحة')) data.restRequested += diff;
+            if (req.status === 'مقبول') {
+                const type = req.type || '';
+                const start = new Date(req.start_date);
+                const end = new Date(req.end_date);
+                const days = Math.ceil(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+                if (type.includes('اعتياد')) data.annual.used += days;
+                else if (type.includes('عارض')) data.casual.used += days;
+                else if (type.includes('راحة') || type.includes('بدل')) data.rest.requested += days;
             }
         });
 
-        // 2. حساب الحضور (الشهر الحالي)
-        attendance.filter(a => a.date.startsWith(month)).forEach(att => {
-            data.presentDays++;
+        // 2. حصر الحضور (الشهر الحالي)
+        const monthlyAttendance = attendance.filter(a => a.date.startsWith(month));
+        monthlyAttendance.forEach(att => {
+            data.attendance.presentDays++;
             const times = att.times.match(/\d{1,2}:\d{2}/g) || [];
             if (times.length >= 2) {
-                const [h1, m1] = times[0].split(':').map(Number);
-                const [h2, m2] = times[times.length - 1].split(':').map(Number);
-                const hours = ((h2 * 60 + m2) - (h1 * 60 + m1)) / 60;
+                const hours = calcHours(times[0], times[times.length - 1]);
+                data.attendance.monthlyHours += hours;
                 
-                if (hours > 0) data.monthlyHours += hours;
-                if (hours > 9) data.restEarned += 1; // استحقاق بدل راحة
-                if (h1 > 8 || (h1 === 8 && m1 > 30)) data.lateCount++;
+                // استحقاق بدل راحة (> 9 ساعات عمل)
+                if (hours > 9) data.rest.earned += 1;
+
+                // حساب التأخير (بعد 08:30)
+                const [h, m] = times[0].split(':').map(Number);
+                if (h > 8 || (h === 8 && m > 30)) data.attendance.lateCount++;
             }
         });
 
-        return data;
-    }, [requests, attendance, employee, month, startDate, endDate]);
+        // 3. حساب الغياب (أيام العمل 26 - الحضور - الإجازات المقبولة في هذا الشهر)
+        const monthlyApprovedLeaves = requests.filter(r => 
+            r.status === 'مقبول' && r.start_date.startsWith(month)
+        ).length;
+        
+        data.attendance.absenceDays = Math.max(0, 26 - data.attendance.presentDays - monthlyApprovedLeaves);
+        data.attendance.weeklyHours = data.attendance.monthlyHours / 4;
 
-    const absenceDays = Math.max(0, 26 - stats.presentDays - requests.filter(r => r.status?.includes('مقبول') && r.start_date.startsWith(month)).length);
+        return data;
+    }, [requests, attendance, employee, month]);
+
+    const chartData = [
+        { name: 'حضور', value: stats.attendance.presentDays },
+        { name: 'إجازات', value: stats.annual.used + stats.casual.used },
+        { name: 'غياب', value: stats.attendance.absenceDays },
+    ];
 
     return (
-        <div className="space-y-6 text-right" dir="rtl">
-            {/* كارت الأرصدة التراكمية */}
-            <div className="bg-slate-900 p-8 rounded-[40px] text-white shadow-2xl">
-                <h3 className="text-xl font-black mb-6 flex items-center gap-2">
-                    <Calculator className="text-indigo-400"/> تقرير السنة المالية {startYear} / {startYear + 1}
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white/5 p-5 rounded-3xl border border-white/10">
-                        <p className="text-emerald-400 text-xs font-bold mb-1">إجازة اعتيادية</p>
-                        <span className="text-3xl font-black">{stats.annual.balance - stats.annual.used}</span>
-                        <div className="flex justify-between text-[10px] mt-2 opacity-60">
-                            <span>المستهلك: {stats.annual.used}</span>
-                            <span>الإجمالي: {stats.annual.balance}</span>
+        <div className="space-y-6 text-right animate-in fade-in duration-500" dir="rtl">
+            
+            {/* بطاقة تقرير السنة المالية الكبرى */}
+            <div className="bg-gradient-to-br from-indigo-950 to-slate-900 p-8 rounded-[40px] shadow-2xl text-white border border-white/10 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-32 h-32 bg-indigo-500/10 rounded-full -ml-16 -mt-16 blur-2xl"></div>
+                
+                <div className="relative z-10">
+                    <h3 className="text-2xl font-black mb-8 flex items-center gap-3">
+                        <Calculator className="text-indigo-400 w-8 h-8"/> تقرير الحصر السنوي (يوليو - يونيو)
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* كارت الاعتيادي */}
+                        <div className="bg-white/5 backdrop-blur-sm p-6 rounded-[30px] border border-white/10">
+                            <p className="text-emerald-400 text-xs font-black mb-2 uppercase tracking-tighter">رصيد الاعتيادي</p>
+                            <div className="flex justify-between items-end">
+                                <div><span className="text-4xl font-black">{stats.annual.balance - stats.annual.used}</span><p className="text-[10px] opacity-50">متبقي</p></div>
+                                <div className="text-left text-[11px] space-y-1">
+                                    <p>الإجمالي: {stats.annual.balance}</p>
+                                    <p className="text-red-400">المستهلك: {stats.annual.used}</p>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div className="bg-white/5 p-5 rounded-3xl border border-white/10">
-                        <p className="text-orange-400 text-xs font-bold mb-1">إجازة عارضة</p>
-                        <span className="text-3xl font-black">{stats.casual.balance - stats.casual.used}</span>
-                        <div className="flex justify-between text-[10px] mt-2 opacity-60">
-                            <span>المستهلك: {stats.casual.used}</span>
-                            <span>الإجمالي: {stats.casual.balance}</span>
+
+                        {/* كارت العارضة */}
+                        <div className="bg-white/5 backdrop-blur-sm p-6 rounded-[30px] border border-white/10">
+                            <p className="text-orange-400 text-xs font-black mb-2 uppercase tracking-tighter">رصيد العارضة</p>
+                            <div className="flex justify-between items-end">
+                                <div><span className="text-4xl font-black">{stats.casual.balance - stats.casual.used}</span><p className="text-[10px] opacity-50">متبقي</p></div>
+                                <div className="text-left text-[11px] space-y-1">
+                                    <p>الإجمالي: {stats.casual.balance}</p>
+                                    <p className="text-red-400">المستهلك: {stats.casual.used}</p>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div className="bg-white/5 p-5 rounded-3xl border border-white/10">
-                        <p className="text-blue-400 text-xs font-bold mb-1">رصيد بدل الراحات</p>
-                        <span className="text-3xl font-black">{stats.restEarned - stats.restRequested}</span>
-                        <div className="flex justify-between text-[10px] mt-2 opacity-60">
-                            <span>المستحق: {stats.restEarned}</span>
-                            <span>المطلوب: {stats.restRequested}</span>
+
+                        {/* كارت بدل الراحة */}
+                        <div className="bg-white/5 backdrop-blur-sm p-6 rounded-[30px] border border-white/10">
+                            <p className="text-blue-400 text-xs font-black mb-2 uppercase tracking-tighter">بدلات الراحة</p>
+                            <div className="flex justify-between items-end">
+                                <div><span className="text-4xl font-black">{stats.rest.earned - stats.rest.requested}</span><p className="text-[10px] opacity-50">متاح للطلب</p></div>
+                                <div className="text-left text-[11px] space-y-1">
+                                    <p className="text-emerald-400">المستحق: {stats.rest.earned}</p>
+                                    <p className="text-red-400">المطلوب: {stats.rest.requested}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -119,27 +150,50 @@ export default function StaffStats({ attendance, evals, requests, month, employe
 
             {/* الإحصائيات الشهرية */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
-                    <Clock className="w-5 h-5 text-blue-500 mb-2"/>
-                    <div className="text-xl font-black">{stats.monthlyHours.toFixed(1)}</div>
-                    <p className="text-[10px] text-gray-400 font-bold">ساعة عمل / شهر</p>
-                    <p className="text-[9px] text-gray-300">أسبوعياً: {(stats.monthlyHours/4).toFixed(1)}</p>
+                <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+                    <Clock className="w-6 h-6 text-blue-500 mb-2"/>
+                    <div className="text-2xl font-black">{stats.attendance.monthlyHours.toFixed(1)}</div>
+                    <p className="text-xs text-gray-400 font-bold">ساعة / شهر</p>
+                    <p className="text-[10px] text-gray-300 font-bold">أسبوعياً: {stats.attendance.weeklyHours.toFixed(1)}</p>
                 </div>
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
-                    <AlertTriangle className="w-5 h-5 text-red-500 mb-2"/>
-                    <div className="text-xl font-black">{stats.lateCount}</div>
-                    <p className="text-[10px] text-gray-400 font-bold">تأخيرات الشهر</p>
+
+                <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+                    <AlertTriangle className="w-6 h-6 text-red-500 mb-2"/>
+                    <div className="text-2xl font-black">{stats.attendance.lateCount}</div>
+                    <p className="text-xs text-gray-400 font-bold">تأخيرات الشهر</p>
                 </div>
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
-                    <UserX className="w-5 h-5 text-purple-500 mb-2"/>
-                    <div className="text-xl font-black">{absenceDays}</div>
-                    <p className="text-[10px] text-gray-400 font-bold">أيام الغياب</p>
+
+                <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+                    <UserX className="w-6 h-6 text-purple-500 mb-2"/>
+                    <div className="text-2xl font-black">{stats.attendance.absenceDays}</div>
+                    <p className="text-xs text-gray-400 font-bold">أيام الغياب</p>
                 </div>
-                <div className="bg-white p-5 rounded-3xl shadow-sm border border-gray-100">
-                    <Coffee className="w-5 h-5 text-emerald-500 mb-2"/>
-                    <div className="text-xl font-black">{stats.restEarned}</div>
-                    <p className="text-[10px] text-gray-400 font-bold">استحقاق بدل راحة</p>
+
+                <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+                    <Coffee className="w-6 h-6 text-emerald-500 mb-2"/>
+                    <div className="text-2xl font-black">{stats.rest.earned}</div>
+                    <p className="text-xs text-gray-400 font-bold">استحقاق راحة</p>
                 </div>
+            </div>
+
+            {/* الرسم البياني */}
+            <div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 h-80">
+                <h3 className="text-lg font-black text-gray-800 mb-8 flex items-center gap-2">
+                    <Activity className="w-6 h-6 text-indigo-600"/> تحليل الأداء العام
+                </h3>
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 'bold'}} />
+                        <YAxis hide />
+                        <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 10px 30px rgba(0,0,0,0.05)'}} />
+                        <Bar dataKey="value" radius={[15, 15, 0, 0]} barSize={50}>
+                            {chartData.map((_entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
             </div>
         </div>
     );
