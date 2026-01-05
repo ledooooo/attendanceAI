@@ -19,8 +19,12 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const sendNotification = async (recipientId: string, type: string, postId: string, message: string) => {
         if (recipientId === employee.employee_id) return;
         await supabase.from('notifications').insert({
-            recipient_id: recipientId, sender_id: employee.employee_id,
-            sender_name: employee.name, type, post_id: postId, message
+            recipient_id: recipientId, 
+            sender_id: employee.employee_id,
+            sender_name: employee.name, 
+            type, 
+            post_id: postId, 
+            message
         });
     };
 
@@ -88,11 +92,8 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         }
     };
 
-    // مكون فرعي لعرض الرياكشنات تحت التعليق
     const ReactionBadges = ({ reactions }: { reactions: any[] }) => {
         if (!reactions || reactions.length === 0) return null;
-        
-        // تجميع الرياكشنات حسب الإيموجي
         const groups = reactions.reduce((acc: any, curr: any) => {
             acc[curr.emoji] = acc[curr.emoji] || [];
             acc[curr.emoji].push(curr.user_name);
@@ -105,7 +106,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                     <div key={emoji} className="group relative bg-white border border-indigo-100 px-1.5 py-0.5 rounded-full text-[10px] shadow-sm flex items-center gap-1 cursor-default">
                         <span>{emoji}</span>
                         <span className="font-bold text-indigo-600">{groups[emoji].length}</span>
-                        {/* قائمة الأسماء عند الهوفر */}
                         <div className="absolute bottom-full mb-1 hidden group-hover:block bg-gray-800 text-white p-2 rounded-lg text-[9px] whitespace-nowrap z-50">
                             {groups[emoji].join('، ')}
                         </div>
@@ -121,11 +121,28 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         <div className="space-y-6 pb-20 text-right" dir="rtl">
             {posts.map(post => (
                 <div key={post.id} className={`bg-white rounded-[2.5rem] border transition-all ${post.is_pinned ? 'border-emerald-200 ring-4 ring-emerald-50' : 'border-gray-100 shadow-sm'}`}>
+                    
+                    {/* ✅ إصلاح عرض صورة البوست */}
+                    {post.image_url && (
+                        <div className="w-full h-64 overflow-hidden rounded-t-[2.5rem] bg-gray-100 relative">
+                            <img 
+                                src={post.image_url} 
+                                alt="" 
+                                className="w-full h-full object-cover"
+                            />
+                            {post.is_pinned && (
+                                <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-[10px] font-black text-emerald-600 flex items-center gap-1 shadow-sm">
+                                    <Pin size={12} className="fill-emerald-600"/> مثبت
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* محتوى البوست */}
                     <div className="p-6">
-                        <div className="flex justify-between items-start mb-4">
+                        <div className="flex justify-between items-start mb-2">
                             <h3 className="text-xl font-black text-gray-800">{post.title}</h3>
-                            {post.is_pinned && <Pin className="w-5 h-5 text-emerald-500 fill-emerald-500" />}
+                            {!post.image_url && post.is_pinned && <Pin className="w-5 h-5 text-emerald-500 fill-emerald-500" />}
                         </div>
                         <p className="text-gray-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap">{post.content}</p>
                         
@@ -150,7 +167,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
 
                     {/* التعليقات والردود */}
                     {expandedPost === post.id && (
-                        <div className="bg-gray-50/50 p-6 border-t border-gray-50">
+                        <div className="bg-gray-50/50 p-6 border-t border-gray-50 rounded-b-[2.5rem]">
                             <div className="space-y-6 max-h-96 overflow-y-auto custom-scrollbar px-2">
                                 {post.mainComments.map((comment: any) => (
                                     <div key={comment.id} className="space-y-2">
@@ -161,7 +178,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                     <p className="text-[11px] font-black text-gray-800 mb-0.5">{comment.user_name}</p>
                                                     <p className="text-sm text-gray-600">{comment.comment_text}</p>
                                                     
-                                                    {/* أزرار الرياكشن السريعة للتعليق */}
                                                     <div className="flex items-center gap-3 mt-2 border-t border-gray-50 pt-2">
                                                         <button onClick={() => setReplyTo({postId: post.id, commentId: comment.id, name: comment.user_name, userId: comment.user_id})} className="text-[10px] font-black text-indigo-500 hover:underline">رد</button>
                                                         <div className="flex gap-2">
@@ -171,12 +187,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                {/* عرض الرياكشنات تحت التعليق مباشرة */}
                                                 <ReactionBadges reactions={comment.reactions} />
                                             </div>
                                         </div>
 
-                                        {/* الردود المتداخلة */}
                                         {comment.replies?.map((rep: any) => (
                                             <div key={rep.id} className="mr-10 flex gap-3">
                                                 <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[9px] font-black text-gray-600">{rep.user_name[0]}</div>
@@ -184,8 +198,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                     <div className="bg-white/60 p-2 rounded-xl border border-gray-100">
                                                         <p className="text-[10px] font-black text-gray-700">{rep.user_name}</p>
                                                         <p className="text-xs text-gray-600">{rep.comment_text}</p>
-                                                        
-                                                        {/* رياكشنات الردود */}
                                                         <div className="flex gap-2 mt-1">
                                                             {['❤️'].map(emoji => (
                                                                 <button key={emoji} onClick={() => handleReaction(rep.id, emoji, 'comment', rep.user_id)} className="text-[10px] grayscale hover:grayscale-0">{emoji}</button>
@@ -200,7 +212,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                 ))}
                             </div>
 
-                            {/* حقل الإدخال */}
                             <div className="mt-6">
                                 {replyTo && (
                                     <div className="flex justify-between items-center mb-2 px-4 py-1 bg-indigo-50 rounded-lg text-xs font-bold text-indigo-600">
