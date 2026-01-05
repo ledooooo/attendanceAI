@@ -24,7 +24,6 @@ const getFiscalYearRange = () => {
     let startYear = now.getFullYear();
     if (now.getMonth() < 6) startYear -= 1;
     
-    // ضبط الوقت ليكون في بداية اليوم تماماً لتجنب إزاحة التوقيت
     const startDate = new Date(startYear, 6, 1, 0, 0, 0);
     const endDate = new Date(startYear + 1, 5, 30, 23, 59, 59);
     return { startDate, endDate, startYear };
@@ -49,12 +48,12 @@ const calcHours = (t1: string, t2: string) => {
 export default function StaffStats({ attendance, evals, requests, month, employee }: Props) {
     const { startDate, endDate, startYear } = useMemo(() => getFiscalYearRange(), []);
 
-    // 1. حصر الإجازات والأرصدة (سنوي وتراكمي)
+    // 1. حساب الأرصدة (سنوية وتراكمية)
     const fiscalLeaves = useMemo(() => {
         const stats = {
             annual: { used: 0, balance: employee?.leave_annual_balance || 21, label: 'اعتيادي' },
             casual: { used: 0, balance: employee?.leave_casual_balance || 7, label: 'عارضة' },
-            rest: { used: 0, requested: 0, label: 'بدل راحة' }
+            rest: { requested: 0, label: 'بدل راحة' }
         };
 
         requests.forEach(req => {
@@ -79,7 +78,7 @@ export default function StaffStats({ attendance, evals, requests, month, employe
         return stats;
     }, [requests, employee, startDate, endDate]);
 
-    // 2. إحصائيات الحضور والغياب
+    // 2. إحصائيات الحضور، الغياب، وبدل الراحة المستحق
     const attendanceStats = useMemo(() => {
         let totalMonthlyHours = 0;
         let lateCount = 0;
@@ -89,6 +88,7 @@ export default function StaffStats({ attendance, evals, requests, month, employe
         const officialStart = employee?.start_time || "08:30";
         const [offH, offM] = officialStart.split(':').map(Number);
 
+        // تصفية الشهر الحالي
         const monthlyRecords = attendance.filter(a => a.date.startsWith(month));
         
         monthlyRecords.forEach(att => {
@@ -136,44 +136,47 @@ export default function StaffStats({ attendance, evals, requests, month, employe
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* كارت الاعتيادي */}
                         <div className="bg-white/10 p-6 rounded-[30px] border border-white/10">
-                            <p className="text-emerald-400 text-xs font-black mb-2 uppercase">إجازة اعتيادية</p>
+                            <p className="text-emerald-400 text-xs font-black mb-2 uppercase tracking-widest">إجازة اعتيادية</p>
                             <div className="flex justify-between items-end">
                                 <div>
                                     <span className="text-4xl font-black">{fiscalLeaves.annual.balance - fiscalLeaves.annual.used}</span>
                                     <p className="text-[10px] opacity-60">يوم متبقي</p>
                                 </div>
-                                <div className="text-left text-xs">
+                                <div className="text-left text-xs space-y-1">
                                     <p>الإجمالي: {fiscalLeaves.annual.balance}</p>
-                                    <p className="text-red-400">المستهلك: {fiscalLeaves.annual.used}</p>
+                                    <p className="text-red-400 font-bold">المستهلك: {fiscalLeaves.annual.used}</p>
                                 </div>
                             </div>
                         </div>
 
+                        {/* كارت العارضة */}
                         <div className="bg-white/10 p-6 rounded-[30px] border border-white/10">
-                            <p className="text-orange-400 text-xs font-black mb-2 uppercase">إجازة عارضة</p>
+                            <p className="text-orange-400 text-xs font-black mb-2 uppercase tracking-widest">إجازة عارضة</p>
                             <div className="flex justify-between items-end">
                                 <div>
                                     <span className="text-4xl font-black">{fiscalLeaves.casual.balance - fiscalLeaves.casual.used}</span>
                                     <p className="text-[10px] opacity-60">يوم متبقي</p>
                                 </div>
-                                <div className="text-left text-xs">
+                                <div className="text-left text-xs space-y-1">
                                     <p>الإجمالي: {fiscalLeaves.casual.balance}</p>
-                                    <p className="text-red-400">المستهلك: {fiscalLeaves.casual.used}</p>
+                                    <p className="text-red-400 font-bold">المستهلك: {fiscalLeaves.casual.used}</p>
                                 </div>
                             </div>
                         </div>
 
+                        {/* كارت بدل الراحة */}
                         <div className="bg-white/10 p-6 rounded-[30px] border border-white/10">
-                            <p className="text-blue-400 text-xs font-black mb-2 uppercase">بدلات الراحة</p>
+                            <p className="text-blue-400 text-xs font-black mb-2 uppercase tracking-widest">بدلات الراحة</p>
                             <div className="flex justify-between items-end">
                                 <div>
                                     <span className="text-4xl font-black">{attendanceStats.restEarnedDays - fiscalLeaves.rest.requested}</span>
                                     <p className="text-[10px] opacity-60">رصيد متاح</p>
                                 </div>
-                                <div className="text-left text-xs">
+                                <div className="text-left text-xs space-y-1">
                                     <p className="text-emerald-400">المستحق: {attendanceStats.restEarnedDays}</p>
-                                    <p className="text-red-400">المطلوب: {fiscalLeaves.rest.requested}</p>
+                                    <p className="text-red-400 font-bold">المطلب: {fiscalLeaves.rest.requested}</p>
                                 </div>
                             </div>
                         </div>
@@ -187,7 +190,7 @@ export default function StaffStats({ attendance, evals, requests, month, employe
                     <Clock className="w-6 h-6 text-blue-500 mb-2"/>
                     <div className="text-2xl font-black">{attendanceStats.totalMonthlyHours.toFixed(1)}</div>
                     <p className="text-xs text-gray-400 font-bold">ساعة عمل / شهر</p>
-                    <p className="text-[10px] text-gray-300">أسبوعياً: {attendanceStats.totalWeeklyHours.toFixed(1)}</p>
+                    <p className="text-[10px] text-gray-400 font-bold mt-1">أسبوعياً: {attendanceStats.totalWeeklyHours.toFixed(1)}</p>
                 </div>
 
                 <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
@@ -205,13 +208,15 @@ export default function StaffStats({ attendance, evals, requests, month, employe
                 <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
                     <Coffee className="w-6 h-6 text-emerald-500 mb-2"/>
                     <div className="text-2xl font-black">{attendanceStats.restEarnedDays}</div>
-                    <p className="text-xs text-gray-400 font-bold">أيام تستحق بدل راحة</p>
+                    <p className="text-xs text-gray-400 font-bold">استحقاق بدل راحة</p>
                 </div>
             </div>
 
-            {/* التحليل البياني */}
+            {/* الرسم البياني */}
             <div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 h-80">
-                <h3 className="text-lg font-black text-gray-800 mb-8">تحليل الأداء</h3>
+                <h3 className="text-lg font-black text-gray-800 mb-8 flex items-center gap-2">
+                    <Activity className="w-6 h-6 text-indigo-600"/> تحليل الأداء العام
+                </h3>
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
