@@ -19,7 +19,7 @@ export default function EOMVotingCard({ employee }: { employee: Employee }) {
 
     // رابط الـ Bucket الخاص بالصور (تأكد من إنشاء bucket باسم 'staff-photos')
     // يتم تكوين الرابط بناءً على رابط مشروعك في Supabase
-    const PROJECT_URL = "https://YOUR_PROJECT_ID.supabase.co"; // ⚠️ استبدل هذا برابط مشروعك الحقيقي، أو سيتم جلبه تلقائياً
+    const PROJECT_URL = "https://dyrolfnfuaifzguaxtgs.supabase.co"; // ⚠️ استبدل هذا برابط مشروعك الحقيقي، أو سيتم جلبه تلقائياً
     
     // دالة مساعدة لتوليد رابط الصورة
     const getPhotoUrl = (empId: string) => {
