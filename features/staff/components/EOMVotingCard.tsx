@@ -53,6 +53,10 @@ export default function EOMVotingCard({ employee }: { employee: Employee }) {
 
                     const enriched = noms.map(n => {
                         const empData = emps?.find(e => e.employee_id === n.employee_id);
+                        const finalPhotoUrl = 
+    nom.photo_url || // 1. الرابط من جدول الموظفين (إذا وجد)
+    getPhotoUrl(nom.employee_id) || // 2. الرابط المتوقع من الـ Bucket
+    `https://ui-avatars.com/api/?name=${nom.employee_name}`; // 3. صورة افتراضية
                         return {
                             ...n,
                             employee_name: empData?.name || 'موظف غير معروف',
