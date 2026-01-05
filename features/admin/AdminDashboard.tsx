@@ -103,6 +103,7 @@ export default function AdminDashboard() {
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
     { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
     { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
+    { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: File cabinet }, // تأكد من استيراد FileCabinet من lucide
     
     // زر إدارة الجودة مع التنبيه
     { 
@@ -226,9 +227,8 @@ export default function AdminDashboard() {
             {activeTab === 'reports' && <ReportsTab />}
             {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
             {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
-            
+            {activeTab === 'library-manager' && <AdminLibraryManager />}
             {activeTab === 'quality' && <QualityDashboard />}
-
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
             {activeTab === 'send_reports' && <SendReportsTab />}
         </div>
