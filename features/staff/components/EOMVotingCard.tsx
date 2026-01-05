@@ -46,12 +46,7 @@ export default function EOMVotingCard({ employee }: { employee: Employee }) {
             setCycle(cyc);
             
             // 2. جلب المرشحين مع بيانات الموظفين (Join)
-            const { data: noms } = await supabase.from('eom_nominees')
-                .select(`
-                    *,
-                    employees:employee_id ( name, specialty, admin_tasks )
-                `)
-                .eq('cycle_id', cyc.id);
+const { data: noms } = await supabase.from('eom_nominees').select('*').eq('cycle_id', cyc.id);
 
             if (noms) {
                 // تنسيق البيانات
