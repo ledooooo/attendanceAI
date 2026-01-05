@@ -1,220 +1,174 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { NewsPost, NewsComment, Employee } from '../../../types';
-import { Pin, MessageCircle, Send, Image as ImageIcon, Clock, Heart, ThumbsUp, PartyPopper } from 'lucide-react';
-
-// تعريف واجهة التفاعل
-interface Reaction {
-    emoji: string;
-    user_id: string;
-    user_name: string;
-}
-
-interface EnrichedComment extends NewsComment {
-    reactions?: Reaction[];
-}
-
-interface EnrichedPost extends NewsPost {
-    comments: EnrichedComment[];
-}
+import { 
+    Pin, MessageCircle, Send, Clock, Heart, ThumbsUp, 
+    PartyPopper, Reply, ChevronDown, ChevronUp 
+} from 'lucide-react';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
-    const [posts, setPosts] = useState<EnrichedPost[]>([]);
+    const [posts, setPosts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
+    const [replyTo, setReplyTo] = useState<{postId: string, commentId: string, name: string} | null>(null);
     const [expandedPost, setExpandedPost] = useState<string | null>(null);
 
-    useEffect(() => {
-        fetchNews();
-    }, []);
+    useEffect(() => { fetchNews(); }, []);
 
     const fetchNews = async () => {
         setLoading(true);
-        const { data: postsData } = await supabase
-            .from('news_posts')
-            .select('*')
-            .order('is_pinned', { ascending: false })
-            .order('created_at', { ascending: false });
+        const { data: postsData } = await supabase.from('news_posts').select('*').order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
+        const { data: commentsData } = await supabase.from('news_comments').select('*').order('created_at', { ascending: true });
+        const { data: pReactions } = await supabase.from('post_reactions').select('*');
+        const { data: cReactions } = await supabase.from('comment_reactions').select('*');
 
         if (postsData) {
-            const { data: commentsData } = await supabase
-                .from('news_comments')
-                .select('*')
-                .order('created_at', { ascending: true });
-
-            // جلب التفاعلات
-            const { data: reactionsData } = await supabase
-                .from('comment_reactions')
-                .select('*');
-
-            const postsWithComments = postsData.map(p => ({
-                ...p,
-                comments: (commentsData || [])
-                    .filter(c => c.post_id === p.id)
-                    .map(c => ({
-                        ...c,
-                        reactions: (reactionsData || []).filter(r => r.comment_id === c.id)
+            const enriched = postsData.map(p => {
+                const postComments = (commentsData || []).filter(c => c.post_id === p.id);
+                return {
+                    ...p,
+                    reactions: (pReactions || []).filter(r => r.post_id === p.id),
+                    // تنظيم التعليقات: الأساسية والردود
+                    mainComments: postComments.filter(c => !c.parent_id).map(mc => ({
+                        ...mc,
+                        reactions: (cReactions || []).filter(r => r.comment_id === mc.id),
+                        replies: postComments.filter(r => r.parent_id === mc.id).map(rep => ({
+                            ...rep,
+                            reactions: (cReactions || []).filter(r => r.comment_id === rep.id)
+                        }))
                     }))
-            }));
-
-            setPosts(postsWithComments);
+                };
+            });
+            setPosts(enriched);
         }
         setLoading(false);
     };
 
-    const handleReaction = async (commentId: string, emoji: string) => {
-        // التحقق إذا كان المستخدم قد تفاعل بالفعل بنفس الإيموجي
-        const { data: existing } = await supabase
-            .from('comment_reactions')
-            .select('*')
-            .eq('comment_id', commentId)
-            .eq('user_id', employee.employee_id)
-            .eq('emoji', emoji)
-            .maybeSingle();
+    const handleReaction = async (id: string, emoji: string, type: 'post' | 'comment') => {
+        const table = type === 'post' ? 'post_reactions' : 'comment_reactions';
+        const field = type === 'post' ? 'post_id' : 'comment_id';
+        
+        const { data: existing } = await supabase.from(table).select('*').eq(field, id).eq('user_id', employee.employee_id).eq('emoji', emoji).maybeSingle();
 
         if (existing) {
-            // إزالة التفاعل
-            await supabase.from('comment_reactions').delete().eq('id', existing.id);
+            await supabase.from(table).delete().eq('id', existing.id);
         } else {
-            // إضافة تفاعل جديد
-            await supabase.from('comment_reactions').insert({
-                comment_id: commentId,
-                user_id: employee.employee_id,
-                user_name: employee.name,
-                emoji: emoji
-            });
+            await supabase.from(table).insert({ [field]: id, user_id: employee.employee_id, user_name: employee.name, emoji });
         }
-        fetchNews(); // تحديث لعرض التغييرات
+        fetchNews();
     };
 
-    const handlePostComment = async (postId: string) => {
+    const handleSubmitComment = async (postId: string) => {
         const text = commentText[postId]?.trim();
         if (!text) return;
 
-        const { error } = await supabase.from('news_comments').insert({
+        const payload: any = {
             post_id: postId,
             user_id: employee.employee_id,
             user_name: employee.name,
             comment_text: text
-        });
+        };
 
+        if (replyTo && replyTo.postId === postId) {
+            payload.parent_id = replyTo.commentId;
+        }
+
+        const { error } = await supabase.from('news_comments').insert(payload);
         if (!error) {
-            setCommentText(prev => ({ ...prev, [postId]: '' }));
+            setCommentText({ ...commentText, [postId]: '' });
+            setReplyTo(null);
             fetchNews();
         }
     };
 
-    if (loading) return <div className="p-10 text-center text-gray-400">جاري تحميل الأخبار...</div>;
+    if (loading) return <div className="p-10 text-center text-gray-400 font-bold">جاري تحميل الأخبار...</div>;
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 pb-20 text-right" dir="rtl">
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-[2.5rem] p-8 text-white shadow-lg mb-8 relative overflow-hidden">
-                <h2 className="text-3xl font-black mb-2">أهلاً، {employee.name.split(' ')[0]} 👋</h2>
-                <p className="opacity-90 font-medium">إليك آخر مستجدات وأخبار المركز الطبي</p>
-            </div>
-
-            <div className="grid gap-6">
-                {posts.map(post => (
-                    <div key={post.id} className={`bg-white rounded-[2rem] border shadow-sm overflow-hidden transition-all ${post.is_pinned ? 'border-emerald-200 ring-4 ring-emerald-50' : 'border-gray-100'}`}>
-                        {post.image_url && (
-                            <div className="h-48 w-full bg-gray-100 relative">
-                                <img src={post.image_url} alt={post.title} className="w-full h-full object-cover" />
-                                {post.is_pinned && (
-                                    <div className="absolute top-4 right-4 bg-white/90 backdrop-blur text-emerald-700 px-3 py-1 rounded-full text-xs font-black flex items-center gap-1">
-                                        <Pin className="w-3 h-3 fill-emerald-700" /> مثبت
-                                    </div>
-                                )}
+        <div className="space-y-6 pb-20 text-right" dir="rtl">
+            {posts.map(post => (
+                <div key={post.id} className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
+                    {/* محتوى البوست */}
+                    <div className="p-6">
+                        <h3 className="text-xl font-black mb-2">{post.title}</h3>
+                        <p className="text-gray-600 mb-4">{post.content}</p>
+                        
+                        {/* تفاعلات البوست */}
+                        <div className="flex items-center gap-3 border-t pt-4">
+                            <div className="flex gap-1 bg-gray-50 p-1.5 rounded-2xl border border-gray-100">
+                                {['❤️', '👍', '🔥'].map(emoji => (
+                                    <button key={emoji} onClick={() => handleReaction(post.id, emoji, 'post')} className="hover:scale-125 transition-transform px-1 text-lg">
+                                        {emoji}
+                                    </button>
+                                ))}
                             </div>
-                        )}
-
-                        <div className="p-6">
-                            <h3 className="text-xl font-black text-gray-800 mb-2">{post.title}</h3>
-                            <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap mb-4">{post.content}</p>
-
-                            <div className="flex items-center justify-between text-xs text-gray-400 font-bold border-t pt-4">
-                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(post.created_at).toLocaleDateString('ar-EG')}</span>
-                                <button onClick={() => setExpandedPost(expandedPost === post.id ? null : post.id)} className="flex items-center gap-1 hover:text-emerald-600 transition-colors">
-                                    <MessageCircle className="w-4 h-4" /> {post.comments?.length || 0} تعليق
-                                </button>
+                            <div className="flex gap-1">
+                                {Array.from(new Set(post.reactions?.map((r: any) => r.emoji))).map((emoji: any) => (
+                                    <div key={emoji} className="bg-indigo-50 px-2 py-0.5 rounded-full text-xs font-bold text-indigo-600 border border-indigo-100">
+                                        {emoji} {post.reactions.filter((r: any) => r.emoji === emoji).length}
+                                    </div>
+                                ))}
                             </div>
                         </div>
+                    </div>
 
-                        {expandedPost === post.id && (
-                            <div className="bg-gray-50 p-4 border-t border-gray-100 animate-in slide-in-from-top-2">
-                                <div className="space-y-4 mb-4 max-h-80 overflow-y-auto custom-scrollbar px-2">
-                                    {post.comments?.map(c => (
-                                        <div key={c.id} className="flex gap-3 items-start group">
-                                            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-xs shrink-0 uppercase">
-                                                {c.user_name.charAt(0)}
-                                            </div>
-                                            <div className="flex-1">
-                                                <div className="bg-white p-3 rounded-2xl rounded-tr-none border border-gray-100 shadow-sm relative">
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <span className="font-bold text-xs text-gray-800">{c.user_name}</span>
-                                                        <span className="text-[9px] text-gray-400">{new Date(c.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
-                                                    </div>
-                                                    <p className="text-sm text-gray-600">{c.comment_text}</p>
-                                                    
-                                                    {/* أزرار التفاعل السريع */}
-                                                    <div className="absolute -bottom-3 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white shadow-md rounded-full px-2 py-1 border border-gray-100 scale-90">
-                                                        {['❤️', '👍', '👏'].map(emoji => (
-                                                            <button 
-                                                                key={emoji} 
-                                                                onClick={() => handleReaction(c.id, emoji)}
-                                                                className="hover:scale-125 transition-transform text-xs"
-                                                            >
-                                                                {emoji}
-                                                            </button>
-                                                        ))}
-                                                    </div>
+                    {/* قسم التعليقات والردود */}
+                    <div className="bg-gray-50/50 p-6 border-t border-gray-50">
+                        <div className="space-y-6">
+                            {post.mainComments?.map((comment: any) => (
+                                <div key={comment.id} className="space-y-3">
+                                    <div className="flex gap-3">
+                                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-xs font-bold text-emerald-700 uppercase">{comment.user_name[0]}</div>
+                                        <div className="flex-1 bg-white p-3 rounded-2xl shadow-xs border border-gray-100">
+                                            <p className="text-xs font-black text-gray-800 mb-1">{comment.user_name}</p>
+                                            <p className="text-sm text-gray-600">{comment.comment_text}</p>
+                                            
+                                            <div className="flex items-center gap-4 mt-2">
+                                                <button onClick={() => setReplyTo({postId: post.id, commentId: comment.id, name: comment.user_name})} className="text-[10px] font-bold text-indigo-500 flex items-center gap-1 hover:underline"><Reply size={12}/> رد</button>
+                                                <div className="flex gap-1">
+                                                    {['❤️', '👍'].map(emoji => (
+                                                        <button key={emoji} onClick={() => handleReaction(comment.id, emoji, 'comment')} className="text-[10px] grayscale hover:grayscale-0">{emoji}</button>
+                                                    ))}
                                                 </div>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                                {/* عرض ملخص التفاعلات */}
-                                                {c.reactions && c.reactions.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1 mt-1 mr-2">
-                                                        {Array.from(new Set(c.reactions.map(r => r.emoji))).map(emoji => {
-                                                            const usersWithThisEmoji = c.reactions!.filter(r => r.emoji === emoji);
-                                                            return (
-                                                                <div 
-                                                                    key={emoji}
-                                                                    className="group relative flex items-center bg-white border border-emerald-100 px-1.5 py-0.5 rounded-full text-[10px] shadow-xs cursor-default"
-                                                                >
-                                                                    <span>{emoji}</span>
-                                                                    <span className="mr-0.5 font-bold text-emerald-600">{usersWithThisEmoji.length}</span>
-                                                                    
-                                                                    {/* Tooltip بالأسماء */}
-                                                                    <div className="absolute bottom-full mb-2 hidden group-hover:block bg-gray-800 text-white p-2 rounded-xl text-[9px] whitespace-nowrap z-50 shadow-xl opacity-90 animate-in fade-in zoom-in-95">
-                                                                        <div className="font-bold border-b border-white/20 mb-1 pb-1">المتفاعلون:</div>
-                                                                        {usersWithThisEmoji.map(u => u.user_name).join('، ')}
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
+                                    {/* عرض الردود */}
+                                    {comment.replies?.map((rep: any) => (
+                                        <div key={rep.id} className="mr-10 flex gap-3">
+                                            <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px] font-bold text-gray-600 uppercase">{rep.user_name[0]}</div>
+                                            <div className="flex-1 bg-indigo-50/30 p-2 rounded-xl border border-indigo-100/50">
+                                                <p className="text-[10px] font-black text-gray-700">{rep.user_name}</p>
+                                                <p className="text-xs text-gray-600">{rep.comment_text}</p>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
+                            ))}
+                        </div>
 
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="اكتب تعليقاً..."
-                                        className="flex-1 bg-white border border-gray-200 rounded-full px-4 py-2 text-sm outline-none focus:border-emerald-500"
-                                        value={commentText[post.id] || ''}
-                                        onChange={(e) => setCommentText({ ...commentText, [post.id]: e.target.value })}
-                                        onKeyDown={(e) => e.key === 'Enter' && handlePostComment(post.id)}
-                                    />
-                                    <button onClick={() => handlePostComment(post.id)} className="bg-emerald-600 text-white p-2 rounded-full hover:bg-emerald-700 transition-transform active:scale-90">
-                                        <Send className="w-4 h-4" />
-                                    </button>
+                        {/* حقل الإدخال الذكي */}
+                        <div className="mt-6">
+                            {replyTo && replyTo.postId === post.id && (
+                                <div className="flex justify-between items-center mb-2 px-4 py-1 bg-indigo-50 rounded-lg text-[10px] font-bold text-indigo-600 animate-in fade-in">
+                                    <span>الرد على: {replyTo.name}</span>
+                                    <button onClick={() => setReplyTo(null)} className="text-red-500">إلغاء</button>
                                 </div>
+                            )}
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    placeholder={replyTo ? "اكتب ردك..." : "اكتب تعليقاً..."}
+                                    className="flex-1 bg-white border border-gray-200 rounded-full px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                                    value={commentText[post.id] || ''}
+                                    onChange={(e) => setCommentText({...commentText, [post.id]: e.target.value})}
+                                />
+                                <button onClick={() => handleSubmitComment(post.id)} className="bg-emerald-600 text-white p-2 rounded-full shadow-lg shadow-emerald-200 active:scale-90 transition-transform"><Send size={18}/></button>
                             </div>
-                        )}
+                        </div>
                     </div>
-                ))}
-            </div>
+                </div>
+            ))}
         </div>
     );
 }
