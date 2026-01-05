@@ -109,7 +109,7 @@ export default function EOMVotingCard({ employee }: { employee: Employee }) {
         }
     };
 
-    if (loading || !cycle || nominees.length === 0) return null;
+  //  if (loading || !cycle || nominees.length === 0) return null;
 
     return (
         <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[30px] border border-indigo-100 shadow-sm mb-6 relative overflow-hidden animate-in fade-in">
