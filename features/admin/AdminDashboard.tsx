@@ -6,11 +6,11 @@ import { useSwipeable } from 'react-swipeable';
 import { 
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
-  Newspaper, Trophy, AlertTriangle, MessageCircle, Home 
+  Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, BookOpen
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
-import HomeTab from './components/HomeTab'; // ✅ استيراد صفحة الاستقبال الجديدة
+import HomeTab from './components/HomeTab';
 import DoctorsTab from './components/DoctorsTab';
 import AttendanceTab from './components/AttendanceTab';
 import EveningSchedulesTab from './components/EveningSchedulesTab';
@@ -25,13 +25,12 @@ import EOMManager from './components/EOMManager';
 import NotificationBell from '../../components/ui/NotificationBell';
 import AdminMessagesTab from './components/AdminMessagesTab';
 import QualityDashboard from './components/QualityDashboard';
+import AdminLibraryManager from './components/AdminLibraryManager'; // ✅ استيراد مكون إدارة المكتبة
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
   
-  // ✅ جعل الصفحة الافتراضية هي الرئيسية (Home)
   const [activeTab, setActiveTab] = useState('home');
-  
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [centerName, setCenterName] = useState('جاري التحميل...');
   const [centerId, setCenterId] = useState('');
@@ -63,15 +62,11 @@ export default function AdminDashboard() {
       }
   };
 
-  // ✅ جلب عدد تقارير الجودة التي تم الرد عليها (تنبيه للمدير)
   const fetchQualityAlerts = async () => {
-      // نعد التقارير التي تم الرد عليها (أي حالتها ليست "جديد")
-      // هذا يشمل closed أو reviewed
       const { count } = await supabase
           .from('ovr_reports')
           .select('*', { count: 'exact', head: true })
           .neq('status', 'new'); 
-      
       setQualityAlerts(count || 0);
   };
 
@@ -80,7 +75,6 @@ export default function AdminDashboard() {
     fetchSettings();
     fetchQualityAlerts();
 
-    // اشتراك لحظي لتحديث التنبيهات
     const subscription = supabase
         .channel('admin_ovr_watch')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ovr_reports' }, () => {
@@ -92,7 +86,6 @@ export default function AdminDashboard() {
   }, []);
 
   const menuItems = [
-    // ✅ إضافة زر الرئيسية في البداية
     { id: 'home', label: 'الرئيسية', icon: Home },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
@@ -103,16 +96,13 @@ export default function AdminDashboard() {
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
     { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
     { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
-    { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: File cabinet }, // تأكد من استيراد FileCabinet من lucide
-    
-    // زر إدارة الجودة مع التنبيه
+    { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive }, // ✅ تم تعديل الأيقونة
     { 
         id: 'quality', 
         label: 'إدارة الجودة (OVR)', 
         icon: AlertTriangle,
         badge: qualityAlerts 
     },
-
     { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
     { id: 'settings', label: 'إعدادات النظام', icon: Settings },
   ];
@@ -147,7 +137,6 @@ export default function AdminDashboard() {
            </button>
         </div>
 
-        {/* ✅ تم تقليل المسافات لتجنب السكرول */}
         <nav className="p-3 space-y-1 flex-1 overflow-y-auto custom-scrollbar">
           {menuItems.map(item => (
             <button
@@ -165,7 +154,6 @@ export default function AdminDashboard() {
               <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
               <span className="text-sm">{item.label}</span>
               
-              {/* Badge التنبيهات */}
               {item.badge && item.badge > 0 && (
                   <span className="absolute left-3 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm animate-pulse min-w-[18px] text-center">
                       {item.badge}
@@ -196,38 +184,31 @@ export default function AdminDashboard() {
 
       {/* المحتوى الرئيسي */}
       <main className="flex-1 flex flex-col h-[calc(100vh-64px)] md:h-screen overflow-hidden bg-gray-50/50">
-        
         <header className="hidden md:flex h-20 bg-white border-b justify-between items-center px-8 shadow-sm shrink-0">
             <div>
                 <h2 className="text-xl font-black text-gray-800">{centerName}</h2>
-                <p className="text-xs text-gray-400 font-bold mt-1">المستخدم الحالي: {user?.email}</p>
+                <p className="text-xs text-gray-400 font-bold mt-1">المسؤول: {user?.email}</p>
             </div>
             <NotificationBell />
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-20 md:pb-8">
-            
-            {/* ✅ عرض صفحة الاستقبال (Home) */}
             {activeTab === 'home' && <HomeTab employees={employees} setActiveTab={setActiveTab} />}
-            
             {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={fetchEmployees} centerId={centerId} />}
             {activeTab === 'news' && <NewsManagementTab />}
-            
             {activeTab === 'motivation' && (
                <div className="space-y-6 max-w-4xl mx-auto">
                    <BirthdayWidget employees={employees} />
                    <EOMManager />
                </div>
             )}
-
             {activeTab === 'all_messages' && <AdminMessagesTab employees={employees} />}
-            
             {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
             {activeTab === 'schedules' && <EveningSchedulesTab employees={employees} />}
             {activeTab === 'reports' && <ReportsTab />}
             {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
             {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
-            {activeTab === 'library-manager' && <AdminLibraryManager />}
+            {activeTab === 'library-manager' && <AdminLibraryManager />} 
             {activeTab === 'quality' && <QualityDashboard />}
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
             {activeTab === 'send_reports' && <SendReportsTab />}
