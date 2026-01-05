@@ -7,7 +7,7 @@ import {
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, 
-  Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell
+  Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -27,6 +27,7 @@ import StaffLinksTab from './components/StaffLinksTab';
 import StaffOVR from './components/StaffOVR';
 import ShiftRequestsTab from './components/ShiftRequestsTab';
 import QualityDashboard from '../admin/components/QualityDashboard'; 
+import StaffLibrary from './components/StaffLibrary'; // ✅ استيراد مكون المكتبة الجديد
 
 interface Props {
   employee: Employee;
@@ -105,8 +106,7 @@ export default function StaffDashboard({ employee }: Props) {
     fetchAllData();
     fetchNotifications();
 
-    // إعداد التحديث اللحظي للإشعارات
-    const channel = supabase.channel('dashboard_realtime')
+    const channel = supabase.channel('dashboard_realtime_staff')
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
@@ -177,6 +177,7 @@ export default function StaffDashboard({ employee }: Props) {
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
+    { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen }, // ✅ إضافة التبويب الجديد هنا
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
@@ -270,7 +271,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            {/* مركز الإشعارات العلوي */}
             <div className="flex items-center gap-4">
                 <div className="relative">
                     <button 
@@ -327,6 +327,8 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                     
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
+                    {activeTab === 'library' && <StaffLibrary />} {/* ✅ عرض صفحة المكتبة هنا */}
+                    
                     {activeTab === 'attendance' && (
                         <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} /> 
                     )}
