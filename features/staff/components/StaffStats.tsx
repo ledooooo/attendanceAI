@@ -29,6 +29,13 @@ const getFiscalYearRange = () => {
     return { startDate, endDate, startYear };
 };
 
+// تحويل أي صيغة تاريخ إلى كائن Date صالح
+const parseFlexibleDate = (dateStr: any) => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? null : d;
+};
+
 const normalizeLeaveType = (type: string) => {
     const t = type?.trim() || '';
     if (t.includes('عارض')) return 'casual';
@@ -48,7 +55,7 @@ const calcHours = (t1: string, t2: string) => {
 export default function StaffStats({ attendance, evals, requests, month, employee }: Props) {
     const { startDate, endDate, startYear } = useMemo(() => getFiscalYearRange(), []);
 
-    // 1. حساب الأرصدة (سنوية وتراكمية)
+    // 1. حساب الأرصدة (سنوية وتراكمية) - حل جذري للمستهلك 0
     const fiscalLeaves = useMemo(() => {
         const stats = {
             annual: { used: 0, balance: employee?.leave_annual_balance || 21, label: 'اعتيادي' },
@@ -57,28 +64,30 @@ export default function StaffStats({ attendance, evals, requests, month, employe
         };
 
         requests.forEach(req => {
+            // تنظيف الحالة والنوع للمقارنة
             const reqStatus = req.status?.trim();
             const typeKey = normalizeLeaveType(req.type);
+            const reqStart = parseFlexibleDate(req.start_date);
+            const reqEnd = parseFlexibleDate(req.end_date);
             
-            if (reqStatus === 'مقبول') {
-                const reqStart = new Date(req.start_date);
-                if (reqStart >= startDate && reqStart <= endDate) {
-                    const s = new Date(req.start_date);
-                    const e = new Date(req.end_date);
-                    const count = Math.ceil(Math.abs(e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                    
-                    if (typeKey === 'annual' || typeKey === 'casual') {
-                        stats[typeKey].used += count;
-                    } else if (typeKey === 'rest') {
-                        stats.rest.requested += count;
-                    }
+            // قبول أي حالة تحتوي على "مقبول" أو "approved"
+            const isApproved = reqStatus?.includes('مقبول') || reqStatus?.toLowerCase().includes('approved');
+
+            if (isApproved && reqStart && reqStart >= startDate && reqStart <= endDate) {
+                const diffTime = Math.abs((reqEnd?.getTime() || reqStart.getTime()) - reqStart.getTime());
+                const count = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                
+                if (typeKey === 'annual' || typeKey === 'casual') {
+                    stats[typeKey].used += count;
+                } else if (typeKey === 'rest') {
+                    stats.rest.requested += count;
                 }
             }
         });
         return stats;
     }, [requests, employee, startDate, endDate]);
 
-    // 2. إحصائيات الحضور، الغياب، وبدل الراحة المستحق
+    // 2. إحصائيات الحضور وبدل الراحة المستحق
     const attendanceStats = useMemo(() => {
         let totalMonthlyHours = 0;
         let lateCount = 0;
@@ -88,8 +97,11 @@ export default function StaffStats({ attendance, evals, requests, month, employe
         const officialStart = employee?.start_time || "08:30";
         const [offH, offM] = officialStart.split(':').map(Number);
 
-        // تصفية الشهر الحالي
-        const monthlyRecords = attendance.filter(a => a.date.startsWith(month));
+        // تصفية الشهر الحالي (دعم صيغ التواريخ المختلفة)
+        const monthlyRecords = attendance.filter(a => {
+            const d = parseFlexibleDate(a.date);
+            return d && d.toISOString().startsWith(month);
+        });
         
         monthlyRecords.forEach(att => {
             const times = att.times.match(/\d{1,2}:\d{2}/g) || [];
@@ -104,7 +116,11 @@ export default function StaffStats({ attendance, evals, requests, month, employe
             }
         });
 
-        const monthlyLeaves = requests.filter(r => r.status === 'مقبول' && r.start_date.startsWith(month)).length;
+        const monthlyLeaves = requests.filter(r => {
+            const d = parseFlexibleDate(r.start_date);
+            return d && d.toISOString().startsWith(month) && r.status?.includes('مقبول');
+        }).length;
+
         const absenceDays = Math.max(0, 26 - presentDays - monthlyLeaves);
 
         return { 
@@ -125,98 +141,58 @@ export default function StaffStats({ attendance, evals, requests, month, employe
 
     return (
         <div className="space-y-6 animate-in fade-in duration-700 text-right" dir="rtl">
-            
-            {/* بطاقة الأرصدة التراكمية (السنة المالية) */}
+            {/* بطاقة الأرصدة (السنة المالية) */}
             <div className="bg-gradient-to-br from-slate-900 to-indigo-900 p-8 rounded-[40px] shadow-2xl relative overflow-hidden text-white border border-white/10">
                 <div className="relative z-10">
-                    <div className="flex justify-between items-center mb-8">
-                        <h3 className="text-2xl font-black flex items-center gap-3">
-                            <Calculator className="w-8 h-8 text-indigo-400"/> تقرير السنة المالية {startYear} / {startYear + 1}
-                        </h3>
-                    </div>
-
+                    <h3 className="text-2xl font-black mb-8 flex items-center gap-3">
+                        <Calculator className="w-8 h-8 text-indigo-400"/> تقرير السنة المالية {startYear} / {startYear + 1}
+                    </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* كارت الاعتيادي */}
-                        <div className="bg-white/10 p-6 rounded-[30px] border border-white/10">
+                        <div className="bg-white/10 p-6 rounded-[30px] border border-white/10 hover:bg-white/20 transition-all">
                             <p className="text-emerald-400 text-xs font-black mb-2 uppercase tracking-widest">إجازة اعتيادية</p>
                             <div className="flex justify-between items-end">
-                                <div>
-                                    <span className="text-4xl font-black">{fiscalLeaves.annual.balance - fiscalLeaves.annual.used}</span>
-                                    <p className="text-[10px] opacity-60">يوم متبقي</p>
-                                </div>
-                                <div className="text-left text-xs space-y-1">
-                                    <p>الإجمالي: {fiscalLeaves.annual.balance}</p>
-                                    <p className="text-red-400 font-bold">المستهلك: {fiscalLeaves.annual.used}</p>
-                                </div>
+                                <div><span className="text-4xl font-black">{fiscalLeaves.annual.balance - fiscalLeaves.annual.used}</span><p className="text-[10px] opacity-60">يوم متبقي</p></div>
+                                <div className="text-left text-xs"><p>الإجمالي: {fiscalLeaves.annual.balance}</p><p className="text-red-400 font-bold">المستهلك: {fiscalLeaves.annual.used}</p></div>
                             </div>
                         </div>
-
-                        {/* كارت العارضة */}
-                        <div className="bg-white/10 p-6 rounded-[30px] border border-white/10">
+                        <div className="bg-white/10 p-6 rounded-[30px] border border-white/10 hover:bg-white/20 transition-all">
                             <p className="text-orange-400 text-xs font-black mb-2 uppercase tracking-widest">إجازة عارضة</p>
                             <div className="flex justify-between items-end">
-                                <div>
-                                    <span className="text-4xl font-black">{fiscalLeaves.casual.balance - fiscalLeaves.casual.used}</span>
-                                    <p className="text-[10px] opacity-60">يوم متبقي</p>
-                                </div>
-                                <div className="text-left text-xs space-y-1">
-                                    <p>الإجمالي: {fiscalLeaves.casual.balance}</p>
-                                    <p className="text-red-400 font-bold">المستهلك: {fiscalLeaves.casual.used}</p>
-                                </div>
+                                <div><span className="text-4xl font-black">{fiscalLeaves.casual.balance - fiscalLeaves.casual.used}</span><p className="text-[10px] opacity-60">يوم متبقي</p></div>
+                                <div className="text-left text-xs"><p>الإجمالي: {fiscalLeaves.casual.balance}</p><p className="text-red-400 font-bold">المستهلك: {fiscalLeaves.casual.used}</p></div>
                             </div>
                         </div>
-
-                        {/* كارت بدل الراحة */}
-                        <div className="bg-white/10 p-6 rounded-[30px] border border-white/10">
+                        <div className="bg-white/10 p-6 rounded-[30px] border border-white/10 hover:bg-white/20 transition-all">
                             <p className="text-blue-400 text-xs font-black mb-2 uppercase tracking-widest">بدلات الراحة</p>
                             <div className="flex justify-between items-end">
-                                <div>
-                                    <span className="text-4xl font-black">{attendanceStats.restEarnedDays - fiscalLeaves.rest.requested}</span>
-                                    <p className="text-[10px] opacity-60">رصيد متاح</p>
-                                </div>
-                                <div className="text-left text-xs space-y-1">
-                                    <p className="text-emerald-400">المستحق: {attendanceStats.restEarnedDays}</p>
-                                    <p className="text-red-400 font-bold">المطلب: {fiscalLeaves.rest.requested}</p>
-                                </div>
+                                <div><span className="text-4xl font-black">{attendanceStats.restEarnedDays - fiscalLeaves.rest.requested}</span><p className="text-[10px] opacity-60">رصيد متاح</p></div>
+                                <div className="text-left text-xs"><p className="text-emerald-400">المستحق: {attendanceStats.restEarnedDays}</p><p className="text-red-400 font-bold">المطلب: {fiscalLeaves.rest.requested}</p></div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* إحصائيات الشهر التفصيلية */}
+            {/* إحصائيات الشهر */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-                    <Clock className="w-6 h-6 text-blue-500 mb-2"/>
-                    <div className="text-2xl font-black">{attendanceStats.totalMonthlyHours.toFixed(1)}</div>
-                    <p className="text-xs text-gray-400 font-bold">ساعة عمل / شهر</p>
-                    <p className="text-[10px] text-gray-400 font-bold mt-1">أسبوعياً: {attendanceStats.totalWeeklyHours.toFixed(1)}</p>
+                    <Clock className="w-6 h-6 text-blue-500 mb-2"/><div className="text-2xl font-black">{attendanceStats.totalMonthlyHours.toFixed(1)}</div>
+                    <p className="text-xs text-gray-400 font-bold">ساعة عمل / شهر</p><p className="text-[10px] text-gray-400 font-bold mt-1">أسبوعياً: {attendanceStats.totalWeeklyHours.toFixed(1)}</p>
                 </div>
-
                 <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-                    <AlertTriangle className="w-6 h-6 text-red-500 mb-2"/>
-                    <div className="text-2xl font-black">{attendanceStats.lateCount}</div>
-                    <p className="text-xs text-gray-400 font-bold">تأخيرات الشهر</p>
+                    <AlertTriangle className="w-6 h-6 text-red-500 mb-2"/><div className="text-2xl font-black">{attendanceStats.lateCount}</div><p className="text-xs text-gray-400 font-bold">تأخيرات الشهر</p>
                 </div>
-
                 <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-                    <UserX className="w-6 h-6 text-purple-500 mb-2"/>
-                    <div className="text-2xl font-black">{attendanceStats.absenceDays}</div>
-                    <p className="text-xs text-gray-400 font-bold">أيام الغياب</p>
+                    <UserX className="w-6 h-6 text-purple-500 mb-2"/><div className="text-2xl font-black">{attendanceStats.absenceDays}</div><p className="text-xs text-gray-400 font-bold">أيام الغياب</p>
                 </div>
-
                 <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-                    <Coffee className="w-6 h-6 text-emerald-500 mb-2"/>
-                    <div className="text-2xl font-black">{attendanceStats.restEarnedDays}</div>
-                    <p className="text-xs text-gray-400 font-bold">استحقاق بدل راحة</p>
+                    <Coffee className="w-6 h-6 text-emerald-500 mb-2"/><div className="text-2xl font-black">{attendanceStats.restEarnedDays}</div><p className="text-xs text-gray-400 font-bold">استحقاق بدل راحة</p>
                 </div>
             </div>
 
             {/* الرسم البياني */}
             <div className="bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 h-80">
-                <h3 className="text-lg font-black text-gray-800 mb-8 flex items-center gap-2">
-                    <Activity className="w-6 h-6 text-indigo-600"/> تحليل الأداء العام
-                </h3>
+                <h3 className="text-lg font-black text-gray-800 mb-8 flex items-center gap-2"><Activity className="w-6 h-6 text-indigo-600"/> تحليل الأداء العام</h3>
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
