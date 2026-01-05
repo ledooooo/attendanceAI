@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
-import { Employee } from '../../types';
+import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, 
-  Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight // ✅ تمت إضافة أيقونة التبديل
+  Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight 
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -25,9 +25,7 @@ import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
 import DepartmentRequests from './components/DepartmentRequests';
 import StaffLinksTab from './components/StaffLinksTab';
 import StaffOVR from './components/StaffOVR';
-import ShiftRequestsTab from './components/ShiftRequestsTab'; // ✅ استيراد صفحة طلبات التبديل
-
-// استيراد لوحة الجودة
+import ShiftRequestsTab from './components/ShiftRequestsTab';
 import QualityDashboard from '../admin/components/QualityDashboard'; 
 
 interface Props {
@@ -40,12 +38,51 @@ export default function StaffDashboard({ employee }: Props) {
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
+
+  // --- 1. حالات تخزين البيانات (States) ---
+  const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   
   // حالات PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+
+  // --- 2. جلب البيانات من قاعدة البيانات ---
+  const fetchAllData = async () => {
+    try {
+      // جلب سجلات الحضور بناءً على الكود الوظيفي (employee_id)
+      const { data: att } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employee_id', employee.employee_id);
+      
+      // جلب طلبات الإجازات بناءً على الكود الوظيفي
+      const { data: reqs } = await supabase
+        .from('leave_requests')
+        .select('*')
+        .eq('employee_id', employee.employee_id);
+
+      // جلب التقييمات
+      const { data: evs } = await supabase
+        .from('evaluations')
+        .select('*')
+        .eq('employee_id', employee.employee_id);
+
+      if (att) setAttendanceData(att);
+      if (reqs) setLeaveRequests(reqs);
+      if (evs) setEvaluations(evs);
+    } catch (error) {
+      console.error("Error fetching stats:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllData();
+  }, [employee.employee_id]);
 
   // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
@@ -119,26 +156,11 @@ export default function StaffDashboard({ employee }: Props) {
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
-    
-    // تبويب مسؤول الجودة
-    ...(employee.role === 'quality_manager' ? [{ 
-        id: 'quality-manager-tab', 
-        label: 'مسؤول الجودة', 
-        icon: ShieldCheck,
-        badge: ovrCount 
-    }] : []),
-
+    ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
-    
-    // ✅ تبويب طلبات التبديل الجديد
     { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight },
-
-    // تبويب رئيس القسم
-    ...(employee.role === 'head_of_dept' ? [{ 
-        id: 'dept-requests', label: 'إدارة القسم', icon: FileText 
-    }] : []),
-
+    ...(employee.role === 'head_of_dept' ? [{ id: 'dept-requests', label: 'إدارة القسم', icon: FileText }] : []),
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
     { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle },
@@ -168,19 +190,19 @@ export default function StaffDashboard({ employee }: Props) {
       `}>
         {/* ترويسة القائمة */}
         <div className="h-24 flex items-center justify-between px-6 border-b shrink-0 bg-emerald-50/50">
-           <div className="flex items-center gap-3">
-               <div className="bg-white p-2 rounded-xl shadow-sm border border-emerald-100">
-                   <img src="/pwa-192x192.png" className="w-8 h-8 rounded-lg" alt="Logo" onError={(e) => e.currentTarget.style.display='none'}/>
-                   <LayoutDashboard className="w-8 h-8 text-emerald-600 hidden group-hover:block"/>
-               </div>
-               <div>
-                   <h1 className="font-black text-gray-800 text-sm">غرب المطار</h1>
-                   <p className="text-[10px] text-gray-500 font-bold mt-0.5">بوابة الموظفين</p>
-               </div>
-           </div>
-           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500 transition-colors">
-               <X className="w-5 h-5"/>
-           </button>
+            <div className="flex items-center gap-3">
+                <div className="bg-white p-2 rounded-xl shadow-sm border border-emerald-100">
+                    <img src="/pwa-192x192.png" className="w-8 h-8 rounded-lg" alt="Logo" onError={(e) => e.currentTarget.style.display='none'}/>
+                    <LayoutDashboard className="w-8 h-8 text-emerald-600 hidden group-hover:block"/>
+                </div>
+                <div>
+                    <h1 className="font-black text-gray-800 text-sm">غرب المطار</h1>
+                    <p className="text-[10px] text-gray-500 font-bold mt-0.5">بوابة الموظفين</p>
+                </div>
+            </div>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500 transition-colors">
+                <X className="w-5 h-5"/>
+            </button>
         </div>
 
         {/* عناصر القائمة */}
@@ -214,9 +236,8 @@ export default function StaffDashboard({ employee }: Props) {
           })}
         </nav>
 
-        {/* ✅ الجزء السفلي المعدل (أيقونات أفقية) */}
+        {/* الجزء السفلي (أيقونات أفقية) */}
         <div className="p-3 border-t bg-gray-50 shrink-0 flex items-center justify-around">
-            
             {!isStandalone && (
                 <button 
                     onClick={handleInstallClick} 
@@ -226,7 +247,6 @@ export default function StaffDashboard({ employee }: Props) {
                     {deferredPrompt ? <Download className="w-5 h-5" /> : <HelpCircle className="w-5 h-5"/>}
                 </button>
             )}
-
             <button 
                 onClick={handleShareApp} 
                 className="p-3 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors"
@@ -234,7 +254,6 @@ export default function StaffDashboard({ employee }: Props) {
             >
                 <Share2 className="w-5 h-5" />
             </button>
-
             <button 
                 onClick={() => setShowAboutModal(true)} 
                 className="p-3 rounded-xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors"
@@ -242,7 +261,6 @@ export default function StaffDashboard({ employee }: Props) {
             >
                 <Info className="w-5 h-5" />
             </button>
-
             <button 
                 onClick={signOut} 
                 className="p-3 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors border border-transparent hover:border-red-200"
@@ -298,11 +316,13 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                     
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
+                    
+                    {/* تمرير البيانات الحقيقية لسجل الحضور */}
                     {activeTab === 'attendance' && (
                         <StaffAttendance 
-                            attendance={[]} 
-                            selectedMonth={new Date().toISOString().slice(0, 7)} 
-                            setSelectedMonth={()=>{}} 
+                            attendance={attendanceData} 
+                            selectedMonth={selectedMonth} 
+                            setSelectedMonth={setSelectedMonth} 
                             employee={employee} 
                         /> 
                     )}
@@ -312,11 +332,10 @@ export default function StaffDashboard({ employee }: Props) {
                             employeeId={employee.id} 
                             employeeCode={employee.employee_id} 
                             employeeName={employee.name}
-                            specialty={employee.specialty} // مهم لفلترة الزملاء عند التبديل
+                            specialty={employee.specialty} 
                         />
                     )}
 
-                    {/* ✅ عرض تبويب طلبات التبديل */}
                     {activeTab === 'shift-requests' && (
                         <ShiftRequestsTab employee={employee} />
                     )}
@@ -329,19 +348,36 @@ export default function StaffDashboard({ employee }: Props) {
                         <QualityDashboard />
                     )}
 
-                    {activeTab === 'stats' && <StaffStats attendance={[]} evals={[]} requests={[]} month={new Date().toISOString().slice(0, 7)} />} 
-                    {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={()=>{}} />}
+                    {/* تمرير البيانات الحقيقية لمكون الإحصائيات */}
+                    {activeTab === 'stats' && (
+                        <StaffStats 
+                            attendance={attendanceData} 
+                            evals={evaluations} 
+                            requests={leaveRequests} 
+                            month={selectedMonth}
+                            employee={employee}
+                        />
+                    )}
+
+                    {activeTab === 'new-request' && (
+                        <StaffNewRequest employee={employee} refresh={fetchAllData} />
+                    )}
+                    
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'links' && <StaffLinksTab />}
-                    {activeTab === 'requests-history' && <StaffRequestsHistory requests={[]} employee={employee} />}
-                    {activeTab === 'evaluations' && <StaffEvaluations evals={[]} employee={employee} />}
+                    
+                    {/* تمرير البيانات الحقيقية لسجل الطلبات والتقييمات */}
+                    {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
+                    {activeTab === 'evaluations' && <StaffEvaluations evals={evaluations} employee={employee} />}
+                    
                     {activeTab === 'messages' && <StaffMessages messages={[]} employee={employee} currentUserId={employee.employee_id} />}
                 </div>
             </div>
         </main>
       </div>
 
+      {/* المودالات المتبقية (About / Install) تبقى كما هي... */}
       {showInstallPopup && deferredPrompt && !isStandalone && (
           <div className="fixed bottom-0 left-0 right-0 z-[100] p-4 animate-in slide-in-from-bottom duration-500 md:hidden">
               <div className="bg-white rounded-[30px] shadow-2xl border border-gray-100 p-5 flex items-center justify-between gap-4">
