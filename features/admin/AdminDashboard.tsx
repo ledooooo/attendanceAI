@@ -26,6 +26,7 @@ import NotificationBell from '../../components/ui/NotificationBell';
 import AdminMessagesTab from './components/AdminMessagesTab';
 import QualityDashboard from './components/QualityDashboard';
 import AdminLibraryManager from './components/AdminLibraryManager'; // ✅ استيراد مكون إدارة المكتبة
+import AdminLibraryManager from './components/AdminDataReports'; // ✅ استيراد مكون إدارة المكتبة
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
@@ -96,6 +97,7 @@ export default function AdminDashboard() {
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
     { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
     { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
+    { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, // استورد Database من lucide-react
     { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive }, // ✅ تم تعديل الأيقونة
     { 
         id: 'quality', 
@@ -210,6 +212,7 @@ export default function AdminDashboard() {
             {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
             {activeTab === 'library-manager' && <AdminLibraryManager />} 
             {activeTab === 'quality' && <QualityDashboard />}
+          {activeTab === 'data-reports' && <AdminDataReports employees={employees} />}
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
             {activeTab === 'send_reports' && <SendReportsTab />}
         </div>
