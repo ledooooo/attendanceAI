@@ -26,7 +26,7 @@ import NotificationBell from '../../components/ui/NotificationBell';
 import AdminMessagesTab from './components/AdminMessagesTab';
 import QualityDashboard from './components/QualityDashboard';
 import AdminLibraryManager from './components/AdminLibraryManager'; // ✅ استيراد مكون إدارة المكتبة
-import AdminLibraryManager from './components/AdminDataReports'; // ✅ استيراد مكون إدارة المكتبة
+import AdminDataReports from './components/AdminDataReports'; // ✅ استيراد مكون إدارة المكتبة
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
