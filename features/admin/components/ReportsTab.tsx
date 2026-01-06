@@ -14,8 +14,8 @@ interface ReportRow {
     employee_id: string;
     name: string;
     specialty: string;
-    jobStatus: string; // حالة القيد (نشط/موقوف)
-    [key: string]: any; // للحقول الإضافية
+    jobStatus: string; 
+    [key: string]: any;
 }
 
 export default function ReportsTab() {
@@ -54,7 +54,8 @@ export default function ReportsTab() {
             'حالة القيد': row.jobStatus,
             'حضور': row.inTime,
             'انصراف': row.outTime,
-            'الحالة': row.reportStatus === 'إجازة' ? row.leaveType : row.reportStatus
+            'الحالة': row.reportStatus,
+            'ملاحظة الطلب': row.leaveInfo || ''
         }));
         fileName = `Daily_Report_${date}`;
     } else if (activeReport === 'monthly') {
@@ -63,7 +64,7 @@ export default function ReportsTab() {
             'الاسم': row.name,
             'التخصص': row.specialty,
             'أيام الحضور': row.daysPresent,
-            'عدد الإجازات': row.daysLeaves
+            'عدد الإجازات/الطلبات': row.daysLeaves
         }));
         fileName = `Monthly_Report_${month}`;
     } else {
@@ -72,7 +73,7 @@ export default function ReportsTab() {
             'الاسم': row.name,
             'التخصص': row.specialty,
             'حالة القيد': row.jobStatus,
-            'الحالة': 'غياب غير مبرر'
+            'الحالة': 'غياب'
         }));
         fileName = `Absence_Report_${date}`;
     }
@@ -94,20 +95,18 @@ export default function ReportsTab() {
     const { data: emps } = await supabase.from('employees').select('*').order('name');
     if (emps) setEmployees(emps);
 
-    // 2. جلب الحضور والإجازات
+    // 2. جلب الحضور والطلبات
     if (activeReport === 'daily' || activeReport === 'absence') {
         const { data: att } = await supabase.from('attendance').select('*').eq('date', date);
         const { data: lvs } = await supabase.from('leave_requests').select('*')
-            .eq('status', 'مقبول')
             .lte('start_date', date)
             .gte('end_date', date);
         
-        if (att) setAttendance(att);
-        if (lvs) setLeaves(lvs);
+        setAttendance(att || []);
+        setLeaves(lvs || []);
 
     } else if (activeReport === 'monthly') {
         const startOfMonth = `${month}-01`;
-        // حساب آخر يوم في الشهر المختار
         const d = new Date(month);
         const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
         const endOfMonth = `${month}-${lastDay}`;
@@ -116,17 +115,16 @@ export default function ReportsTab() {
             .gte('date', startOfMonth)
             .lte('date', endOfMonth);
         
-        const { data: lvs = [] } = await supabase.from('leave_requests').select('*')
-            .eq('status', 'مقبول')
+        const { data: lvs } = await supabase.from('leave_requests').select('*')
             .or(`start_date.gte.${startOfMonth},end_date.lte.${endOfMonth}`);
 
-        if (att) setAttendance(att);
-        if (lvs) setLeaves(lvs);
+        setAttendance(att || []);
+        setLeaves(lvs || []);
     }
     setLoading(false);
   };
 
-  // --- معالجة البيانات: التقرير اليومي (تم تعديل المنطق هنا لضبط الحالات بدقة) ---
+  // --- معالجة البيانات: التقرير اليومي ---
   const dailyData = useMemo(() => {
       return employees.map(emp => {
           const empAtt = attendance.find(a => a.employee_id === emp.employee_id);
@@ -135,22 +133,22 @@ export default function ReportsTab() {
           let reportStatus = 'غياب';
           let inTime = '-';
           let outTime = '-';
+          let leaveInfo = '';
 
           if (empAtt) {
               const times = empAtt.times ? empAtt.times.split(/\s+/).filter(t => t.includes(':')) : [];
               if (times.length > 0) inTime = times[0];
               if (times.length > 1) outTime = times[times.length - 1];
 
-              // ✅ منطق الحالات الجديد
+              // تحديد الحالة بناءً على وجود البصمتين
               if (inTime !== '-' && outTime !== '-') {
                   reportStatus = 'حضور';
               } else if (inTime !== '-' && outTime === '-') {
                   reportStatus = 'ترك عمل';
-              } else {
-                  reportStatus = 'حضور'; // حالة افتراضية إذا وجدت بصمة غير محددة
               }
           } else if (empLeave) {
               reportStatus = 'إجازة';
+              leaveInfo = `${empLeave.type} (${empLeave.status})`;
           }
 
           return { 
@@ -159,7 +157,7 @@ export default function ReportsTab() {
               reportStatus,
               inTime, 
               outTime, 
-              leaveType: empLeave?.type 
+              leaveInfo 
           };
       }).filter((item: any) => {
           if (filterName && !item.name.includes(filterName)) return false;
@@ -167,10 +165,7 @@ export default function ReportsTab() {
           if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
           
           if (filterAttendanceStatus !== 'all') {
-              if (filterAttendanceStatus === 'حضور' && item.reportStatus !== 'حضور') return false;
-              if (filterAttendanceStatus === 'غياب' && item.reportStatus !== 'غياب') return false;
-              if (filterAttendanceStatus === 'إجازة' && item.reportStatus !== 'إجازة') return false;
-              if (filterAttendanceStatus === 'ترك عمل' && item.reportStatus !== 'ترك عمل') return false;
+              if (item.reportStatus !== filterAttendanceStatus) return false;
           }
           return true;
       });
@@ -184,13 +179,13 @@ export default function ReportsTab() {
   // --- معالجة البيانات: التقرير الشهري ---
   const monthlyData = useMemo(() => {
       return employees.map(emp => {
-          const empAtts = attendance.filter(a => a.employee_id === emp.employee_id);
+          const empAtts = attendance.filter(a => a.employee_id === emp.employee_id).length;
           const empLeaves = leaves.filter(l => l.employee_id === emp.employee_id).length; 
 
           return {
               ...emp,
               jobStatus: emp.status,
-              daysPresent: empAtts.length,
+              daysPresent: empAtts,
               daysLeaves: empLeaves,
           };
       }).filter((item: any) => {
@@ -201,26 +196,25 @@ export default function ReportsTab() {
       });
   }, [employees, attendance, leaves, filterName, filterSpecialty, filterJobStatus]);
 
-  // --- الإحصائيات (تعديل الحساب ليكون دقيقاً بناءً على المنطق الجديد) ---
+  // --- الإحصائيات (تعتمد على البيانات الكلية قبل الفلترة بالاسم لضمان دقة أرقام المنشأة) ---
   const stats = useMemo(() => {
-      // نعتمد على البيانات الكاملة قبل الفلترة بالاسم لضمان دقة أرقام المركز
-      const baseData = employees.map(emp => {
-          const hasAtt = attendance.find(a => a.employee_id === emp.employee_id);
-          const hasLeave = leaves.find(l => l.employee_id === emp.employee_id);
-          if (hasAtt) {
-              const times = hasAtt.times ? hasAtt.times.split(/\s+/).filter(t => t.includes(':')) : [];
+      const allData = employees.map(emp => {
+          const empAtt = attendance.find(a => a.employee_id === emp.employee_id);
+          const empLeave = leaves.find(l => l.employee_id === emp.employee_id);
+          if (empAtt) {
+              const times = empAtt.times ? empAtt.times.split(/\s+/).filter(t => t.includes(':')) : [];
               return (times.length > 1) ? 'حضور' : 'ترك عمل';
           }
-          if (hasLeave) return 'إجازة';
+          if (empLeave) return 'إجازة';
           return 'غياب';
       });
 
       return {
           total: employees.length,
-          present: baseData.filter(s => s === 'حضور').length,
-          absent: baseData.filter(s => s === 'غياب').length,
-          leave: baseData.filter(s => s === 'إجازة').length,
-          leftWork: baseData.filter(s => s === 'ترك عمل').length
+          present: allData.filter(s => s === 'حضور').length,
+          absent: allData.filter(s => s === 'غياب').length,
+          leave: allData.filter(s => s === 'إجازة').length,
+          leftWork: allData.filter(s => s === 'ترك عمل').length
       };
   }, [employees, attendance, leaves]);
 
@@ -264,7 +258,7 @@ export default function ReportsTab() {
             
             <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e => e.specialty)))]} value={filterSpecialty} onChange={setFilterSpecialty} />
             
-            <Select label="حالة القيد" options={['all', 'نشط', 'موقوف']} value={filterJobStatus} onChange={setFilterJobStatus} />
+            <Select label="حالة القيد" options={['all', 'نشط', 'موقوف', 'اجازة', 'خارج المركز']} value={filterJobStatus} onChange={setFilterJobStatus} />
 
             {activeReport === 'daily' && (
                 <Select label="حالة الحضور" options={['all', 'حضور', 'غياب', 'إجازة', 'ترك عمل']} value={filterAttendanceStatus} onChange={setFilterAttendanceStatus} />
@@ -275,8 +269,8 @@ export default function ReportsTab() {
         <div ref={componentRef} className="bg-white p-8 rounded-[30px] border shadow-sm min-h-[600px] print:p-4 print:border-0 print:shadow-none print:w-full text-right" dir="rtl">
             
             {/* Print Header */}
-            <div className="hidden print:flex flex-col items-center mb-8 border-b-2 border-gray-800 pb-4 text-center">
-                <h1 className="text-3xl font-black text-gray-900">المركز الطبي الذكي</h1>
+            <div className="hidden print:flex flex-col items-center mb-8 border-b-2 border-gray-800 pb-4">
+                <h1 className="text-3xl font-black text-gray-900">إدارة المركز الطبي</h1>
                 <h2 className="text-xl font-bold mt-2 text-gray-700">
                     {activeReport === 'daily' ? `تقرير الحضور والانصراف اليومي (${new Date(date).toLocaleDateString('ar-EG')})` : 
                      activeReport === 'monthly' ? `تقرير الحضور الشهري (${month})` : 
@@ -304,7 +298,7 @@ export default function ReportsTab() {
                 </div>
                 <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 text-center print:border-gray-300">
                     <span className="block text-2xl font-black text-orange-600">{stats.leave}</span>
-                    <span className="text-[10px] font-bold text-orange-700">إجازات</span>
+                    <span className="text-[10px] font-bold text-orange-700">طلبات/إجازات</span>
                 </div>
                 <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 text-center print:border-gray-300">
                     <span className="block text-2xl font-black text-purple-600">{stats.leftWork}</span>
@@ -336,7 +330,11 @@ export default function ReportsTab() {
                                     <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
                                     <td className="p-3 border-l text-gray-600">{row.specialty}</td>
                                     <td className="p-3 border-l">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] ${row.jobStatus === 'نشط' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                            row.jobStatus === 'نشط' ? 'bg-green-100 text-green-700' : 
+                                            row.jobStatus === 'موقوف' ? 'bg-red-100 text-red-700' : 
+                                            'bg-gray-100 text-gray-600'
+                                        }`}>
                                             {row.jobStatus}
                                         </span>
                                     </td>
@@ -349,7 +347,7 @@ export default function ReportsTab() {
                                             row.reportStatus === 'ترك عمل' ? 'bg-purple-100 text-purple-700 print:border print:border-purple-600' :
                                             'bg-orange-100 text-orange-700 print:border print:border-orange-600'
                                         }`}>
-                                            {row.reportStatus === 'إجازة' && row.leaveType ? row.leaveType : row.reportStatus}
+                                            {row.reportStatus === 'إجازة' ? row.leaveInfo : row.reportStatus}
                                         </span>
                                     </td>
                                 </tr>
@@ -371,7 +369,7 @@ export default function ReportsTab() {
                                 <th className="p-4 border-l">التخصص</th>
                                 <th className="p-4 border-l">حالة القيد</th>
                                 <th className="p-4 border-l text-center">أيام الحضور</th>
-                                <th className="p-4 text-center">الإجازات</th>
+                                <th className="p-4 text-center">الطلبات</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -380,7 +378,7 @@ export default function ReportsTab() {
                                     <td className="p-3 border-l font-mono text-gray-500">{row.employee_id}</td>
                                     <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
                                     <td className="p-3 border-l text-gray-600">{row.specialty}</td>
-                                    <td className="p-3 border-l text-xs">{row.jobStatus}</td>
+                                    <td className="p-3 border-l text-xs font-bold">{row.jobStatus}</td>
                                     <td className="p-3 border-l text-center">
                                         <span className="inline-block w-8 h-8 rounded-full bg-green-100 text-green-700 leading-8 font-black">{row.daysPresent}</span>
                                     </td>
@@ -391,7 +389,6 @@ export default function ReportsTab() {
                                     </td>
                                 </tr>
                             ))}
-                            {monthlyData.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-400">لا توجد بيانات للعرض</td></tr>}
                         </tbody>
                     </table>
                 </div>
@@ -416,8 +413,8 @@ export default function ReportsTab() {
                                     <td className="p-3 border-l font-mono text-gray-500">{row.employee_id}</td>
                                     <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
                                     <td className="p-3 border-l text-gray-600">{row.specialty}</td>
-                                    <td className="p-3 border-l text-xs">{row.jobStatus}</td>
-                                    <td className="p-3 text-center font-black text-red-600 bg-red-50">غياب غير مبرر</td>
+                                    <td className="p-3 border-l text-xs font-bold">{row.jobStatus}</td>
+                                    <td className="p-3 text-center font-black text-red-600 bg-red-50">غياب</td>
                                 </tr>
                             ))}
                             {absenceData.length === 0 && <tr><td colSpan={5} className="p-12 text-center text-green-600 font-bold text-lg bg-green-50">✨ لا يوجد غياب اليوم! ✨</td></tr>}
