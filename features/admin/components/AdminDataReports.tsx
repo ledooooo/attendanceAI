@@ -6,7 +6,7 @@ import {
     FileText, Printer, Download, Filter, ShieldAlert, 
     ChevronDown, Settings2, CheckSquare, Square, Type,
     TrendingUp, PieChart, Info, Calendar as CalendarIcon,
-    ArrowRightLeft, FileSpreadsheet
+    ArrowRightLeft, CheckCircle2, FileSpreadsheet
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
