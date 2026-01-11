@@ -41,7 +41,7 @@ export default function AdminLibraryManager() {
     };
 
     // --- وظيفة استيراد البيانات من ملف اكسيل المحدثة والمحمية ---
-    const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -53,41 +53,49 @@ export default function AdminLibraryManager() {
                 const wb = XLSX.read(bstr, { type: 'binary' });
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
-                const rawData = XLSX.utils.sheet_to_json(ws);
+                
+                // تحويل البيانات مع التأكد من جلب كل الصفوف (defval تضمن عدم تجاهل الخلايا الفارغة)
+                const rawData = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-                // تنظيف البيانات ومطابقتها مع حقول Supabase
-                const cleanedData = rawData.map((row: any) => ({
-                    title: row.title || 'بدون عنوان',
-                    file_type: row.file_type || 'PDF',
-                    department: row.department || 'عام',
-                    file_url: row.file_url || '',
-                    description: row.description || '',
-                    category: row.category || 'general'
-                }));
-
-                // التحقق من صحة الروابط والعناوين
-                if (cleanedData.some(d => !d.file_url)) {
-                    throw new Error("يوجد صفوف تفتقد لروابط الملفات (file_url)");
+                if (!rawData || rawData.length === 0) {
+                    throw new Error("الملف لا يحتوي على بيانات");
                 }
 
-                // الرفع إلى Supabase
-                const { error } = await supabase.from('company_documents').insert(cleanedData);
+                // تنظيف البيانات وفلترتها (تجاهل أي صف ليس له عنوان أو رابط)
+                const cleanedData = rawData
+                    .map((row: any) => ({
+                        title: String(row.title || "").trim(),
+                        file_type: String(row.file_type || "PDF").trim(),
+                        department: String(row.department || "عام").trim(),
+                        file_url: String(row.file_url || "").trim(),
+                        description: String(row.description || "").trim(),
+                        category: String(row.category || "general").trim()
+                    }))
+                    .filter(item => item.title !== "" && item.file_url !== ""); // استبعاد الصفوف الفارغة
+
+                if (cleanedData.length === 0) {
+                    throw new Error("لم يتم العثور على بيانات صالحة (تأكد من وجود title و file_url)");
+                }
+
+                // تنفيذ عملية الإدخال الجماعي لجميع الصفوف مرة واحدة
+                const { error } = await supabase
+                    .from('company_documents')
+                    .insert(cleanedData);
                 
                 if (error) throw error;
                 
-                alert(`تم استيراد ${cleanedData.length} مستند بنجاح!`);
+                alert(`تم بنجاح استيراد جميع البيانات: عدد (${cleanedData.length}) مستند`);
                 fetchDocs();
             } catch (error: any) {
-                alert(`خطأ في الرفع: ${error.message || 'تأكد من مطابقة أسماء الأعمدة في الإكسيل'}`);
-                console.error("Import Error Details:", error);
+                alert(`خطأ: ${error.message}`);
+                console.error("Import Error:", error);
             } finally {
                 setLoading(false);
-                e.target.value = ''; // إعادة تعيين قيمة المدخل
+                e.target.value = ''; 
             }
         };
         reader.readAsBinaryString(file);
     };
-
     const handleSave = async () => {
         if (!formData.title || !formData.file_url) return alert('يرجى ملء اسم الملف والرابط');
         setLoading(true);
