@@ -4,7 +4,7 @@ import {
     Plus, Trash2, FileText, Download, Upload, 
     FileSpreadsheet, X, Save, ExternalLink, AlertCircle 
 } from 'lucide-react';
-import * as XLSX from 'xlsx'; // استيراد مكتبة الاكسيل
+import * as XLSX from 'xlsx';
 
 export default function AdminLibraryManager() {
     const [docs, setDocs] = useState<any[]>([]);
@@ -15,7 +15,8 @@ export default function AdminLibraryManager() {
         file_type: 'PDF', 
         department: '', 
         file_url: '', 
-        description: '' 
+        description: '',
+        category: 'general'
     });
 
     useEffect(() => { fetchDocs(); }, []);
@@ -29,15 +30,17 @@ export default function AdminLibraryManager() {
     const handleExportExcel = () => {
         if (docs.length === 0) return alert('لا توجد بيانات لتصديرها');
         
-        const worksheet = XLSX.utils.json_to_sheet(docs);
+        // استثناء الـ ID و Created At عند التصدير ليكون الملف جاهزاً لإعادة الرفع إذا لزم الأمر
+        const dataToExport = docs.map(({ id, created_at, ...rest }) => rest);
+        
+        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Documents");
         
-        // تحميل الملف
         XLSX.writeFile(workbook, `Library_Backup_${new Date().toLocaleDateString()}.xlsx`);
     };
 
-    // --- وظيفة استيراد البيانات من ملف اكسيل ---
+    // --- وظيفة استيراد البيانات من ملف اكسيل المحدثة والمحمية ---
     const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -50,35 +53,52 @@ export default function AdminLibraryManager() {
                 const wb = XLSX.read(bstr, { type: 'binary' });
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
-                const data = XLSX.utils.sheet_to_json(ws);
+                const rawData = XLSX.utils.sheet_to_json(ws);
 
-                // رفع البيانات إلى Supabase
-                const { error } = await supabase.from('company_documents').insert(data);
+                // تنظيف البيانات ومطابقتها مع حقول Supabase
+                const cleanedData = rawData.map((row: any) => ({
+                    title: row.title || 'بدون عنوان',
+                    file_type: row.file_type || 'PDF',
+                    department: row.department || 'عام',
+                    file_url: row.file_url || '',
+                    description: row.description || '',
+                    category: row.category || 'general'
+                }));
+
+                // التحقق من صحة الروابط والعناوين
+                if (cleanedData.some(d => !d.file_url)) {
+                    throw new Error("يوجد صفوف تفتقد لروابط الملفات (file_url)");
+                }
+
+                // الرفع إلى Supabase
+                const { error } = await supabase.from('company_documents').insert(cleanedData);
                 
                 if (error) throw error;
                 
-                alert('تم استيراد البيانات بنجاح!');
+                alert(`تم استيراد ${cleanedData.length} مستند بنجاح!`);
                 fetchDocs();
             } catch (error: any) {
-                alert('خطأ في تنسيق الملف: تأكد من تطابق أسماء الأعمدة مع قاعدة البيانات');
-                console.error(error);
+                alert(`خطأ في الرفع: ${error.message || 'تأكد من مطابقة أسماء الأعمدة في الإكسيل'}`);
+                console.error("Import Error Details:", error);
             } finally {
                 setLoading(false);
-                e.target.value = ''; // مسح الملف من المدخل
+                e.target.value = ''; // إعادة تعيين قيمة المدخل
             }
         };
         reader.readAsBinaryString(file);
     };
 
     const handleSave = async () => {
-        if (!formData.title || !formData.file_url) return alert('يرجى ملء الحقول الأساسية');
+        if (!formData.title || !formData.file_url) return alert('يرجى ملء اسم الملف والرابط');
         setLoading(true);
         const { error } = await supabase.from('company_documents').insert([formData]);
         setLoading(false);
         if (!error) {
             setIsModalOpen(false);
-            setFormData({ title: '', file_type: 'PDF', department: '', file_url: '', description: '' });
+            setFormData({ title: '', file_type: 'PDF', department: '', file_url: '', description: '', category: 'general' });
             fetchDocs();
+        } else {
+            alert('خطأ في الحفظ يدوياً');
         }
     };
 
@@ -91,27 +111,26 @@ export default function AdminLibraryManager() {
 
     return (
         <div className="p-4 md:p-8 text-right" dir="rtl">
+            {/* الهيدر والأزرار */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                 <div>
                     <h2 className="text-2xl font-black text-gray-800">إدارة المكتبة والسياسات</h2>
-                    <p className="text-gray-500 text-sm font-bold mt-1">تحكم في ملفات PDF، الوورد، والروابط الرسمية</p>
+                    <p className="text-gray-500 text-sm font-bold mt-1 text-right">تحكم شامل في ملفات PDF والروابط الرسمية</p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                    {/* زر الرفع من اكسيل */}
-                    <label className="bg-blue-50 text-blue-600 px-4 py-2.5 rounded-xl flex items-center gap-2 font-black cursor-pointer hover:bg-blue-100 transition-all text-sm border border-blue-100">
+                <div className="flex flex-wrap gap-2 mr-auto md:mr-0">
+                    <label className="bg-indigo-50 text-indigo-600 px-4 py-2.5 rounded-xl flex items-center gap-2 font-black cursor-pointer hover:bg-indigo-100 transition-all text-sm border border-indigo-100">
                         <Upload size={18} />
                         <span>رفع من اكسيل</span>
                         <input type="file" accept=".xlsx, .xls" hidden onChange={handleImportExcel} />
                     </label>
 
-                    {/* زر تحميل قاعدة البيانات */}
                     <button 
                         onClick={handleExportExcel}
                         className="bg-amber-50 text-amber-600 px-4 py-2.5 rounded-xl flex items-center gap-2 font-black hover:bg-amber-100 transition-all text-sm border border-amber-100"
                     >
                         <Download size={18} />
-                        تصدير قاعدة البيانات
+                        تحميل قاعدة البيانات
                     </button>
 
                     <button 
@@ -123,24 +142,24 @@ export default function AdminLibraryManager() {
                 </div>
             </div>
 
-            {/* عرض حالة التحميل */}
             {loading && (
-                <div className="mb-4 p-4 bg-blue-50 text-blue-700 rounded-2xl flex items-center gap-3 animate-pulse font-bold text-sm">
-                    <FileSpreadsheet className="animate-bounce" /> جاري معالجة البيانات...
+                <div className="mb-6 p-4 bg-indigo-50 text-indigo-700 rounded-2xl flex items-center gap-3 animate-pulse font-bold text-sm">
+                    <FileSpreadsheet className="animate-bounce" /> جاري معالجة البيانات وتحديث القاعدة...
                 </div>
             )}
 
+            {/* الجدول */}
             <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden overflow-x-auto">
-                <table className="w-full text-right">
+                <table className="w-full text-right border-collapse">
                     <thead>
                         <tr className="bg-gray-50 text-gray-400 text-xs font-black uppercase">
-                            <th className="p-5">اسم المستند</th>
-                            <th className="p-5">القسم</th>
-                            <th className="p-5">النوع</th>
+                            <th className="p-5 text-right">المستند</th>
+                            <th className="p-5 text-center">القسم المختص</th>
+                            <th className="p-5 text-center">نوع الملف</th>
                             <th className="p-5 text-center">إجراءات</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-gray-50 text-sm">
                         {docs.map(doc => (
                             <tr key={doc.id} className="hover:bg-gray-50/50 transition-colors group">
                                 <td className="p-5">
@@ -148,18 +167,23 @@ export default function AdminLibraryManager() {
                                         <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
                                             <FileText size={18} />
                                         </div>
-                                        <span className="font-bold text-gray-700">{doc.title}</span>
+                                        <div>
+                                            <p className="font-black text-gray-800">{doc.title}</p>
+                                            <p className="text-[10px] text-gray-400 truncate max-w-[200px]">{doc.description}</p>
+                                        </div>
                                     </div>
                                 </td>
-                                <td className="p-5 text-sm font-bold text-gray-500">{doc.department}</td>
-                                <td className="p-5">
-                                    <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md text-[10px] font-black uppercase">
+                                <td className="p-5 text-center text-gray-500 font-bold">{doc.department || 'غير محدد'}</td>
+                                <td className="p-5 text-center">
+                                    <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase ${
+                                        doc.file_type === 'PDF' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+                                    }`}>
                                         {doc.file_type}
                                     </span>
                                 </td>
                                 <td className="p-5">
                                     <div className="flex justify-center gap-2">
-                                        <a href={doc.file_url} target="_blank" className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-colors">
+                                        <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-colors">
                                             <ExternalLink size={18} />
                                         </a>
                                         <button onClick={() => handleDelete(doc.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors">
@@ -184,42 +208,42 @@ export default function AdminLibraryManager() {
                         
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-xs font-black text-gray-400 mb-2 mr-2">اسم الملف</label>
-                                <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold" placeholder="مثلاً: سياسة الأمن السيبراني" onChange={e => setFormData({...formData, title: e.target.value})} />
+                                <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">اسم المستند</label>
+                                <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="مثلاً: سياسة مكافحة العدوى" onChange={e => setFormData({...formData, title: e.target.value})} />
                             </div>
                             
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-black text-gray-400 mb-2 mr-2">القسم المختص</label>
-                                    <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold" placeholder="مثلاً: HR" onChange={e => setFormData({...formData, department: e.target.value})} />
+                                    <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">القسم</label>
+                                    <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="HR / الجودة" onChange={e => setFormData({...formData, department: e.target.value})} />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-black text-gray-400 mb-2 mr-2">نوع الملف</label>
-                                    <select className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold" onChange={e => setFormData({...formData, file_type: e.target.value})}>
+                                    <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">النوع</label>
+                                    <select className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" onChange={e => setFormData({...formData, file_type: e.target.value})}>
                                         <option value="PDF">PDF</option>
                                         <option value="Word">Word</option>
                                         <option value="Excel">Excel</option>
-                                        <option value="HTML">Link/HTML</option>
+                                        <option value="HTML">Link / HTML</option>
                                     </select>
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-xs font-black text-gray-400 mb-2 mr-2">رابط الملف (Google Drive / URL)</label>
-                                <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold" placeholder="https://..." onChange={e => setFormData({...formData, file_url: e.target.value})} />
+                                <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">رابط الملف (جوجل درايف)</label>
+                                <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="https://..." onChange={e => setFormData({...formData, file_url: e.target.value})} />
                             </div>
 
                             <div>
-                                <label className="block text-xs font-black text-gray-400 mb-2 mr-2">وصف مختصر</label>
-                                <textarea className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold h-24" placeholder="اكتب نبذة عن الملف..." onChange={e => setFormData({...formData, description: e.target.value})} />
+                                <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">شرح مختصر</label>
+                                <textarea className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold h-20" placeholder="عن ماذا يتحدث هذا الملف..." onChange={e => setFormData({...formData, description: e.target.value})} />
                             </div>
                         </div>
 
                         <div className="flex gap-3 mt-8">
                             <button onClick={handleSave} className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
-                                <Save size={20} /> حفظ المستند
+                                <Save size={20} /> حفظ في القاعدة
                             </button>
-                            <button onClick={() => setIsModalOpen(false)} className="px-8 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black hover:bg-gray-200">إلغاء</button>
+                            <button onClick={() => setIsModalOpen(false)} className="px-8 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black hover:bg-gray-200 transition-colors">إلغاء</button>
                         </div>
                     </div>
                 </div>
