@@ -1,162 +1,212 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Employee, getBirthDateFromNationalID } from '../../../types';
-import { Cake, Send, CalendarHeart, Clock, AlertCircle } from 'lucide-react';
+import { Employee, EOMCycle, EOMNominee, getBirthDateFromNationalID } from '../../../types';
+import { 
+  Trophy, Users, CalendarHeart, Cake, AlertCircle, 
+  Send, BarChart3, StopCircle, Filter, Search
+} from 'lucide-react';
 
-// واجهة مساعدة لتخزين البيانات المحسوبة
-interface BirthdayEmployee extends Employee {
-    daysRemaining: number;
-    formattedDate: string;
+interface EnrichedNominee extends EOMNominee {
+    employee_name?: string;
+    photo_url?: string;
 }
 
-export default function BirthdayWidget({ employees }: { employees: Employee[] }) {
-    const [upcomingBirthdays, setUpcomingBirthdays] = useState<BirthdayEmployee[]>([]);
+export default function MotivationTab({ employees }: { employees: Employee[] }) {
+    const [cycle, setCycle] = useState<EOMCycle | null>(null);
+    const [nominees, setNominees] = useState<EnrichedNominee[]>([]);
+    const [totalVotes, setTotalVotes] = useState(0);
+    
+    // حالات الفلترة
+    const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [searchTerm, setSearchTerm] = useState('');
 
-    useEffect(() => {
-        const processBirthdays = async () => {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0); // تصفير الوقت للمقارنة الدقيقة
-
-            const nextMonth = new Date();
-            nextMonth.setDate(today.getDate() + 30);
-
-            const list: BirthdayEmployee[] = [];
-
-            employees.forEach(emp => {
-                const birthDate = getBirthDateFromNationalID(emp.national_id);
-                if (!birthDate) return;
-
-                // إنشاء تاريخ عيد الميلاد للسنة الحالية
-                const currentYearBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
-                
-                // إذا كان التاريخ قد مضى هذا العام، نحسب للعام القادم
-                if (currentYearBirthday < today) {
-                    currentYearBirthday.setFullYear(today.getFullYear() + 1);
-                }
-
-                // التحقق مما إذا كان في نطاق الـ 30 يوم القادمة
-                if (currentYearBirthday >= today && currentYearBirthday <= nextMonth) {
-                    // حساب الفرق بالأيام
-                    const diffTime = currentYearBirthday.getTime() - today.getTime();
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-
-                    list.push({
-                        ...emp,
-                        daysRemaining: diffDays,
-                        formattedDate: `${birthDate.getDate()} / ${birthDate.getMonth() + 1}`
-                    });
-                }
-            });
-
-            // 1. الترتيب حسب الأقرب (تصاعدي)
-            list.sort((a, b) => a.daysRemaining - b.daysRemaining);
-
-            setUpcomingBirthdays(list);
-
-            // 2. إرسال تنبيه للمدير (إذا كان اليوم أو غداً)
-            // نستخدم sessionStorage لمنع تكرار الإشعار في نفس الجلسة
-            list.forEach(async (emp) => {
-                if (emp.daysRemaining <= 1) { // اليوم (0) أو غداً (1)
-                    const notificationKey = `notified_birthday_${emp.id}_${new Date().toDateString()}`;
-                    
-                    if (!sessionStorage.getItem(notificationKey)) {
-                        // إرسال الإشعار للقاعدة
-                        await supabase.from('notifications').insert({
-                            user_id: 'all', // أو حدد كود المدير هنا
-                            title: '🎂 تنبيه عيد ميلاد',
-                            message: emp.daysRemaining === 0 
-                                ? `اليوم هو عيد ميلاد ${emp.name}!` 
-                                : `غداً هو عيد ميلاد ${emp.name}!`,
-                            is_read: false
-                        });
-                        
-                        // وضع علامة أنه تم التنبيه
-                        sessionStorage.setItem(notificationKey, 'true');
-                        console.log(`Notification sent for ${emp.name}`);
-                    }
-                }
-            });
-        };
-
-        processBirthdays();
+    // 1. استخراج جميع الحالات الفريدة الموجودة في قاعدة البيانات حالياً لضمان عمل الفلتر
+    const availableStatuses = useMemo(() => {
+        const statuses = Array.from(new Set(employees.map(emp => emp.status).filter(Boolean)));
+        return statuses;
     }, [employees]);
 
-    const handleCelebrate = async (emp: Employee) => {
-        if(!confirm(`هل تريد نشر بوست تهنئة لـ ${emp.name}؟`)) return;
+    // تعيين الحالة الافتراضية عند تحميل الموظفين إذا لم تكن 'all'
+    useEffect(() => {
+        if (statusFilter === 'all' && availableStatuses.length > 0) {
+            // نحاول العثور على أي حالة تعني "نشط" سواء بالعربي أو الإنجليزي
+            const activeKey = availableStatuses.find(s => 
+                s?.toLowerCase() === 'active' || s === 'نشط'
+            );
+            if (activeKey) setStatusFilter(activeKey);
+        }
+    }, [availableStatuses]);
 
-        const { error } = await supabase.from('news_posts').insert({
-            title: `🎉 عيد ميلاد سعيد! 🎉`,
-            content: `تتقدم إدارة المركز بخالص التهاني للزميل/ة ${emp.name} بمناسبة عيد ميلاده/ها. نتمنى لك عاماً مليئاً بالنجاح والتوفيق! 🎂🎈`,
-            image_url: 'https://images.unsplash.com/photo-1464349153735-7db50ed83c84?auto=format&fit=crop&q=80&w=1000',
-            is_pinned: true
-        });
+    // 2. معالجة أعياد الميلاد (تصفية وحساب)
+    const filteredBirthdays = useMemo(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const nextMonth = new Date();
+        nextMonth.setDate(today.getDate() + 30);
 
-        if (!error) {
-            alert('تم نشر التهنئة بنجاح!');
-        } else {
-            alert('حدث خطأ أثناء النشر');
+        return employees
+            .filter(emp => {
+                const matchStatus = statusFilter === 'all' || emp.status === statusFilter;
+                const matchSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase());
+                return matchStatus && matchSearch;
+            })
+            .map(emp => {
+                const birthDate = getBirthDateFromNationalID(emp.national_id);
+                if (!birthDate) return null;
+
+                let bDay = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+                if (bDay < today) bDay.setFullYear(today.getFullYear() + 1);
+
+                if (bDay <= nextMonth) {
+                    const diff = Math.ceil((bDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    return {
+                        ...emp,
+                        daysRemaining: diff,
+                        formattedDate: `${birthDate.getDate()} / ${birthDate.getMonth() + 1}`
+                    };
+                }
+                return null;
+            })
+            .filter((item): item is any => item !== null)
+            .sort((a, b) => a.daysRemaining - b.daysRemaining);
+    }, [employees, statusFilter, searchTerm]);
+
+    useEffect(() => {
+        fetchEOMStatus();
+    }, [employees]);
+
+    const fetchEOMStatus = async () => {
+        const currentMonth = new Date().toISOString().slice(0, 7);
+        const { data: cyc } = await supabase.from('eom_cycles')
+            .select('*').eq('month', currentMonth).maybeSingle();
+
+        if (cyc) {
+            setCycle(cyc);
+            const { data: noms } = await supabase.from('eom_nominees')
+                .select('*').eq('cycle_id', cyc.id);
+
+            if (noms) {
+                const total = noms.reduce((sum, n) => sum + (n.votes_count || 0), 0);
+                setTotalVotes(total);
+                const enriched = noms.map(n => ({
+                    ...n,
+                    employee_name: employees.find(e => e.employee_id === n.employee_id)?.name,
+                    photo_url: employees.find(e => e.employee_id === n.employee_id)?.photo_url
+                }));
+                setNominees(enriched.sort((a, b) => (b.votes_count || 0) - (a.votes_count || 0)));
+            }
         }
     };
 
-    if (upcomingBirthdays.length === 0) return null;
+    const handleEndVoting = async () => {
+        if (!cycle || nominees.length === 0) return;
+        if (!confirm('هل أنت متأكد من إنهاء التصويت؟')) return;
+        const winner = nominees[0];
+        const { error } = await supabase.from('eom_cycles')
+            .update({ status: 'announced', winner_id: winner.employee_id })
+            .eq('id', cycle.id);
+        if (!error) {
+            alert('تم إنهاء التصويت بنجاح');
+            fetchEOMStatus();
+        }
+    };
 
     return (
-        <div className="bg-gradient-to-br from-pink-50 to-red-50 p-6 rounded-[30px] border border-pink-100 shadow-sm animate-in slide-in-from-top-5">
-            <h3 className="text-lg font-black text-pink-700 mb-4 flex items-center gap-2">
-                <Cake className="w-6 h-6"/> أعياد الميلاد القادمة
-            </h3>
-            <div className="space-y-3">
-                {upcomingBirthdays.map(emp => {
-                    // تحديد لون وتسمية بناءً على الأيام المتبقية
-                    let remainingText = '';
-                    let badgeColor = '';
-                    
-                    if (emp.daysRemaining === 0) {
-                        remainingText = 'اليوم! 🎉';
-                        badgeColor = 'bg-red-500 text-white animate-pulse';
-                    } else if (emp.daysRemaining === 1) {
-                        remainingText = 'غداً';
-                        badgeColor = 'bg-orange-500 text-white';
-                    } else {
-                        remainingText = `باقي ${emp.daysRemaining} يوم`;
-                        badgeColor = 'bg-pink-100 text-pink-700';
-                    }
+        <div className="space-y-8 animate-in fade-in duration-500 text-right" dir="rtl">
+            
+            {/* قسم متابعة التصويت */}
+            <div className="bg-white rounded-[35px] p-8 shadow-sm border border-indigo-100">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
+                    <div>
+                        <h3 className="text-2xl font-black text-gray-800 flex items-center gap-3">
+                            <BarChart3 className="text-indigo-600 w-8 h-8"/> متابعة نتائج التصويت
+                        </h3>
+                        <p className="text-gray-500 font-bold mt-1">إجمالي المشاركين: {totalVotes} صوت</p>
+                    </div>
+                    {cycle?.status === 'voting' && (
+                        <button onClick={handleEndVoting} className="bg-red-50 text-red-600 px-6 py-3 rounded-2xl font-black flex items-center gap-2 hover:bg-red-100 transition-all">
+                            <StopCircle className="w-5 h-5"/> إنهاء وإعلان النتائج
+                        </button>
+                    )}
+                </div>
 
-                    return (
-                        <div key={emp.id} className={`bg-white p-3 rounded-2xl flex justify-between items-center shadow-sm border ${emp.daysRemaining <= 1 ? 'border-red-200 ring-2 ring-red-50' : 'border-transparent'}`}>
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center text-pink-600 font-bold overflow-hidden">
-                                    {emp.photo_url ? (
-                                        <img src={emp.photo_url} alt={emp.name} className="w-full h-full object-cover"/>
-                                    ) : (
-                                        emp.name.charAt(0)
-                                    )}
+                <div className="space-y-6">
+                    {nominees.map((nom, index) => {
+                        const percentage = totalVotes > 0 ? Math.round((nom.votes_count / totalVotes) * 100) : 0;
+                        return (
+                            <div key={nom.id}>
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="font-bold text-gray-700">{index + 1}. {nom.employee_name}</span>
+                                    <span className="text-indigo-600 font-black">{nom.votes_count} صوت ({percentage}%)</span>
                                 </div>
-                                <div>
-                                    <h4 className="font-bold text-gray-800 text-sm flex items-center gap-2">
-                                        {emp.name}
-                                        {/* أيقونة تنبيه إذا كان اليوم أو غداً */}
-                                        {emp.daysRemaining <= 1 && <AlertCircle className="w-4 h-4 text-red-500"/>}
-                                    </h4>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <p className="text-xs text-gray-500 flex items-center gap-1">
-                                            <CalendarHeart className="w-3 h-3"/> {emp.formattedDate}
-                                        </p>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${badgeColor}`}>
-                                            <Clock className="w-3 h-3"/> {remainingText}
-                                        </span>
-                                    </div>
+                                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden border border-gray-50">
+                                    <div className={`h-full transition-all duration-1000 ${index === 0 ? 'bg-indigo-600' : 'bg-indigo-300'}`} style={{ width: `${percentage}%` }} />
                                 </div>
                             </div>
-                            <button 
-                                onClick={() => handleCelebrate(emp)}
-                                className="bg-pink-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-pink-700 flex items-center gap-1 transition-colors shadow-lg shadow-pink-200"
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* قسم أعياد الميلاد مع الفلترة الذكية */}
+            <div className="bg-white rounded-[35px] p-8 shadow-sm border border-pink-100">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
+                    <h3 className="text-2xl font-black text-gray-800 flex items-center gap-3">
+                        <Cake className="text-pink-600 w-8 h-8"/> أعياد الميلاد القادمة
+                    </h3>
+                    
+                    <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                        <div className="relative flex-1 min-w-[200px]">
+                            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input 
+                                type="text" placeholder="بحث بالاسم..." 
+                                className="w-full pr-10 pl-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-pink-200"
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+
+                        {/* فلتر الحالة الديناميكي */}
+                        <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-xl border border-gray-100">
+                            <Filter className="w-4 h-4 text-gray-400" />
+                            <select 
+                                className="bg-transparent text-sm font-bold text-gray-600 outline-none cursor-pointer"
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
                             >
-                                <Send className="w-3 h-3"/> تهنئة
+                                <option value="all">كل الحالات</option>
+                                {availableStatuses.map(status => (
+                                    <option key={status} value={status}>
+                                        {status === 'active' || status === 'نشط' ? '🟢 نشط' : status}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredBirthdays.length > 0 ? filteredBirthdays.map((emp) => (
+                        <div key={emp.id} className={`p-4 rounded-3xl border flex justify-between items-center transition-all ${emp.daysRemaining === 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50/50 border-gray-100'}`}>
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-white border border-gray-100 flex items-center justify-center overflow-hidden shadow-sm">
+                                    {emp.photo_url ? <img src={emp.photo_url} className="w-full h-full object-cover"/> : <Users className="text-gray-300"/>}
+                                </div>
+                                <div>
+                                    <p className="font-black text-gray-800 text-sm">{emp.name}</p>
+                                    <p className="text-[10px] text-pink-600 font-bold">{emp.formattedDate} — {emp.daysRemaining === 0 ? 'اليوم! 🎉' : `بعد ${emp.daysRemaining} يوم`}</p>
+                                </div>
+                            </div>
+                            <button className="p-2.5 bg-white text-gray-400 rounded-xl hover:text-pink-600 border border-gray-100 shadow-sm transition-colors">
+                                <Send className="w-4 h-4"/>
                             </button>
                         </div>
-                    );
-                })}
+                    )) : (
+                        <div className="col-span-full py-12 text-center bg-gray-50 rounded-[30px] border border-dashed border-gray-200">
+                            <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                            <p className="text-gray-500 font-bold">لا يوجد موظفون يطابقون خيارات الفلترة الحالية</p>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
