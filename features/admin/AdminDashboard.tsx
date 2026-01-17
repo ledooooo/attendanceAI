@@ -124,59 +124,56 @@ export default function AdminDashboard() {
         <NotificationBell />
       </div>
 
-      {/* القائمة الجانبية (Sidebar) */}
-      <aside className={`
-          fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 ease-in-out
-          ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
-          md:translate-x-0 md:static md:shadow-none md:flex md:flex-col
-      `}>
-        <div className="p-5 border-b flex items-center justify-between h-20 shrink-0">
-           <div className="flex items-center gap-2 text-emerald-700">
-               <LayoutDashboard className="w-7 h-7"/>
-               <h1 className="text-lg font-black">لوحة التحكم</h1>
-           </div>
-           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 bg-gray-50 rounded-full hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors">
-               <X className="w-5 h-5"/>
-           </button>
-        </div>
+<aside className={`
+    fixed inset-y-0 right-0 z-50 w-64 bg-white border-l shadow-2xl transform transition-transform duration-300 ease-in-out
+    ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
+    md:translate-x-0 md:static md:shadow-none md:flex md:flex-col h-screen
+`}>
+  {/* زر الإغلاق فقط للموبايل بدون عنوان */}
+  <div className="md:hidden p-4 flex justify-end shrink-0 bg-white">
+      <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 bg-gray-50 rounded-full text-gray-500">
+          <X className="w-5 h-5"/>
+      </button>
+  </div>
 
-        <nav className="p-3 space-y-1 flex-1 overflow-y-auto custom-scrollbar">
-          {menuItems.map(item => (
-            <button
-              key={item.id}
-              onClick={() => {
-                  setActiveTab(item.id);
-                  setIsSidebarOpen(false); 
-              }}
-              className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-200 relative group ${
-                activeTab === item.id 
-                  ? 'bg-emerald-600 text-white shadow-md font-bold translate-x-[-3px]' 
-                  : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 font-medium'
-              }`}
-            >
-              <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
-              <span className="text-sm">{item.label}</span>
-              
-              {item.badge && item.badge > 0 && (
-                  <span className="absolute left-3 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm animate-pulse min-w-[18px] text-center">
-                      {item.badge}
-                  </span>
-              )}
-            </button>
-          ))}
-        </nav>
+  {/* حاوية الأزرار - تبدأ من الأعلى مباشرة */}
+  <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5 custom-scrollbar bg-white">
+    {menuItems.map(item => (
+      <button
+        key={item.id}
+        onClick={() => {
+            setActiveTab(item.id);
+            setIsSidebarOpen(false); 
+        }}
+        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 relative group ${
+          activeTab === item.id 
+            ? 'bg-emerald-600 text-white shadow-sm font-bold' 
+            : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 font-medium'
+        }`}
+      >
+        <item.icon className={`w-4 h-4 shrink-0 ${activeTab === item.id ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
+        <span className="text-xs">{item.label}</span>
+        
+        {item.badge && item.badge > 0 && (
+            <span className="absolute left-2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm animate-pulse">
+                {item.badge}
+            </span>
+        )}
+      </button>
+    ))}
+  </nav>
 
-        <div className="p-4 border-t bg-gray-50 shrink-0">
-           <button 
-             onClick={signOut} 
-             className="w-full flex items-center justify-center gap-2 text-red-500 p-2.5 rounded-xl hover:bg-red-50 transition-all font-bold border border-red-100 shadow-sm text-sm"
-           >
-             <LogOut className="w-4 h-4 shrink-0" />
-             تسجيل خروج
-           </button>
-        </div>
-      </aside>
-
+  {/* التذييل */}
+  <div className="p-3 border-t bg-gray-50 shrink-0">
+     <button 
+       onClick={signOut} 
+       className="w-full flex items-center justify-center gap-2 text-red-500 py-2 rounded-lg hover:bg-red-100 transition-all font-bold border border-red-100 text-xs"
+     >
+       <LogOut className="w-4 h-4 shrink-0" />
+       تسجيل خروج
+     </button>
+  </div>
+</aside>
       {/* خلفية مظللة للموبايل */}
       {isSidebarOpen && (
         <div 
