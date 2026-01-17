@@ -1,29 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { NotificationProvider } from './context/NotificationContext'; // <--- استيراد
+import { NotificationProvider } from './context/NotificationContext';
 import LoginPage from './features/auth/LoginPage';
 import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
 import { supabase } from './supabaseClient';
 
-
-import { useEffect } from 'react';
-
 const AppContent = () => {
-  const { user, employeeProfile, loading, isAdmin, signOut } = useAuth();
+  const { user, employeeProfile, loading, isAdmin } = useAuth();
 
-  // تسجيل الـ Service Worker
+  // تسجيل Service Worker فور تحميل التطبيق
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
-        .then(reg => console.log('SW Registered', reg.scope))
-        .catch(err => console.error('SW Error', err));
+        .then(reg => console.log('✅ Service Worker جاهز:', reg.scope))
+        .catch(err => console.error('❌ فشل تسجيل SW:', err));
     }
   }, []);
-
-  
-const AppContent = () => {
-  const { user, employeeProfile, loading, isAdmin, signOut } = useAuth();
 
   if (loading) {
     return (
@@ -40,17 +33,8 @@ const AppContent = () => {
     return (
       <div className="h-screen flex flex-col items-center justify-center text-center p-6 bg-white" dir="rtl">
         <h2 className="text-xl font-bold text-gray-800 mb-2">جاري التحقق من بيانات الموظف...</h2>
-        <p className="text-gray-500 mb-6 text-sm">
-           إذا استمرت هذه الشاشة، فهذا يعني أن إيميلك ({user.email}) غير مرتبط بملف موظف.
-        </p>
-        <button 
-            onClick={() => {
-                supabase.auth.signOut().then(() => window.location.replace('/'));
-            }} 
-            className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold hover:bg-gray-900 transition-all text-sm"
-        >
-            تسجيل خروج
-        </button>
+        <p className="text-gray-500 mb-6 text-sm">إيميلك ({user.email}) غير مرتبط بملف موظف.</p>
+        <button onClick={() => supabase.auth.signOut()} className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold text-sm">تسجيل خروج</button>
       </div>
     );
   }
@@ -61,7 +45,6 @@ const AppContent = () => {
 export default function App() {
   return (
     <AuthProvider>
-      {/* تغليف التطبيق بمزود الإشعارات */}
       <NotificationProvider>
         <AppContent />
       </NotificationProvider>
