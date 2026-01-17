@@ -6,6 +6,22 @@ import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
 import { supabase } from './supabaseClient';
 
+
+import { useEffect } from 'react';
+
+const AppContent = () => {
+  const { user, employeeProfile, loading, isAdmin, signOut } = useAuth();
+
+  // تسجيل الـ Service Worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('SW Registered', reg.scope))
+        .catch(err => console.error('SW Error', err));
+    }
+  }, []);
+
+  
 const AppContent = () => {
   const { user, employeeProfile, loading, isAdmin, signOut } = useAuth();
 
