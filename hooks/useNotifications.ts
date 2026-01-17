@@ -1,36 +1,47 @@
 import { supabase } from '../supabaseClient';
 
 export const useNotifications = (userId: string) => {
-  // مفتاح الـ VAPID العام (يجب توليده أو استبداله لاحقاً لإرسال الرسائل الحقيقية)
-  // يمكنك البدء بمفتاح تجريبي
-  const publicKey = 'YOUR_PUBLIC_VAPID_KEY'; 
+  // ملاحظة: هذا مفتاح تجريبي، للإنتاج يفضل توليد مفتاح خاص بك
+  const publicKey = 'BEl62vp9IHZS95v5H5z6N2_t757988358485'; 
+
+  const urlBase64ToUint8Array = (base64String: string) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
 
   const subscribeUser = async () => {
     try {
+      if (!('serviceWorker' in navigator)) return false;
+      
       const registration = await navigator.serviceWorker.ready;
       
-      // طلب الاشتراك من سيرفر المتصفح
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: publicKey
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
       });
 
-      // حفظ البيانات في جدول push_subscriptions الذي أنشأناه في SQL
       const { error } = await supabase
         .from('push_subscriptions')
         .upsert({
           user_id: userId,
-          subscription_data: subscription.toJSON(),
+          subscription_data: subscription, // Supabase سيتعامل معه كـ JSONB
           device_info: {
             userAgent: navigator.userAgent,
-            platform: navigator.platform
+            platform: navigator.platform,
+            last_sync: new Date().toISOString()
           }
-        });
+        }, { onConflict: 'user_id, subscription_data' });
 
       if (error) throw error;
       return true;
     } catch (err) {
-      console.error('Failed to subscribe to push notifications', err);
+      console.error('Push subscription error:', err);
       return false;
     }
   };
