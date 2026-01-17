@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
+import { useNotifications as usePush } from '../../hooks/useNotifications';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
@@ -47,7 +48,17 @@ export default function StaffDashboard({ employee }: Props) {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
-  
+  const { requestPermission } = usePush(employee.employee_id);
+
+  useEffect(() => {
+    // طلب الإذن تلقائياً بعد 4 ثواني من دخول الموظف إذا لم يسأل من قبل
+    const timer = setTimeout(() => {
+      if (Notification.permission === 'default') {
+        requestPermission();
+      }
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [employee.employee_id]);
   // حالات PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
