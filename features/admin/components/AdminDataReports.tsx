@@ -2,26 +2,23 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { 
-    Database, Users, BarChart3, Clock, CalendarX, 
-    FileText, Printer, Settings2, CheckSquare, 
-    Square, Type, Info, Mail
+    Users, BarChart3, Clock, Printer, 
+    CheckSquare, Square, Type, Info
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 
 interface Props { employees: Employee[] }
 
-type ReportView = 'staff_names' | 'staff_counts' | 'daily_io' | 'monthly_absent';
+type ReportView = 'staff_names' | 'staff_counts' | 'daily_io';
 
 export default function AdminDataReports({ employees }: Props) {
     const [view, setView] = useState<ReportView>('staff_names');
     const [loading, setLoading] = useState(false);
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-    const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
     
     const [selectedRows, setSelectedRows] = useState<string[]>([]);
-    const [fontSize, setFontSize] = useState(11);
+    const [fontSize, setFontSize] = useState(10); // تصغير الخط الافتراضي ليناسب التقسيم
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-    const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
     const [filterStatus, setFilterStatus] = useState('all');
     const [sortBy, setSortBy] = useState<'name' | 'specialty'>('name');
 
@@ -29,30 +26,21 @@ export default function AdminDataReports({ employees }: Props) {
 
     useEffect(() => {
         fetchData();
-    }, [view, date, month]);
+    }, [date]);
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            // جلب سجلات البصمة للشهر بالكامل لضمان توفر البيانات لكل التقارير
-            const startOfMonth = `${month}-01`;
-            const endOfMonth = `${month}-31`;
-
             const { data: att } = await supabase.from('attendance')
                 .select('*')
-                .gte('date', startOfMonth)
-                .lte('date', endOfMonth);
-            
-            // جلب كافة الطلبات لمقارنتها بالتواريخ
-            const { data: lvs } = await supabase.from('leave_requests').select('*');
+                .eq('date', date);
             
             setAttendance(att || []);
-            setLeaves(lvs || []);
             if (employees) setSelectedRows(employees.map(e => e.employee_id));
         } finally { setLoading(false); }
     };
 
-    // --- 1. معالجة القوة الفعلية والمسميات ---
+    // --- معالجة القوة المفلترة والترتيب ---
     const staffReport = useMemo(() => {
         return [...employees]
             .filter(e => filterStatus === 'all' || e.status === filterStatus)
@@ -66,7 +54,31 @@ export default function AdminDataReports({ employees }: Props) {
             });
     }, [employees, filterStatus, sortBy]);
 
-    // --- 2. بيان التخصصات (أعداد فقط) ---
+    // --- معالجة بيانات الحضور اليومي ---
+    const dailyProcessed = useMemo(() => {
+        return staffReport.map(emp => {
+            const att = attendance.find(a => a.employee_id === emp.employee_id);
+            let inT = '', outT = '';
+            
+            if (att) {
+                const times = att.times?.split(/\s+/).filter(t => t.includes(':')) || [];
+                inT = times[0] || '';
+                outT = times.length > 1 ? times[times.length - 1] : '';
+            }
+            return { ...emp, inTime: inT, outTime: outT, isPresent: !!att };
+        });
+    }, [staffReport, attendance]);
+
+    // تقسيم البيانات لنصفين (أيمن وأيسر)
+    const dailySplit = useMemo(() => {
+        const half = Math.ceil(dailyProcessed.length / 2);
+        return {
+            left: dailyProcessed.slice(0, half),
+            right: dailyProcessed.slice(half)
+        };
+    }, [dailyProcessed]);
+
+    // --- بيان التخصصات ---
     const specialtyReport = useMemo(() => {
         const specs = Array.from(new Set(employees.map(e => e.specialty)));
         return specs.map((spec, idx) => {
@@ -75,66 +87,14 @@ export default function AdminDataReports({ employees }: Props) {
         }).filter(item => item.count > 0);
     }, [employees, filterStatus]);
 
-    // --- 3. حضور وغياب يومي (منطق سريان الطلبات) ---
-    const dailyProcessed = useMemo(() => {
-        return staffReport.map(emp => {
-            const att = attendance.find(a => a.employee_id === emp.employee_id && a.date === date);
-            
-            // البحث عن طلب "يخص هذا اليوم" (التاريخ المختار يقع بين بداية ونهاية الطلب)
-            const activeLeave = leaves.find(l => 
-                l.employee_id === emp.employee_id && 
-                date >= l.start_date && 
-                date <= l.end_date
-            );
-            
-            let status = 'غائب', inT = '-', outT = '-';
-            
-            if (att) {
-                const times = att.times?.split(/\s+/).filter(t => t.includes(':')) || [];
-                inT = times[0] || '-';
-                outT = times.length > 1 ? times[times.length - 1] : '-';
-                status = (inT !== '-' && outT !== '-') ? 'حاضر' : (inT !== '-' ? 'ترك عمل' : 'غائب');
-            }
-            
-            const requestInfo = activeLeave ? `${activeLeave.type} (${activeLeave.status})` : '';
-
-            return { ...emp, reportStatus: status, inTime: inT, outTime: outT, requestInfo };
-        });
-    }, [staffReport, attendance, leaves, date]);
-
-    // --- 4. الغياب الشهري الدقيق (الخوارزمية النهائية) ---
-    const monthlyAbsentReport = useMemo(() => {
-        const [year, monthNum] = month.split('-').map(Number);
-        const daysInMonth = new Date(year, monthNum, 0).getDate();
-
-        return staffReport.map(emp => {
-            const empAttDates = attendance.filter(a => a.employee_id === emp.employee_id).map(a => a.date);
-            const empApprovedLeaves = leaves.filter(l => l.employee_id === emp.employee_id && l.status === 'مقبول');
-            
-            let absentDays: number[] = [];
-            
-            for (let d = 1; d <= daysInMonth; d++) {
-                const dayStr = String(d).padStart(2, '0');
-                const checkDate = `${month}-${dayStr}`;
-                
-                // استبعاد الجمعة
-                if (new Date(checkDate).getDay() === 5) continue;
-
-                const hasAtt = empAttDates.includes(checkDate);
-                // تحقق هل اليوم يقع ضمن "نطاق" أي إجازة مقبولة
-                const hasLeave = empApprovedLeaves.some(l => checkDate >= l.start_date && checkDate <= l.end_date);
-
-                if (!hasAtt && !hasLeave) absentDays.push(d);
-            }
-
-            return { ...emp, absentCount: absentDays.length, daysList: absentDays.join(', ') };
-        }).filter(e => e.absentCount > 0);
-    }, [staffReport, attendance, leaves, month]);
-
     const handlePrint = useReactToPrint({
         content: () => printRef.current,
-        documentTitle: `مركز_غرب_المطار_${view}`,
+        documentTitle: `تقرير_${view}_${date}`,
     });
+
+    const toggleRow = (id: string) => {
+        setSelectedRows(prev => prev.includes(id) ? prev.filter(rid => rid !== id) : [...prev, id]);
+    };
 
     return (
         <div className="space-y-6 text-right pb-10" dir="rtl">
@@ -144,7 +104,6 @@ export default function AdminDataReports({ employees }: Props) {
                     { id: 'staff_names', label: 'بيان القوة الفعلية', icon: Users },
                     { id: 'staff_counts', label: 'بيان التخصصات', icon: BarChart3 },
                     { id: 'daily_io', label: 'حضور وغياب يومي', icon: Clock },
-                    { id: 'monthly_absent', label: 'غياب شهري', icon: CalendarX },
                 ].map(tab => (
                     <button key={tab.id} onClick={() => setView(tab.id as ReportView)}
                         className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all ${view === tab.id ? 'bg-white text-indigo-600 shadow-md' : 'text-gray-500 hover:bg-gray-200'}`}>
@@ -163,20 +122,19 @@ export default function AdminDataReports({ employees }: Props) {
                             <option value="specialty">التخصص</option>
                         </select>
                     </div>
-                    <div className="flex-1 min-w-[200px]">
-                        <label className="block text-[10px] font-black text-gray-400 mb-2">التاريخ</label>
-                        <input type={view === 'monthly_absent' ? "month" : "date"} value={view === 'monthly_absent' ? month : date} 
-                               onChange={(e) => view === 'monthly_absent' ? setMonth(e.target.value) : setDate(e.target.value)} 
-                               className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 focus:ring-2 focus:ring-indigo-500" />
-                    </div>
+                    {view === 'daily_io' && (
+                        <div className="flex-1 min-w-[200px]">
+                            <label className="block text-[10px] font-black text-gray-400 mb-2">تاريخ اليوم</label>
+                            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+                                className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100" />
+                        </div>
+                    )}
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-[10px] font-black text-gray-400 mb-2">حالة الموظف</label>
                         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100">
                             <option value="all">الكل</option>
                             <option value="نشط">قوة فعلية</option>
                             <option value="موقوف">موقوف</option>
-                            <option value="اجازة">اجازة</option>
-                            <option value="خارج المركز">خارج المركز</option>
                         </select>
                     </div>
                     <button onClick={handlePrint} className="p-3 bg-gray-900 text-white rounded-xl shadow-lg hover:scale-105 transition-transform"><Printer size={20}/></button>
@@ -184,109 +142,124 @@ export default function AdminDataReports({ employees }: Props) {
 
                 <div className="flex items-center gap-4 bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100">
                     <Type size={18} className="text-indigo-600" />
-                    <span className="text-xs font-black text-indigo-700">مقاس الخط:</span>
-                    <input type="range" min="8" max="16" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-32 accent-indigo-600" />
+                    <span className="text-xs font-black text-indigo-700">مقاس الخط للطباعة:</span>
+                    <input type="range" min="7" max="14" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-32 accent-indigo-600" />
                     <span className="font-bold text-indigo-600 text-xs">{fontSize}px</span>
                 </div>
             </div>
 
             {/* منطقة الطباعة */}
-            <div ref={printRef} className="bg-white p-10 rounded-[3rem] border shadow-sm min-h-[1000px] print:p-0 print:border-0 print:shadow-none text-right" dir="rtl">
-                <div className="hidden print:block mb-8 border-b-2 border-black pb-6 text-center">
-                    <h1 className="text-2xl font-black italic">إدارة شمال الجيزة - مركز غرب المطار</h1>
-                    <p className="text-sm font-bold mt-2">بيان: {view.replace('_', ' ')} | التاريخ: {view === 'monthly_absent' ? month : date}</p>
+            <div ref={printRef} className="bg-white p-8 rounded-[2rem] border shadow-sm min-h-[1000px] print:p-0 print:border-0 print:shadow-none text-right" dir="rtl">
+                <div className="hidden print:block mb-4 border-b-2 border-black pb-4 text-center">
+                    <h1 className="text-xl font-black italic">إدارة شمال الجيزة - مركز غرب المطار</h1>
+                    <p className="text-sm font-bold mt-1">بيان: {view === 'daily_io' ? 'حضور وغياب يومي (مزدوج)' : view.replace('_', ' ')} | التاريخ: {date}</p>
                 </div>
 
                 <div className="overflow-x-auto">
                     {view === 'staff_counts' ? (
-                        <table className="w-full border-collapse" style={{ fontSize: `${fontSize}px` }}>
+                        <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
                             <thead>
-                                <tr className="bg-gray-100 border-y-2 border-black">
-                                    <th className="p-3 border text-center w-16">م</th>
-                                    <th className="p-3 border text-right">التخصص</th>
-                                    <th className="p-3 border text-center">عدد الأطباء</th>
+                                <tr className="bg-gray-100">
+                                    <th className="p-2 border border-black text-center w-16">م</th>
+                                    <th className="p-2 border border-black text-right">التخصص</th>
+                                    <th className="p-2 border border-black text-center">عدد الأطباء</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {specialtyReport.map((row, i) => (
-                                    <tr key={i} className="border-b">
-                                        <td className="p-3 border text-center font-mono">{row.m}</td>
-                                        <td className="p-3 border font-black">{row.specialty}</td>
-                                        <td className="p-3 border text-center font-black text-indigo-600 bg-gray-50">{row.count}</td>
+                                    <tr key={i}>
+                                        <td className="p-2 border border-black text-center font-mono">{row.m}</td>
+                                        <td className="p-2 border border-black font-black">{row.specialty}</td>
+                                        <td className="p-2 border border-black text-center font-black">{row.count}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
+                    ) : view === 'daily_io' ? (
+                        /* التصميم المزدوج للحضور اليومي */
+                        <div className="flex gap-2 w-full">
+                            {/* القسم الأيمن */}
+                            <div className="w-1/2">
+                                <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
+                                    <thead>
+                                        <tr className="bg-gray-100 text-[10px]">
+                                            <th className="border border-black p-1">بصمة</th>
+                                            <th className="border border-black p-1 text-right">الاسم</th>
+                                            <th className="border border-black p-1">تخصص</th>
+                                            <th className="border border-black p-1">حضور</th>
+                                            <th className="border border-black p-1">انصراف</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {dailySplit.left.map((row, i) => (
+                                            <tr key={row.employee_id} className={`h-6 ${!selectedRows.includes(row.employee_id) ? 'no-print hidden' : ''}`}>
+                                                <td className="border border-black text-center font-mono">{row.employee_id}</td>
+                                                <td className="border border-black pr-1 font-bold whitespace-nowrap overflow-hidden">{row.name.split(' ').slice(0,3).join(' ')}</td>
+                                                <td className="border border-black text-center text-[9px]">{row.specialty.substring(0,10)}</td>
+                                                <td className="border border-black text-center font-mono">{row.inTime}</td>
+                                                <td className="border border-black text-center font-mono">{row.outTime}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* القسم الأيسر */}
+                            <div className="w-1/2">
+                                <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
+                                    <thead>
+                                        <tr className="bg-gray-100 text-[10px]">
+                                            <th className="border border-black p-1">بصمة</th>
+                                            <th className="border border-black p-1 text-right">الاسم</th>
+                                            <th className="border border-black p-1">تخصص</th>
+                                            <th className="border border-black p-1">حضور</th>
+                                            <th className="border border-black p-1">انصراف</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {dailySplit.right.map((row, i) => (
+                                            <tr key={row.employee_id} className={`h-6 ${!selectedRows.includes(row.employee_id) ? 'no-print hidden' : ''}`}>
+                                                <td className="border border-black text-center font-mono">{row.employee_id}</td>
+                                                <td className="border border-black pr-1 font-bold whitespace-nowrap overflow-hidden">{row.name.split(' ').slice(0,3).join(' ')}</td>
+                                                <td className="border border-black text-center text-[9px]">{row.specialty.substring(0,10)}</td>
+                                                <td className="border border-black text-center font-mono">{row.inTime}</td>
+                                                <td className="border border-black text-center font-mono">{row.outTime}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     ) : (
-                        <table className="w-full border-collapse" style={{ fontSize: `${fontSize}px` }}>
+                        /* بيان القوة الفعلية (الأسماء) */
+                        <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
                             <thead>
-                                <tr className="bg-gray-100 border-y-2 border-black">
-                                    <th className="p-3 border text-center no-print w-10"><CheckSquare size={16} /></th>
-                                    <th className="p-3 border text-center w-12">م</th>
-                                    <th className="p-3 border text-right">الاسم الرباعي</th>
-                                    <th className="p-3 border text-center">التخصص</th>
-                                    {view === 'staff_names' && (
-                                        <>
-                                            <th className="p-3 border text-center">الرقم القومي</th>
-                                            <th className="p-3 border text-center">التليفون</th>
-                                            <th className="p-3 border text-center">البريد الإلكتروني</th>
-                                            <th className="p-3 border text-center">الحالة</th>
-                                        </>
-                                    )}
-                                    {view === 'daily_io' && (
-                                        <>
-                                            <th className="p-3 border text-center font-mono text-blue-700">حضور</th>
-                                            <th className="p-3 border text-center font-mono text-red-700">انصراف</th>
-                                            <th className="p-3 border text-center">حالة اليوم / الطلبات</th>
-                                        </>
-                                    )}
-                                    {view === 'monthly_absent' && (
-                                        <>
-                                            <th className="p-3 border text-center text-red-600 font-black">أيام الغياب</th>
-                                            <th className="p-3 border text-right font-mono text-[9px]">تواريخ الغياب</th>
-                                        </>
-                                    )}
+                                <tr className="bg-gray-100">
+                                    <th className="p-2 border border-black text-center no-print w-10"><CheckSquare size={16} /></th>
+                                    <th className="p-2 border border-black text-center w-12">م</th>
+                                    <th className="p-2 border border-black text-right">الاسم</th>
+                                    <th className="p-2 border border-black text-center font-mono">الرقم القومي</th>
+                                    <th className="p-2 border border-black text-center">التخصص</th>
+                                    <th className="p-2 border border-black text-center">التليفون</th>
+                                    <th className="p-2 border border-black text-center">الحالة</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {(view === 'monthly_absent' ? monthlyAbsentReport : dailyProcessed).map((row: any, i: number) => {
+                                {staffReport.map((row, i) => {
                                     const isSelected = selectedRows.includes(row.employee_id);
                                     return (
-                                        <tr key={row.employee_id} className={`border-b ${!isSelected ? 'no-print opacity-20 bg-gray-50' : 'hover:bg-gray-50/50'}`}>
-                                            <td className="p-3 border text-center no-print">
-                                                <button onClick={() => setSelectedRows(prev => prev.includes(row.employee_id) ? prev.filter(id => id !== row.employee_id) : [...prev, row.employee_id])}>
-                                                    {isSelected ? <CheckSquare size={18} className="text-indigo-600" /> : <Square size={18} className="text-gray-300" />}
+                                        <tr key={row.employee_id} className={`${!isSelected ? 'no-print opacity-20' : ''}`}>
+                                            <td className="p-2 border border-black text-center no-print">
+                                                <button onClick={() => toggleRow(row.employee_id)}>
+                                                    {isSelected ? <CheckSquare size={16} className="text-indigo-600" /> : <Square size={16} className="text-gray-300" />}
                                                 </button>
                                             </td>
-                                            <td className="p-3 border text-center font-mono">{i + 1}</td>
-                                            <td className="p-3 border font-black">{row.name}</td>
-                                            <td className="p-3 border text-center">{row.specialty}</td>
-                                            {view === 'staff_names' && (
-                                                <>
-                                                    <td className="p-3 border text-center font-mono">{row.national_id}</td>
-                                                    <td className="p-3 border text-center font-mono">{row.phone}</td>
-                                                    <td className="p-3 border text-center text-[10px] text-blue-600">{row.email || '-'}</td>
-                                                    <td className="p-3 border text-center text-[10px] font-bold">{row.displayStatus}</td>
-                                                </>
-                                            )}
-                                            {view === 'daily_io' && (
-                                                <>
-                                                    <td className="p-3 border text-center font-mono text-blue-700">{row.inTime}</td>
-                                                    <td className="p-3 border text-center font-mono text-red-700">{row.outTime}</td>
-                                                    <td className="p-3 border text-center text-[10px]">
-                                                        <span className={row.reportStatus === 'حاضر' ? 'text-emerald-600 font-black' : 'text-red-500 font-black'}>
-                                                            {row.reportStatus}
-                                                        </span>
-                                                        {row.requestInfo && <div className="text-indigo-500 font-bold mt-1 border-t pt-1">{row.requestInfo}</div>}
-                                                    </td>
-                                                </>
-                                            )}
-                                            {view === 'monthly_absent' && (
-                                                <>
-                                                    <td className="p-3 border text-center font-black text-red-600">{row.absentCount} يوم</td>
-                                                    <td className="p-3 border text-right font-mono text-[9px] text-gray-500">{row.daysList}</td>
-                                                </>
-                                            )}
+                                            <td className="p-2 border border-black text-center font-mono">{i + 1}</td>
+                                            <td className="p-2 border border-black font-black">{row.name}</td>
+                                            <td className="p-2 border border-black text-center font-mono">{row.national_id}</td>
+                                            <td className="p-2 border border-black text-center">{row.specialty}</td>
+                                            <td className="p-2 border border-black text-center font-mono">{row.phone}</td>
+                                            <td className="p-2 border border-black text-center text-[10px] font-bold">{row.displayStatus}</td>
                                         </tr>
                                     );
                                 })}
@@ -295,9 +268,18 @@ export default function AdminDataReports({ employees }: Props) {
                     )}
                 </div>
 
-                <div className="mt-20 hidden print:flex justify-between px-16 text-sm font-black">
-                    <div className="text-center space-y-16"><p>مسئول شئون العاملين</p><p>........................</p></div>
-                    <div className="text-center space-y-16"><p>مدير المركز</p><p>........................</p></div>
+                {/* الإحصائيات والتذييل */}
+                {view === 'daily_io' && (
+                    <div className="mt-4 border-2 border-black p-2 bg-gray-50 flex justify-around items-center font-black text-xs">
+                        <span>إجمالي الموظفين: {dailyProcessed.length}</span>
+                        <span>إجمالي الحضور: {dailyProcessed.filter(e => e.isPresent).length}</span>
+                        <span>إجمالي الغياب: {dailyProcessed.filter(e => !e.isPresent).length}</span>
+                    </div>
+                )}
+
+                <div className="mt-8 flex justify-between px-16 text-[10px] font-black">
+                    <div className="text-center space-y-12"><p>مسئول شئون العاملين</p><p>........................</p></div>
+                    <div className="text-center space-y-12"><p>مدير المركز</p><p>........................</p></div>
                 </div>
             </div>
         </div>
