@@ -3,7 +3,7 @@ import { supabase } from '../../../supabaseClient';
 import { NewsPost } from '../../../types';
 import { 
   Plus, Trash2, Pin, Image as ImageIcon, 
-  Newspaper, Loader2, Save, Upload, Link as LinkIcon 
+  Newspaper, Loader2, Save, Upload, Link as LinkIcon, Send 
 } from 'lucide-react';
 
 export default function NewsManagementTab() {
@@ -11,11 +11,9 @@ export default function NewsManagementTab() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // حالات الصورة
   const [imageMode, setImageMode] = useState<'url' | 'upload'>('url');
   const [imageFile, setImageFile] = useState<File | null>(null);
 
-  // نموذج إضافة خبر جديد
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -38,21 +36,18 @@ export default function NewsManagementTab() {
     setLoading(false);
   };
 
-  // دالة رفع الصورة
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
         const filePath = `${fileName}`;
 
-        // 1. الرفع
         const { error: uploadError } = await supabase.storage
             .from('news-images')
             .upload(filePath, file);
 
         if (uploadError) throw uploadError;
 
-        // 2. جلب الرابط
         const { data } = supabase.storage
             .from('news-images')
             .getPublicUrl(filePath);
@@ -65,15 +60,39 @@ export default function NewsManagementTab() {
     }
   };
 
+  // ✅ الدالة الجديدة لإرسال الإشعارات لجميع المشتركين
+  const triggerPushNotifications = async (title: string, body: string) => {
+    try {
+      // جلب كافة الاشتراكات المسجلة
+      const { data: subs } = await supabase
+        .from('push_subscriptions')
+        .select('subscription_data');
+
+      if (!subs || subs.length === 0) return;
+
+      // استدعاء الوظيفة السحابية لإرسال الإشعارات
+      await supabase.functions.invoke('send-push-notification', {
+        body: {
+          subscriptions: subs.map(s => s.subscription_data),
+          payload: {
+            title: "خبر جديد من الإدارة 📢",
+            body: title,
+            url: "/staff/news" // الرابط الذي سيفتحه الموظف عند النقر
+          }
+        }
+      });
+    } catch (err) {
+      console.error("Notification Error:", err);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title || !formData.content) return alert('العنوان والمحتوى مطلوبان');
 
     setSubmitting(true);
-    
     let finalImageUrl = formData.image_url;
 
-    // رفع الصورة إذا وجدت
     if (imageMode === 'upload' && imageFile) {
         const uploadedUrl = await uploadImage(imageFile);
         if (uploadedUrl) {
@@ -84,7 +103,7 @@ export default function NewsManagementTab() {
         }
     }
 
-    // 1. إدخال الخبر فقط (سيقوم التريجر في قاعدة البيانات بإرسال الإشعارات تلقائياً)
+    // 1. إدخال الخبر في قاعدة البيانات
     const { error } = await supabase.from('news_posts').insert({
       title: formData.title,
       content: formData.content,
@@ -93,8 +112,10 @@ export default function NewsManagementTab() {
     });
 
     if (!error) {
-      alert('تم نشر الخبر بنجاح ✅');
-      // إعادة تعيين النموذج
+      // ✅ 2. إرسال إشعارات فورية لكل الأجهزة المفعلة
+      await triggerPushNotifications(formData.title, formData.content);
+
+      alert('تم نشر الخبر وإرسال تنبيهات للموظفين بنجاح ✅');
       setFormData({ title: '', content: '', image_url: '', is_pinned: false });
       setImageFile(null);
       setImageMode('url');
@@ -105,22 +126,15 @@ export default function NewsManagementTab() {
     setSubmitting(false);
   };
 
-const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا الخبر؟')) return;
-    
     try {
         const { error } = await supabase.from('news_posts').delete().eq('id', id);
-        
-        if (error) {
-            console.error("Delete Error:", error);
-            throw error;
-        }
-
+        if (error) throw error;
         alert('تم الحذف بنجاح ✅');
-        fetchPosts(); // تحديث القائمة
+        fetchPosts();
     } catch (error: any) {
-        // عرض رسالة الخطأ القادمة من قاعدة البيانات
-        alert('فشل الحذف: ' + (error.message || error.details || 'خطأ غير معروف'));
+        alert('فشل الحذف: ' + (error.message || 'خطأ غير معروف'));
     }
   };
 
@@ -129,22 +143,17 @@ const handleDelete = async (id: string) => {
         .from('news_posts')
         .update({ is_pinned: !post.is_pinned })
         .eq('id', post.id);
-      
       if(!error) fetchPosts();
   };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-        
-        {/* Header */}
         <div className="flex items-center gap-3 border-b pb-4">
             <Newspaper className="w-8 h-8 text-emerald-600"/>
             <h2 className="text-2xl font-black text-gray-800">إدارة الأخبار والمنشورات</h2>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            {/* Form Section */}
             <div className="lg:col-span-1">
                 <div className="bg-white p-6 rounded-[30px] border shadow-sm sticky top-4">
                     <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
@@ -175,7 +184,6 @@ const handleDelete = async (id: string) => {
                             />
                         </div>
 
-                        {/* قسم الصورة */}
                         <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
                             <label className="block text-sm font-bold text-gray-700 mb-2">صورة الخبر (اختياري)</label>
                             <div className="flex gap-2 mb-3">
@@ -225,17 +233,15 @@ const handleDelete = async (id: string) => {
                             disabled={submitting}
                             className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 shadow-lg shadow-emerald-100"
                         >
-                            {submitting ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>}
-                            {imageMode === 'upload' && imageFile ? 'رفع الصورة ونشر الخبر' : 'نشر الخبر'}
+                            {submitting ? <Loader2 className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5"/>}
+                            {submitting ? 'جاري النشر...' : 'نشر الخبر وإرسال إشعار'}
                         </button>
                     </form>
                 </div>
             </div>
 
-            {/* List Section */}
             <div className="lg:col-span-2 space-y-4">
                 <h3 className="text-lg font-black text-gray-800 mb-2">الأخبار الحالية ({posts.length})</h3>
-                
                 {loading ? (
                     <div className="text-center py-10 text-gray-400">جاري التحميل...</div>
                 ) : posts.length === 0 ? (
@@ -261,14 +267,12 @@ const handleDelete = async (id: string) => {
                                                 <button 
                                                     onClick={() => togglePin(post)}
                                                     className={`p-2 rounded-lg transition-colors ${post.is_pinned ? 'text-emerald-600 bg-emerald-100' : 'text-gray-400 hover:bg-gray-100'}`}
-                                                    title={post.is_pinned ? "إلغاء التثبيت" : "تثبيت"}
                                                 >
                                                     <Pin className="w-4 h-4"/>
                                                 </button>
                                                 <button 
                                                     onClick={() => handleDelete(post.id)}
                                                     className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
-                                                    title="حذف"
                                                 >
                                                     <Trash2 className="w-4 h-4"/>
                                                 </button>
