@@ -17,14 +17,13 @@ export default function AdminDataReports({ employees }: Props) {
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     
     const [selectedRows, setSelectedRows] = useState<string[]>([]);
-    const [fontSize, setFontSize] = useState(9); 
+    const [fontSize, setFontSize] = useState(8.5); // تصغير افتراضي طفيف للخط
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [filterStatus, setFilterStatus] = useState('all');
     const [sortBy, setSortBy] = useState<'name' | 'specialty'>('name');
 
     const printRef = useRef(null);
 
-    // جلب البيانات عند تغيير التاريخ
     useEffect(() => {
         fetchAttendance();
     }, [date]);
@@ -37,7 +36,6 @@ export default function AdminDataReports({ employees }: Props) {
                 .eq('date', date);
             
             setAttendance(att || []);
-            // عند التحميل الأول أو تغيير البيانات، نحدد جميع الموظفين المفلترين
             if (employees) {
                 const currentIds = employees
                     .filter(e => filterStatus === 'all' || e.status === filterStatus)
@@ -47,14 +45,12 @@ export default function AdminDataReports({ employees }: Props) {
         } finally { setLoading(false); }
     };
 
-    // ✅ دالة التحديد المفقودة التي تسببت في الخطأ
     const toggleRow = (id: string) => {
         setSelectedRows(prev => 
             prev.includes(id) ? prev.filter(rid => rid !== id) : [...prev, id]
         );
     };
 
-    // --- 1. معالجة القوة المفلترة والترتيب ---
     const filteredEmployees = useMemo(() => {
         return employees
             .filter(e => filterStatus === 'all' || e.status === filterStatus)
@@ -64,7 +60,6 @@ export default function AdminDataReports({ employees }: Props) {
             });
     }, [employees, filterStatus, sortBy]);
 
-    // --- 2. محرك بيانات الحضور والغياب اليومي ---
     const dailyProcessed = useMemo(() => {
         return filteredEmployees.map(emp => {
             const attRecord = attendance.find(a => String(a.employee_id) === String(emp.employee_id));
@@ -83,19 +78,15 @@ export default function AdminDataReports({ employees }: Props) {
         });
     }, [filteredEmployees, attendance]);
 
-    // --- 3. إحصائيات التواجد ---
     const stats = useMemo(() => {
-        // الإحصائيات تعتمد فقط على الصفوف التي اختار المدير طباعتها (المحددة بـ Checkbox)
         const activeList = dailyProcessed.filter(e => selectedRows.includes(e.employee_id));
         const total = activeList.length;
         const present = activeList.filter(e => e.isPresent).length;
         const absent = total - present;
         const ratio = total > 0 ? ((present / total) * 100).toFixed(1) : "0";
-
         return { total, present, absent, ratio };
     }, [dailyProcessed, selectedRows]);
 
-    // تقسيم البيانات لنصفين للطباعة المزدوجة
     const dailySplit = useMemo(() => {
         const activeList = dailyProcessed.filter(e => selectedRows.includes(e.employee_id));
         const half = Math.ceil(activeList.length / 2);
@@ -105,14 +96,12 @@ export default function AdminDataReports({ employees }: Props) {
         };
     }, [dailyProcessed, selectedRows]);
 
-    // --- 4. بيان التخصصات ---
     const specialtyReport = useMemo(() => {
         const specs = Array.from(new Set(employees.map(e => e.specialty)));
         const data = specs.map((spec, idx) => {
             const count = employees.filter(e => e.specialty === spec && (filterStatus === 'all' || e.status === filterStatus)).length;
             return { m: idx + 1, specialty: spec, count };
         }).filter(item => item.count > 0);
-
         const totalDoctors = data.reduce((sum, item) => sum + item.count, 0);
         return { list: data, total: totalDoctors };
     }, [employees, filterStatus]);
@@ -123,7 +112,7 @@ export default function AdminDataReports({ employees }: Props) {
     });
 
     return (
-        <div className="space-y-6 text-right pb-10" dir="rtl">
+        <div className="space-y-4 text-right pb-10" dir="rtl">
             {/* التبويبات */}
             <div className="flex bg-gray-100 p-1.5 rounded-2xl no-print overflow-x-auto shadow-inner border border-gray-200">
                 {[
@@ -139,23 +128,23 @@ export default function AdminDataReports({ employees }: Props) {
             </div>
 
             {/* الفلاتر */}
-            <div className="bg-white p-6 rounded-[2.5rem] border shadow-sm no-print space-y-6">
+            <div className="bg-white p-6 rounded-[2.5rem] border shadow-sm no-print space-y-4">
                 <div className="flex flex-wrap gap-6 items-end">
                     <div className="flex-1 min-w-[150px]">
-                        <label className="block text-[10px] font-black text-gray-400 mb-2">ترتيب حسب</label>
-                        <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100">
+                        <label className="block text-[10px] font-black text-gray-400 mb-1">ترتيب حسب</label>
+                        <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="w-full p-2 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 text-sm">
                             <option value="name">الاسم الأبجدي</option>
                             <option value="specialty">التخصص</option>
                         </select>
                     </div>
                     <div className="flex-1 min-w-[200px]">
-                        <label className="block text-[10px] font-black text-gray-400 mb-2">تاريخ التقرير</label>
+                        <label className="block text-[10px] font-black text-gray-400 mb-1">تاريخ التقرير</label>
                         <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-                               className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 focus:ring-2 focus:ring-indigo-500" />
+                               className="w-full p-2 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 text-sm focus:ring-2 focus:ring-indigo-500" />
                     </div>
                     <div className="flex-1 min-w-[200px]">
-                        <label className="block text-[10px] font-black text-gray-400 mb-2">حالة القيد</label>
-                        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100">
+                        <label className="block text-[10px] font-black text-gray-400 mb-1">حالة القيد</label>
+                        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full p-2 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 text-sm">
                             <option value="all">الكل</option>
                             <option value="نشط">قوة فعلية</option>
                             <option value="موقوف">موقوف</option>
@@ -167,40 +156,43 @@ export default function AdminDataReports({ employees }: Props) {
                 <div className="flex items-center gap-4 bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100">
                     <Type size={18} className="text-indigo-600" />
                     <span className="text-xs font-black text-indigo-700">تحكم في حجم خط الطباعة:</span>
-                    <input type="range" min="6" max="14" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-48 accent-indigo-600" />
+                    <input type="range" min="6" max="12" step="0.5" value={fontSize} onChange={(e) => setFontSize(parseFloat(e.target.value))} className="w-48 accent-indigo-600" />
                     <span className="font-bold text-indigo-600 text-xs">{fontSize}px</span>
                 </div>
             </div>
 
             {/* منطقة المعاينة والطباعة */}
-            <div ref={printRef} className="bg-white p-6 rounded-[2rem] border shadow-sm min-h-[1100px] print:p-0 print:border-0 print:shadow-none text-right" dir="rtl">
-                <div className="hidden print:block mb-4 border-b-2 border-black pb-4 text-center">
-                    <h1 className="text-xl font-black italic tracking-tighter">إدارة شمال الجيزة - مركز غرب المطار</h1>
-                    <p className="text-sm font-bold mt-1">بيان: {view === 'daily_io' ? 'مسير الحضور والغياب اليومي' : view.replace('_', ' ')} | التاريخ: {date}</p>
+            <div ref={printRef} className="bg-white p-6 rounded-[1.5rem] border shadow-sm min-h-[1100px] print:p-2 print:border-0 print:shadow-none text-right" dir="rtl">
+                
+                {/* هيدر الطباعة المحدث (سطر واحد) */}
+                <div className="hidden print:block mb-4 border-b border-black pb-2 text-center">
+                    <p className="text-[11px] font-black italic">
+                        ادارة شمال الجيزة الصحية مركز غرب المطار - بيان التواجد يوم ({new Date(date).toLocaleDateString('ar-EG')}) الساعة ({new Date().toLocaleTimeString('ar-EG', {hour: '2-digit', minute: '2-digit'})})
+                    </p>
                 </div>
 
                 <div className="overflow-x-auto">
                     {view === 'staff_counts' ? (
-                        <div className="max-w-2xl mx-auto">
-                            <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize + 2}px` }}>
+                        <div className="max-w-xl mx-auto">
+                            <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize + 1}px` }}>
                                 <thead>
                                     <tr className="bg-gray-100 font-black">
-                                        <th className="p-2 border border-black text-center w-16">م</th>
-                                        <th className="p-2 border border-black text-right">التخصص الطبي</th>
-                                        <th className="p-2 border border-black text-center w-32">العدد</th>
+                                        <th className="p-1 border border-black text-center w-12">م</th>
+                                        <th className="p-1 border border-black text-right">التخصص الطبي</th>
+                                        <th className="p-1 border border-black text-center w-24">العدد</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {specialtyReport.list.map((row, i) => (
-                                        <tr key={i} className="h-8">
-                                            <td className="p-2 border border-black text-center font-mono">{row.m}</td>
-                                            <td className="p-2 border border-black font-black">{row.specialty}</td>
-                                            <td className="p-2 border border-black text-center font-black">{row.count}</td>
+                                        <tr key={i}>
+                                            <td className="p-1 border border-black text-center font-mono">{row.m}</td>
+                                            <td className="p-1 border border-black font-black pr-2">{row.specialty}</td>
+                                            <td className="p-1 border border-black text-center font-black">{row.count}</td>
                                         </tr>
                                     ))}
-                                    <tr className="bg-gray-200 font-black border-t-2 border-black h-10">
-                                        <td className="p-2 border border-black text-center" colSpan={2}>الإجمالي العام للقوة المختارة</td>
-                                        <td className="p-2 border border-black text-center">{specialtyReport.total}</td>
+                                    <tr className="bg-gray-200 font-black border-t-2 border-black">
+                                        <td className="p-1 border border-black text-center" colSpan={2}>الإجمالي العام للقوة المختارة</td>
+                                        <td className="p-1 border border-black text-center">{specialtyReport.total}</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -211,22 +203,22 @@ export default function AdminDataReports({ employees }: Props) {
                             <div className="w-1/2">
                                 <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
                                     <thead>
-                                        <tr className="bg-gray-100 text-[9px] font-black h-8">
-                                            <th className="border border-black p-1 w-8">كود</th>
-                                            <th className="border border-black p-1 text-right">اسم الموظف كاملاً</th>
-                                            <th className="border border-black p-1 w-16">تخصص</th>
-                                            <th className="border border-black p-1 w-12">حضور</th>
-                                            <th className="border border-black p-1 w-12">انصراف</th>
+                                        <tr className="bg-gray-50 text-[9px] font-black">
+                                            <th className="border border-black p-0.5 w-8">كود</th>
+                                            <th className="border border-black p-0.5 text-right">اسم الموظف كاملاً</th>
+                                            <th className="border border-black p-0.5 w-16">تخصص</th>
+                                            <th className="border border-black p-0.5 w-12">حضور</th>
+                                            <th className="border border-black p-0.5 w-12">انصراف</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {dailySplit.left.map((row) => (
-                                            <tr key={row.employee_id} className="h-6">
-                                                <td className="border border-black text-center font-mono">{row.employee_id}</td>
-                                                <td className="border border-black pr-1 font-bold whitespace-nowrap overflow-hidden leading-tight">{row.name}</td>
-                                                <td className="border border-black text-center text-[7px] leading-none">{row.specialty}</td>
-                                                <td className="border border-black text-center font-mono text-blue-800">{row.inTime}</td>
-                                                <td className="border border-black text-center font-mono text-red-800">{row.outTime}</td>
+                                            <tr key={row.employee_id} className="h-[18px]">
+                                                <td className="border border-black text-center font-mono text-[8px] p-0">{row.employee_id}</td>
+                                                <td className="border border-black pr-1 font-bold whitespace-nowrap overflow-hidden text-[8px] p-0">{row.name}</td>
+                                                <td className="border border-black text-center text-[7px] leading-none p-0">{row.specialty}</td>
+                                                <td className="border border-black text-center font-mono text-blue-800 text-[8px] p-0">{row.inTime}</td>
+                                                <td className="border border-black text-center font-mono text-red-800 text-[8px] p-0">{row.outTime}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -237,22 +229,22 @@ export default function AdminDataReports({ employees }: Props) {
                             <div className="w-1/2">
                                 <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
                                     <thead>
-                                        <tr className="bg-gray-100 text-[9px] font-black h-8">
-                                            <th className="border border-black p-1 w-8">كود</th>
-                                            <th className="border border-black p-1 text-right">اسم الموظف كاملاً</th>
-                                            <th className="border border-black p-1 w-16">تخصص</th>
-                                            <th className="border border-black p-1 w-12">حضور</th>
-                                            <th className="border border-black p-1 w-12">انصراف</th>
+                                        <tr className="bg-gray-50 text-[9px] font-black">
+                                            <th className="border border-black p-0.5 w-8">كود</th>
+                                            <th className="border border-black p-0.5 text-right">اسم الموظف كاملاً</th>
+                                            <th className="border border-black p-0.5 w-16">تخصص</th>
+                                            <th className="border border-black p-0.5 w-12">حضور</th>
+                                            <th className="border border-black p-0.5 w-12">انصراف</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {dailySplit.right.map((row) => (
-                                            <tr key={row.employee_id} className="h-6">
-                                                <td className="border border-black text-center font-mono">{row.employee_id}</td>
-                                                <td className="border border-black pr-1 font-bold whitespace-nowrap overflow-hidden leading-tight">{row.name}</td>
-                                                <td className="border border-black text-center text-[7px] leading-none">{row.specialty}</td>
-                                                <td className="border border-black text-center font-mono text-blue-800">{row.inTime}</td>
-                                                <td className="border border-black text-center font-mono text-red-800">{row.outTime}</td>
+                                            <tr key={row.employee_id} className="h-[18px]">
+                                                <td className="border border-black text-center font-mono text-[8px] p-0">{row.employee_id}</td>
+                                                <td className="border border-black pr-1 font-bold whitespace-nowrap overflow-hidden text-[8px] p-0">{row.name}</td>
+                                                <td className="border border-black text-center text-[7px] leading-none p-0">{row.specialty}</td>
+                                                <td className="border border-black text-center font-mono text-blue-800 text-[8px] p-0">{row.inTime}</td>
+                                                <td className="border border-black text-center font-mono text-red-800 text-[8px] p-0">{row.outTime}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -260,35 +252,34 @@ export default function AdminDataReports({ employees }: Props) {
                             </div>
                         </div>
                     ) : (
-                        /* بيان القوة الفعلية */
-                        <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize + 1}px` }}>
+                        <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize + 0.5}px` }}>
                             <thead>
-                                <tr className="bg-gray-100 h-10 font-black">
-                                    <th className="p-2 border border-black text-center no-print w-10"><CheckSquare size={16} /></th>
-                                    <th className="p-2 border border-black text-center w-12">م</th>
-                                    <th className="p-2 border border-black text-right">الاسم بالكامل</th>
-                                    <th className="p-2 border border-black text-center font-mono w-40">الرقم القومي</th>
-                                    <th className="p-2 border border-black text-center">التخصص</th>
-                                    <th className="p-2 border border-black text-center font-mono">التليفون</th>
-                                    <th className="p-2 border border-black text-center w-24">الحالة</th>
+                                <tr className="bg-gray-100 font-black h-8">
+                                    <th className="p-1 border border-black text-center no-print w-10"><CheckSquare size={16} /></th>
+                                    <th className="p-1 border border-black text-center w-10">م</th>
+                                    <th className="p-1 border border-black text-right">الاسم بالكامل</th>
+                                    <th className="p-1 border border-black text-center font-mono w-32">الرقم القومي</th>
+                                    <th className="p-1 border border-black text-center w-24">التخصص</th>
+                                    <th className="p-1 border border-black text-center font-mono w-28">التليفون</th>
+                                    <th className="p-1 border border-black text-center w-20">الحالة</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredEmployees.map((row, i) => {
                                     const isSelected = selectedRows.includes(row.employee_id);
                                     return (
-                                        <tr key={row.employee_id} className={`h-8 ${!isSelected ? 'no-print opacity-20' : ''}`}>
-                                            <td className="p-1 border border-black text-center no-print">
+                                        <tr key={row.employee_id} className={`h-6 ${!isSelected ? 'no-print opacity-20' : ''}`}>
+                                            <td className="p-0 border border-black text-center no-print">
                                                 <button onClick={() => toggleRow(row.employee_id)}>
-                                                    {isSelected ? <CheckSquare size={16} className="text-indigo-600" /> : <Square size={16} className="text-gray-300" />}
+                                                    {isSelected ? <CheckSquare size={14} className="text-indigo-600" /> : <Square size={14} className="text-gray-300" />}
                                                 </button>
                                             </td>
-                                            <td className="p-1 border border-black text-center font-mono">{i + 1}</td>
-                                            <td className="p-1 border border-black pr-2 font-bold">{row.name}</td>
-                                            <td className="p-1 border border-black text-center font-mono">{row.national_id}</td>
-                                            <td className="p-1 border border-black text-center">{row.specialty}</td>
-                                            <td className="p-1 border border-black text-center font-mono">{row.phone}</td>
-                                            <td className="p-1 border border-black text-center font-black text-[10px]">
+                                            <td className="p-0 border border-black text-center font-mono">{i + 1}</td>
+                                            <td className="p-0 border border-black pr-2 font-bold">{row.name}</td>
+                                            <td className="p-0 border border-black text-center font-mono">{row.national_id}</td>
+                                            <td className="p-0 border border-black text-center">{row.specialty}</td>
+                                            <td className="p-0 border border-black text-center font-mono">{row.phone}</td>
+                                            <td className="p-0 border border-black text-center font-black text-[9px]">
                                                 {row.status === 'نشط' ? 'قوة فعلية' : row.status}
                                             </td>
                                         </tr>
@@ -299,21 +290,21 @@ export default function AdminDataReports({ employees }: Props) {
                     )}
                 </div>
 
-                {/* الإحصائيات السفلية */}
+                {/* الإحصائيات السفلية (مضغوطة) */}
                 {view === 'daily_io' && (
-                    <div className="mt-4 border-2 border-black p-3 bg-gray-50 grid grid-cols-4 gap-2 text-center font-black text-[11px] leading-relaxed">
-                        <div className="border-l border-black">إجمالي القوة: {stats.total}</div>
-                        <div className="border-l border-black text-emerald-800 bg-emerald-50/50">المتواجدين: {stats.present}</div>
-                        <div className="border-l border-black text-red-800 bg-red-50/50">غير المتواجدين: {stats.absent}</div>
-                        <div className="text-indigo-900 font-black italic">نسبة التواجد: {stats.ratio}%</div>
+                    <div className="mt-2 border border-black p-1 bg-gray-50 flex justify-between px-10 text-center font-black text-[10px]">
+                        <div>إجمالي القوة: {stats.total}</div>
+                        <div className="text-emerald-800">المتواجدين: {stats.present}</div>
+                        <div className="text-red-800">غير المتواجدين: {stats.absent}</div>
+                        <div className="text-indigo-900 italic">نسبة الانضباط: {stats.ratio}%</div>
                     </div>
                 )}
 
-                {/* التوقيعات */}
-                <div className="mt-8 flex justify-between px-16 text-[10px] font-black">
-                    <div className="text-center space-y-10"><p>مسئول البصمة</p><p className="border-b border-black w-32 mx-auto"></p></div>
-                    <div className="text-center space-y-10"><p>شئون العاملين</p><p className="border-b border-black w-32 mx-auto"></p></div>
-                    <div className="text-center space-y-10"><p>مدير المركز</p><p className="border-b border-black w-32 mx-auto"></p></div>
+                {/* التوقيعات (مضغوطة) */}
+                <div className="mt-6 flex justify-between px-16 text-[9px] font-black">
+                    <div className="text-center">مسئول البصمة<br/>........</div>
+                    <div className="text-center">شئون العاملين<br/>........</div>
+                    <div className="text-center">مدير المركز<br/>........</div>
                 </div>
             </div>
         </div>
