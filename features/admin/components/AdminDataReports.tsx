@@ -17,7 +17,7 @@ export default function AdminDataReports({ employees }: Props) {
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     
     const [selectedRows, setSelectedRows] = useState<string[]>([]);
-    const [fontSize, setFontSize] = useState(10); // تصغير الخط الافتراضي ليناسب التقسيم
+    const [fontSize, setFontSize] = useState(10); 
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [filterStatus, setFilterStatus] = useState('all');
     const [sortBy, setSortBy] = useState<'name' | 'specialty'>('name');
@@ -54,7 +54,7 @@ export default function AdminDataReports({ employees }: Props) {
             });
     }, [employees, filterStatus, sortBy]);
 
-    // --- معالجة بيانات الحضور اليومي ---
+    // --- معالجة بيانات الحضور اليومي (بدون نصوص للغياب) ---
     const dailyProcessed = useMemo(() => {
         return staffReport.map(emp => {
             const att = attendance.find(a => a.employee_id === emp.employee_id);
@@ -65,11 +65,22 @@ export default function AdminDataReports({ employees }: Props) {
                 inT = times[0] || '';
                 outT = times.length > 1 ? times[times.length - 1] : '';
             }
+            // الموظف متواجد إذا وجد سجل بصمة (حتى لو بصمة واحدة)
             return { ...emp, inTime: inT, outTime: outT, isPresent: !!att };
         });
     }, [staffReport, attendance]);
 
-    // تقسيم البيانات لنصفين (أيمن وأيسر)
+    // الإحصائيات المطلوبة (تعتمد على الموظفين المختارين حالياً)
+    const stats = useMemo(() => {
+        const total = dailyProcessed.length;
+        const present = dailyProcessed.filter(e => e.isPresent).length;
+        const absent = total - present;
+        const ratio = total > 0 ? ((present / total) * 100).toFixed(1) : "0";
+
+        return { total, present, absent, ratio };
+    }, [dailyProcessed]);
+
+    // تقسيم البيانات لنصفين (أيمن وأيسر) للتقرير المزدوج
     const dailySplit = useMemo(() => {
         const half = Math.ceil(dailyProcessed.length / 2);
         return {
@@ -126,7 +137,7 @@ export default function AdminDataReports({ employees }: Props) {
                         <div className="flex-1 min-w-[200px]">
                             <label className="block text-[10px] font-black text-gray-400 mb-2">تاريخ اليوم</label>
                             <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-                                className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100" />
+                                className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 focus:ring-2 focus:ring-indigo-500" />
                         </div>
                     )}
                     <div className="flex-1 min-w-[200px]">
@@ -142,7 +153,7 @@ export default function AdminDataReports({ employees }: Props) {
 
                 <div className="flex items-center gap-4 bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100">
                     <Type size={18} className="text-indigo-600" />
-                    <span className="text-xs font-black text-indigo-700">مقاس الخط للطباعة:</span>
+                    <span className="text-xs font-black text-indigo-700">تعديل مقاس الخط للطباعة:</span>
                     <input type="range" min="7" max="14" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} className="w-32 accent-indigo-600" />
                     <span className="font-bold text-indigo-600 text-xs">{fontSize}px</span>
                 </div>
@@ -151,8 +162,8 @@ export default function AdminDataReports({ employees }: Props) {
             {/* منطقة الطباعة */}
             <div ref={printRef} className="bg-white p-8 rounded-[2rem] border shadow-sm min-h-[1000px] print:p-0 print:border-0 print:shadow-none text-right" dir="rtl">
                 <div className="hidden print:block mb-4 border-b-2 border-black pb-4 text-center">
-                    <h1 className="text-xl font-black italic">إدارة شمال الجيزة - مركز غرب المطار</h1>
-                    <p className="text-sm font-bold mt-1">بيان: {view === 'daily_io' ? 'حضور وغياب يومي (مزدوج)' : view.replace('_', ' ')} | التاريخ: {date}</p>
+                    <h1 className="text-xl font-black italic tracking-tighter">إدارة شمال الجيزة - مركز غرب المطار</h1>
+                    <p className="text-sm font-bold mt-1">بيان: {view === 'daily_io' ? 'الحضور والغياب اليومي (تنسيق مزدوج)' : view.replace('_', ' ')} | التاريخ: {date}</p>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -176,14 +187,13 @@ export default function AdminDataReports({ employees }: Props) {
                             </tbody>
                         </table>
                     ) : view === 'daily_io' ? (
-                        /* التصميم المزدوج للحضور اليومي */
                         <div className="flex gap-2 w-full">
                             {/* القسم الأيمن */}
                             <div className="w-1/2">
                                 <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
                                     <thead>
-                                        <tr className="bg-gray-100 text-[10px]">
-                                            <th className="border border-black p-1">بصمة</th>
+                                        <tr className="bg-gray-100 text-[9px] font-black">
+                                            <th className="border border-black p-1 w-10">كود</th>
                                             <th className="border border-black p-1 text-right">الاسم</th>
                                             <th className="border border-black p-1">تخصص</th>
                                             <th className="border border-black p-1">حضور</th>
@@ -191,13 +201,13 @@ export default function AdminDataReports({ employees }: Props) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {dailySplit.left.map((row, i) => (
+                                        {dailySplit.left.map((row) => (
                                             <tr key={row.employee_id} className={`h-6 ${!selectedRows.includes(row.employee_id) ? 'no-print hidden' : ''}`}>
                                                 <td className="border border-black text-center font-mono">{row.employee_id}</td>
                                                 <td className="border border-black pr-1 font-bold whitespace-nowrap overflow-hidden">{row.name.split(' ').slice(0,3).join(' ')}</td>
-                                                <td className="border border-black text-center text-[9px]">{row.specialty.substring(0,10)}</td>
-                                                <td className="border border-black text-center font-mono">{row.inTime}</td>
-                                                <td className="border border-black text-center font-mono">{row.outTime}</td>
+                                                <td className="border border-black text-center text-[8px]">{row.specialty.substring(0,10)}</td>
+                                                <td className="border border-black text-center font-mono text-blue-800">{row.inTime}</td>
+                                                <td className="border border-black text-center font-mono text-red-800">{row.outTime}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -208,8 +218,8 @@ export default function AdminDataReports({ employees }: Props) {
                             <div className="w-1/2">
                                 <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
                                     <thead>
-                                        <tr className="bg-gray-100 text-[10px]">
-                                            <th className="border border-black p-1">بصمة</th>
+                                        <tr className="bg-gray-100 text-[9px] font-black">
+                                            <th className="border border-black p-1 w-10">كود</th>
                                             <th className="border border-black p-1 text-right">الاسم</th>
                                             <th className="border border-black p-1">تخصص</th>
                                             <th className="border border-black p-1">حضور</th>
@@ -217,13 +227,13 @@ export default function AdminDataReports({ employees }: Props) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {dailySplit.right.map((row, i) => (
+                                        {dailySplit.right.map((row) => (
                                             <tr key={row.employee_id} className={`h-6 ${!selectedRows.includes(row.employee_id) ? 'no-print hidden' : ''}`}>
                                                 <td className="border border-black text-center font-mono">{row.employee_id}</td>
                                                 <td className="border border-black pr-1 font-bold whitespace-nowrap overflow-hidden">{row.name.split(' ').slice(0,3).join(' ')}</td>
-                                                <td className="border border-black text-center text-[9px]">{row.specialty.substring(0,10)}</td>
-                                                <td className="border border-black text-center font-mono">{row.inTime}</td>
-                                                <td className="border border-black text-center font-mono">{row.outTime}</td>
+                                                <td className="border border-black text-center text-[8px]">{row.specialty.substring(0,10)}</td>
+                                                <td className="border border-black text-center font-mono text-blue-800">{row.inTime}</td>
+                                                <td className="border border-black text-center font-mono text-red-800">{row.outTime}</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -231,7 +241,7 @@ export default function AdminDataReports({ employees }: Props) {
                             </div>
                         </div>
                     ) : (
-                        /* بيان القوة الفعلية (الأسماء) */
+                        /* بيان القوة الفعلية */
                         <table className="w-full border-collapse border border-black" style={{ fontSize: `${fontSize}px` }}>
                             <thead>
                                 <tr className="bg-gray-100">
@@ -240,7 +250,7 @@ export default function AdminDataReports({ employees }: Props) {
                                     <th className="p-2 border border-black text-right">الاسم</th>
                                     <th className="p-2 border border-black text-center font-mono">الرقم القومي</th>
                                     <th className="p-2 border border-black text-center">التخصص</th>
-                                    <th className="p-2 border border-black text-center">التليفون</th>
+                                    <th className="p-2 border border-black text-center font-mono">التليفون</th>
                                     <th className="p-2 border border-black text-center">الحالة</th>
                                 </tr>
                             </thead>
@@ -268,18 +278,21 @@ export default function AdminDataReports({ employees }: Props) {
                     )}
                 </div>
 
-                {/* الإحصائيات والتذييل */}
+                {/* الإحصائيات المحدثة المطلوبة */}
                 {view === 'daily_io' && (
-                    <div className="mt-4 border-2 border-black p-2 bg-gray-50 flex justify-around items-center font-black text-xs">
-                        <span>إجمالي الموظفين: {dailyProcessed.length}</span>
-                        <span>إجمالي الحضور: {dailyProcessed.filter(e => e.isPresent).length}</span>
-                        <span>إجمالي الغياب: {dailyProcessed.filter(e => !e.isPresent).length}</span>
+                    <div className="mt-4 border-2 border-black p-3 bg-gray-50 grid grid-cols-4 gap-2 text-center font-black text-xs leading-relaxed">
+                        <div className="border-l border-black">إجمالي الموظفين: {stats.total}</div>
+                        <div className="border-l border-black text-emerald-700">إجمالي المتواجدين: {stats.present}</div>
+                        <div className="border-l border-black text-red-700">إجمالي غير المتواجدين: {stats.absent}</div>
+                        <div className="text-indigo-700 italic">نسبة التواجد: {stats.ratio}%</div>
                     </div>
                 )}
 
+                {/* التوقيعات */}
                 <div className="mt-8 flex justify-between px-16 text-[10px] font-black">
-                    <div className="text-center space-y-12"><p>مسئول شئون العاملين</p><p>........................</p></div>
-                    <div className="text-center space-y-12"><p>مدير المركز</p><p>........................</p></div>
+                    <div className="text-center space-y-12"><p>مسئول البصمة</p><p className="border-b border-black w-24 mx-auto"></p></div>
+                    <div className="text-center space-y-12"><p>شئون العاملين</p><p className="border-b border-black w-24 mx-auto"></p></div>
+                    <div className="text-center space-y-12"><p>مدير المركز</p><p className="border-b border-black w-24 mx-auto"></p></div>
                 </div>
             </div>
         </div>
