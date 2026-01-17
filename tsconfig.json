@@ -17,9 +17,15 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./attendanceAI/*"]
     }
   },
-  "include": ["src", "vite.config.ts"],
+  "include": [
+    "attendanceAI/**/*.ts", 
+    "attendanceAI/**/*.tsx", 
+    "attendanceAI/**/*.js", 
+    "attendanceAI/**/*.jsx",
+    "vite.config.ts"
+  ],
   "exclude": ["node_modules", "supabase", "dist"]
 }
