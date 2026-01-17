@@ -3,8 +3,8 @@ import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { 
     Database, Users, BarChart3, Clock, CalendarX, 
-    FileText, Printer, Download, Settings2, CheckSquare, 
-    Square, Type, ArrowUpDown, Info
+    FileText, Printer, Settings2, CheckSquare, 
+    Square, Type, Info, Mail
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 
@@ -18,32 +18,32 @@ export default function AdminDataReports({ employees }: Props) {
     const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
     
-    // إعدادات العرض
     const [selectedRows, setSelectedRows] = useState<string[]>([]);
     const [fontSize, setFontSize] = useState(11);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
     const [filterStatus, setFilterStatus] = useState('all');
-    const [sortBy, setSortBy] = useState<'name' | 'specialty' | 'id'>('name');
+    const [sortBy, setSortBy] = useState<'name' | 'specialty'>('name');
 
     const printRef = useRef(null);
 
-    // جلب البيانات الأساسية
     useEffect(() => {
-        const isMonth = view === 'monthly_absent';
-        fetchData(isMonth ? month : date, isMonth);
+        fetchData();
     }, [view, date, month]);
 
-    const fetchData = async (targetDate: string, isMonth = false) => {
+    const fetchData = async () => {
         setLoading(true);
         try {
-            // جلب سجلات البصمة 
-            let attQuery = supabase.from('attendance').select('*');
-            if (isMonth) attQuery = attQuery.gte('date', `${targetDate}-01`).lte('date', `${targetDate}-31`);
-            else attQuery = attQuery.eq('date', targetDate);
+            // جلب سجلات البصمة للشهر بالكامل لضمان توفر البيانات لكل التقارير
+            const startOfMonth = `${month}-01`;
+            const endOfMonth = `${month}-31`;
+
+            const { data: att } = await supabase.from('attendance')
+                .select('*')
+                .gte('date', startOfMonth)
+                .lte('date', endOfMonth);
             
-            const { data: att } = await attQuery;
-            // جلب كافة الطلبات 
+            // جلب كافة الطلبات لمقارنتها بالتواريخ
             const { data: lvs } = await supabase.from('leave_requests').select('*');
             
             setAttendance(att || []);
@@ -52,18 +52,21 @@ export default function AdminDataReports({ employees }: Props) {
         } finally { setLoading(false); }
     };
 
-    // --- 1. بيان القوة الفعلية مع الترتيب ---
-    const sortedEmployees = useMemo(() => {
+    // --- 1. معالجة القوة الفعلية والمسميات ---
+    const staffReport = useMemo(() => {
         return [...employees]
             .filter(e => filterStatus === 'all' || e.status === filterStatus)
+            .map(e => ({
+                ...e,
+                displayStatus: e.status === 'نشط' ? 'قوة فعلية' : e.status
+            }))
             .sort((a, b) => {
                 if (sortBy === 'name') return a.name.localeCompare(b.name, 'ar');
-                if (sortBy === 'specialty') return a.specialty.localeCompare(b.specialty, 'ar');
-                return 0;
+                return a.specialty.localeCompare(b.specialty, 'ar');
             });
     }, [employees, filterStatus, sortBy]);
 
-    // --- 2. بيان التخصصات المختصر ---
+    // --- 2. بيان التخصصات (أعداد فقط) ---
     const specialtyReport = useMemo(() => {
         const specs = Array.from(new Set(employees.map(e => e.specialty)));
         return specs.map((spec, idx) => {
@@ -72,56 +75,65 @@ export default function AdminDataReports({ employees }: Props) {
         }).filter(item => item.count > 0);
     }, [employees, filterStatus]);
 
-    // --- 3. بيان الحضور اليومي مع جلب الطلبات ---
+    // --- 3. حضور وغياب يومي (منطق سريان الطلبات) ---
     const dailyProcessed = useMemo(() => {
-        return sortedEmployees.map(emp => {
-            const att = attendance.find(a => a.employee_id === emp.employee_id);
-            const lve = leaves.find(l => l.employee_id === emp.employee_id && date >= l.start_date && date <= l.end_date);
+        return staffReport.map(emp => {
+            const att = attendance.find(a => a.employee_id === emp.employee_id && a.date === date);
+            
+            // البحث عن طلب "يخص هذا اليوم" (التاريخ المختار يقع بين بداية ونهاية الطلب)
+            const activeLeave = leaves.find(l => 
+                l.employee_id === emp.employee_id && 
+                date >= l.start_date && 
+                date <= l.end_date
+            );
             
             let status = 'غائب', inT = '-', outT = '-';
             
             if (att) {
-                const times = att.times?.split(/\s+/).filter(t => t.includes(':')) || []; 
+                const times = att.times?.split(/\s+/).filter(t => t.includes(':')) || [];
                 inT = times[0] || '-';
                 outT = times.length > 1 ? times[times.length - 1] : '-';
                 status = (inT !== '-' && outT !== '-') ? 'حاضر' : (inT !== '-' ? 'ترك عمل' : 'غائب');
             }
             
-            // دمج حالة الطلب إذا وجد 
-            const requestInfo = lve ? `${lve.type} (${lve.status})` : '';
+            const requestInfo = activeLeave ? `${activeLeave.type} (${activeLeave.status})` : '';
 
             return { ...emp, reportStatus: status, inTime: inT, outTime: outT, requestInfo };
         });
-    }, [sortedEmployees, attendance, leaves, date]);
+    }, [staffReport, attendance, leaves, date]);
 
-    // --- 4. منطق الغياب الشهري الدقيق ---
+    // --- 4. الغياب الشهري الدقيق (الخوارزمية النهائية) ---
     const monthlyAbsentReport = useMemo(() => {
-        const parts = month.split('-');
-        const year = parseInt(parts[0]);
-        const monthNum = parseInt(parts[1]);
+        const [year, monthNum] = month.split('-').map(Number);
         const daysInMonth = new Date(year, monthNum, 0).getDate();
 
-        return sortedEmployees.map(emp => {
+        return staffReport.map(emp => {
             const empAttDates = attendance.filter(a => a.employee_id === emp.employee_id).map(a => a.date);
             const empApprovedLeaves = leaves.filter(l => l.employee_id === emp.employee_id && l.status === 'مقبول');
             
             let absentDays: number[] = [];
+            
             for (let d = 1; d <= daysInMonth; d++) {
-                const checkDate = `${month}-${String(d).padStart(2, '0')}`;
-                if (new Date(checkDate).getDay() === 5) continue; // استبعاد الجمعة
+                const dayStr = String(d).padStart(2, '0');
+                const checkDate = `${month}-${dayStr}`;
+                
+                // استبعاد الجمعة
+                if (new Date(checkDate).getDay() === 5) continue;
 
                 const hasAtt = empAttDates.includes(checkDate);
+                // تحقق هل اليوم يقع ضمن "نطاق" أي إجازة مقبولة
                 const hasLeave = empApprovedLeaves.some(l => checkDate >= l.start_date && checkDate <= l.end_date);
 
                 if (!hasAtt && !hasLeave) absentDays.push(d);
             }
+
             return { ...emp, absentCount: absentDays.length, daysList: absentDays.join(', ') };
         }).filter(e => e.absentCount > 0);
-    }, [sortedEmployees, attendance, leaves, month]);
+    }, [staffReport, attendance, leaves, month]);
 
     const handlePrint = useReactToPrint({
         content: () => printRef.current,
-        documentTitle: `تقرير_${view}_${date}`,
+        documentTitle: `مركز_غرب_المطار_${view}`,
     });
 
     return (
@@ -132,7 +144,7 @@ export default function AdminDataReports({ employees }: Props) {
                     { id: 'staff_names', label: 'بيان القوة الفعلية', icon: Users },
                     { id: 'staff_counts', label: 'بيان التخصصات', icon: BarChart3 },
                     { id: 'daily_io', label: 'حضور وغياب يومي', icon: Clock },
-                    { id: 'monthly_absent', label: 'غياب شهري', icon: FileText },
+                    { id: 'monthly_absent', label: 'غياب شهري', icon: CalendarX },
                 ].map(tab => (
                     <button key={tab.id} onClick={() => setView(tab.id as ReportView)}
                         className={`flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black transition-all ${view === tab.id ? 'bg-white text-indigo-600 shadow-md' : 'text-gray-500 hover:bg-gray-200'}`}>
@@ -141,29 +153,27 @@ export default function AdminDataReports({ employees }: Props) {
                 ))}
             </div>
 
-            {/* الفلاتر والتحكم */}
+            {/* الفلاتر */}
             <div className="bg-white p-6 rounded-[2.5rem] border shadow-sm no-print space-y-6">
                 <div className="flex flex-wrap gap-6 items-end">
-                    {view !== 'staff_counts' && (
-                        <div className="flex-1 min-w-[150px]">
-                            <label className="block text-[10px] font-black text-gray-400 mb-2">ترتيب حسب</label>
-                            <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100">
-                                <option value="name">الاسم</option>
-                                <option value="specialty">التخصص</option>
-                            </select>
-                        </div>
-                    )}
+                    <div className="flex-1 min-w-[150px]">
+                        <label className="block text-[10px] font-black text-gray-400 mb-2">ترتيب حسب</label>
+                        <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100">
+                            <option value="name">الاسم</option>
+                            <option value="specialty">التخصص</option>
+                        </select>
+                    </div>
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-[10px] font-black text-gray-400 mb-2">التاريخ</label>
                         <input type={view === 'monthly_absent' ? "month" : "date"} value={view === 'monthly_absent' ? month : date} 
                                onChange={(e) => view === 'monthly_absent' ? setMonth(e.target.value) : setDate(e.target.value)} 
-                               className="w-full p-2.5 bg-gray-50 rounded-2xl font-bold border-none ring-1 ring-gray-100" />
+                               className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 focus:ring-2 focus:ring-indigo-500" />
                     </div>
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-[10px] font-black text-gray-400 mb-2">حالة الموظف</label>
-                        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-2xl font-bold border-none ring-1 ring-gray-100">
+                        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="w-full p-2.5 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100">
                             <option value="all">الكل</option>
-                            <option value="نشط">نشط</option>
+                            <option value="نشط">قوة فعلية</option>
                             <option value="موقوف">موقوف</option>
                             <option value="اجازة">اجازة</option>
                             <option value="خارج المركز">خارج المركز</option>
@@ -213,12 +223,13 @@ export default function AdminDataReports({ employees }: Props) {
                                 <tr className="bg-gray-100 border-y-2 border-black">
                                     <th className="p-3 border text-center no-print w-10"><CheckSquare size={16} /></th>
                                     <th className="p-3 border text-center w-12">م</th>
-                                    <th className="p-3 border text-right">الاسم</th>
+                                    <th className="p-3 border text-right">الاسم الرباعي</th>
                                     <th className="p-3 border text-center">التخصص</th>
                                     {view === 'staff_names' && (
                                         <>
-                                            <th className="p-3 border text-center font-mono">الرقم القومي</th>
-                                            <th className="p-3 border text-center font-mono">التليفون</th>
+                                            <th className="p-3 border text-center">الرقم القومي</th>
+                                            <th className="p-3 border text-center">التليفون</th>
+                                            <th className="p-3 border text-center">البريد الإلكتروني</th>
                                             <th className="p-3 border text-center">الحالة</th>
                                         </>
                                     )}
@@ -254,7 +265,8 @@ export default function AdminDataReports({ employees }: Props) {
                                                 <>
                                                     <td className="p-3 border text-center font-mono">{row.national_id}</td>
                                                     <td className="p-3 border text-center font-mono">{row.phone}</td>
-                                                    <td className="p-3 border text-center text-[10px]">{row.status}</td>
+                                                    <td className="p-3 border text-center text-[10px] text-blue-600">{row.email || '-'}</td>
+                                                    <td className="p-3 border text-center text-[10px] font-bold">{row.displayStatus}</td>
                                                 </>
                                             )}
                                             {view === 'daily_io' && (
