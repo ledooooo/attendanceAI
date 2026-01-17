@@ -3,7 +3,7 @@ import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { 
   Users, Clock, AlertTriangle, Calendar, 
-  ArrowLeft, Activity, UserPlus, Search 
+  Activity, UserPlus, Search 
 } from 'lucide-react';
 
 export default function HomeTab({ employees, setActiveTab }: { employees: Employee[], setActiveTab: (tab: string) => void }) {
@@ -19,7 +19,7 @@ export default function HomeTab({ employees, setActiveTab }: { employees: Employ
       
       // 1. عدد الحضور اليوم
       const { count: attendanceCount } = await supabase
-        .from('attendance_records')
+        .from('attendance') // تأكد من اسم الجدول الصحيح لديك (سواء attendance أو attendance_records)
         .select('*', { count: 'exact', head: true })
         .eq('date', today);
 
@@ -46,69 +46,68 @@ export default function HomeTab({ employees, setActiveTab }: { employees: Employ
   }, []);
 
   const cards = [
-    { title: 'إجمالي الموظفين', value: employees.length, icon: Users, color: 'bg-blue-500', tab: 'doctors' },
-    { title: 'حضور اليوم', value: stats.presentToday, icon: Clock, color: 'bg-emerald-500', tab: 'attendance' },
-    { title: 'بلاغات OVR جديدة', value: stats.ovrNew, icon: AlertTriangle, color: 'bg-red-500', tab: 'quality' },
-    { title: 'إجازات معلقة', value: stats.leavesPending, icon: Calendar, color: 'bg-orange-500', tab: 'leaves' },
+    { title: 'إجمالي الموظفين', value: employees.length, icon: Users, color: 'text-blue-600', bgColor: 'bg-blue-50', tab: 'doctors' },
+    { title: 'حضور اليوم', value: stats.presentToday, icon: Clock, color: 'text-emerald-600', bgColor: 'bg-emerald-50', tab: 'attendance' },
+    { title: 'بلاغات OVR', value: stats.ovrNew, icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50', tab: 'quality' },
+    { title: 'إجازات معلقة', value: stats.leavesPending, icon: Calendar, color: 'text-orange-600', bgColor: 'bg-orange-50', tab: 'leaves' },
   ];
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-      {/* ترويسة الترحيب */}
-      <div className="bg-gradient-to-r from-emerald-800 to-emerald-600 rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-10">
+      {/* ترويسة الترحيب المصغرة */}
+      <div className="bg-gradient-to-r from-emerald-800 to-emerald-600 rounded-[2rem] p-6 text-white shadow-lg relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-        <div className="relative z-10">
-          <h1 className="text-3xl font-black mb-2">مرحباً بك في لوحة القيادة 👋</h1>
-          <p className="text-emerald-100 font-medium text-lg">نظرة عامة على سير العمل في المركز اليوم.</p>
+        <div className="relative z-10 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-black mb-1">مرحباً بك، أيها المسؤول 👋</h1>
+            <p className="text-emerald-100 font-medium text-sm">إليك ملخص سريع لأداء المركز الطبي اليوم.</p>
+          </div>
+          <Activity className="hidden md:block w-12 h-12 text-emerald-400 opacity-50" />
         </div>
       </div>
 
-      {/* بطاقات الإحصائيات السريعة */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* بطاقات الإحصائيات الأفقية (بيانات الكارت في صف واحد) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card, idx) => (
           <div 
             key={idx} 
             onClick={() => setActiveTab(card.tab)}
-            className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+            className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-100 transition-all cursor-pointer group flex items-center justify-between h-20"
           >
-            <div className="flex justify-between items-start mb-4">
-              <div className={`p-3 rounded-2xl ${card.color} text-white shadow-lg shadow-gray-200 group-hover:scale-110 transition-transform`}>
-                <card.icon className="w-6 h-6"/>
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl ${card.bgColor} ${card.color} transition-transform group-hover:scale-105`}>
+                <card.icon className="w-5 h-5"/>
               </div>
-              {card.value > 0 && (
-                <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-lg text-xs font-bold">
-                  {card.value}
-                </span>
-              )}
+              <h3 className="text-gray-600 font-bold text-xs md:text-sm whitespace-nowrap">{card.title}</h3>
             </div>
-            <h3 className="text-gray-400 font-bold text-xs mb-1">{card.title}</h3>
-            <p className="text-3xl font-black text-gray-800">{card.value}</p>
+            <div className="flex items-center">
+               <span className="text-2xl font-black text-gray-800">{card.value}</span>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* الوصول السريع */}
-      <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
-        <h3 className="font-black text-xl text-gray-800 mb-6 flex items-center gap-2">
-            <Activity className="w-6 h-6 text-emerald-600"/> وصول سريع
+      {/* الوصول السريع المصغر */}
+      <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm">
+        <h3 className="font-black text-lg text-gray-800 mb-4 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-emerald-600"/> اختصارات الإدارة
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <button onClick={() => setActiveTab('doctors')} className="p-4 bg-gray-50 rounded-2xl hover:bg-emerald-50 hover:text-emerald-700 transition-colors flex flex-col items-center gap-2 border border-gray-100">
-                <UserPlus className="w-6 h-6"/>
-                <span className="font-bold text-sm">إضافة موظف</span>
-            </button>
-            <button onClick={() => setActiveTab('attendance')} className="p-4 bg-gray-50 rounded-2xl hover:bg-blue-50 hover:text-blue-700 transition-colors flex flex-col items-center gap-2 border border-gray-100">
-                <Clock className="w-6 h-6"/>
-                <span className="font-bold text-sm">سجل الحضور</span>
-            </button>
-            <button onClick={() => setActiveTab('quality')} className="p-4 bg-gray-50 rounded-2xl hover:bg-red-50 hover:text-red-700 transition-colors flex flex-col items-center gap-2 border border-gray-100">
-                <AlertTriangle className="w-6 h-6"/>
-                <span className="font-bold text-sm">إدارة الجودة</span>
-            </button>
-            <button onClick={() => setActiveTab('reports')} className="p-4 bg-gray-50 rounded-2xl hover:bg-purple-50 hover:text-purple-700 transition-colors flex flex-col items-center gap-2 border border-gray-100">
-                <Search className="w-6 h-6"/>
-                <span className="font-bold text-sm">بحث تقارير</span>
-            </button>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'إضافة موظف', icon: UserPlus, tab: 'doctors', color: 'hover:bg-emerald-50 hover:text-emerald-700' },
+              { label: 'سجل الحضور', icon: Clock, tab: 'attendance', color: 'hover:bg-blue-50 hover:text-blue-700' },
+              { label: 'إدارة الجودة', icon: AlertTriangle, tab: 'quality', color: 'hover:bg-red-50 hover:text-red-700' },
+              { label: 'بحث تقارير', icon: Search, tab: 'reports', color: 'hover:bg-purple-50 hover:text-purple-700' },
+            ].map((btn, i) => (
+              <button 
+                key={i} 
+                onClick={() => setActiveTab(btn.tab)} 
+                className={`p-3 bg-gray-50 rounded-xl transition-all flex items-center justify-center gap-3 border border-gray-50 font-bold text-xs md:text-sm ${btn.color}`}
+              >
+                <btn.icon className="w-4 h-4"/>
+                {btn.label}
+              </button>
+            ))}
         </div>
       </div>
     </div>
