@@ -98,21 +98,58 @@ export default function AdminDataReports({ employees }: Props) {
     }, [dailyProcessed, date]);
 
     // 4. الغياب الشهري
+// ج. تقرير الغياب الشهري المطور
     const monthlyAbsentData = useMemo(() => {
-        const daysInMonth = new Date(parseInt(month.split('-')[0]), parseInt(month.split('-')[1]), 0).getDate();
+        // 1. تحديد عدد أيام الشهر المختار
+        const parts = month.split('-');
+        const year = parseInt(parts[0]);
+        const monthNum = parseInt(parts[1]);
+        const daysInMonth = new Date(year, monthNum, 0).getDate();
+
         return employees.map(emp => {
-            const empAttDates = attendance.filter(a => a.employee_id === emp.employee_id).map(a => a.date);
-            const empLeaves = leaves.filter(l => l.employee_id === emp.employee_id && l.status === 'مقبول');
+            // جلب تواريخ بصمات الموظف لهذا الشهر فقط
+            const empAttDates = attendance
+                .filter(a => a.employee_id === emp.employee_id)
+                .map(a => a.date);
+
+            // جلب طلبات الإجازة المقبولة للموظف
+            const empApprovedLeaves = leaves.filter(l => 
+                l.employee_id === emp.employee_id && l.status === 'مقبول'
+            );
+
             let absentDays: number[] = [];
+            
+            // 2. الدوران على كل أيام الشهر يوماً بيوم
             for (let d = 1; d <= daysInMonth; d++) {
-                const checkDate = `${month}-${d.toString().padStart(2, '0')}`;
-                if (new Date(checkDate).getDay() === 5) continue;
-                if (!empAttDates.includes(checkDate) && !empLeaves.some(l => checkDate >= l.start_date && checkDate <= l.end_date)) absentDays.push(d);
+                const dayStr = d.toString().padStart(2, '0');
+                const checkDate = `${month}-${dayStr}`;
+                
+                // أ. استبعاد أيام الجمعة (رقم 5 في JS حيث الأحد 0)
+                const dayOfWeek = new Date(checkDate).getDay();
+                if (dayOfWeek === 5) continue;
+
+                // ب. تحقق هل بصم في هذا اليوم؟
+                const hasAttendance = empAttDates.includes(checkDate);
+
+                // ج. تحقق هل لديه إجازة مقبولة تغطي هذا اليوم؟
+                const hasLeave = empApprovedLeaves.some(l => 
+                    checkDate >= l.start_date && checkDate <= l.end_date
+                );
+
+                // د. إذا لم يبصم ولم يكن في إجازة، يعتبر غائباً
+                if (!hasAttendance && !hasLeave) {
+                    absentDays.push(d);
+                }
             }
-            return { ...emp, absentCount: absentDays.length, daysList: absentDays.join(', ') };
+
+            return { 
+                ...emp, 
+                absentCount: absentDays.length, 
+                daysList: absentDays.length > 0 ? absentDays.join(', ') : 'لا يوجد' 
+            };
         }).filter(e => e.absentCount > 0 && (filterStatus === 'all' || e.status === filterStatus));
     }, [employees, attendance, leaves, month, filterStatus]);
-
+    
     const handlePrint = useReactToPrint({
         content: () => printRef.current,
         documentTitle: `تقرير_${view}_${date}`,
