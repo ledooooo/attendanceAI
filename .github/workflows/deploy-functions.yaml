@@ -1,0 +1,23 @@
+name: Deploy Supabase Functions
+
+on:
+  push:
+    paths:
+      - 'supabase/functions/**' # يعمل فقط عند تعديل الدوال
+    branches:
+      - main # أو master حسب اسم الفرع الرئيسي عندك
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - run: supabase functions deploy send-push-notification --project-ref $SUPABASE_PROJECT_ID
