@@ -74,7 +74,7 @@ export default function StaffDashboard({ employee }: Props) {
     const { data } = await supabase
       .from('notifications')
       .select('*')
-      .eq('recipient_id', employee.employee_id)
+.eq('recipient_id', employee.id)
       .order('created_at', { ascending: false })
       .limit(15);
     if (data) setNotifications(data);
@@ -85,8 +85,8 @@ export default function StaffDashboard({ employee }: Props) {
       await supabase
         .from('notifications')
         .update({ is_read: true })
-        .eq('recipient_id', employee.employee_id);
-      fetchNotifications();
+.eq('recipient_id', employee.id)
+        fetchNotifications();
     }
     setShowNotifMenu(!showNotifMenu);
   };
