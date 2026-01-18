@@ -1,36 +1,125 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Employee } from '../../../types';
+import { Employee, AttendanceRecord } from '../../../types'; //
 import { Input, Select } from '../../../components/ui/FormElements';
-import { FilePlus, Send, Calendar, UserCheck } from 'lucide-react';
+import { FilePlus, Send, Calendar, UserCheck, AlertCircle, Clock, XCircle, Loader2 } from 'lucide-react';
 import { useNotifications } from '../../../context/NotificationContext';
 
 const LEAVE_TYPES = [
   "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورة تدريبية", "خط سير", "مأمورية", "بدل راحة", "اذن صباحى", "اذن مسائي", "تأمين صحي"
 ];
 
-// 1. تحديث الواجهة لتقبل initialDate (اختياري)
 interface Props { 
     employee: Employee; 
     refresh: () => void;
     initialDate?: string | null; 
 }
 
+// واجهة لتعريف الاقتراحات
+interface DateSuggestion {
+    date: string;
+    label: string;
+    type: 'absence' | 'incomplete';
+}
+
 export default function StaffNewRequest({ employee, refresh, initialDate }: Props) {
     const { sendNotification } = useNotifications();
     const [submitting, setSubmitting] = useState(false);
     
+    // حالات الاقتراحات (الغياب والبصمة الواحدة)
+    const [suggestions, setSuggestions] = useState<DateSuggestion[]>([]);
+    const [loadingSuggestions, setLoadingSuggestions] = useState(true);
+
     // حالة النموذج
     const [formData, setFormData] = useState({
         type: LEAVE_TYPES[0], 
-        start: initialDate || '', // استخدام التاريخ الممرر كبداية
-        end: initialDate || '',   // وكهناية (افتراض يوم واحد)
+        start: initialDate || '', 
+        end: initialDate || '',   
         returnDate: '', 
         backup: '', 
         notes: ''
     });
 
-    // 2. تأثير (Effect) لتحديث النموذج إذا تغير التاريخ الممرر
+    // 1. جلب أيام الغياب والبصمة الواحدة
+    useEffect(() => {
+        const fetchIrregularities = async () => {
+            setLoadingSuggestions(true);
+            try {
+                const today = new Date();
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(today.getDate() - 30); // فحص آخر 30 يوم
+
+                // جلب سجلات الحضور للفترة المحددة
+                const { data: records } = await supabase
+                    .from('attendance')
+                    .select('*')
+                    .eq('employee_id', employee.employee_id)
+                    .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
+                    .lte('date', today.toISOString().split('T')[0]);
+
+                if (!records) return;
+
+                const foundSuggestions: DateSuggestion[] = [];
+                const recordDates = new Set(records.map(r => r.date));
+
+                // أ) استخراج أيام البصمة الواحدة (ترك عمل / بصمة ناقصة)
+                records.forEach((record: AttendanceRecord) => {
+                    // نفترض أن التوقيتات مفصولة بمسافة، إذا كان الطول 1 يعني بصمة واحدة
+                    // AttendanceRecord defined times as string
+                    const punches = record.times ? record.times.trim().split(' ') : [];
+                    if (punches.length === 1) {
+                        foundSuggestions.push({
+                            date: record.date,
+                            label: formatDateArabic(record.date),
+                            type: 'incomplete'
+                        });
+                    }
+                });
+
+                // ب) استخراج أيام الغياب (الأيام المفقودة من السجلات)
+                for (let d = new Date(thirtyDaysAgo); d < today; d.setDate(d.getDate() + 1)) {
+                    const dateStr = d.toISOString().split('T')[0];
+                    const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+
+                    // تجاهل أيام الجمعة (أو العطلات حسب النظام)
+                    if (dayName === 'Friday') continue;
+
+                    // إذا لم يكن التاريخ موجوداً في السجلات
+                    if (!recordDates.has(dateStr)) {
+                        foundSuggestions.push({
+                            date: dateStr,
+                            label: formatDateArabic(dateStr),
+                            type: 'absence'
+                        });
+                    }
+                }
+
+                // ترتيب النتائج من الأحدث للأقدم
+                foundSuggestions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                
+                setSuggestions(foundSuggestions);
+            } catch (err) {
+                console.error("Error fetching suggestions:", err);
+            } finally {
+                setLoadingSuggestions(false);
+            }
+        };
+
+        fetchIrregularities();
+    }, [employee.employee_id]);
+
+    // 2. تحديث النموذج عند اختيار تاريخ مقترح
+    const handleSuggestionClick = (suggestion: DateSuggestion) => {
+        setFormData(prev => ({
+            ...prev,
+            start: suggestion.date,
+            end: suggestion.date,
+            // اختيار نوع الإجازة المناسب تلقائياً
+            type: suggestion.type === 'incomplete' ? 'اذن مسائي' : 'اجازة عارضة' 
+        }));
+    };
+
+    // 3. تأثير لتحديث النموذج إذا تغير التاريخ الممرر من الخارج
     useEffect(() => {
         if (initialDate) {
             setFormData(prev => ({
@@ -41,13 +130,21 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         }
     }, [initialDate]);
 
+    // دالة مساعدة لتنسيق التاريخ بالعربية
+    const formatDateArabic = (dateStr: string) => {
+        return new Date(dateStr).toLocaleDateString('ar-EG', {
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric'
+        });
+    };
+
     const submit = async () => {
-        // التحقق الإجباري
         if (!formData.type || !formData.start || !formData.end || !formData.returnDate || !formData.backup) {
             return alert('⚠️ عفواً، جميع الحقول الموضحة بعلامة (*) إجبارية.');
         }
 
-        // التحقق من منطقية التواريخ
         if (new Date(formData.end) < new Date(formData.start)) {
             return alert('⚠️ تاريخ النهاية يجب أن يكون بعد تاريخ البداية!');
         }
@@ -58,7 +155,6 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         setSubmitting(true);
         
         try {
-            // الإرسال لقاعدة البيانات
             const { error } = await supabase.from('leave_requests').insert([{ 
                 employee_id: employee.employee_id, 
                 type: formData.type, 
@@ -72,12 +168,10 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
 
             if (error) throw error;
 
-            // إرسال إشعار للمدير
             await sendNotification('admin', 'طلب جديد 📄', `قام ${employee.name} بتقديم طلب ${formData.type}`);
 
             alert('✅ تم إرسال الطلب بنجاح'); 
             
-            // تصفير النموذج وتحديث الصفحة
             setFormData({ 
                 type: LEAVE_TYPES[0], 
                 start: '', 
@@ -104,6 +198,35 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
             
             <div className="bg-white p-6 md:p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6">
                 
+                {/* قسم الاقتراحات الجديد */}
+                {loadingSuggestions ? (
+                    <div className="flex items-center justify-center gap-2 text-gray-400 text-sm py-2">
+                        <Loader2 className="w-4 h-4 animate-spin"/> جاري فحص سجلات الغياب...
+                    </div>
+                ) : suggestions.length > 0 && (
+                    <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 mb-4">
+                        <h4 className="text-orange-800 font-bold text-sm mb-3 flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4"/> تسوية المواقف المعلقة (آخر 30 يوم):
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                            {suggestions.map((sugg, idx) => (
+                                <button
+                                    key={idx}
+                                    onClick={() => handleSuggestionClick(sugg)}
+                                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border ${
+                                        sugg.type === 'absence' 
+                                        ? 'bg-red-100 text-red-700 border-red-200 hover:bg-red-200' 
+                                        : 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200'
+                                    }`}
+                                >
+                                    {sugg.type === 'absence' ? <XCircle className="w-3 h-3"/> : <Clock className="w-3 h-3"/>}
+                                    {sugg.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-blue-800 text-sm font-bold flex items-center gap-2">
                     <UserCheck className="w-5 h-5"/>
                     يرجى التأكد من التنسيق مع الموظف البديل قبل تقديم الطلب.
@@ -180,4 +303,3 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         </div>
     );
 }
-
