@@ -28,7 +28,8 @@ import AdminMessagesTab from './components/AdminMessagesTab';
 import QualityDashboard from './components/QualityDashboard';
 import AdminLibraryManager from './components/AdminLibraryManager'; 
 import AdminDataReports from './components/AdminDataReports'; 
-
+import AbsenceReportTab from './components/AbsenceReportTab';
+import { FileX } from 'lucide-react'; // استيراد الأيقونة
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
   
@@ -100,6 +101,7 @@ export default function AdminDashboard() {
     { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
     { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, // ✅ تعمل الآن بعد الاستيراد
     { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
+    { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
     { 
         id: 'quality', 
         label: 'إدارة الجودة (OVR)', 
@@ -213,6 +215,7 @@ export default function AdminDashboard() {
             {activeTab === 'data-reports' && <AdminDataReports employees={employees} />}
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
             {activeTab === 'send_reports' && <SendReportsTab />}
+            {activeTab === 'absence-report' && <AbsenceReportTab />}     
         </div>
       </main>
     </div>
