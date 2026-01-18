@@ -28,14 +28,15 @@ import StaffLinksTab from './components/StaffLinksTab';
 import StaffOVR from './components/StaffOVR';
 import ShiftRequestsTab from './components/ShiftRequestsTab';
 import QualityDashboard from '../admin/components/QualityDashboard'; 
-import StaffLibrary from './components/StaffLibrary'; // ✅ استيراد مكون المكتبة الجديد
+import StaffLibrary from './components/StaffLibrary';
 
 interface Props {
   employee: Employee;
 }
 
 export default function StaffDashboard({ employee }: Props) {
-  const { signOut } = useAuth();
+  // 1. استدعاء user من الـ AuthContext
+  const { signOut, user } = useAuth();
   
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -48,7 +49,9 @@ export default function StaffDashboard({ employee }: Props) {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
-  const { requestPermission } = usePush(employee.employee_id);
+  
+  // 2. استخدام user.id بدلاً من employee.employee_id لربط الإشعارات بشكل آمن
+  const { requestPermission } = usePush(user?.id || '');
 
   useEffect(() => {
     // طلب الإذن تلقائياً بعد 4 ثواني من دخول الموظف إذا لم يسأل من قبل
@@ -58,14 +61,15 @@ export default function StaffDashboard({ employee }: Props) {
       }
     }, 4000);
     return () => clearTimeout(timer);
-  }, [employee.employee_id]);
+  }, [user?.id]); // 3. تحديث التبعية هنا لتعتمد على user.id
+
   // حالات PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // --- 2. وظائف الإشعارات ---
+  // --- 2. وظائف الإشعارات الداخلية ---
   const fetchNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
@@ -188,7 +192,7 @@ export default function StaffDashboard({ employee }: Props) {
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
-    { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen }, // ✅ إضافة التبويب الجديد هنا
+    { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
@@ -338,7 +342,7 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                     
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
-                    {activeTab === 'library' && <StaffLibrary />} {/* ✅ عرض صفحة المكتبة هنا */}
+                    {activeTab === 'library' && <StaffLibrary />}
                     
                     {activeTab === 'attendance' && (
                         <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} /> 
@@ -372,7 +376,7 @@ export default function StaffDashboard({ employee }: Props) {
               <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm text-center relative animate-in zoom-in-95">
                   <button onClick={() => setShowAboutModal(false)} className="absolute top-6 right-6 p-2 bg-gray-100 rounded-full"><X size={18}/></button>
                   <div className="w-20 h-20 bg-emerald-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200">
-                       <img src="/pwa-192x192.png" className="w-16 h-16 rounded-2xl" alt="Logo" />
+                        <img src="/pwa-192x192.png" className="w-16 h-16 rounded-2xl" alt="Logo" />
                   </div>
                   <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
                   <p className="text-sm text-gray-500 font-bold mb-6">نظام إدارة الموارد البشرية</p>
