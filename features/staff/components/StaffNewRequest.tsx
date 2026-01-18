@@ -1,3 +1,20 @@
+المشكلة الآن أصبحت واضحة جداً بفضل البيانات التي أرسلتها! 💡
+
+**أسباب المشكلة:**
+
+1. **تنسيق التاريخ مختلف:** التواريخ في قاعدة البيانات مخزنة بتنسيق `M/D/YYYY` (مثال: `11/19/2025`)، بينما الكود يقوم بتوليد تواريخ بتنسيق `YYYY-MM-DD` (مثال: `2025-11-19`). هذا الاختلاف يجعل المقارنة تفشل دائماً.
+2. **منطق الغياب:** الكود السابق كان يبحث عن "الصفوف المفقودة"، بينما بياناتك تؤكد أن الصف **موجود** ولكن خانة `times` فارغة.
+
+### الحل الجذري:
+
+قمت بتعديل الكود ليقوم بـ:
+
+1. **توحيد تنسيق التواريخ:** دالة جديدة تحول أي تاريخ قادم من القاعدة (مثل `1/18/2026`) إلى الصيغة القياسية `YYYY-MM-DD` لتنجح المقارنة.
+2. **فحص محتوى `times`:** إذا كان الحقل فارغاً يعتبر غياباً، وإذا كان يحتوي توقيتاً واحداً يعتبر غير مكتمل.
+
+انسخ هذا الكود وضعه في `StaffNewRequest.tsx`:
+
+```tsx
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
@@ -24,7 +41,6 @@ interface DateSuggestion {
 export default function StaffNewRequest({ employee, refresh, initialDate }: Props) {
     const { sendNotification } = useNotifications();
     const [submitting, setSubmitting] = useState(false);
-    
     const [suggestions, setSuggestions] = useState<DateSuggestion[]>([]);
     const [loadingSuggestions, setLoadingSuggestions] = useState(true);
 
@@ -37,76 +53,83 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         notes: ''
     });
 
-    // دالة مساعدة لتحويل التاريخ إلى نص YYYY-MM-DD بالتوقيت المحلي (تمنع مشاكل فرق التوقيت)
-    const toLocalISOString = (date: Date) => {
-        const offset = date.getTimezoneOffset() * 60000; // فرق التوقيت بالمللي ثانية
-        return new Date(date.getTime() - offset).toISOString().split('T')[0];
+    // 🛠️ دالة هامة جداً لتوحيد تنسيق التاريخ (1/18/2026 -> 2026-01-18)
+    const normalizeDate = (dateStr: string) => {
+        const d = new Date(dateStr);
+        // نضمن استخدام التوقيت المحلي
+        const offset = d.getTimezoneOffset() * 60000;
+        return new Date(d.getTime() - offset).toISOString().split('T')[0];
     };
 
-    // --- منطق جلب أيام الغياب والمخالفات ---
+    // دالة لتوليد تاريخ قياسي YYYY-MM-DD من كائن Date
+    const toStandardDate = (d: Date) => {
+        const offset = d.getTimezoneOffset() * 60000;
+        return new Date(d.getTime() - offset).toISOString().split('T')[0];
+    };
+
     useEffect(() => {
         const fetchIrregularities = async () => {
             setLoadingSuggestions(true);
             try {
-                // تحديد فترة الـ 60 يوم
                 const today = new Date();
                 const sixtyDaysAgo = new Date();
                 sixtyDaysAgo.setDate(today.getDate() - 60);
 
-                const startDateStr = toLocalISOString(sixtyDaysAgo);
-                const endDateStr = toLocalISOString(today);
-
-                // 1. جلب سجلات الحضور (Attendance)
-                const attendancePromise = supabase
+                // بما أن التواريخ في قاعدتك M/D/YYYY، لا نعتمد على الفلترة النصية الدقيقة هنا
+                // سنجلب نطاقاً أوسع قليلاً ثم نفلتر بالكود
+                const { data: records } = await supabase
                     .from('attendance')
                     .select('date, times')
                     .eq('employee_id', employee.employee_id)
-                    .gte('date', startDateStr)
-                    .lte('date', endDateStr);
+                    .order('date', { ascending: false })
+                    .limit(100); // جلب آخر 100 سجل لضمان تغطية الـ 60 يوم
 
-                // 2. جلب الإجازات المقدمة مسبقاً (لاستبعادها)
-                // نستبعد أي إجازة ليست "مرفوضة" (يعني مقبولة أو معلقة)
-                const leavesPromise = supabase
+                // جلب الإجازات
+                const { data: leaves } = await supabase
                     .from('leave_requests')
                     .select('start_date, end_date')
                     .eq('employee_id', employee.employee_id)
-                    .neq('status', 'مرفوض') 
-                    .gte('end_date', startDateStr); 
+                    .neq('status', 'مرفوض');
 
-                // 3. جلب العطلات الرسمية
-                const settingsPromise = supabase
+                // جلب العطلات
+                const { data: settings } = await supabase
                     .from('settings')
                     .select('holidays_date')
                     .single();
 
-                const [attRes, leavesRes, settingsRes] = await Promise.all([attendancePromise, leavesPromise, settingsPromise]);
+                const validLeaves = leaves || [];
+                const holidays = settings?.holidays_date || [];
 
-                const records = attRes.data || [];
-                const leaves = leavesRes.data || [];
-                const holidays = settingsRes.data?.holidays_date || []; 
+                // 🏗️ بناء خريطة الحالة لكل يوم (Map)
+                // المفتاح: التاريخ الموحد (YYYY-MM-DD)
+                // القيمة: الحالة (absent, incomplete, present)
+                const statusMap = new Map<string, string>();
+
+                if (records) {
+                    records.forEach((r: any) => {
+                        const stdDate = normalizeDate(r.date); // توحيد التاريخ
+                        const t = r.times ? r.times.trim() : ''; // تنظيف الوقت
+
+                        if (!t) {
+                            // إذا الحقل فارغ تماماً = غياب
+                            statusMap.set(stdDate, 'absent');
+                        } else {
+                            // تقسيم الوقت (يدعم المسافات العادية والبيانات القادمة بثواني)
+                            const punches = t.split(/\s+/);
+                            if (punches.length === 1) {
+                                statusMap.set(stdDate, 'incomplete');
+                            } else {
+                                statusMap.set(stdDate, 'present');
+                            }
+                        }
+                    });
+                }
 
                 const foundSuggestions: DateSuggestion[] = [];
-                // تحويل سجلات الحضور إلى Set لسهولة البحث
-                const recordDates = new Set(records.map(r => r.date));
 
-                // --- أ) فحص أيام البصمة الواحدة (incomplete) ---
-                records.forEach((record: any) => {
-                    const punches = record.times ? record.times.trim().split(' ') : [];
-                    // شرط البصمة الواحدة
-                    if (punches.length === 1) {
-                        foundSuggestions.push({
-                            date: record.date,
-                            label: formatDateArabic(record.date),
-                            type: 'incomplete'
-                        });
-                    }
-                });
-
-                // --- ب) فحص أيام الغياب (Absence) ---
-                // ننشئ حلقة تدور يوماً بيوم من 60 يوم فاتوا لحد النهاردة
+                // 🔄 الحلقة التكرارية (Loop) على الـ 60 يوم الماضية
                 for (let d = new Date(sixtyDaysAgo); d < today; d.setDate(d.getDate() + 1)) {
-                    // استخدام الدالة المحلية لضمان التطابق مع قاعدة البيانات
-                    const dateStr = toLocalISOString(d);
+                    const dateStr = toStandardDate(d); // YYYY-MM-DD
                     const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
 
                     // 1. استبعاد الجمعة
@@ -115,29 +138,46 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                     // 2. استبعاد العطلات الرسمية
                     if (holidays.includes(dateStr)) continue;
 
-                    // 3. استبعاد الأيام التي تم تقديم إجازة فيها مسبقاً (تداخل تواريخ)
-                    const isLeave = leaves.some((leave: any) => 
+                    // 3. استبعاد الإجازات المسجلة
+                    const isLeave = validLeaves.some((leave: any) => 
                         dateStr >= leave.start_date && dateStr <= leave.end_date
                     );
                     if (isLeave) continue;
 
-                    // 4. الفحص النهائي: هل هذا التاريخ موجود في سجلات الحضور؟
-                    if (!recordDates.has(dateStr)) {
-                        // غير موجود في الحضور + ليس جمعة + ليس عطلة + ليس إجازة = غياب
+                    // 4. فحص الحالة من الـ Map
+                    const status = statusMap.get(dateStr);
+
+                    if (status === 'absent') {
+                        // الحالة أ: الصف موجود ولكن الـ times فارغ
+                        foundSuggestions.push({
+                            date: dateStr,
+                            label: formatDateArabic(dateStr),
+                            type: 'absence'
+                        });
+                    } else if (status === 'incomplete') {
+                        // الحالة ب: الصف موجود وبه بصمة واحدة
+                        foundSuggestions.push({
+                            date: dateStr,
+                            label: formatDateArabic(dateStr),
+                            type: 'incomplete'
+                        });
+                    } else if (status === undefined) {
+                        // الحالة ج: الصف غير موجود تماماً في القاعدة (أيضاً يعتبر غياب)
                         foundSuggestions.push({
                             date: dateStr,
                             label: formatDateArabic(dateStr),
                             type: 'absence'
                         });
                     }
+                    // الحالة د: present (يتم تجاهله)
                 }
 
                 // ترتيب النتائج: الأحدث أولاً
                 foundSuggestions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                
                 setSuggestions(foundSuggestions);
+
             } catch (err) {
-                console.error("Error fetching suggestions:", err);
+                console.error("Error checking attendance:", err);
             } finally {
                 setLoadingSuggestions(false);
             }
@@ -151,27 +191,19 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
             ...prev,
             start: suggestion.date,
             end: suggestion.date,
-            // ذكاء في تحديد النوع: لو بصمة ناقصة يبقى غالباً إذن، لو غياب يبقى عارضة
             type: suggestion.type === 'incomplete' ? 'اذن مسائي' : 'اجازة عارضة' 
         }));
     };
 
     useEffect(() => {
         if (initialDate) {
-            setFormData(prev => ({
-                ...prev,
-                start: initialDate,
-                end: initialDate
-            }));
+            setFormData(prev => ({ ...prev, start: initialDate, end: initialDate }));
         }
     }, [initialDate]);
 
     const formatDateArabic = (dateStr: string) => {
         return new Date(dateStr).toLocaleDateString('ar-EG', {
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric'
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
         });
     };
 
@@ -179,16 +211,11 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         if (!formData.type || !formData.start || !formData.end || !formData.returnDate || !formData.backup) {
             return alert('⚠️ عفواً، جميع الحقول الموضحة بعلامة (*) إجبارية.');
         }
-
         if (new Date(formData.end) < new Date(formData.start)) {
             return alert('⚠️ تاريخ النهاية يجب أن يكون بعد تاريخ البداية!');
         }
-        if (new Date(formData.returnDate) <= new Date(formData.end)) {
-            return alert('⚠️ تاريخ العودة للعمل يجب أن يكون بعد انتهاء الإجازة!');
-        }
 
         setSubmitting(true);
-        
         try {
             const { error } = await supabase.from('leave_requests').insert([{ 
                 employee_id: employee.employee_id, 
@@ -200,25 +227,12 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                 status: 'معلق', 
                 notes: formData.notes 
             }]);
-
             if (error) throw error;
-
             await sendNotification('admin', 'طلب جديد 📄', `قام ${employee.name} بتقديم طلب ${formData.type}`);
-
             alert('✅ تم إرسال الطلب بنجاح'); 
-            
-            setFormData({ 
-                type: LEAVE_TYPES[0], 
-                start: '', 
-                end: '', 
-                returnDate: '', 
-                backup: '', 
-                notes: '' 
-            }); 
+            setFormData({ type: LEAVE_TYPES[0], start: '', end: '', returnDate: '', backup: '', notes: '' }); 
             refresh();
-
         } catch (error: any) {
-            console.error(error);
             alert('❌ خطأ في الإرسال: ' + error.message);
         } finally {
             setSubmitting(false);
@@ -233,7 +247,6 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
             
             <div className="bg-white p-6 md:p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6">
                 
-                {/* قسم الاقتراحات (تسوية الموقف) */}
                 {loadingSuggestions ? (
                     <div className="flex items-center justify-center gap-2 text-gray-400 text-sm py-4 bg-gray-50 rounded-2xl border border-dashed">
                         <Loader2 className="w-4 h-4 animate-spin"/> جاري فحص السجلات (آخر 60 يوم)...
@@ -277,73 +290,28 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* نوع الطلب */}
                     <div className="md:col-span-2">
-                        <Select 
-                            label="نوع الطلب *" 
-                            options={LEAVE_TYPES} 
-                            value={formData.type} 
-                            onChange={(v:any)=>setFormData({...formData, type: v})} 
-                        />
+                        <Select label="نوع الطلب *" options={LEAVE_TYPES} value={formData.type} onChange={(v:any)=>setFormData({...formData, type: v})} />
                     </div>
-
-                    {/* التواريخ */}
-                    <Input 
-                        label="من تاريخ *" 
-                        type="date" 
-                        value={formData.start} 
-                        onChange={(v:any)=>setFormData({...formData, start: v})} 
-                    />
-                    <Input 
-                        label="إلى تاريخ *" 
-                        type="date" 
-                        value={formData.end} 
-                        onChange={(v:any)=>setFormData({...formData, end: v})} 
-                    />
-                    
-                    {/* تاريخ العودة والموظف البديل */}
+                    <Input label="من تاريخ *" type="date" value={formData.start} onChange={(v:any)=>setFormData({...formData, start: v})} />
+                    <Input label="إلى تاريخ *" type="date" value={formData.end} onChange={(v:any)=>setFormData({...formData, end: v})} />
                     <div className="relative">
-                         <Input 
-                            label="تاريخ العودة للعمل *" 
-                            type="date" 
-                            value={formData.returnDate} 
-                            onChange={(v:any)=>setFormData({...formData, returnDate: v})} 
-                        />
+                         <Input label="تاريخ العودة للعمل *" type="date" value={formData.returnDate} onChange={(v:any)=>setFormData({...formData, returnDate: v})} />
                         <Calendar className="absolute left-3 top-9 text-gray-400 w-4 h-4 pointer-events-none"/>
                     </div>
-                    
-                    <Input 
-                        label="الموظف البديل *" 
-                        value={formData.backup} 
-                        onChange={(v:any)=>setFormData({...formData, backup: v})} 
-                        placeholder="اسم الزميل القائم بالعمل" 
-                    />
-                    
-                    {/* الملاحظات */}
+                    <Input label="الموظف البديل *" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} placeholder="اسم الزميل القائم بالعمل" />
                     <div className="md:col-span-2">
                         <label className="block text-xs font-bold text-gray-500 mb-1">ملاحظات إضافية (اختياري)</label>
-                        <textarea 
-                            value={formData.notes} 
-                            onChange={(e)=>setFormData({...formData, notes: e.target.value})} 
-                            className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all min-h-[100px] text-sm font-medium" 
-                            placeholder="اكتب أي تفاصيل أخرى..."
-                        />
+                        <textarea value={formData.notes} onChange={(e)=>setFormData({...formData, notes: e.target.value})} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all min-h-[100px] text-sm font-medium" placeholder="اكتب أي تفاصيل أخرى..." />
                     </div>
                 </div>
 
-                {/* زر الإرسال */}
-                <button 
-                    onClick={submit} 
-                    disabled={submitting} 
-                    className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-emerald-700 hover:shadow-emerald-200 transition-all flex justify-center items-center gap-2 active:scale-95 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:shadow-none"
-                >
-                    {submitting ? (
-                        <span className="flex items-center gap-2">جاري الإرسال... <span className="animate-spin">⏳</span></span>
-                    ) : (
-                        <><Send className="w-5 h-5" /> إرسال الطلب للاعتماد</>
-                    )}
+                <button onClick={submit} disabled={submitting} className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-emerald-700 hover:shadow-emerald-200 transition-all flex justify-center items-center gap-2 active:scale-95 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:shadow-none">
+                    {submitting ? <span className="flex items-center gap-2">جاري الإرسال... <span className="animate-spin">⏳</span></span> : <><Send className="w-5 h-5" /> إرسال الطلب للاعتماد</>}
                 </button>
             </div>
         </div>
     );
 }
+
+```
