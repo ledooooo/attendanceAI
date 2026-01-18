@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Printer, Search, FileX, Loader2, AlertCircle } from 'lucide-react';
+import { Printer, Search, FileX, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 
 export default function AbsenceReportTab() {
   const [loading, setLoading] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [reportData, setReportData] = useState<any[]>([]);
 
-  // 🛠️ دالة تحويل التاريخ من M/D/YYYY إلى YYYY-MM-DD يدوياً لتجنب مشاكل التوقيت
-  const normalizeDbDate = (dateStr: string) => {
+  // 🛠️ 1. دالة قوية لتوحيد صيغة التاريخ من (M/D/YYYY) أو (YYYY-MM-DD)
+  const parseDate = (dateStr: string) => {
     if (!dateStr) return '';
-    // إذا كان التاريخ أصلاً YYYY-MM-DD
-    if (dateStr.includes('-')) return dateStr;
     
-    // إذا كان M/D/YYYY (مثل 11/19/2025)
+    // لو التاريخ جاي بصيغة YYYY-MM-DD جاهزة
+    if (dateStr.includes('-')) return dateStr;
+
+    // لو التاريخ جاي بصيغة M/D/YYYY (مثل 7/24/2025)
     const parts = dateStr.split('/');
     if (parts.length === 3) {
       const month = parts[0].padStart(2, '0');
@@ -24,45 +25,51 @@ export default function AbsenceReportTab() {
     return dateStr;
   };
 
-  // دالة توليد تواريخ الحلقة التكرارية
-  const toStandardDate = (d: Date) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
   const generateReport = async () => {
     setLoading(true);
     setReportData([]);
 
     try {
       const [year, month] = selectedMonth.split('-').map(Number);
-      const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0); 
       
-      // توسيع النطاق قليلاً لضمان جلب التواريخ بتنسيقات مختلفة
-      const startDateStr = toStandardDate(startDate); 
-      const endDateStr = toStandardDate(endDate);
+      // تحديد بداية ونهاية الشهر المختار
+      const startDate = new Date(year, month - 1, 1);
+      const endOfMonth = new Date(year, month, 0); 
 
-      // 1. جلب الموظفين
+      // ✅ حل مشكلة الأيام المستقبلية
+      // نتوقف عند "اليوم الحالي" فقط إذا كنا نستعرض تقرير الشهر الحالي
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      
+      let effectiveEndDate = endOfMonth;
+      // لو السنة والشهر المختارين هما الحاليين، واليوم الحالي قبل نهاية الشهر -> نقف عند اليوم
+      if (year === today.getFullYear() && (month - 1) === today.getMonth()) {
+          effectiveEndDate = today;
+      }
+      // لو اخترنا شهراً مستقبلياً بالكامل -> لا نعرض شيئاً
+      if (startDate > today) {
+          effectiveEndDate = new Date(startDate.getTime() - 86400000); // تاريخ قبل البداية لإيقاف اللوب
+      }
+
+      // تحويل تواريخ البداية والنهاية لـ String للمقارنة
+      const startDateStr = parseDate(startDate.toLocaleDateString('en-US')); 
+      // نستخدم نطاق واسع في الجلب (الشهر كاملاً) ثم نفلتر بالكود
+      
+      // 1. جلب الموظفين النشطين
       const { data: employees } = await supabase
         .from('employees')
         .select('id, employee_id, name, specialty')
-        .eq('status', 'نشط') //
+        .eq('status', 'نشط')
         .order('name');
 
       if (!employees) throw new Error("لا يوجد موظفين");
 
-      // 2. جلب الحضور (بدون فلترة دقيقة بالتاريخ هنا، سنفلتر بالكود)
-      // نجلب الشهر كاملاً بزيادة أيام قبله وبعده لتغطية اختلاف التنسيق
-      const fetchStart = `${year}-${String(month).padStart(2, '0')}-01`; 
-      // أو يمكننا جلب كل شيء للموظفين المحددين وفلترتها محلياً إذا كانت البيانات ليست ضخمة جداً
-      // للأمان: نعتمد على الفلترة اللاحقة
+      // 2. جلب سجلات الحضور (بدون فلترة دقيقة هنا لتجنب مشاكل الصيغة)
       const { data: attendance } = await supabase
         .from('attendance')
-        .select('employee_id, date, times'); 
-      
+        .select('employee_id, date, times');
+        // يمكن إضافة .limit(5000) إذا كانت البيانات ضخمة جداً
+
       // 3. جلب الإجازات
       const { data: leaves } = await supabase
         .from('leave_requests')
@@ -75,22 +82,32 @@ export default function AbsenceReportTab() {
         .select('holidays_date')
         .single();
 
-      const holidays = settings?.holidays_date || []; //
+      const holidays = settings?.holidays_date || [];
 
-      // --- المعالجة ---
-      const attendanceMap = new Map();
-      
+      // --- مرحلة بناء خريطة الحالة (Map) ---
+      // المفتاح: EmpID_YYYY-MM-DD
+      // القيمة: 'present' | 'incomplete' | 'absent'
+      const statusMap = new Map<string, string>();
+
       attendance?.forEach((r: any) => {
-        // أهم خطوة: توحيد صيغة التاريخ
-        const stdDate = normalizeDbDate(r.date);
+        const stdDate = parseDate(r.date); // تحويل 7/24/2025 -> 2025-07-24
         
-        // التحقق هل التاريخ يقع في الشهر المحدد؟
-        if (stdDate >= startDateStr && stdDate <= endDateStr) {
-           const key = `${r.employee_id}_${stdDate}`;
-           // نعتبره حضوراً فقط إذا كان هناك وقت مسجل
-           const hasTime = r.times && r.times.trim().length > 0;
-           if (hasTime) {
-               attendanceMap.set(key, true);
+        // تنظيف الوقت
+        const timeStr = r.times ? r.times.trim() : '';
+        const key = `${r.employee_id}_${stdDate}`;
+
+        if (timeStr === '') {
+           // السجل موجود لكن الوقت فارغ -> غياب
+           statusMap.set(key, 'absent');
+        } else {
+           // تقسيم الوقت لمعرفة العدد
+           const punches = timeStr.split(/\s+/);
+           if (punches.length === 1) {
+               // بصمة واحدة -> ترك عمل / غير مكتمل
+               statusMap.set(key, 'incomplete');
+           } else {
+               // أكثر من بصمة -> حضور
+               statusMap.set(key, 'present');
            }
         }
       });
@@ -98,37 +115,60 @@ export default function AbsenceReportTab() {
       const finalReport: any[] = [];
 
       for (const emp of employees) {
-        const absentDays: string[] = [];
+        const issues: {date: string, type: string, label: string}[] = [];
 
-        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-          const dateStr = toStandardDate(d);
+        // دوران يومي من 1 في الشهر وحتى (اليوم الحالي أو نهاية الشهر)
+        for (let d = new Date(startDate); d <= effectiveEndDate; d.setDate(d.getDate() + 1)) {
+          // تنسيق التاريخ للحلقة YYYY-MM-DD
+          const yearLoop = d.getFullYear();
+          const monthLoop = String(d.getMonth() + 1).padStart(2, '0');
+          const dayLoop = String(d.getDate()).padStart(2, '0');
+          const dateStr = `${yearLoop}-${monthLoop}-${dayLoop}`;
+          
           const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
 
-          // استبعاد الجمعة
+          // 1. استبعاد الجمعة
           if (dayName === 'Friday') continue;
 
-          // استبعاد العطلات الرسمية
+          // 2. استبعاد العطلات الرسمية
           if (holidays.includes(dateStr)) continue;
 
-          // استبعاد الإجازات
+          // 3. استبعاد الإجازات (المقبولة أو المعلقة)
           const isOnLeave = leaves?.some((leave: any) => 
             leave.employee_id === emp.employee_id && 
             dateStr >= leave.start_date && dateStr <= leave.end_date
           );
           if (isOnLeave) continue;
 
-          // فحص الحضور
+          // 4. فحص الحالة
           const key = `${emp.employee_id}_${dateStr}`;
-          if (!attendanceMap.has(key)) {
-             absentDays.push(new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric', weekday: 'short' }));
+          const status = statusMap.get(key);
+
+          // الحالة: غياب (السجل غير موجود OR السجل موجود وقيمته absent)
+          if (!status || status === 'absent') {
+            issues.push({
+                date: dateStr,
+                type: 'absent',
+                label: new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' })
+            });
+          } 
+          // الحالة: بصمة واحدة (ترك عمل)
+          else if (status === 'incomplete') {
+            issues.push({
+                date: dateStr,
+                type: 'incomplete',
+                label: `${new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' })} (بصمة واحدة)`
+            });
           }
         }
 
-        if (absentDays.length > 0) {
+        // إضافة الموظف للتقرير إذا كان لديه أي ملاحظات (غياب أو ترك عمل)
+        if (issues.length > 0) {
           finalReport.push({
             ...emp,
-            absentDays,
-            totalAbsence: absentDays.length
+            issues,
+            absentCount: issues.filter(i => i.type === 'absent').length,
+            incompleteCount: issues.filter(i => i.type === 'incomplete').length
           });
         }
       }
@@ -150,9 +190,9 @@ export default function AbsenceReportTab() {
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
             <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
-              <FileX className="text-red-600" /> تقرير الغياب الشهري
+              <FileX className="text-red-600" /> تقرير الغياب والمخالفات
             </h2>
-            <p className="text-sm text-gray-500 mt-1">حصر الموظفين المتغيبين (بدون إذن أو عطلات)</p>
+            <p className="text-sm text-gray-500 mt-1">حصر أيام الغياب وترك العمل (بصمة واحدة) حتى تاريخ اليوم</p>
           </div>
 
           <div className="flex gap-3 items-center w-full md:w-auto">
@@ -186,7 +226,7 @@ export default function AbsenceReportTab() {
       {reportData.length > 0 ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden print-container">
           <div className="hidden print-header text-center p-4 border-b-2 border-gray-800 mb-4">
-            <h1 className="text-2xl font-black text-gray-900">تقرير الغياب الشهري</h1>
+            <h1 className="text-2xl font-black text-gray-900">تقرير الغياب والمخالفات</h1>
             <p className="text-gray-600 font-bold">عن شهر: {selectedMonth}</p>
           </div>
 
@@ -196,8 +236,9 @@ export default function AbsenceReportTab() {
                 <th className="px-4 py-3 w-10">#</th>
                 <th className="px-4 py-3 w-48">الموظف</th>
                 <th className="px-4 py-3 w-32">التخصص</th>
-                <th className="px-4 py-3 w-20 text-center text-red-600">أيام الغياب</th>
-                <th className="px-4 py-3">تواريخ الغياب</th>
+                <th className="px-4 py-3 w-24 text-center text-red-600">أيام الغياب</th>
+                <th className="px-4 py-3 w-24 text-center text-orange-600">بصمة واحدة</th>
+                <th className="px-4 py-3">التفاصيل</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm font-medium text-gray-700">
@@ -209,9 +250,28 @@ export default function AbsenceReportTab() {
                     <span className="block text-[10px] text-gray-400 font-normal">{emp.employee_id}</span>
                   </td>
                   <td className="px-4 py-2">{emp.specialty}</td>
-                  <td className="px-4 py-2 text-center font-black text-red-600 bg-red-50 rounded-lg">{emp.totalAbsence}</td>
+                  
+                  {/* عداد الغياب */}
+                  <td className="px-4 py-2 text-center">
+                      {emp.absentCount > 0 ? (
+                          <span className="bg-red-50 text-red-700 px-2 py-1 rounded-lg font-black">{emp.absentCount}</span>
+                      ) : '-'}
+                  </td>
+                  
+                  {/* عداد البصمة الواحدة */}
+                  <td className="px-4 py-2 text-center">
+                      {emp.incompleteCount > 0 ? (
+                          <span className="bg-orange-50 text-orange-700 px-2 py-1 rounded-lg font-black">{emp.incompleteCount}</span>
+                      ) : '-'}
+                  </td>
+
+                  {/* التفاصيل */}
                   <td className="px-4 py-2 text-xs leading-relaxed text-gray-500">
-                    {emp.absentDays.join(' ، ')}
+                    {emp.issues.map((issue: any, i: number) => (
+                        <span key={i} className={issue.type === 'incomplete' ? 'text-orange-600 font-bold' : ''}>
+                            {issue.label}{i < emp.issues.length - 1 ? ' ، ' : ''}
+                        </span>
+                    ))}
                   </td>
                 </tr>
               ))}
