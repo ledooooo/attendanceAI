@@ -1,16 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Calendar, Printer, Search, FileX, Loader2, AlertCircle } from 'lucide-react';
+import { Printer, Search, FileX, Loader2, AlertCircle } from 'lucide-react';
 
 export default function AbsenceReportTab() {
   const [loading, setLoading] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [reportData, setReportData] = useState<any[]>([]);
 
-  // دالة توحيد التاريخ (لضمان التطابق)
+  // 🛠️ دالة تحويل التاريخ من M/D/YYYY إلى YYYY-MM-DD يدوياً لتجنب مشاكل التوقيت
+  const normalizeDbDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    // إذا كان التاريخ أصلاً YYYY-MM-DD
+    if (dateStr.includes('-')) return dateStr;
+    
+    // إذا كان M/D/YYYY (مثل 11/19/2025)
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      const month = parts[0].padStart(2, '0');
+      const day = parts[1].padStart(2, '0');
+      const year = parts[2];
+      return `${year}-${month}-${day}`;
+    }
+    return dateStr;
+  };
+
+  // دالة توليد تواريخ الحلقة التكرارية
   const toStandardDate = (d: Date) => {
-    const offset = d.getTimezoneOffset() * 60000;
-    return new Date(d.getTime() - offset).toISOString().split('T')[0];
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const generateReport = async () => {
@@ -18,92 +37,93 @@ export default function AbsenceReportTab() {
     setReportData([]);
 
     try {
-      // 1. تحديد بداية ونهاية الشهر المختار
       const [year, month] = selectedMonth.split('-').map(Number);
       const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0); // آخر يوم في الشهر
+      const endDate = new Date(year, month, 0); 
       
-      const startDateStr = toStandardDate(startDate);
+      // توسيع النطاق قليلاً لضمان جلب التواريخ بتنسيقات مختلفة
+      const startDateStr = toStandardDate(startDate); 
       const endDateStr = toStandardDate(endDate);
 
-      // 2. جلب جميع الموظفين النشطين
+      // 1. جلب الموظفين
       const { data: employees } = await supabase
         .from('employees')
         .select('id, employee_id, name, specialty')
-        .eq('status', 'نشط') // تأكد أن الحالة تطابق قاعدة بياناتك
+        .eq('status', 'نشط') //
         .order('name');
 
       if (!employees) throw new Error("لا يوجد موظفين");
 
-      // 3. جلب جميع سجلات الحضور لهذا الشهر دفعة واحدة
+      // 2. جلب الحضور (بدون فلترة دقيقة بالتاريخ هنا، سنفلتر بالكود)
+      // نجلب الشهر كاملاً بزيادة أيام قبله وبعده لتغطية اختلاف التنسيق
+      const fetchStart = `${year}-${String(month).padStart(2, '0')}-01`; 
+      // أو يمكننا جلب كل شيء للموظفين المحددين وفلترتها محلياً إذا كانت البيانات ليست ضخمة جداً
+      // للأمان: نعتمد على الفلترة اللاحقة
       const { data: attendance } = await supabase
         .from('attendance')
-        .select('employee_id, date, times')
-        .gte('date', startDateStr)
-        .lte('date', endDateStr);
-
-      // 4. جلب جميع الإجازات المقبولة في هذا الشهر
+        .select('employee_id, date, times'); 
+      
+      // 3. جلب الإجازات
       const { data: leaves } = await supabase
         .from('leave_requests')
         .select('employee_id, start_date, end_date')
-        .neq('status', 'مرفوض')
-        .or(`start_date.lte.${endDateStr},end_date.gte.${startDateStr}`);
+        .neq('status', 'مرفوض');
 
-      // 5. جلب العطلات الرسمية
+      // 4. جلب العطلات
       const { data: settings } = await supabase
         .from('settings')
         .select('holidays_date')
         .single();
 
-      const holidays = settings?.holidays_date || [];
+      const holidays = settings?.holidays_date || []; //
 
-      // --- مرحلة المعالجة (في الذاكرة لتسريع الأداء) ---
-      
-      // تحويل الحضور إلى Map لسهولة البحث: Key = "EmpID_Date"
+      // --- المعالجة ---
       const attendanceMap = new Map();
+      
       attendance?.forEach((r: any) => {
-        // توحيد التاريخ القادم من القاعدة
-        const stdDate = new Date(r.date).toISOString().split('T')[0]; 
-        const key = `${r.employee_id}_${stdDate}`;
-        const hasTime = r.times && r.times.trim().length > 0;
-        attendanceMap.set(key, hasTime); // true = حضر, false = سجل فارغ (غياب)
+        // أهم خطوة: توحيد صيغة التاريخ
+        const stdDate = normalizeDbDate(r.date);
+        
+        // التحقق هل التاريخ يقع في الشهر المحدد؟
+        if (stdDate >= startDateStr && stdDate <= endDateStr) {
+           const key = `${r.employee_id}_${stdDate}`;
+           // نعتبره حضوراً فقط إذا كان هناك وقت مسجل
+           const hasTime = r.times && r.times.trim().length > 0;
+           if (hasTime) {
+               attendanceMap.set(key, true);
+           }
+        }
       });
 
       const finalReport: any[] = [];
 
-      // المرور على كل موظف
       for (const emp of employees) {
         const absentDays: string[] = [];
 
-        // المرور على كل يوم في الشهر
         for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
           const dateStr = toStandardDate(d);
           const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
 
-          // أ) استبعاد الجمعة
+          // استبعاد الجمعة
           if (dayName === 'Friday') continue;
 
-          // ب) استبعاد العطلات الرسمية
+          // استبعاد العطلات الرسمية
           if (holidays.includes(dateStr)) continue;
 
-          // ج) استبعاد الإجازات
+          // استبعاد الإجازات
           const isOnLeave = leaves?.some((leave: any) => 
             leave.employee_id === emp.employee_id && 
             dateStr >= leave.start_date && dateStr <= leave.end_date
           );
           if (isOnLeave) continue;
 
-          // د) فحص الحضور
+          // فحص الحضور
           const key = `${emp.employee_id}_${dateStr}`;
-          const isPresent = attendanceMap.get(key);
-
-          // إذا لم يكن موجوداً في Map نهائياً (undefined) أو موجود وقيمته false (حقل فارغ)
-          if (isPresent !== true) {
-            absentDays.push(new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' }));
+          if (!attendanceMap.has(key)) {
+             absentDays.push(new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric', weekday: 'short' }));
           }
         }
 
-        // إضافة الموظف للتقرير فقط إذا كان لديه غياب
         if (absentDays.length > 0) {
           finalReport.push({
             ...emp,
@@ -125,15 +145,14 @@ export default function AbsenceReportTab() {
 
   return (
     <div className="space-y-6 p-4">
-      
-      {/* رأس الصفحة وأدوات التحكم (تختفي عند الطباعة) */}
+      {/* رأس الصفحة */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 no-print">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
             <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
               <FileX className="text-red-600" /> تقرير الغياب الشهري
             </h2>
-            <p className="text-sm text-gray-500 mt-1">حصر الموظفين المتغيبين (بدون إذن أو عطلات) خلال الشهر</p>
+            <p className="text-sm text-gray-500 mt-1">حصر الموظفين المتغيبين (بدون إذن أو عطلات)</p>
           </div>
 
           <div className="flex gap-3 items-center w-full md:w-auto">
@@ -163,11 +182,9 @@ export default function AbsenceReportTab() {
         </div>
       </div>
 
-      {/* منطقة التقرير (جدول) */}
+      {/* الجدول */}
       {reportData.length > 0 ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden print-container">
-          
-          {/* ترويسة الطباعة فقط */}
           <div className="hidden print-header text-center p-4 border-b-2 border-gray-800 mb-4">
             <h1 className="text-2xl font-black text-gray-900">تقرير الغياب الشهري</h1>
             <p className="text-gray-600 font-bold">عن شهر: {selectedMonth}</p>
@@ -201,12 +218,10 @@ export default function AbsenceReportTab() {
             </tbody>
           </table>
           
-          {/* تذييل الطباعة */}
           <div className="hidden print-footer mt-8 pt-4 border-t border-gray-300 flex justify-between text-xs text-gray-500">
             <span>تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG')}</span>
             <span>توقيع المدير: ..............................</span>
           </div>
-
         </div>
       ) : (
         !loading && (
@@ -217,7 +232,7 @@ export default function AbsenceReportTab() {
         )
       )}
 
-      {/* تنسيقات الطباعة A4 */}
+      {/* تنسيقات الطباعة */}
       <style>{`
         @media print {
           @page { size: A4; margin: 10mm; }
@@ -225,16 +240,10 @@ export default function AbsenceReportTab() {
           .no-print { display: none !important; }
           .print-header, .print-footer { display: block !important; }
           .print-container { box-shadow: none; border: none; }
-          
-          /* تحسين الجدول للطباعة */
-          table { width: 100%; border-collapse: collapse; font-size: 11pt; }
-          th, td { border: 1px solid #ddd; padding: 6px; }
+          table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+          th, td { border: 1px solid #ddd; padding: 4px; }
           thead th { background-color: #f3f4f6 !important; color: black !important; }
-          
-          /* منع قص الصفوف في نهاية الصفحة */
           tr { break-inside: avoid; page-break-inside: avoid; }
-          
-          /* إخفاء القوائم الجانبية والعناصر الأخرى في التطبيق */
           aside, header, nav { display: none !important; }
           main { margin: 0; padding: 0; height: auto; overflow: visible; }
         }
