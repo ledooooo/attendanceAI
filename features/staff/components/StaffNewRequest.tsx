@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Employee, AttendanceRecord, LeaveRequest, GeneralSettings } from '../../../types';
+import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { FilePlus, Send, Calendar, UserCheck, AlertCircle, Clock, XCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { useNotifications } from '../../../context/NotificationContext';
@@ -37,17 +37,24 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         notes: ''
     });
 
+    // دالة مساعدة لتحويل التاريخ إلى نص YYYY-MM-DD بالتوقيت المحلي (تمنع مشاكل فرق التوقيت)
+    const toLocalISOString = (date: Date) => {
+        const offset = date.getTimezoneOffset() * 60000; // فرق التوقيت بالمللي ثانية
+        return new Date(date.getTime() - offset).toISOString().split('T')[0];
+    };
+
     // --- منطق جلب أيام الغياب والمخالفات ---
     useEffect(() => {
         const fetchIrregularities = async () => {
             setLoadingSuggestions(true);
             try {
+                // تحديد فترة الـ 60 يوم
                 const today = new Date();
                 const sixtyDaysAgo = new Date();
                 sixtyDaysAgo.setDate(today.getDate() - 60);
 
-                const startDateStr = sixtyDaysAgo.toISOString().split('T')[0];
-                const endDateStr = today.toISOString().split('T')[0];
+                const startDateStr = toLocalISOString(sixtyDaysAgo);
+                const endDateStr = toLocalISOString(today);
 
                 // 1. جلب سجلات الحضور (Attendance)
                 const attendancePromise = supabase
@@ -57,15 +64,16 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                     .gte('date', startDateStr)
                     .lte('date', endDateStr);
 
-                // 2. جلب الإجازات المقدمة مسبقاً (سواء مقبولة أو معلقة) لاستبعادها
+                // 2. جلب الإجازات المقدمة مسبقاً (لاستبعادها)
+                // نستبعد أي إجازة ليست "مرفوضة" (يعني مقبولة أو معلقة)
                 const leavesPromise = supabase
                     .from('leave_requests')
                     .select('start_date, end_date')
                     .eq('employee_id', employee.employee_id)
-                    .or(`status.eq.مقبول,status.eq.معلق,status.eq.موافقة_رئيس_القسم`) // تجاهل المرفوض فقط
-                    .gte('end_date', startDateStr); // الإجازات التي تنتهي بعد بداية فترتنا
+                    .neq('status', 'مرفوض') 
+                    .gte('end_date', startDateStr); 
 
-                // 3. جلب العطلات الرسمية من الإعدادات
+                // 3. جلب العطلات الرسمية
                 const settingsPromise = supabase
                     .from('settings')
                     .select('holidays_date')
@@ -75,15 +83,16 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
 
                 const records = attRes.data || [];
                 const leaves = leavesRes.data || [];
-                const holidays = settingsRes.data?.holidays_date || []; // مصفوفة تواريخ العطلات "YYYY-MM-DD"
+                const holidays = settingsRes.data?.holidays_date || []; 
 
                 const foundSuggestions: DateSuggestion[] = [];
+                // تحويل سجلات الحضور إلى Set لسهولة البحث
                 const recordDates = new Set(records.map(r => r.date));
 
                 // --- أ) فحص أيام البصمة الواحدة (incomplete) ---
                 records.forEach((record: any) => {
                     const punches = record.times ? record.times.trim().split(' ') : [];
-                    // شرط البصمة الواحدة: يوجد بصمة واحدة فقط
+                    // شرط البصمة الواحدة
                     if (punches.length === 1) {
                         foundSuggestions.push({
                             date: record.date,
@@ -94,9 +103,10 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                 });
 
                 // --- ب) فحص أيام الغياب (Absence) ---
-                // نمر على كل يوم في الـ 60 يوم
+                // ننشئ حلقة تدور يوماً بيوم من 60 يوم فاتوا لحد النهاردة
                 for (let d = new Date(sixtyDaysAgo); d < today; d.setDate(d.getDate() + 1)) {
-                    const dateStr = d.toISOString().split('T')[0];
+                    // استخدام الدالة المحلية لضمان التطابق مع قاعدة البيانات
+                    const dateStr = toLocalISOString(d);
                     const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
 
                     // 1. استبعاد الجمعة
@@ -105,14 +115,15 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                     // 2. استبعاد العطلات الرسمية
                     if (holidays.includes(dateStr)) continue;
 
-                    // 3. استبعاد الأيام التي تم تقديم إجازة فيها مسبقاً
+                    // 3. استبعاد الأيام التي تم تقديم إجازة فيها مسبقاً (تداخل تواريخ)
                     const isLeave = leaves.some((leave: any) => 
                         dateStr >= leave.start_date && dateStr <= leave.end_date
                     );
                     if (isLeave) continue;
 
-                    // 4. الفحص النهائي: هل يوجد بصمة في هذا اليوم؟
+                    // 4. الفحص النهائي: هل هذا التاريخ موجود في سجلات الحضور؟
                     if (!recordDates.has(dateStr)) {
+                        // غير موجود في الحضور + ليس جمعة + ليس عطلة + ليس إجازة = غياب
                         foundSuggestions.push({
                             date: dateStr,
                             label: formatDateArabic(dateStr),
@@ -140,6 +151,7 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
             ...prev,
             start: suggestion.date,
             end: suggestion.date,
+            // ذكاء في تحديد النوع: لو بصمة ناقصة يبقى غالباً إذن، لو غياب يبقى عارضة
             type: suggestion.type === 'incomplete' ? 'اذن مسائي' : 'اجازة عارضة' 
         }));
     };
@@ -251,7 +263,6 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                                 </div>
                             </div>
                         ) : (
-                            // ✅ الرسالة عند عدم وجود غياب
                             <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mb-4 flex items-center justify-center gap-2 text-emerald-700 font-bold text-sm animate-in fade-in">
                                 <CheckCircle2 className="w-5 h-5" />
                                 لا توجد أيام غياب أو ترك عمل في الـ 60 يوماً الماضية 👏
