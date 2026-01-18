@@ -97,18 +97,27 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     let inserted = 0; let updated = 0; let skipped = 0;
+    
     try {
+        // 1. جلب البيانات الحالية للمقارنة
         const { data: currentLeaves } = await supabase.from('leave_requests').select('*');
         const dbLeaves = currentLeaves || [];
-        const rowsToUpsert: any[] = [];
+        
+        // 2. فصل القوائم
+        const rowsToInsert: any[] = [];
+        const rowsToUpdate: any[] = [];
         const processedKeys = new Set(); 
 
         for (const row of data) {
+            // تنظيف البيانات
             const empId = String(row['كود الموظف'] || row.employee_id || '').trim();
             const type = String(row['نوع الإجازة'] || row.type || '').trim();
             const startDate = formatDateForDB(row['تاريخ البداية'] || row.start_date);
+            
+            // تخطي الصفوف غير الصالحة
             if (!empId || !type || !startDate) continue;
 
+            // منع التكرار داخل ملف الإكسيل نفسه
             const rowKey = `${empId}_${type}_${startDate}`;
             if (processedKeys.has(rowKey)) continue; 
             processedKeys.add(rowKey);
@@ -117,6 +126,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
             const statusRaw = String(row['الحالة'] || row.status || 'معلق').trim();
             const status = ['مقبول', 'مرفوض', 'معلق'].includes(statusRaw) ? statusRaw : 'معلق';
             
+            // تجهيز الكائن (بدون ID حالياً)
             const payload = {
                 employee_id: empId,
                 type,
@@ -128,24 +138,62 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
                 back_date: formatDateForDB(row['تاريخ العودة'] || row.back_date)
             };
 
-            const existingRecord = dbLeaves.find(l => l.employee_id === empId && l.type === type && l.start_date === startDate);
+            // البحث عن سجل موجود مطابق
+            const existingRecord = dbLeaves.find(l => 
+                l.employee_id === empId && 
+                l.type === type && 
+                l.start_date === startDate
+            );
 
             if (existingRecord) {
-                const isChanged = existingRecord.end_date !== payload.end_date || existingRecord.status !== payload.status;
-                if (isChanged) { rowsToUpsert.push({ ...payload, id: existingRecord.id }); updated++; }
-                else skipped++;
-            } else { rowsToUpsert.push(payload); inserted++; }
+                // التحقق هل هناك تغيير يستدعي التحديث
+                const isChanged = existingRecord.end_date !== payload.end_date || 
+                                  existingRecord.status !== payload.status ||
+                                  existingRecord.notes !== payload.notes ||
+                                  existingRecord.backup_person !== payload.backup_person;
+                                  
+                if (isChanged) {
+                    // إضافة ID للسجل المراد تحديثه ووضعه في قائمة التحديث
+                    rowsToUpdate.push({ ...payload, id: existingRecord.id });
+                    updated++;
+                } else {
+                    skipped++;
+                }
+            } else {
+                // سجل جديد يذهب لقائمة الإضافة (بدون ID)
+                rowsToInsert.push(payload);
+                inserted++;
+            }
         }
 
-        if (rowsToUpsert.length > 0) {
-            const { error } = await supabase.from('leave_requests').upsert(rowsToUpsert);
-            if (error) throw error;
+        // 3. تنفيذ العمليات بشكل منفصل لتجنب خطأ الـ ID
+        
+        // أولاً: الإضافة (Insert)
+        if (rowsToInsert.length > 0) {
+            const { error: insertError } = await supabase
+                .from('leave_requests')
+                .insert(rowsToInsert);
+            if (insertError) throw insertError;
         }
-        alert(`تمت المعالجة: إضافة ${inserted}, تحديث ${updated}`);
+
+        // ثانياً: التحديث (Upsert/Update)
+        if (rowsToUpdate.length > 0) {
+            const { error: updateError } = await supabase
+                .from('leave_requests')
+                .upsert(rowsToUpdate); // هنا upsert آمنة لأن كل العناصر لديها ID
+            if (updateError) throw updateError;
+        }
+
+        alert(`تمت المعالجة بنجاح:\n- إضافة جديدة: ${inserted}\n- تحديث بيانات: ${updated}\n- تخطي (بدون تغيير): ${skipped}`);
         fetchData();
-    } catch (err: any) { alert('خطأ: ' + err.message); } finally { setIsProcessing(false); }
-  };
 
+    } catch (err: any) {
+        console.error("Import Error:", err);
+        alert('حدث خطأ أثناء المعالجة: ' + (err.message || JSON.stringify(err)));
+    } finally {
+        setIsProcessing(false);
+    }
+  };
   // --- دوال التعديل اليدوي ---
   const startEditing = (req: LeaveRequest) => {
     setEditingId(req.id);
