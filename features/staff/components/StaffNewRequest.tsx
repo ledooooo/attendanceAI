@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Employee, AttendanceRecord } from '../../../types';
+import { Employee, AttendanceRecord, LeaveRequest, GeneralSettings } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
 import { FilePlus, Send, Calendar, UserCheck, AlertCircle, Clock, XCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { useNotifications } from '../../../context/NotificationContext';
@@ -25,11 +25,9 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
     const { sendNotification } = useNotifications();
     const [submitting, setSubmitting] = useState(false);
     
-    // حالات الاقتراحات
     const [suggestions, setSuggestions] = useState<DateSuggestion[]>([]);
     const [loadingSuggestions, setLoadingSuggestions] = useState(true);
 
-    // حالة النموذج
     const [formData, setFormData] = useState({
         type: LEAVE_TYPES[0], 
         start: initialDate || '', 
@@ -39,35 +37,53 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         notes: ''
     });
 
-    // 1. جلب المخالفات (غياب / بصمة ناقصة) لآخر 60 يوم
+    // --- منطق جلب أيام الغياب والمخالفات ---
     useEffect(() => {
         const fetchIrregularities = async () => {
             setLoadingSuggestions(true);
             try {
                 const today = new Date();
                 const sixtyDaysAgo = new Date();
-                sixtyDaysAgo.setDate(today.getDate() - 60); // ✅ تعديل الفترة لـ 60 يوم
+                sixtyDaysAgo.setDate(today.getDate() - 60);
 
-                // جلب سجلات الحضور
-                const { data: records } = await supabase
+                const startDateStr = sixtyDaysAgo.toISOString().split('T')[0];
+                const endDateStr = today.toISOString().split('T')[0];
+
+                // 1. جلب سجلات الحضور (Attendance)
+                const attendancePromise = supabase
                     .from('attendance')
-                    .select('*')
+                    .select('date, times')
                     .eq('employee_id', employee.employee_id)
-                    .gte('date', sixtyDaysAgo.toISOString().split('T')[0])
-                    .lte('date', today.toISOString().split('T')[0]);
+                    .gte('date', startDateStr)
+                    .lte('date', endDateStr);
 
-                if (!records) {
-                    setLoadingSuggestions(false);
-                    return;
-                }
+                // 2. جلب الإجازات المقدمة مسبقاً (سواء مقبولة أو معلقة) لاستبعادها
+                const leavesPromise = supabase
+                    .from('leave_requests')
+                    .select('start_date, end_date')
+                    .eq('employee_id', employee.employee_id)
+                    .or(`status.eq.مقبول,status.eq.معلق,status.eq.موافقة_رئيس_القسم`) // تجاهل المرفوض فقط
+                    .gte('end_date', startDateStr); // الإجازات التي تنتهي بعد بداية فترتنا
+
+                // 3. جلب العطلات الرسمية من الإعدادات
+                const settingsPromise = supabase
+                    .from('settings')
+                    .select('holidays_date')
+                    .single();
+
+                const [attRes, leavesRes, settingsRes] = await Promise.all([attendancePromise, leavesPromise, settingsPromise]);
+
+                const records = attRes.data || [];
+                const leaves = leavesRes.data || [];
+                const holidays = settingsRes.data?.holidays_date || []; // مصفوفة تواريخ العطلات "YYYY-MM-DD"
 
                 const foundSuggestions: DateSuggestion[] = [];
                 const recordDates = new Set(records.map(r => r.date));
 
-                // أ) استخراج أيام البصمة الواحدة (ترك عمل)
-                records.forEach((record: AttendanceRecord) => {
-                    // نفترض أن التوقيتات "08:00 14:00". إذا كان هناك توقيت واحد فقط فهو غير مكتمل
+                // --- أ) فحص أيام البصمة الواحدة (incomplete) ---
+                records.forEach((record: any) => {
                     const punches = record.times ? record.times.trim().split(' ') : [];
+                    // شرط البصمة الواحدة: يوجد بصمة واحدة فقط
                     if (punches.length === 1) {
                         foundSuggestions.push({
                             date: record.date,
@@ -77,16 +93,25 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                     }
                 });
 
-                // ب) استخراج أيام الغياب
-                // نمر على كل يوم في الـ 60 يوم الماضية
+                // --- ب) فحص أيام الغياب (Absence) ---
+                // نمر على كل يوم في الـ 60 يوم
                 for (let d = new Date(sixtyDaysAgo); d < today; d.setDate(d.getDate() + 1)) {
                     const dateStr = d.toISOString().split('T')[0];
                     const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
 
-                    // تجاهل أيام الجمعة
+                    // 1. استبعاد الجمعة
                     if (dayName === 'Friday') continue;
 
-                    // إذا لم يكن التاريخ موجوداً في السجلات، فهو غياب
+                    // 2. استبعاد العطلات الرسمية
+                    if (holidays.includes(dateStr)) continue;
+
+                    // 3. استبعاد الأيام التي تم تقديم إجازة فيها مسبقاً
+                    const isLeave = leaves.some((leave: any) => 
+                        dateStr >= leave.start_date && dateStr <= leave.end_date
+                    );
+                    if (isLeave) continue;
+
+                    // 4. الفحص النهائي: هل يوجد بصمة في هذا اليوم؟
                     if (!recordDates.has(dateStr)) {
                         foundSuggestions.push({
                             date: dateStr,
@@ -226,7 +251,7 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                                 </div>
                             </div>
                         ) : (
-                            // ✅ الرسالة المطلوبة عند عدم وجود غياب
+                            // ✅ الرسالة عند عدم وجود غياب
                             <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 mb-4 flex items-center justify-center gap-2 text-emerald-700 font-bold text-sm animate-in fade-in">
                                 <CheckCircle2 className="w-5 h-5" />
                                 لا توجد أيام غياب أو ترك عمل في الـ 60 يوماً الماضية 👏
