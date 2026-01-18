@@ -35,7 +35,6 @@ interface Props {
 }
 
 export default function StaffDashboard({ employee }: Props) {
-  // 1. استدعاء user من الـ AuthContext
   const { signOut, user } = useAuth();
   
   const [activeTab, setActiveTab] = useState('news');
@@ -50,8 +49,8 @@ export default function StaffDashboard({ employee }: Props) {
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   
-  // 2. استخدام user.id بدلاً من employee.employee_id لربط الإشعارات بشكل آمن
-  const { requestPermission } = usePush(user?.id || '');
+  // استخدام employee.id (UUID) لربط إشعارات المتصفح
+  const { requestPermission } = usePush(employee.id);
 
   useEffect(() => {
     // طلب الإذن تلقائياً بعد 4 ثواني من دخول الموظف إذا لم يسأل من قبل
@@ -61,7 +60,7 @@ export default function StaffDashboard({ employee }: Props) {
       }
     }, 4000);
     return () => clearTimeout(timer);
-  }, [user?.id]); // 3. تحديث التبعية هنا لتعتمد على user.id
+  }, [employee.id]);
 
   // حالات PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -69,12 +68,12 @@ export default function StaffDashboard({ employee }: Props) {
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // --- 2. وظائف الإشعارات الداخلية ---
+  // --- 2. وظائف الإشعارات الداخلية (تم التعديل) ---
   const fetchNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
       .select('*')
-.eq('recipient_id', employee.id)
+      .eq('user_id', employee.id) // ✅ تم التعديل: user_id بدلاً من recipient_id واستخدام UUID
       .order('created_at', { ascending: false })
       .limit(15);
     if (data) setNotifications(data);
@@ -85,8 +84,8 @@ export default function StaffDashboard({ employee }: Props) {
       await supabase
         .from('notifications')
         .update({ is_read: true })
-.eq('recipient_id', employee.id)
-        fetchNotifications();
+        .eq('user_id', employee.id); // ✅ تم التعديل: user_id بدلاً من recipient_id
+      fetchNotifications();
     }
     setShowNotifMenu(!showNotifMenu);
   };
@@ -121,17 +120,18 @@ export default function StaffDashboard({ employee }: Props) {
     fetchAllData();
     fetchNotifications();
 
+    // ✅ تم تحديث الاشتراك المباشر ليعمل مع العمود الصحيح
     const channel = supabase.channel('dashboard_realtime_staff')
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'notifications', 
-        filter: `recipient_id=eq.${employee.employee_id}` 
+        filter: `user_id=eq.${employee.id}` // ✅ تم التعديل: user_id و employee.id
       }, () => fetchNotifications())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [employee.employee_id]);
+  }, [employee.id]); // ✅ الاعتماد على ID الصحيح
 
   // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
@@ -376,7 +376,7 @@ export default function StaffDashboard({ employee }: Props) {
               <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm text-center relative animate-in zoom-in-95">
                   <button onClick={() => setShowAboutModal(false)} className="absolute top-6 right-6 p-2 bg-gray-100 rounded-full"><X size={18}/></button>
                   <div className="w-20 h-20 bg-emerald-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200">
-                        <img src="/pwa-192x192.png" className="w-16 h-16 rounded-2xl" alt="Logo" />
+                       <img src="/pwa-192x192.png" className="w-16 h-16 rounded-2xl" alt="Logo" />
                   </div>
                   <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
                   <p className="text-sm text-gray-500 font-bold mb-6">نظام إدارة الموارد البشرية</p>
