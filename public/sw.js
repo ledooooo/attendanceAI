@@ -1,48 +1,59 @@
-// الاستماع لحدث وصول إشعار من السيرفر (Push Event)
+self.addEventListener('install', (event) => {
+  self.skipWaiting(); // تفعيل التحديث فوراً
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim()); // السيطرة على المتصفح فوراً
+});
+
 self.addEventListener('push', function(event) {
   if (event.data) {
-    const data = event.data.json(); // نفترض أن السيرفر يرسل بيانات JSON
-    
+    // محاولة قراءة البيانات بأكثر من طريقة لضمان النجاح
+    let data;
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data = { title: 'تنبيه جديد', body: event.data.text() };
+    }
+
     const options = {
-      body: data.body || 'لديك تنبيه جديد من المركز الطبي',
-      icon: data.icon || '/logo.png', // تأكد من وجود شعار في مجلد public
-      badge: '/badge.png', // أيقونة صغيرة تظهر في شريط التنبيهات
-      vibrate: [100, 50, 100], // نمط الهزاز
+      body: data.body || 'يوجد تحديث جديد في النظام',
+      icon: '/pwa-192x192.png', // تأكد من وجود هذه الصورة
+      badge: '/pwa-192x192.png', // أيقونة صغيرة تظهر في الشريط العلوي (يفضل أن تكون أبيض وأسود)
+      vibrate: [200, 100, 200], // نمط اهتزاز قوي
+      requireInteraction: true, // ⚠️ مهم جداً: يمنع الإشعار من الاختفاء تلقائياً
       data: {
-        url: data.url || '/' // الرابط الذي سيفتح عند الضغط على الإشعار
+        url: data.url || '/'
       },
       actions: [
-        { action: 'open', title: 'عرض التفاصيل' },
-        { action: 'close', title: 'إغلاق' }
+        { action: 'open', title: 'عرض التفاصيل' }
       ]
     };
 
+    // ⚠️ استخدام event.waitUntil ضروري جداً لإبقاء الـ Service Worker حياً
     event.waitUntil(
-      self.registration.showNotification(data.title || 'تنبيه جديد', options)
+      self.registration.showNotification(data.title || 'إشعار من المركز الطبي', options)
     );
   }
 });
 
-// الاستماع لحدث الضغط على الإشعار
 self.addEventListener('notificationclick', function(event) {
-  event.notification.close(); // إغلاق الإشعار
+  event.notification.close();
 
-  if (event.action === 'close') return;
-
-  // فتح الرابط المحدد في الإشعار
+  // كود فتح الرابط عند الضغط
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      if (clientList.length > 0) {
-        let client = clientList[0];
-        for (let i = 0; i < clientList.length; i++) {
-          if (clientList[i].focused) {
-            client = clientList[i];
-            break;
-          }
+      // 1. إذا كان الموقع مفتوحاً بالفعل، قم بالتركيز عليه
+      for (let i = 0; i < clientList.length; i++) {
+        const client = clientList[i];
+        if (client.url && 'focus' in client) {
+          return client.focus().then(c => c.navigate(event.notification.data.url));
         }
-        return client.focus().then(c => c.navigate(event.notification.data.url));
       }
-      return clients.openWindow(event.notification.data.url);
+      // 2. إذا كان مغلقاً، افتح نافذة جديدة
+      if (clients.openWindow) {
+        return clients.openWindow(event.notification.data.url);
+      }
     })
   );
 });
