@@ -1,28 +1,15 @@
 import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Printer, Search, FileX, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Printer, Search, FileX, Loader2, AlertCircle } from 'lucide-react';
 
 export default function AbsenceReportTab() {
   const [loading, setLoading] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [reportData, setReportData] = useState<any[]>([]);
 
-  // 🛠️ 1. دالة قوية لتوحيد صيغة التاريخ من (M/D/YYYY) أو (YYYY-MM-DD)
-  const parseDate = (dateStr: string) => {
-    if (!dateStr) return '';
-    
-    // لو التاريخ جاي بصيغة YYYY-MM-DD جاهزة
-    if (dateStr.includes('-')) return dateStr;
-
-    // لو التاريخ جاي بصيغة M/D/YYYY (مثل 7/24/2025)
-    const parts = dateStr.split('/');
-    if (parts.length === 3) {
-      const month = parts[0].padStart(2, '0');
-      const day = parts[1].padStart(2, '0');
-      const year = parts[2];
-      return `${year}-${month}-${day}`;
-    }
-    return dateStr;
+  // دالة تحويل التاريخ لنص YYYY-MM-DD (لإرساله لقاعدة البيانات)
+  const toISODate = (d: Date) => {
+    return d.toISOString().split('T')[0];
   };
 
   const generateReport = async () => {
@@ -32,30 +19,44 @@ export default function AbsenceReportTab() {
     try {
       const [year, month] = selectedMonth.split('-').map(Number);
       
-      // تحديد بداية ونهاية الشهر المختار
+      // 1. تحديد نطاق الشهر (من يوم 1 إلى آخر يوم)
       const startDate = new Date(year, month - 1, 1);
       const endOfMonth = new Date(year, month, 0); 
 
-      // ✅ حل مشكلة الأيام المستقبلية
-      // نتوقف عند "اليوم الحالي" فقط إذا كنا نستعرض تقرير الشهر الحالي
+      // ضبط التوقيت لتجنب مشاكل المناطق الزمنية (UTC vs Local)
+      startDate.setHours(12, 0, 0, 0); 
+      endOfMonth.setHours(12, 0, 0, 0);
+
+      // 2. تحديد تاريخ التوقف (عشان ما يجبش غياب للمستقبل)
       const today = new Date();
-      today.setHours(0,0,0,0);
+      today.setHours(12, 0, 0, 0);
       
       let effectiveEndDate = endOfMonth;
-      // لو السنة والشهر المختارين هما الحاليين، واليوم الحالي قبل نهاية الشهر -> نقف عند اليوم
-      if (year === today.getFullYear() && (month - 1) === today.getMonth()) {
+      
+      // لو احنا في نفس الشهر والسنة، نقف عند "امبارح" أو "اليوم"
+      // (هنا سنقف عند اليوم الحالي)
+      if (today < endOfMonth && today.getMonth() + 1 === month && today.getFullYear() === year) {
           effectiveEndDate = today;
       }
-      // لو اخترنا شهراً مستقبلياً بالكامل -> لا نعرض شيئاً
+      
+      // لو اخترنا شهر في المستقبل، نوقف اللوب فوراً
       if (startDate > today) {
-          effectiveEndDate = new Date(startDate.getTime() - 86400000); // تاريخ قبل البداية لإيقاف اللوب
+          alert("لا يمكن استخراج تقرير غياب لشهر في المستقبل!");
+          setLoading(false);
+          return;
       }
 
-      // تحويل تواريخ البداية والنهاية لـ String للمقارنة
-      const startDateStr = parseDate(startDate.toLocaleDateString('en-US')); 
-      // نستخدم نطاق واسع في الجلب (الشهر كاملاً) ثم نفلتر بالكود
-      
-      // 1. جلب الموظفين النشطين
+      // تحويل التواريخ لنصوص لاستخدامها في الاستعلام
+      const startDateStr = toISODate(startDate);
+      const endDateStr = toISODate(endOfMonth); // نجلب داتا الشهر كله حتى لو هنعرض لحد النهاردة بس
+
+      console.log(`جلب البيانات من ${startDateStr} إلى ${endDateStr}`);
+
+      // ---------------------------------------------------------
+      // 3. جلب البيانات من Supabase (هنا كان الخطأ وتم إصلاحه)
+      // ---------------------------------------------------------
+
+      // أ) الموظفين النشطين
       const { data: employees } = await supabase
         .from('employees')
         .select('id, employee_id, name, specialty')
@@ -64,19 +65,23 @@ export default function AbsenceReportTab() {
 
       if (!employees) throw new Error("لا يوجد موظفين");
 
-      // 2. جلب سجلات الحضور (بدون فلترة دقيقة هنا لتجنب مشاكل الصيغة)
+      // ب) سجلات الحضور (تمت إضافة الفلترة بالتاريخ لتعمل مع الـ 20000 سجل)
       const { data: attendance } = await supabase
         .from('attendance')
-        .select('employee_id, date, times');
-        // يمكن إضافة .limit(5000) إذا كانت البيانات ضخمة جداً
+        .select('employee_id, date, times')
+        .gte('date', startDateStr)  // ✅ أكبر من أو يساوي بداية الشهر
+        .lte('date', endDateStr)    // ✅ أصغر من أو يساوي نهاية الشهر
+        .limit(10000);              // ✅ رفعنا الحد لـ 10000 احتياطياً (الشهر عادة 3000 سجل)
 
-      // 3. جلب الإجازات
+      // ج) الإجازات (المقبولة فقط)
       const { data: leaves } = await supabase
         .from('leave_requests')
         .select('employee_id, start_date, end_date')
-        .neq('status', 'مرفوض');
+        .neq('status', 'مرفوض')
+        .lte('start_date', endDateStr) // تحسين الأداء
+        .gte('end_date', startDateStr);
 
-      // 4. جلب العطلات
+      // د) العطلات الرسمية
       const { data: settings } = await supabase
         .from('settings')
         .select('holidays_date')
@@ -84,30 +89,29 @@ export default function AbsenceReportTab() {
 
       const holidays = settings?.holidays_date || [];
 
-      // --- مرحلة بناء خريطة الحالة (Map) ---
-      // المفتاح: EmpID_YYYY-MM-DD
-      // القيمة: 'present' | 'incomplete' | 'absent'
-      const statusMap = new Map<string, string>();
+      // ---------------------------------------------------------
+      // 4. معالجة البيانات (Mapping)
+      // ---------------------------------------------------------
+      
+      // خريطة الحضور: المفتاح = "EmpID_YYYY-MM-DD"
+      const attendanceMap = new Map<string, string>();
 
       attendance?.forEach((r: any) => {
-        const stdDate = parseDate(r.date); // تحويل 7/24/2025 -> 2025-07-24
+        // بما أن العمود date نوعه date، فهو يرجع عادة YYYY-MM-DD
+        const dateKey = r.date; 
+        const key = `${r.employee_id}_${dateKey}`;
         
-        // تنظيف الوقت
         const timeStr = r.times ? r.times.trim() : '';
-        const key = `${r.employee_id}_${stdDate}`;
-
+        
         if (timeStr === '') {
-           // السجل موجود لكن الوقت فارغ -> غياب
-           statusMap.set(key, 'absent');
+           attendanceMap.set(key, 'absent'); // سجل موجود بس فاضي
         } else {
-           // تقسيم الوقت لمعرفة العدد
-           const punches = timeStr.split(/\s+/);
+           // نعد المسافات لنعرف عدد البصمات
+           const punches = timeStr.split(/\s+/).filter((t:string) => t.length > 0);
            if (punches.length === 1) {
-               // بصمة واحدة -> ترك عمل / غير مكتمل
-               statusMap.set(key, 'incomplete');
+               attendanceMap.set(key, 'incomplete'); // بصمة واحدة
            } else {
-               // أكثر من بصمة -> حضور
-               statusMap.set(key, 'present');
+               attendanceMap.set(key, 'present'); // حضور كامل
            }
         }
       });
@@ -117,52 +121,57 @@ export default function AbsenceReportTab() {
       for (const emp of employees) {
         const issues: {date: string, type: string, label: string}[] = [];
 
-        // دوران يومي من 1 في الشهر وحتى (اليوم الحالي أو نهاية الشهر)
-        for (let d = new Date(startDate); d <= effectiveEndDate; d.setDate(d.getDate() + 1)) {
-          // تنسيق التاريخ للحلقة YYYY-MM-DD
-          const yearLoop = d.getFullYear();
-          const monthLoop = String(d.getMonth() + 1).padStart(2, '0');
-          const dayLoop = String(d.getDate()).padStart(2, '0');
-          const dateStr = `${yearLoop}-${monthLoop}-${dayLoop}`;
-          
-          const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+        // 🔄 الدوران يوماً بيوم
+        const loopDate = new Date(startDate);
+        while (loopDate <= effectiveEndDate) {
+          const dateStr = toISODate(loopDate);
+          const dayName = loopDate.toLocaleDateString('en-US', { weekday: 'long' });
 
-          // 1. استبعاد الجمعة
-          if (dayName === 'Friday') continue;
+          // التحقق من الاستثناءات
+          let isExcused = false;
 
-          // 2. استبعاد العطلات الرسمية
-          if (holidays.includes(dateStr)) continue;
+          // 1. الجمعة
+          if (dayName === 'Friday') isExcused = true;
 
-          // 3. استبعاد الإجازات (المقبولة أو المعلقة)
-          const isOnLeave = leaves?.some((leave: any) => 
-            leave.employee_id === emp.employee_id && 
-            dateStr >= leave.start_date && dateStr <= leave.end_date
-          );
-          if (isOnLeave) continue;
+          // 2. عطلة رسمية
+          if (!isExcused && holidays.includes(dateStr)) isExcused = true;
 
-          // 4. فحص الحالة
-          const key = `${emp.employee_id}_${dateStr}`;
-          const status = statusMap.get(key);
-
-          // الحالة: غياب (السجل غير موجود OR السجل موجود وقيمته absent)
-          if (!status || status === 'absent') {
-            issues.push({
-                date: dateStr,
-                type: 'absent',
-                label: new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' })
-            });
-          } 
-          // الحالة: بصمة واحدة (ترك عمل)
-          else if (status === 'incomplete') {
-            issues.push({
-                date: dateStr,
-                type: 'incomplete',
-                label: `${new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' })} (بصمة واحدة)`
-            });
+          // 3. إجازة
+          if (!isExcused && leaves) {
+             const isOnLeave = leaves.some((leave: any) => 
+                dateStr >= leave.start_date && dateStr <= leave.end_date && leave.employee_id === emp.employee_id
+             );
+             if (isOnLeave) isExcused = true;
           }
+
+          if (!isExcused) {
+             const key = `${emp.employee_id}_${dateStr}`;
+             const status = attendanceMap.get(key);
+
+             // 🚨 كشف الغياب
+             // الغياب = لا يوجد سجل في الـ Map نهائياً، أو السجل موجود وقيمته 'absent'
+             if (status === undefined || status === 'absent') {
+                 issues.push({
+                    date: dateStr,
+                    type: 'absent',
+                    label: new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' })
+                 });
+             }
+             // ⚠️ كشف البصمة الواحدة (اختياري، يظهر باللون البرتقالي)
+             else if (status === 'incomplete') {
+                 issues.push({
+                    date: dateStr,
+                    type: 'incomplete',
+                    label: `${new Date(dateStr).toLocaleDateString('ar-EG', { day: 'numeric', month: 'numeric' })} (بصمة واحدة)`
+                 });
+             }
+          }
+
+          // الانتقال لليوم التالي
+          loopDate.setDate(loopDate.getDate() + 1);
         }
 
-        // إضافة الموظف للتقرير إذا كان لديه أي ملاحظات (غياب أو ترك عمل)
+        // إضافة الموظف للتقرير فقط إذا كان عنده غياب أو بصمة واحدة
         if (issues.length > 0) {
           finalReport.push({
             ...emp,
@@ -192,7 +201,7 @@ export default function AbsenceReportTab() {
             <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
               <FileX className="text-red-600" /> تقرير الغياب والمخالفات
             </h2>
-            <p className="text-sm text-gray-500 mt-1">حصر أيام الغياب وترك العمل (بصمة واحدة) حتى تاريخ اليوم</p>
+            <p className="text-sm text-gray-500 mt-1">حصر الأيام الخالية من البصمات (حتى تاريخ اليوم)</p>
           </div>
 
           <div className="flex gap-3 items-center w-full md:w-auto">
