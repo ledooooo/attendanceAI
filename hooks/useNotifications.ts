@@ -1,8 +1,8 @@
 import { supabase } from '../supabaseClient';
 
 export const useNotifications = (userId: string) => {
-  // ملاحظة: هذا مفتاح تجريبي، للإنتاج يفضل توليد مفتاح خاص بك
-  const publicKey = 'BEl62vp9IHZS95v5H5z6N2_t757988358485'; 
+  // ⚠️ استبدل النص التالي بالمفتاح العام الحقيقي الذي نسخته من الموقع
+  const publicKey = 'BJ5Rx-llNAH1bWDuB6miFY2GLp6qQz3XSRWsD9_onnn430E7HZmN5w3VSR17DV9qxl341wsJjc-35lOqNTBo65k'; 
 
   const urlBase64ToUint8Array = (base64String: string) => {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -21,6 +21,7 @@ export const useNotifications = (userId: string) => {
       
       const registration = await navigator.serviceWorker.ready;
       
+      // هنا كان يحدث الخطأ بسبب المفتاح غير الصالح
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey)
@@ -30,7 +31,7 @@ export const useNotifications = (userId: string) => {
         .from('push_subscriptions')
         .upsert({
           user_id: userId,
-          subscription_data: subscription, // Supabase سيتعامل معه كـ JSONB
+          subscription_data: subscription, 
           device_info: {
             userAgent: navigator.userAgent,
             platform: navigator.platform,
