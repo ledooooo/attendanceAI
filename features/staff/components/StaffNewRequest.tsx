@@ -36,15 +36,14 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         notes: ''
     });
 
-    // 🛠️ دالة هامة جداً لتوحيد تنسيق التاريخ (1/18/2026 -> 2026-01-18)
+    // توحيد التاريخ (للمقارنة مع قاعدة البيانات)
     const normalizeDate = (dateStr: string) => {
         const d = new Date(dateStr);
-        // نضمن استخدام التوقيت المحلي
         const offset = d.getTimezoneOffset() * 60000;
         return new Date(d.getTime() - offset).toISOString().split('T')[0];
     };
 
-    // دالة لتوليد تاريخ قياسي YYYY-MM-DD من كائن Date
+    // توليد التاريخ القياسي للحلقة
     const toStandardDate = (d: Date) => {
         const offset = d.getTimezoneOffset() * 60000;
         return new Date(d.getTime() - offset).toISOString().split('T')[0];
@@ -58,104 +57,124 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                 const sixtyDaysAgo = new Date();
                 sixtyDaysAgo.setDate(today.getDate() - 60);
 
-                // بما أن التواريخ في قاعدتك M/D/YYYY، لا نعتمد على الفلترة النصية الدقيقة هنا
-                // سنجلب نطاقاً أوسع قليلاً ثم نفلتر بالكود
+                // 1. جلب بيانات الموظف للتأكد من أيام العمل (work_days)
+                const { data: empData } = await supabase
+                    .from('employees')
+                    .select('work_days')
+                    .eq('employee_id', employee.employee_id)
+                    .single();
+
+                const workDays = empData?.work_days || []; // مصفوفة أيام العمل
+
+                // 2. جلب سجلات الحضور
                 const { data: records } = await supabase
                     .from('attendance')
                     .select('date, times')
                     .eq('employee_id', employee.employee_id)
                     .order('date', { ascending: false })
-                    .limit(100); // جلب آخر 100 سجل لضمان تغطية الـ 60 يوم
+                    .limit(100);
 
-                // جلب الإجازات
+                // 3. جلب الإجازات
                 const { data: leaves } = await supabase
                     .from('leave_requests')
                     .select('start_date, end_date')
                     .eq('employee_id', employee.employee_id)
                     .neq('status', 'مرفوض');
 
-                // جلب العطلات
+                // 4. جلب العطلات الرسمية
                 const { data: settings } = await supabase
-                    .from('settings')
-                    .select('holidays_date')
+                    .from('settings') // أو general_settings حسب قاعدتك
+                    .select('holidays_date') // أو holidays حسب قاعدتك
                     .single();
 
+                // التعامل مع اختلاف أسماء الأعمدة المحتمل
+                const holidays = settings?.holidays_date || settings?.holidays || [];
                 const validLeaves = leaves || [];
-                const holidays = settings?.holidays_date || [];
 
-                // 🏗️ بناء خريطة الحالة لكل يوم (Map)
-                // المفتاح: التاريخ الموحد (YYYY-MM-DD)
-                // القيمة: الحالة (absent, incomplete, present)
+                // خريطة الحضور
                 const statusMap = new Map<string, string>();
-
                 if (records) {
                     records.forEach((r: any) => {
-                        const stdDate = normalizeDate(r.date); // توحيد التاريخ
-                        const t = r.times ? r.times.trim() : ''; // تنظيف الوقت
-
+                        const stdDate = normalizeDate(r.date);
+                        const t = r.times ? r.times.trim() : '';
                         if (!t) {
-                            // إذا الحقل فارغ تماماً = غياب
                             statusMap.set(stdDate, 'absent');
                         } else {
-                            // تقسيم الوقت (يدعم المسافات العادية والبيانات القادمة بثواني)
                             const punches = t.split(/\s+/);
-                            if (punches.length === 1) {
-                                statusMap.set(stdDate, 'incomplete');
-                            } else {
-                                statusMap.set(stdDate, 'present');
-                            }
+                            statusMap.set(stdDate, punches.length === 1 ? 'incomplete' : 'present');
                         }
                     });
                 }
 
                 const foundSuggestions: DateSuggestion[] = [];
 
-                // 🔄 الحلقة التكرارية (Loop) على الـ 60 يوم الماضية
+                // 🔄 الحلقة التكرارية
                 for (let d = new Date(sixtyDaysAgo); d < today; d.setDate(d.getDate() + 1)) {
-                    const dateStr = toStandardDate(d); // YYYY-MM-DD
-                    const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+                    const dateStr = toStandardDate(d);
+                    const dayNameEn = d.toLocaleDateString('en-US', { weekday: 'long' });
 
-                    // 1. استبعاد الجمعة
-                    if (dayName === 'Friday') continue;
+                    // 🔥 تعديل هام: التحقق من أيام العمل الخاصة بالموظف
+                    let isWorkDay = false;
+
+                    // خريطة للتحويل من الإنجليزي للجذر العربي للمطابقة المرنة
+                    const dayMap: { [key: string]: string } = {
+                        'Saturday': 'سبت',
+                        'Sunday': 'حد',
+                        'Monday': 'ثنين',
+                        'Tuesday': 'ثلاثاء',
+                        'Wednesday': 'ربعاء',
+                        'Thursday': 'خميس',
+                        'Friday': 'جمعة'
+                    };
+
+                    const arabicKey = dayMap[dayNameEn];
+
+                    if (!workDays || workDays.length === 0) {
+                        // لو المصفوفة فارغة، نفترض الافتراضي (كل الأيام ما عدا الجمعة)
+                        if (dayNameEn !== 'Friday') isWorkDay = true;
+                    } else {
+                        // البحث الجزئي في مصفوفة الموظف
+                        // مثال: هل "الأحد" يحتوي على "حد"؟ نعم
+                        isWorkDay = workDays.some((wd: string) => wd.includes(arabicKey));
+                    }
+
+                    // 1. إذا لم يكن يوم عمل لهذا الموظف، تخطاه
+                    if (!isWorkDay) continue;
 
                     // 2. استبعاد العطلات الرسمية
                     if (holidays.includes(dateStr)) continue;
 
-                    // 3. استبعاد الإجازات المسجلة
+                    // 3. استبعاد الإجازات
                     const isLeave = validLeaves.some((leave: any) => 
                         dateStr >= leave.start_date && dateStr <= leave.end_date
                     );
                     if (isLeave) continue;
 
-                    // 4. فحص الحالة من الـ Map
+                    // 4. فحص الحالة
                     const status = statusMap.get(dateStr);
 
                     if (status === 'absent') {
-                        // الحالة أ: الصف موجود ولكن الـ times فارغ
                         foundSuggestions.push({
                             date: dateStr,
                             label: formatDateArabic(dateStr),
                             type: 'absence'
                         });
                     } else if (status === 'incomplete') {
-                        // الحالة ب: الصف موجود وبه بصمة واحدة
                         foundSuggestions.push({
                             date: dateStr,
                             label: formatDateArabic(dateStr),
                             type: 'incomplete'
                         });
                     } else if (status === undefined) {
-                        // الحالة ج: الصف غير موجود تماماً في القاعدة (أيضاً يعتبر غياب)
+                        // لم يحضر واليوم مطلوب عمل
                         foundSuggestions.push({
                             date: dateStr,
                             label: formatDateArabic(dateStr),
                             type: 'absence'
                         });
                     }
-                    // الحالة د: present (يتم تجاهله)
                 }
 
-                // ترتيب النتائج: الأحدث أولاً
                 foundSuggestions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 setSuggestions(foundSuggestions);
 
