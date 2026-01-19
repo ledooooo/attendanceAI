@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Printer, Search, FileX, Loader2, AlertCircle } from 'lucide-react';
+import { Printer, Search, FileX, Loader2, AlertCircle, Download } from 'lucide-react';
 
 export default function AbsenceReportTab() {
   const [loading, setLoading] = useState(false);
@@ -47,7 +47,6 @@ export default function AbsenceReportTab() {
         employee_id: emp.employee_id,
         name: emp.name,
         specialty: emp.specialty,
-        // فصل التواريخ بناءً على النوع لعرضها في الأعمدة الجديدة
         absentDates: emp.issues.filter((i:any) => i.type === 'absent').map((i:any) => i.label).join('، '),
         incompleteDates: emp.issues.filter((i:any) => i.type === 'incomplete').map((i:any) => i.label).join('، '),
       }));
@@ -62,6 +61,42 @@ export default function AbsenceReportTab() {
     }
   };
 
+  // 📥 دالة تحميل الإكسل (CSV)
+  const downloadExcel = () => {
+    if (reportData.length === 0) return;
+
+    // 1. تجهيز العناوين
+    const headers = ['م', 'اسم الموظف', 'الكود الوظيفي', 'التخصص', 'أيام ترك العمل (بصمة واحدة)', 'أيام الغياب'];
+    
+    // 2. تجهيز الصفوف
+    const rows = reportData.map((emp, index) => [
+      index + 1,
+      `"${emp.name}"`, // علامات تنصيص لمنع تداخل الفواصل
+      `"${emp.employee_id}"`,
+      `"${emp.specialty}"`,
+      `"${emp.incompleteDates || '-'}"`,
+      `"${emp.absentDates || '-'}"`
+    ]);
+
+    // 3. دمج البيانات في نص واحد
+    const csvContent = [
+      headers.join(','), 
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    // 4. إنشاء الملف مع BOM لدعم اللغة العربية
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    // 5. تحميل الملف
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Absence_Report_${selectedMonth}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6 p-4">
       {/* رأس الصفحة (يختفي عند الطباعة) */}
@@ -74,7 +109,7 @@ export default function AbsenceReportTab() {
             <p className="text-sm text-gray-500 mt-1">حصر دقيق (غياب + بصمة واحدة)</p>
           </div>
 
-          <div className="flex gap-3 items-center w-full md:w-auto">
+          <div className="flex gap-3 items-center w-full md:w-auto flex-wrap">
             <input 
               type="month" 
               value={selectedMonth}
@@ -84,18 +119,27 @@ export default function AbsenceReportTab() {
             <button 
               onClick={generateReport}
               disabled={loading}
-              className="bg-emerald-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-50"
+              className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-50 text-sm"
             >
               {loading ? <Loader2 className="animate-spin w-4 h-4"/> : <Search className="w-4 h-4"/>}
               عرض
             </button>
+            
             {reportData.length > 0 && (
-              <button 
-                onClick={() => window.print()}
-                className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-900"
-              >
-                <Printer className="w-4 h-4"/> طباعة
-              </button>
+              <>
+                <button 
+                  onClick={downloadExcel}
+                  className="bg-green-700 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-800 text-sm"
+                >
+                  <Download className="w-4 h-4"/> إكسل
+                </button>
+                <button 
+                  onClick={() => window.print()}
+                  className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-900 text-sm"
+                >
+                  <Printer className="w-4 h-4"/> طباعة
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -164,7 +208,7 @@ export default function AbsenceReportTab() {
         @media print {
           @page { 
             size: A4; 
-            margin: 10mm; /* هامش مناسب للطابعة */
+            margin: 5mm; /* تقليل الهوامش لأقصى درجة */
           }
           body { 
             background: white; 
@@ -177,24 +221,26 @@ export default function AbsenceReportTab() {
           /* إظهار عناصر الطباعة */
           .print-header, .print-footer { display: block !important; }
           
-          /* تنسيق الحاوية */
+          /* توسيط المحتوى وجعله عرضياً */
           .print-container { 
             box-shadow: none; 
             border: none; 
             width: 100%;
+            margin: 0 auto; /* توسيط أفقي */
           }
           
-          /* تنسيق الجدول */
+          /* تنسيق الجدول المضغوط */
           table { 
             width: 100%; 
             border-collapse: collapse; 
-            table-layout: fixed; /* ضروري لاحترام النسب المئوية */
+            table-layout: fixed; 
           }
           
           th, td { 
-            border: 1px solid #000 !important; /* حدود سوداء واضحة */
-            padding: 3px 4px !important; /* تقليل الهوامش لزيادة السعة */
+            border: 1px solid #000 !important;
+            padding: 2px !important; /* تقليل الحشوة جداً */
             vertical-align: middle;
+            line-height: 1.2; /* تقليل تباعد الأسطر */
           }
           
           /* ضبط الخلفيات للطباعة */
@@ -202,6 +248,7 @@ export default function AbsenceReportTab() {
             background-color: #eee !important; 
             color: black !important;
             font-weight: 900 !important;
+            font-size: 9pt !important;
           }
           
           /* منع قص الصفوف */
@@ -210,8 +257,8 @@ export default function AbsenceReportTab() {
             page-break-inside: avoid; 
           }
           
-          /* ضبط الخطوط لتناسب الورقة */
-          td { font-size: 10pt !important; }
+          /* تصغير الخط ليستوعب صفوفاً أكثر */
+          td { font-size: 9pt !important; }
           
           /* إجبار المحتوى الرئيسي على ملء الصفحة */
           main { margin: 0; padding: 0; height: auto; overflow: visible; }
