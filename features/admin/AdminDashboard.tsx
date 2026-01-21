@@ -1,3 +1,22 @@
+لإضافة زر تجريبي لإرسال الإشعارات وإجبارها على العمل، سنضيف زراً بسيطاً في `AdminDashboard` يقوم باستدعاء دالة `send-push-notification` مباشرة.
+
+سأقوم بإضافة تبويب جديد باسم **"اختبار التنبيهات" (`test_push`)** ضمن القائمة، ليظهر فيه زر الإرسال التجريبي.
+
+إليك الكود المعدل لملف `AdminDashboard.tsx`:
+
+### التعديلات التي تمت:
+
+1. إضافة أيقونة `BellRing` من `lucide-react`.
+2. إضافة عنصر جديد للقائمة الجانبية: **اختبار التنبيهات**.
+3. إضافة دالة `sendTestNotification` التي تقوم بالآتي:
+* تجلب الـ `user_id` الخاص بالمدير الحالي.
+* ترسل إشعاراً لنفس المستخدم (المدير) للتجربة.
+* تستدعي `supabase.functions.invoke`.
+
+
+4. إضافة واجهة العرض الخاصة بالتبويب الجديد (`activeTab === 'test_push'`).
+
+```tsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
@@ -7,7 +26,7 @@ import {
   Users, Clock, CalendarRange, ClipboardList, 
   Activity, Settings, LogOut, Menu, LayoutDashboard, X, Mail, FileBarChart,
   Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, BookOpen,
-  Database // ✅ تم إضافة الاستيراد المفقود هنا
+  Database, BellRing, Smartphone // ✅ تمت إضافة BellRing و Smartphone
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
@@ -29,7 +48,8 @@ import QualityDashboard from './components/QualityDashboard';
 import AdminLibraryManager from './components/AdminLibraryManager'; 
 import AdminDataReports from './components/AdminDataReports'; 
 import AbsenceReportTab from './components/AbsenceReportTab';
-import { FileX } from 'lucide-react'; // استيراد الأيقونة
+import { FileX } from 'lucide-react';
+
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
   
@@ -39,6 +59,10 @@ export default function AdminDashboard() {
   const [centerId, setCenterId] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [qualityAlerts, setQualityAlerts] = useState(0); 
+
+  // حالة لواجهة الاختبار
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState('');
 
   // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
@@ -88,6 +112,34 @@ export default function AdminDashboard() {
     return () => { supabase.removeChannel(subscription); };
   }, []);
 
+  // 🔥 دالة إرسال التنبيه التجريبي
+  const sendTestNotification = async () => {
+    if (!user) return;
+    setTestLoading(true);
+    setTestResult('جاري الإرسال...');
+
+    try {
+        const { data, error } = await supabase.functions.invoke('send-push-notification', {
+            body: {
+                userId: user.id, // نرسل للمدير نفسه للتجربة
+                title: '🔔 تنبيه تجريبي',
+                body: `تم إرسال هذا التنبيه في: ${new Date().toLocaleTimeString('ar-EG')}`,
+                url: '/admin'
+            }
+        });
+
+        if (error) throw error;
+        setTestResult('✅ تم الإرسال بنجاح! راقب هاتفك الآن.');
+        console.log('Push Result:', data);
+
+    } catch (err: any) {
+        console.error('Push Error:', err);
+        setTestResult(`❌ فشل الإرسال: ${err.message}`);
+    } finally {
+        setTestLoading(false);
+    }
+  };
+
   const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
@@ -99,7 +151,7 @@ export default function AdminDashboard() {
     { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
     { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
     { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
-    { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, // ✅ تعمل الآن بعد الاستيراد
+    { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
     { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
     { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
     { 
@@ -109,6 +161,7 @@ export default function AdminDashboard() {
         badge: qualityAlerts 
     },
     { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
+    { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing }, // 🔥 الزر الجديد
     { id: 'settings', label: 'إعدادات النظام', icon: Settings },
   ];
 
@@ -131,14 +184,12 @@ export default function AdminDashboard() {
     ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
     md:translate-x-0 md:static md:shadow-none md:flex md:flex-col h-screen
 `}>
-  {/* زر الإغلاق فقط للموبايل بدون عنوان */}
   <div className="md:hidden p-4 flex justify-end shrink-0 bg-white">
       <button onClick={() => setIsSidebarOpen(false)} className="p-1.5 bg-gray-50 rounded-full text-gray-500">
           <X className="w-5 h-5"/>
       </button>
   </div>
 
-  {/* حاوية الأزرار - تبدأ من الأعلى مباشرة */}
   <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5 custom-scrollbar bg-white">
     {menuItems.map(item => (
       <button
@@ -165,7 +216,6 @@ export default function AdminDashboard() {
     ))}
   </nav>
 
-  {/* التذييل */}
   <div className="p-3 border-t bg-gray-50 shrink-0">
      <button 
        onClick={signOut} 
@@ -176,7 +226,7 @@ export default function AdminDashboard() {
      </button>
   </div>
 </aside>
-      {/* خلفية مظللة للموبايل */}
+
       {isSidebarOpen && (
         <div 
             className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
@@ -216,8 +266,41 @@ export default function AdminDashboard() {
             {activeTab === 'settings' && <SettingsTab onUpdateName={fetchSettings} />}
             {activeTab === 'send_reports' && <SendReportsTab />}
             {activeTab === 'absence-report' && <AbsenceReportTab />}     
+            
+            {/* 🔥 واجهة اختبار التنبيهات */}
+            {activeTab === 'test_push' && (
+                <div className="max-w-md mx-auto bg-white p-8 rounded-3xl shadow-sm border border-gray-100 text-center space-y-6 mt-10">
+                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto text-blue-600">
+                        <Smartphone className="w-8 h-8" />
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-black text-gray-800">اختبار إشعارات الموبايل</h2>
+                        <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+                            اضغط على الزر أدناه لإرسال إشعار تجريبي إلى جهازك فوراً.
+                            <br />
+                            (تأكد أنك سمحت بالإشعارات، وأن التطبيق مغلق للتجربة الحقيقية)
+                        </p>
+                    </div>
+
+                    <button
+                        onClick={sendTestNotification}
+                        disabled={testLoading}
+                        className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg hover:shadow-blue-200 active:scale-95 transition-all disabled:opacity-50 flex justify-center items-center gap-2"
+                    >
+                        {testLoading ? 'جاري الإرسال...' : '🚀 إرسال تنبيه تجريبي'}
+                    </button>
+
+                    {testResult && (
+                        <div className={`p-4 rounded-xl text-sm font-bold ${testResult.includes('نجح') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                            {testResult}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
       </main>
     </div>
   );
 }
+
+```
