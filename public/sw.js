@@ -1,76 +1,68 @@
 // public/sw.js
-
-// 1. التثبيت والتفعيل الفوري (تخطي الانتظار)
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // يجبر المتصفح على استبدال الـ Worker القديم فوراً
+  console.log('SW: Installing...');
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim()); // يسيطر على كل الصفحات المفتوحة فوراً
+  console.log('SW: Activated');
+  event.waitUntil(self.clients.claim());
 });
 
-// 2. استقبال الإشعار (يعمل حتى والتطبيق مغلق)
 self.addEventListener('push', (event) => {
-  if (!event.data) return;
+  console.log('🔔 SW: Push Received', event);
 
-  let data;
-  try {
-    data = event.data.json();
-  } catch (e) {
-    // في حالة وصول نص عادي
-    data = { title: 'تنبيه إداري', body: event.data.text(), url: '/' };
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+      console.log('📦 Push Data:', data);
+    } catch (e) {
+      console.warn('⚠️ Push data is not JSON, using text');
+      data = { title: 'تنبيه', body: event.data.text() };
+    }
   }
 
+  const title = data.title || 'إشعار جديد';
   const options = {
-    body: data.body || 'لديك إشعار جديد',
-    icon: '/pwa-192x192.png', // تأكد أن الصورة موجودة في public
-    badge: '/pwa-192x192.png', // الأيقونة الصغيرة في شريط الحالة
+    body: data.body || 'لديك تنبيه جديد من النظام',
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
     dir: 'rtl',
     lang: 'ar',
-    vibrate: [200, 100, 200], // اهتزاز
-    tag: 'attendance-notification', // يمنع تكرار الإشعارات فوق بعضها
-    renotify: true, // يهتز كل مرة حتى لو الإشعار قديم موجود
-    requireInteraction: true, // ⚠️ هام: يمنع الإشعار من الاختفاء تلقائياً
+    tag: 'renotify', // استخدام تاج ثابت للتجربة
+    renotify: true,
+    requireInteraction: true, // يمنع اختفاء التنبيه تلقائياً
     data: {
-      url: data.url || '/',
-      dateOfArrival: Date.now()
-    },
-    actions: [
-      { action: 'open', title: 'عرض' },
-      { action: 'close', title: 'إغلاق' }
-    ]
+      url: data.url || '/'
+    }
   };
 
-  // ⚠️ استخدام waitUntil ضروري جداً لضمان بقاء العملية حية
   event.waitUntil(
-    self.registration.showNotification(data.title || 'المركز الطبي', options)
+    self.registration.showNotification(title, options)
+      .then(() => console.log('✅ Notification Shown'))
+      .catch((err) => console.error('❌ Notification Error:', err))
   );
 });
 
-// 3. التفاعل مع الضغط على الإشعار
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close(); // إغلاق الإشعار أولاً
-
-  if (event.action === 'close') return;
-
-  const urlToOpen = new URL(event.notification.data.url, self.location.origin).href;
-
-  const promiseChain = clients.matchAll({
-    type: 'window',
-    includeUncontrolled: true
-  }).then((windowClients) => {
-    // أ) إذا كان التطبيق مفتوحاً بالفعل، ركز عليه وانتقل للرابط
-    for (let i = 0; i < windowClients.length; i++) {
-      const client = windowClients[i];
-      if (client.url === urlToOpen && 'focus' in client) {
+  console.log('👆 Notification Clicked');
+  event.notification.close();
+  
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      if (clientList.length > 0) {
+        let client = clientList[0];
+        for (let i = 0; i < clientList.length; i++) {
+          if (clientList[i].focused) {
+            client = clientList[i];
+          }
+        }
         return client.focus();
       }
-    }
-    // ب) إذا لم يكن مفتوحاً، افتح نافذة جديدة
-    if (clients.openWindow) {
-      return clients.openWindow(urlToOpen);
-    }
-  });
-
-  event.waitUntil(promiseChain);
+      if (clients.openWindow) {
+        return clients.openWindow(event.notification.data.url || '/');
+      }
+    })
+  );
 });
