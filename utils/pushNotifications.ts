@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseClient';
 
-// ⚠️ هام: ضع المفتاح العام هنا (بدون مسافات زائدة)
-const VAPID_PUBLIC_KEY = 'BJ5Rx-llNAH1bWDuB6miFY2GLp6qQz3XSRWsD9_onnn430E7HZmN5w3VSR17DV9qxl341wsJjc-35lOqNTBo65k'; // هذا المفتاح من ملفك السابق
+// ⚠️ مفتاحك العام (تأكد أنه صحيح)
+const VAPID_PUBLIC_KEY = 'BJ5Rx-llNAH1bWDuB6miFY2GLp6qQz3XSRWsD9_onnn430E7HZmN5w3VSR17DV9qxl341wsJjc-35lOqNTBo65k';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -14,9 +14,9 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-// ... (نفس الجزء العلوي من الاستيرادات والمفتاح العام)
-
 export async function requestNotificationPermission(userId: string) {
+  console.log("🚀 بدء عملية تسجيل الإشعارات للمستخدم:", userId);
+  
   try {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       console.error('❌ المتصفح لا يدعم الإشعارات');
@@ -24,16 +24,19 @@ export async function requestNotificationPermission(userId: string) {
     }
 
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return false;
+    if (permission !== 'granted') {
+      console.warn('⚠️ المستخدم رفض الإذن');
+      return false;
+    }
 
-    // تسجيل الـ SW (احتياطياً)
+    // تجهيز Service Worker
     let registration = await navigator.serviceWorker.ready.catch(() => null);
     if (!registration) {
         registration = await navigator.serviceWorker.register('/sw.js');
         await navigator.serviceWorker.ready;
     }
 
-    // الاشتراك
+    // الحصول على الاشتراك
     let subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
         subscription = await registration.pushManager.subscribe({
@@ -42,37 +45,37 @@ export async function requestNotificationPermission(userId: string) {
         });
     }
 
-    // --- التعديل هنا ---
+    // 🛠️ التجهيز للإرسال لقاعدة البيانات
     const subscriptionData = JSON.parse(JSON.stringify(subscription));
-    const endpoint = subscriptionData.endpoint; // استخراج الرابط الأساسي
+    const endpoint = subscriptionData.endpoint; // استخراج الرابط للمقارنة
 
-    const { error } = await supabase
+    console.log("📡 جاري حفظ الاشتراك في Supabase...");
+
+    const { data, error } = await supabase
       .from('push_subscriptions')
       .upsert({
         user_id: userId,
         subscription_data: subscriptionData,
-        endpoint: endpoint, // ✅ نرسل الرابط في عمود منفصل
+        endpoint: endpoint, // ✅ نرسل الرابط صراحةً ليطابق القيد في الجدول
         device_info: {
              userAgent: navigator.userAgent,
              platform: navigator.platform
         },
         updated_at: new Date().toISOString()
       }, {
-        onConflict: 'user_id, endpoint' // ✅ الآن يطابق القيد الموجود في SQL تماماً
+        onConflict: 'user_id, endpoint' // ✅ الآن يطابق CONSTRAINT unique_user_device
       });
 
     if (error) {
-        console.error('❌ خطأ Supabase:', error);
-        // طباعة تفاصيل الخطأ للمساعدة
-        console.log('Error Details:', error.message, error.details);
+        console.error('❌ فشل الحفظ في قاعدة البيانات:', error.message, error.details);
     } else {
-        console.log('✅ تم تفعيل الإشعارات وحفظها في قاعدة البيانات');
+        console.log('✅ تم حفظ الاشتراك بنجاح في الجدول!');
     }
     
     return true;
 
   } catch (error) {
-    console.error('❌ خطأ عام:', error);
+    console.error('❌ خطأ غير متوقع:', error);
     return false;
   }
 }
