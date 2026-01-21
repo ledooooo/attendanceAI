@@ -1,70 +1,76 @@
-// 1. إجبار المتصفح على تفعيل النسخة الجديدة فوراً (Skip Waiting)
+// public/sw.js
+
+// 1. التثبيت والتفعيل الفوري (تخطي الانتظار)
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // يتخطى مرحلة الانتظار ويفعل الكود فوراً
+  self.skipWaiting(); // يجبر المتصفح على استبدال الـ Worker القديم فوراً
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim()); // السيطرة على المتصفح فوراً دون الحاجة لإعادة فتحه
+  event.waitUntil(self.clients.claim()); // يسيطر على كل الصفحات المفتوحة فوراً
 });
 
-// 2. استقبال الإشعار
-self.addEventListener('push', function(event) {
-  if (event.data) {
-    let data;
-    try {
-      data = event.data.json();
-    } catch (e) {
-      data = { title: 'تنبيه إداري', body: event.data.text() };
-    }
+// 2. استقبال الإشعار (يعمل حتى والتطبيق مغلق)
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
 
-    const options = {
-      body: data.body || 'لديك تنبيه جديد',
-      icon: '/pwa-192x192.png', // تأكد أن الاسم يطابق الصورة في public
-      badge: '/pwa-192x192.png', // الأيقونة الصغيرة
-      dir: 'rtl',
-      lang: 'ar',
-      vibrate: [200, 100, 200], // نمط اهتزاز أقوى
-      
-      // ⚠️ أهم الإعدادات للخلفية:
-      tag: 'attendance-notification', // يمنع تراكم الإشعارات
-      renotify: true, // يهتز الهاتف حتى لو كان هناك إشعار سابق لم يقرأ
-      requireInteraction: true, // يمنع الإشعار من الاختفاء تلقائياً (يجبر المستخدم على التفاعل)
-      
-      data: {
-        url: data.url || '/'
-      },
-      actions: [
-        { action: 'open', title: 'عرض' },
-        { action: 'close', title: 'إغلاق' }
-      ]
-    };
-
-    // استخدام event.waitUntil ضروري جداً لإبقاء الـ Worker حياً حتى يظهر الإشعار
-    event.waitUntil(
-      self.registration.showNotification(data.title || 'المركز الطبي', options)
-    );
+  let data;
+  try {
+    data = event.data.json();
+  } catch (e) {
+    // في حالة وصول نص عادي
+    data = { title: 'تنبيه إداري', body: event.data.text(), url: '/' };
   }
+
+  const options = {
+    body: data.body || 'لديك إشعار جديد',
+    icon: '/pwa-192x192.png', // تأكد أن الصورة موجودة في public
+    badge: '/pwa-192x192.png', // الأيقونة الصغيرة في شريط الحالة
+    dir: 'rtl',
+    lang: 'ar',
+    vibrate: [200, 100, 200], // اهتزاز
+    tag: 'attendance-notification', // يمنع تكرار الإشعارات فوق بعضها
+    renotify: true, // يهتز كل مرة حتى لو الإشعار قديم موجود
+    requireInteraction: true, // ⚠️ هام: يمنع الإشعار من الاختفاء تلقائياً
+    data: {
+      url: data.url || '/',
+      dateOfArrival: Date.now()
+    },
+    actions: [
+      { action: 'open', title: 'عرض' },
+      { action: 'close', title: 'إغلاق' }
+    ]
+  };
+
+  // ⚠️ استخدام waitUntil ضروري جداً لضمان بقاء العملية حية
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'المركز الطبي', options)
+  );
 });
 
-// 3. التفاعل مع الإشعار
-self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
+// 3. التفاعل مع الضغط على الإشعار
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close(); // إغلاق الإشعار أولاً
 
   if (event.action === 'close') return;
 
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // إذا كان الموقع مفتوحاً، قم بالتركيز عليه
-      for (let i = 0; i < clientList.length; i++) {
-        const client = clientList[i];
-        if (client.url && 'focus' in client) {
-          return client.focus().then(c => c.navigate(event.notification.data.url));
-        }
+  const urlToOpen = new URL(event.notification.data.url, self.location.origin).href;
+
+  const promiseChain = clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true
+  }).then((windowClients) => {
+    // أ) إذا كان التطبيق مفتوحاً بالفعل، ركز عليه وانتقل للرابط
+    for (let i = 0; i < windowClients.length; i++) {
+      const client = windowClients[i];
+      if (client.url === urlToOpen && 'focus' in client) {
+        return client.focus();
       }
-      // إذا كان مغلقاً، افتح نافذة جديدة
-      if (clients.openWindow) {
-        return clients.openWindow(event.notification.data.url);
-      }
-    })
-  );
+    }
+    // ب) إذا لم يكن مفتوحاً، افتح نافذة جديدة
+    if (clients.openWindow) {
+      return clients.openWindow(urlToOpen);
+    }
+  });
+
+  event.waitUntil(promiseChain);
 });
