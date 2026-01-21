@@ -14,6 +14,8 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
+// ... (نفس الجزء العلوي من الاستيرادات والمفتاح العام)
+
 export async function requestNotificationPermission(userId: string) {
   try {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
@@ -24,7 +26,7 @@ export async function requestNotificationPermission(userId: string) {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return false;
 
-    // تسجيل الـ SW إذا لم يكن مسجلاً (احتياطياً)
+    // تسجيل الـ SW (احتياطياً)
     let registration = await navigator.serviceWorker.ready.catch(() => null);
     if (!registration) {
         registration = await navigator.serviceWorker.register('/sw.js');
@@ -40,30 +42,37 @@ export async function requestNotificationPermission(userId: string) {
         });
     }
 
-    // حفظ في قاعدة البيانات
+    // --- التعديل هنا ---
     const subscriptionData = JSON.parse(JSON.stringify(subscription));
+    const endpoint = subscriptionData.endpoint; // استخراج الرابط الأساسي
+
     const { error } = await supabase
       .from('push_subscriptions')
       .upsert({
         user_id: userId,
         subscription_data: subscriptionData,
+        endpoint: endpoint, // ✅ نرسل الرابط في عمود منفصل
         device_info: {
              userAgent: navigator.userAgent,
              platform: navigator.platform
         },
         updated_at: new Date().toISOString()
       }, {
-        // نستخدم user_id وهذا العمود الفريد
-        onConflict: 'user_id, subscription_data' // تأكد من إنشاء الـ constraint في الخطوة 2
+        onConflict: 'user_id, endpoint' // ✅ الآن يطابق القيد الموجود في SQL تماماً
       });
 
-    if (error) console.error('❌ خطأ Supabase:', error);
-    else console.log('✅ تم تفعيل الإشعارات وحفظها');
+    if (error) {
+        console.error('❌ خطأ Supabase:', error);
+        // طباعة تفاصيل الخطأ للمساعدة
+        console.log('Error Details:', error.message, error.details);
+    } else {
+        console.log('✅ تم تفعيل الإشعارات وحفظها في قاعدة البيانات');
+    }
     
     return true;
 
   } catch (error) {
-    console.error('❌ خطأ في الإشعارات:', error);
+    console.error('❌ خطأ عام:', error);
     return false;
   }
 }
