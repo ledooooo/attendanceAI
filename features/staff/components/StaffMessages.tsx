@@ -19,8 +19,6 @@ export default function StaffMessages({ messages: initialMessages, employee, cur
 
     // دالة لجلب الرسائل من قاعدة البيانات
     const fetchMessages = async () => {
-        // إذا كنت أنا الأدمن، فأنا أعتمد على البيانات القادمة من الـ Props (لأن الأدمن لديه صفحة خاصة تجلب كل شيء)
-        // أما إذا كنت موظفاً (currentUserId ليس admin)، فيجب علي جلب رسائلي بنفسي
         if (currentUserId === 'admin') {
             setLocalMessages(initialMessages);
             return;
@@ -41,10 +39,9 @@ export default function StaffMessages({ messages: initialMessages, employee, cur
         setLoading(false);
     };
 
-    // جلب الرسائل عند فتح الصفحة أو تغير المستخدم
     useEffect(() => {
         fetchMessages();
-    }, [employee.employee_id, currentUserId, initialMessages]); // أضفنا initialMessages للتحديث إذا تغيرت من الخارج
+    }, [employee.employee_id, currentUserId, initialMessages]);
 
     // الاشتراك اللحظي (Real-time)
     useEffect(() => {
@@ -81,7 +78,6 @@ export default function StaffMessages({ messages: initialMessages, employee, cur
 
             if (unreadIds.length > 0) {
                 await supabase.from('messages').update({ is_read: true }).in('id', unreadIds);
-                // تحديث الحالة المحلية لتظهر كمقروءة فوراً
                 setLocalMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, is_read: true } : m));
             }
         };
@@ -89,8 +85,9 @@ export default function StaffMessages({ messages: initialMessages, employee, cur
         if (localMessages.length > 0) {
             markAsRead();
         }
-    }, [localMessages.length, currentUserId, employee]); // الاعتماد على length يقلل التكرار
+    }, [localMessages.length, currentUserId, employee]);
 
+    // 🚀 دالة الإرسال (تم التعديل لإرسال الإشعار)
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newMessage.trim()) return;
@@ -98,11 +95,12 @@ export default function StaffMessages({ messages: initialMessages, employee, cur
 
         const fromUser = currentUserId === 'admin' ? 'admin' : employee.employee_id;
         const toUser = currentUserId === 'admin' ? employee.employee_id : 'admin';
+        const msgContent = newMessage; // نحتفظ بالنص لاستخدامه في الإشعار
 
         const payload = {
             from_user: fromUser,
             to_user: toUser,
-            content: newMessage, 
+            content: msgContent, 
             is_read: false
         };
 
@@ -111,6 +109,31 @@ export default function StaffMessages({ messages: initialMessages, employee, cur
         if (!error && data) {
             setLocalMessages([data as any, ...localMessages]);
             setNewMessage('');
+
+            // 🔥🔥🔥 الإضافة الجديدة: إرسال تنبيه للموظف 🔥🔥🔥
+            // الشرط: إذا كان المرسل هو الأدمن، نرسل إشعاراً للموظف
+            if (currentUserId === 'admin') {
+                console.log("🔔 محاولة إرسال إشعار للموظف:", employee.name);
+                
+                // نستخدم employee.id (UUID) لأنه المربوط بجدول الاشتراكات
+                if (employee.id) {
+                    supabase.functions.invoke('send-push-notification', {
+                        body: {
+                            userId: employee.id, // الـ UUID للموظف
+                            title: 'رسالة جديدة من الإدارة',
+                            body: msgContent.substring(0, 50) + (msgContent.length > 50 ? '...' : ''),
+                            url: '/messages'
+                        }
+                    }).then(({ error }) => {
+                        if (error) console.error("❌ فشل إرسال الإشعار:", error);
+                        else console.log("✅ تم إرسال الإشعار بنجاح");
+                    });
+                } else {
+                    console.warn("⚠️ لا يوجد UUID للموظف، لن يتم إرسال الإشعار");
+                }
+            }
+            // 🔥🔥🔥 نهاية الإضافة 🔥🔥🔥
+
         } else {
             alert('فشل الإرسال: ' + error?.message);
         }
@@ -135,7 +158,6 @@ export default function StaffMessages({ messages: initialMessages, employee, cur
                         <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shadow-sm border-2 border-white ${currentUserId === 'admin' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
                             {currentUserId === 'admin' ? employee.name.charAt(0) : 'A'}
                         </div>
-                        {/* حالة الاتصال (وهمية حالياً) */}
                         <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
                     </div>
                     <div>
@@ -178,7 +200,6 @@ export default function StaffMessages({ messages: initialMessages, employee, cur
                                         ? 'bg-blue-600 text-white rounded-br-none' 
                                         : 'bg-white border border-gray-100 text-gray-700 rounded-bl-none'
                                     }`}>
-                                        {/* دعم الأسماء القديمة والجديدة للحقل */}
                                         {msg.content || msg.message || <span className="italic opacity-50">...</span>} 
                                     </div>
                                     <div className="flex items-center gap-1 mt-1 px-1">
