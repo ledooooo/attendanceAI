@@ -3,11 +3,13 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
-import { useNotifications as usePush } from '../../hooks/useNotifications';
+// ⚠️ تأكد أن مسار الاستيراد صحيح لملف الإشعارات الجديد
+import { requestNotificationPermission } from '../../utils/pushNotifications'; 
+
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Download, Info, Heart, Smartphone, HelpCircle, Moon, FileText, 
+  Share2, Info, Moon, FileText, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen
 } from 'lucide-react';
 
@@ -35,7 +37,7 @@ interface Props {
 }
 
 export default function StaffDashboard({ employee }: Props) {
-  const { signOut, user } = useAuth();
+  const { signOut } = useAuth();
   
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -49,31 +51,39 @@ export default function StaffDashboard({ employee }: Props) {
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   
-  // استخدام employee.id (UUID) لربط إشعارات المتصفح
-  const { requestPermission } = usePush(employee.id);
-
-  useEffect(() => {
-    // طلب الإذن تلقائياً بعد 4 ثواني من دخول الموظف إذا لم يسأل من قبل
-    const timer = setTimeout(() => {
-      if (Notification.permission === 'default') {
-        requestPermission();
-      }
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [employee.id]);
-
   // حالات PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // --- 2. وظائف الإشعارات الداخلية (تم التعديل) ---
+  // --- 2. إدارة الإشعارات ---
+  
+  // تفعيل الإشعارات تلقائياً عند دخول الموظف
+  useEffect(() => {
+    // نستخدم employee.id لأنه يمثل الـ UUID للمستخدم في Supabase Auth
+    // وهذا ما نستخدمه في جدول الاشتراكات push_subscriptions
+    if (employee?.id) {
+        const timer = setTimeout(() => {
+             // نطلب الإذن فقط إذا لم يرفض سابقاً
+             if (Notification.permission !== 'denied') {
+                 requestNotificationPermission(employee.id);
+             }
+        }, 3000); // بعد 3 ثواني
+        return () => clearTimeout(timer);
+    }
+  }, [employee.id]);
+
+  // جلب الإشعارات الداخلية من قاعدة البيانات
   const fetchNotifications = async () => {
+    // ملاحظة: الجدول notifications يعتمد على التصميم الخاص بك
+    // إذا كان يعتمد على user_id (UUID) نستخدم employee.id
+    // إذا كان يعتمد على رقم الموظف نستخدم employee.employee_id
+    // سنفترض هنا استخدام UUID لتوحيد المعايير
     const { data } = await supabase
       .from('notifications')
       .select('*')
-      .eq('user_id', employee.id) // ✅ تم التعديل: user_id بدلاً من recipient_id واستخدام UUID
+      .eq('user_id', employee.id) 
       .order('created_at', { ascending: false })
       .limit(15);
     if (data) setNotifications(data);
@@ -84,7 +94,7 @@ export default function StaffDashboard({ employee }: Props) {
       await supabase
         .from('notifications')
         .update({ is_read: true })
-        .eq('user_id', employee.id); // ✅ تم التعديل: user_id بدلاً من recipient_id
+        .eq('user_id', employee.id);
       fetchNotifications();
     }
     setShowNotifMenu(!showNotifMenu);
@@ -120,18 +130,18 @@ export default function StaffDashboard({ employee }: Props) {
     fetchAllData();
     fetchNotifications();
 
-    // ✅ تم تحديث الاشتراك المباشر ليعمل مع العمود الصحيح
+    // الاشتراك في تحديثات الإشعارات (Realtime)
     const channel = supabase.channel('dashboard_realtime_staff')
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'notifications', 
-        filter: `user_id=eq.${employee.id}` // ✅ تم التعديل: user_id و employee.id
+        filter: `user_id=eq.${employee.id}` // استخدام UUID
       }, () => fetchNotifications())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [employee.id]); // ✅ الاعتماد على ID الصحيح
+  }, [employee.id, employee.employee_id]);
 
   // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
@@ -376,7 +386,7 @@ export default function StaffDashboard({ employee }: Props) {
               <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm text-center relative animate-in zoom-in-95">
                   <button onClick={() => setShowAboutModal(false)} className="absolute top-6 right-6 p-2 bg-gray-100 rounded-full"><X size={18}/></button>
                   <div className="w-20 h-20 bg-emerald-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200">
-                       <img src="/pwa-192x192.png" className="w-16 h-16 rounded-2xl" alt="Logo" />
+                        <img src="/pwa-192x192.png" className="w-16 h-16 rounded-2xl" alt="Logo" />
                   </div>
                   <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
                   <p className="text-sm text-gray-500 font-bold mb-6">نظام إدارة الموارد البشرية</p>
