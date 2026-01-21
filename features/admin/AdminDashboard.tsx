@@ -1,22 +1,3 @@
-لإضافة زر تجريبي لإرسال الإشعارات وإجبارها على العمل، سنضيف زراً بسيطاً في `AdminDashboard` يقوم باستدعاء دالة `send-push-notification` مباشرة.
-
-سأقوم بإضافة تبويب جديد باسم **"اختبار التنبيهات" (`test_push`)** ضمن القائمة، ليظهر فيه زر الإرسال التجريبي.
-
-إليك الكود المعدل لملف `AdminDashboard.tsx`:
-
-### التعديلات التي تمت:
-
-1. إضافة أيقونة `BellRing` من `lucide-react`.
-2. إضافة عنصر جديد للقائمة الجانبية: **اختبار التنبيهات**.
-3. إضافة دالة `sendTestNotification` التي تقوم بالآتي:
-* تجلب الـ `user_id` الخاص بالمدير الحالي.
-* ترسل إشعاراً لنفس المستخدم (المدير) للتجربة.
-* تستدعي `supabase.functions.invoke`.
-
-
-4. إضافة واجهة العرض الخاصة بالتبويب الجديد (`activeTab === 'test_push'`).
-
-```tsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
@@ -302,5 +283,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
-```
