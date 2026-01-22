@@ -1,68 +1,50 @@
 // public/sw.js
+
 self.addEventListener('install', (event) => {
-  console.log('SW: Installing...');
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('SW: Activated');
   event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener('push', (event) => {
-  console.log('🔔 SW: Push Received', event);
-
-  let data = {};
+  // 1. محاولة قراءة البيانات بأمان
+  let data = { title: 'تنبيه جديد', body: 'لديك رسالة جديدة', url: '/' };
+  
   if (event.data) {
     try {
-      data = event.data.json();
-      console.log('📦 Push Data:', data);
+      const json = event.data.json();
+      data = { ...data, ...json };
     } catch (e) {
-      console.warn('⚠️ Push data is not JSON, using text');
-      data = { title: 'تنبيه', body: event.data.text() };
+      data.body = event.data.text(); // لو وصلت كنص عادي
     }
   }
 
-  const title = data.title || 'إشعار جديد';
+  // 2. خيارات الإشعار (مهمة جداً للأندرويد)
   const options = {
-    body: data.body || 'لديك تنبيه جديد من النظام',
-    icon: '/pwa-192x192.png',
+    body: data.body,
+    icon: '/pwa-192x192.png', // تأكد أن هذه الصورة موجودة
     badge: '/pwa-192x192.png',
     dir: 'rtl',
     lang: 'ar',
-    tag: 'renotify', // استخدام تاج ثابت للتجربة
-    renotify: true,
-    requireInteraction: true, // يمنع اختفاء التنبيه تلقائياً
+    tag: 'test-notification', // يمنع التكرار
+    renotify: true, // يهتز حتى لو التنبيه موجود
+    requireInteraction: true, // يظل معلقاً حتى يراه المستخدم
     data: {
-      url: data.url || '/'
+      url: data.url
     }
   };
 
+  // 3. الأمر الفعلي للعرض
   event.waitUntil(
-    self.registration.showNotification(title, options)
-      .then(() => console.log('✅ Notification Shown'))
-      .catch((err) => console.error('❌ Notification Error:', err))
+    self.registration.showNotification(data.title, options)
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
-  console.log('👆 Notification Clicked');
   event.notification.close();
-  
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      if (clientList.length > 0) {
-        let client = clientList[0];
-        for (let i = 0; i < clientList.length; i++) {
-          if (clientList[i].focused) {
-            client = clientList[i];
-          }
-        }
-        return client.focus();
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(event.notification.data.url || '/');
-      }
-    })
+    clients.openWindow(event.notification.data.url || '/')
   );
 });
