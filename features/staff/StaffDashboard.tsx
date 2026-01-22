@@ -3,14 +3,14 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
-// ⚠️ تأكد أن مسار الاستيراد صحيح لملف الإشعارات الجديد
 import { requestNotificationPermission } from '../../utils/pushNotifications'; 
 
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, 
-  Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen
+  Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
+  Sparkles, Calendar
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -58,28 +58,18 @@ export default function StaffDashboard({ employee }: Props) {
   const [isStandalone, setIsStandalone] = useState(false);
 
   // --- 2. إدارة الإشعارات ---
-  
-  // تفعيل الإشعارات تلقائياً عند دخول الموظف
   useEffect(() => {
-    // نستخدم employee.id لأنه يمثل الـ UUID للمستخدم في Supabase Auth
-    // وهذا ما نستخدمه في جدول الاشتراكات push_subscriptions
     if (employee?.id) {
         const timer = setTimeout(() => {
-             // نطلب الإذن فقط إذا لم يرفض سابقاً
              if (Notification.permission !== 'denied') {
                  requestNotificationPermission(employee.id);
              }
-        }, 3000); // بعد 3 ثواني
+        }, 3000); 
         return () => clearTimeout(timer);
     }
   }, [employee.id]);
 
-  // جلب الإشعارات الداخلية من قاعدة البيانات
   const fetchNotifications = async () => {
-    // ملاحظة: الجدول notifications يعتمد على التصميم الخاص بك
-    // إذا كان يعتمد على user_id (UUID) نستخدم employee.id
-    // إذا كان يعتمد على رقم الموظف نستخدم employee.employee_id
-    // سنفترض هنا استخدام UUID لتوحيد المعايير
     const { data } = await supabase
       .from('notifications')
       .select('*')
@@ -130,20 +120,18 @@ export default function StaffDashboard({ employee }: Props) {
     fetchAllData();
     fetchNotifications();
 
-    // الاشتراك في تحديثات الإشعارات (Realtime)
     const channel = supabase.channel('dashboard_realtime_staff')
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'notifications', 
-        filter: `user_id=eq.${employee.id}` // استخدام UUID
+        filter: `user_id=eq.${employee.id}` 
       }, () => fetchNotifications())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [employee.id, employee.employee_id]);
 
-  // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => {
       if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true);
@@ -153,7 +141,6 @@ export default function StaffDashboard({ employee }: Props) {
     delta: 50,
   });
 
-  // فحص تقارير الجودة الجديدة (لمسؤول الجودة فقط)
   useEffect(() => {
     if (employee.role === 'quality_manager') {
         const checkNewReports = async () => {
@@ -167,7 +154,6 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.role]);
 
-  // منطق تثبيت التطبيق (PWA)
   useEffect(() => {
     const checkStandalone = () => {
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
@@ -238,14 +224,14 @@ export default function StaffDashboard({ employee }: Props) {
           md:translate-x-0 md:static md:shadow-none
       `}>
         {/* ترويسة القائمة */}
-        <div className="h-24 flex items-center justify-between px-6 border-b shrink-0 bg-emerald-50/50">
+        <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-emerald-50/50">
             <div className="flex items-center gap-3">
-                <div className="bg-white p-2 rounded-xl shadow-sm border border-emerald-100">
-                    <img src="/pwa-192x192.png" className="w-8 h-8 rounded-lg" alt="Logo" />
+                <div className="bg-white p-1.5 rounded-xl shadow-sm border border-emerald-100">
+                    <img src="/pwa-192x192.png" className="w-7 h-7 rounded-lg" alt="Logo" />
                 </div>
                 <div>
                     <h1 className="font-black text-gray-800 text-sm">غرب المطار</h1>
-                    <p className="text-[10px] text-gray-500 font-bold mt-0.5">بوابة الموظفين</p>
+                    <p className="text-[10px] text-gray-500 font-bold">بوابة الموظفين</p>
                 </div>
             </div>
             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400">
@@ -253,7 +239,7 @@ export default function StaffDashboard({ employee }: Props) {
             </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar">
+        <nav className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -261,13 +247,13 @@ export default function StaffDashboard({ employee }: Props) {
               <button
                 key={item.id}
                 onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group relative ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${
                   isActive 
-                    ? 'bg-emerald-600 text-white shadow-lg font-bold' 
+                    ? 'bg-emerald-600 text-white shadow-md font-bold' 
                     : 'text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 font-medium'
                 }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400'}`} />
+                <Icon className={`w-4.5 h-4.5 ${isActive ? 'text-white' : 'text-gray-400'}`} />
                 <span className="text-sm">{item.label}</span>
                 {item.badge && item.badge > 0 && (
                     <span className="absolute left-4 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
@@ -280,14 +266,14 @@ export default function StaffDashboard({ employee }: Props) {
         </nav>
 
         <div className="p-3 border-t bg-gray-50 flex items-center justify-around shrink-0">
-            <button onClick={handleShareApp} className="p-3 rounded-xl text-gray-500 hover:bg-purple-100"><Share2 className="w-5 h-5" /></button>
-            <button onClick={() => setShowAboutModal(true)} className="p-3 rounded-xl text-gray-500 hover:bg-orange-100"><Info className="w-5 h-5" /></button>
-            <button onClick={signOut} className="p-3 rounded-xl text-red-400 hover:bg-red-100"><LogOut className="w-5 h-5" /></button>
+            <button onClick={handleShareApp} className="p-2.5 rounded-xl text-gray-500 hover:bg-purple-100"><Share2 className="w-5 h-5" /></button>
+            <button onClick={() => setShowAboutModal(true)} className="p-2.5 rounded-xl text-gray-500 hover:bg-orange-100"><Info className="w-5 h-5" /></button>
+            <button onClick={signOut} className="p-2.5 rounded-xl text-red-400 hover:bg-red-100"><LogOut className="w-5 h-5" /></button>
         </div>
       </aside>
 
       {/* المحتوى الرئيسي */}
-      <div className="flex-1 flex flex-col min-w-0 bg-gray-50/50">
+      <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50">
         <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
             <div className="flex items-center gap-3">
                 <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl">
@@ -304,26 +290,26 @@ export default function StaffDashboard({ employee }: Props) {
                     >
                         <Bell className="w-6 h-6 text-gray-600" />
                         {unreadNotifsCount > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce">
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white animate-bounce">
                                 {unreadNotifsCount}
                             </span>
                         )}
                     </button>
 
                     {showNotifMenu && (
-                        <div className="absolute left-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-gray-100 z-[100] overflow-hidden animate-in fade-in zoom-in-95">
-                            <div className="p-4 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
+                        <div className="absolute left-0 mt-3 w-80 bg-white rounded-3xl shadow-xl border border-gray-100 z-[100] overflow-hidden animate-in fade-in zoom-in-95">
+                            <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
                                 <span>آخر التنبيهات</span>
                                 <button onClick={() => setShowNotifMenu(false)} className="text-gray-400"><X size={16}/></button>
                             </div>
-                            <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                            <div className="max-h-80 overflow-y-auto custom-scrollbar">
                                 {notifications.length === 0 ? (
-                                    <p className="p-10 text-center text-gray-400 text-xs">لا توجد إشعارات حالياً</p>
+                                    <p className="p-8 text-center text-gray-400 text-xs">لا توجد إشعارات حالياً</p>
                                 ) : (
                                     notifications.map(n => (
-                                        <div key={n.id} className={`p-4 border-b border-gray-50 flex gap-3 hover:bg-gray-50 ${!n.is_read ? 'bg-emerald-50/30' : ''}`}>
-                                            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase">{n.sender_name[0]}</div>
-                                            <div className="space-y-1">
+                                        <div key={n.id} className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 ${!n.is_read ? 'bg-emerald-50/30' : ''}`}>
+                                            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">{n.sender_name[0]}</div>
+                                            <div className="space-y-0.5">
                                                 <p className="text-xs text-gray-800 leading-relaxed"><span className="font-bold">{n.sender_name}</span> {n.message}</p>
                                                 <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
                                             </div>
@@ -335,20 +321,44 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                 </div>
 
-                <div className="w-10 h-10 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden">
-                    {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full bg-emerald-200 flex items-center justify-center rounded-full text-emerald-700 font-bold">{employee.name.charAt(0)}</div>}
+                <div className="w-9 h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden">
+                    {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full bg-emerald-200 flex items-center justify-center rounded-full text-emerald-700 font-bold text-sm">{employee.name.charAt(0)}</div>}
                 </div>
             </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-            <div className="max-w-5xl mx-auto space-y-6">
-                <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-5 md:p-8 min-h-[500px]">
+        {/* --- منطقة المحتوى (تم تقليل الـ Padding هنا) --- */}
+        <main className="flex-1 overflow-y-auto p-3 md:p-6 custom-scrollbar">
+            <div className="max-w-6xl mx-auto space-y-4">
+                
+                {/* الحاوية البيضاء الرئيسية (تم تقليل الحواف والـ Padding) */}
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-4 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
-                        <>
+                        <div className="space-y-4">
+                            {/* 🔥 كارت ترحيب جديد ومدمج (Compact Welcome Banner) */}
+                            <div className="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-4 text-white shadow-md flex items-center justify-between relative overflow-hidden">
+                                <div className="relative z-10">
+                                    <h2 className="font-bold text-lg flex items-center gap-2">
+                                        مرحباً، {employee.name.split(' ')[0]} 👋
+                                    </h2>
+                                    <p className="text-xs text-emerald-100 mt-1 opacity-90">
+                                        نتمنى لك يوماً سعيداً ومليئاً بالإنجازات في المركز الطبي
+                                    </p>
+                                </div>
+                                <div className="hidden sm:block text-right relative z-10">
+                                    <div className="text-xs font-medium opacity-80 mb-0.5">التاريخ اليوم</div>
+                                    <div className="text-sm font-bold flex items-center gap-1 justify-end">
+                                        <Calendar className="w-4 h-4"/>
+                                        {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                    </div>
+                                </div>
+                                {/* زخرفة خلفية */}
+                                <Sparkles className="absolute -bottom-4 -left-4 w-24 h-24 text-white opacity-10 rotate-12" />
+                            </div>
+
                             <EOMVotingCard employee={employee} />
                             <StaffNewsFeed employee={employee} />
-                        </>
+                        </div>
                     )}
                     
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
@@ -383,14 +393,14 @@ export default function StaffDashboard({ employee }: Props) {
       {/* About Modal */}
       {showAboutModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-sm text-center relative animate-in zoom-in-95">
-                  <button onClick={() => setShowAboutModal(false)} className="absolute top-6 right-6 p-2 bg-gray-100 rounded-full"><X size={18}/></button>
-                  <div className="w-20 h-20 bg-emerald-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200">
-                        <img src="/pwa-192x192.png" className="w-16 h-16 rounded-2xl" alt="Logo" />
+              <div className="bg-white rounded-3xl p-6 w-full max-w-sm text-center relative animate-in zoom-in-95">
+                  <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100"><X size={16}/></button>
+                  <div className="w-16 h-16 bg-emerald-100 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200">
+                        <img src="/pwa-192x192.png" className="w-12 h-12 rounded-xl" alt="Logo" />
                   </div>
-                  <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
-                  <p className="text-sm text-gray-500 font-bold mb-6">نظام إدارة الموارد البشرية</p>
-                  <div className="space-y-3 text-xs text-gray-600 bg-gray-50 p-4 rounded-2xl border">
+                  <h2 className="text-lg font-black text-gray-800">غرب المطار</h2>
+                  <p className="text-xs text-gray-500 font-bold mb-4">نظام إدارة الموارد البشرية</p>
+                  <div className="space-y-2 text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border">
                       <div className="flex justify-between"><span>الإصدار:</span><span className="font-bold">1.2.0</span></div>
                       <div className="flex justify-between"><span>التطوير:</span><span className="font-bold">IT Department</span></div>
                   </div>
