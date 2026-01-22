@@ -1,50 +1,34 @@
 // public/sw.js
-
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
+self.addEventListener('install', (event) => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', (event) => {
-  // 1. محاولة قراءة البيانات بأمان
-  let data = { title: 'تنبيه جديد', body: 'لديك رسالة جديدة', url: '/' };
-  
+  console.log('🔔 Push event received inside SW');
+
+  let title = 'اختبار';
+  let body = 'هل ظهر هذا التنبيه؟';
+
   if (event.data) {
     try {
       const json = event.data.json();
-      data = { ...data, ...json };
+      title = json.title || title;
+      body = json.body || body;
     } catch (e) {
-      data.body = event.data.text(); // لو وصلت كنص عادي
+      body = event.data.text();
     }
   }
 
-  // 2. خيارات الإشعار (مهمة جداً للأندرويد)
+  // خيارات بسيطة جداً بدون صور لتجنب أخطاء التحميل
   const options = {
-    body: data.body,
-    icon: '/pwa-192x192.png', // تأكد أن هذه الصورة موجودة
-    badge: '/pwa-192x192.png',
-    dir: 'rtl',
-    lang: 'ar',
-    tag: 'test-notification', // يمنع التكرار
-    renotify: true, // يهتز حتى لو التنبيه موجود
-    requireInteraction: true, // يظل معلقاً حتى يراه المستخدم
-    data: {
-      url: data.url
-    }
+    body: body,
+    requireInteraction: true, // يظل ظاهراً حتى تغلقه
+    dir: 'rtl'
+    // تم إزالة icon و badge مؤقتاً للتأكد
   };
 
-  // 3. الأمر الفعلي للعرض
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
-});
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(
-    clients.openWindow(event.notification.data.url || '/')
+    self.registration.showNotification(title, options)
+      .then(() => console.log('✅ Notification displayed'))
+      .catch(err => console.error('❌ Display failed:', err))
   );
 });
