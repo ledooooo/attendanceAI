@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Employee, EOMCycle } from '../../../types';
-import { Trophy, Star, CheckCircle2, Loader2, Play, StopCircle, PartyPopper } from 'lucide-react';
+import { EOMCycle } from '../../../types';
+import { Trophy, CheckCircle2, Loader2, Play, StopCircle, Trash2 } from 'lucide-react';
 
 export default function EOMManager() {
     const [employees, setEmployees] = useState<any[]>([]);
@@ -9,12 +9,12 @@ export default function EOMManager() {
     const [loading, setLoading] = useState(false);
     const [activeCycle, setActiveCycle] = useState<EOMCycle | null>(null);
 
-    // 1. جلب الموظفين مع تقييماتهم للشهر السابق
+    // 1. جلب البيانات
     const fetchCandidates = async () => {
         setLoading(true);
         const date = new Date();
         date.setMonth(date.getMonth() - 1);
-        const lastMonth = date.toISOString().slice(0, 7); // YYYY-MM
+        const lastMonth = date.toISOString().slice(0, 7); 
 
         const { data: emps } = await supabase.from('employees').select('id, employee_id, name, specialty, photo_url');
         const { data: evals } = await supabase.from('evaluations').select('*').eq('month', lastMonth);
@@ -28,7 +28,6 @@ export default function EOMManager() {
                     attendance_score: ev ? ev.score_attendance : 0
                 };
             }).sort((a, b) => b.score - a.score);
-            
             setEmployees(ranked);
         }
         
@@ -54,7 +53,7 @@ export default function EOMManager() {
             .select().single();
 
         if (error) { 
-            alert('خطأ في الإنشاء: ربما يوجد تصويت مفتوح بالفعل لهذا الشهر'); 
+            alert('خطأ: ربما يوجد تصويت بالفعل'); 
             setLoading(false); 
             return; 
         }
@@ -66,98 +65,87 @@ export default function EOMManager() {
 
         await supabase.from('eom_nominees').insert(nomineesData);
 
-        // نشر خبر تلقائي
+        // نشر خبر
         await supabase.from('news_posts').insert({
             title: '⭐ بدء التصويت للموظف المثالي ⭐',
-            content: 'تم فتح باب التصويت لاختيار الموظف المثالي لهذا الشهر. شارك برأيك الآن من الصفحة الرئيسية!',
+            content: 'تم فتح باب التصويت لاختيار الموظف المثالي لهذا الشهر.',
             is_pinned: true,
-            author_id: 'admin' // إضافة معرف افتراضي
+            author_id: 'admin'
         });
 
-        alert('تم بدء التصويت بنجاح!');
+        alert('تم بدء التصويت!');
         setActiveCycle(cycle);
         setLoading(false);
     };
 
-    // 3. إنهاء التصويت وإعلان الفائز (🔥 الكود الجديد 🔥)
+    // 3. إنهاء التصويت
     const endVoting = async () => {
         if (!activeCycle || activeCycle.status !== 'voting') return;
-        if (!confirm('هل أنت متأكد من إنهاء التصويت وإعلان الفائز الآن؟')) return;
+        if (!confirm('هل أنت متأكد من إنهاء التصويت وإعلان الفائز؟')) return;
 
         setLoading(true);
         try {
-            // أ) جلب نتائج التصويت
-            const { data: votes } = await supabase
-                .from('eom_votes')
-                .select('nominee_id')
-                .eq('cycle_id', activeCycle.id);
-
-            const { data: nominees } = await supabase
-                .from('eom_nominees')
-                .select('id, employee_id, employees(name)')
-                .eq('cycle_id', activeCycle.id);
+            const { data: votes } = await supabase.from('eom_votes').select('nominee_id').eq('cycle_id', activeCycle.id);
+            const { data: nominees } = await supabase.from('eom_nominees').select('id, employee_id, employees(name)').eq('cycle_id', activeCycle.id);
 
             if (!nominees || nominees.length === 0) throw new Error('لا يوجد مرشحين');
 
-            // ب) حساب الفائز
             const voteCounts: Record<string, number> = {};
-            votes?.forEach(v => {
-                voteCounts[v.nominee_id] = (voteCounts[v.nominee_id] || 0) + 1;
-            });
+            votes?.forEach(v => { voteCounts[v.nominee_id] = (voteCounts[v.nominee_id] || 0) + 1; });
 
             let winnerId = null;
             let maxVotes = -1;
 
             nominees.forEach(nom => {
                 const count = voteCounts[nom.id] || 0;
-                if (count > maxVotes) {
-                    maxVotes = count;
-                    winnerId = nom.employee_id;
-                }
+                if (count > maxVotes) { maxVotes = count; winnerId = nom.employee_id; }
             });
 
             if (!winnerId) throw new Error('تعذر تحديد الفائز');
-
             const winnerName = nominees.find(n => n.employee_id === winnerId)?.employees?.name;
 
-            // ج) تحديث حالة الدورة
-            const { error: updateError } = await supabase
-                .from('eom_cycles')
-                .update({ 
-                    status: 'completed',
-                    winner_id: winnerId
-                })
-                .eq('id', activeCycle.id);
+            await supabase.from('eom_cycles').update({ status: 'completed', winner_id: winnerId }).eq('id', activeCycle.id);
 
-            if (updateError) throw updateError;
-
-            // د) نشر خبر الفوز
+            // نشر خبر الفوز
             await supabase.from('news_posts').insert({
-                title: '🏆 الموظف المثالي لهذا الشهر 🏆',
-                content: `نبارك للزميل/ة **${winnerName}** حصوله على لقب الموظف المثالي لهذا الشهر بعدد أصوات ${maxVotes}. نتمنى له دوام التوفيق والنجاح!`,
+                title: '🏆 الموظف المثالي 🏆',
+                content: `نبارك للزميل/ة **${winnerName}** حصوله على لقب الموظف المثالي!`,
                 is_pinned: true,
-                image_url: 'https://cdn-icons-png.flaticon.com/512/3112/3112946.png', // صورة افتراضية للكأس
+                image_url: 'https://cdn-icons-png.flaticon.com/512/3112/3112946.png',
                 author_id: 'admin'
             });
 
-            // هـ) إرسال إشعار للموظفين (اختياري)
-            // supabase.functions.invoke('send-push-notification', { ... })
-
-            alert(`تم إنهاء التصويت! الفائز هو: ${winnerName}`);
+            alert(`الفائز هو: ${winnerName}`);
             setActiveCycle(prev => prev ? { ...prev, status: 'completed', winner_id: winnerId } : null);
 
         } catch (error: any) {
-            console.error(error);
-            alert('حدث خطأ أثناء إنهاء التصويت: ' + error.message);
+            alert('خطأ: ' + error.message);
         } finally {
             setLoading(false);
         }
     };
 
+    // 🔥 4. حذف الدورة (لإصلاح الخطأ)
+    const resetCycle = async () => {
+        if (!activeCycle) return;
+        if (!confirm('⚠️ تحذير: هذا سيحذف التصويت الحالي بالكامل (بما في ذلك الأصوات والمرشحين والفائز). هل أنت متأكد؟')) return;
+        
+        setLoading(true);
+        const { error } = await supabase.from('eom_cycles').delete().eq('id', activeCycle.id);
+        
+        if (error) alert('فشل الحذف');
+        else {
+            setActiveCycle(null);
+            setSelectedIds([]);
+            alert('تم إعادة تعيين الدورة. يمكنك بدء التصويت من جديد.');
+        }
+        setLoading(false);
+    };
+
     const toggleSelect = (id: string) => {
         if (selectedIds.includes(id)) setSelectedIds(prev => prev.filter(i => i !== id));
         else {
-            if (selectedIds.length >= 5) return alert('يمكنك اختيار 5 مرشحين كحد أقصى');
+            if (selectedIds.length >= 5) return alert('الحد الأقصى 5');
             setSelectedIds(prev => [...prev, id]);
         }
     };
@@ -170,77 +158,54 @@ export default function EOMManager() {
                 </h3>
                 
                 {activeCycle ? (
-                    activeCycle.status === 'voting' ? (
-                        <div className="flex gap-3 items-center">
-                            <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
-                                التصويت جاري ({activeCycle.month})
+                    <div className="flex flex-wrap gap-2 items-center justify-end">
+                        {activeCycle.status === 'voting' ? (
+                            <>
+                                <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+                                    التصويت جاري
+                                </span>
+                                <button onClick={endVoting} disabled={loading} className="bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-red-700 text-xs flex items-center gap-1">
+                                    {loading ? <Loader2 className="w-3 h-3 animate-spin"/> : <StopCircle className="w-3 h-3"/>} إنهاء
+                                </button>
+                            </>
+                        ) : (
+                            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2">
+                                <CheckCircle2 className="w-3 h-3"/> تم إعلان الفائز
                             </span>
-                            <button 
-                                onClick={endVoting}
-                                disabled={loading}
-                                className="bg-red-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-red-700 disabled:opacity-50 flex items-center gap-2 text-xs"
-                            >
-                                {loading ? <Loader2 className="w-3 h-3 animate-spin"/> : <StopCircle className="w-3 h-3"/>}
-                                إنهاء وإعلان الفائز
-                            </button>
-                        </div>
-                    ) : (
-                        <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2">
-                            <CheckCircle2 className="w-3 h-3"/>
-                            تم إعلان الفائز ({activeCycle.month})
-                        </span>
-                    )
+                        )}
+                        
+                        {/* زر الحذف للإصلاح */}
+                        <button onClick={resetCycle} className="p-2 bg-gray-100 text-gray-500 rounded-lg hover:bg-red-50 hover:text-red-600" title="حذف وإعادة تعيين">
+                            <Trash2 className="w-4 h-4"/>
+                        </button>
+                    </div>
                 ) : (
-                    <button 
-                        onClick={startVoting}
-                        disabled={loading || selectedIds.length === 0}
-                        className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2"
-                    >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Play className="w-4 h-4"/>}
-                        بدء التصويت
+                    <button onClick={startVoting} disabled={loading || selectedIds.length === 0} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2">
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Play className="w-4 h-4"/>} بدء التصويت
                     </button>
                 )}
             </div>
 
             {!activeCycle && (
-                <>
-                    <p className="text-gray-500 text-sm">اختر المرشحين بناءً على أداء الشهر الماضي (الحد الأقصى 5):</p>
-                    <div className="grid gap-3 max-h-[400px] overflow-y-auto custom-scrollbar">
-                        {employees.map((emp, idx) => (
-                            <div key={emp.id} 
-                                onClick={() => toggleSelect(emp.id)}
-                                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
-                                    selectedIds.includes(emp.id) ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-400' : 'hover:bg-gray-50 border-gray-100'
-                                }`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>
-                                        #{idx + 1}
-                                    </span>
-                                    <div>
-                                        <h4 className="font-bold text-gray-800 text-sm">{emp.name}</h4>
-                                        <p className="text-xs text-gray-400">{emp.specialty}</p>
-                                    </div>
-                                </div>
-                                <div className="text-left">
-                                    <div className="text-sm font-black text-emerald-600">{emp.score}%</div>
-                                    <div className="text-[10px] text-gray-400">تقييم شامل</div>
-                                </div>
+                <div className="grid gap-3 max-h-[400px] overflow-y-auto custom-scrollbar">
+                    {employees.map((emp, idx) => (
+                        <div key={emp.id} onClick={() => toggleSelect(emp.id)} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer ${selectedIds.includes(emp.id) ? 'bg-yellow-50 border-yellow-400 ring-1' : 'hover:bg-gray-50'}`}>
+                            <div className="flex items-center gap-3">
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>#{idx + 1}</span>
+                                <div><h4 className="font-bold text-gray-800 text-sm">{emp.name}</h4><p className="text-xs text-gray-400">{emp.specialty}</p></div>
                             </div>
-                        ))}
-                    </div>
-                </>
+                            <div className="text-left"><div className="text-sm font-black text-emerald-600">{emp.score}%</div></div>
+                        </div>
+                    ))}
+                </div>
             )}
             
-            {/* عرض الفائز إن وجد */}
             {activeCycle && activeCycle.winner_id && (
                 <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-2xl flex items-center gap-4">
                     <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center text-2xl">🏆</div>
                     <div>
-                        <p className="text-xs text-yellow-600 font-bold">الفائز لهذا الشهر:</p>
-                        <p className="text-lg font-black text-gray-800">
-                            {employees.find(e => e.employee_id === activeCycle.winner_id)?.name || '...'}
-                        </p>
+                        <p className="text-xs text-yellow-600 font-bold">الفائز:</p>
+                        <p className="text-lg font-black text-gray-800">{employees.find(e => e.employee_id === activeCycle.winner_id)?.name || '...'}</p>
                     </div>
                 </div>
             )}
