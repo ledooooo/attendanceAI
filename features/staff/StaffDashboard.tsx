@@ -43,6 +43,7 @@ export default function StaffDashboard({ employee }: Props) {
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0); // ✅ عداد التكليفات الجديدة
 
   // --- 1. حالات تخزين البيانات (States) ---
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
@@ -58,56 +59,55 @@ export default function StaffDashboard({ employee }: Props) {
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // --- 2. إدارة الإشعارات ---
+  // --- 2. إعداد الإشعارات (Push & Internal) ---
   useEffect(() => {
-    if (employee?.id) {
-        const timer = setTimeout(() => {
-             if (Notification.permission !== 'denied') {
-                 requestNotificationPermission(employee.id);
-             }
-        }, 3000); 
-        return () => clearTimeout(timer);
+    // 1. طلب إذن الإشعارات الخارجية (Push)
+    if (employee?.employee_id) { // نستخدم المعرف الوظيفي لضمان التطابق
+        requestNotificationPermission(employee.employee_id);
     }
-  }, [employee.id]);
+  }, [employee.employee_id]);
 
+  // دالة جلب الإشعارات الداخلية
   const fetchNotifications = async () => {
+    // ✅ نستخدم employee_id لأن المدير يرسل للكود الوظيفي
     const { data } = await supabase
       .from('notifications')
       .select('*')
-      .eq('user_id', employee.id) 
+      .eq('user_id', employee.employee_id) 
       .order('created_at', { ascending: false })
-      .limit(15);
+      .limit(20);
     if (data) setNotifications(data);
   };
 
+  // دالة جلب عدد التكليفات المعلقة (للبادج)
+  const fetchTaskCount = async () => {
+      const { count } = await supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('employee_id', employee.employee_id)
+        .eq('status', 'pending'); // نحسب فقط المعلقة (التي لم يراها الموظف)
+      
+      setPendingTasksCount(count || 0);
+  };
+
+  // تحديث قراءة الإشعارات
   const markNotifsAsRead = async () => {
     if (notifications.some(n => !n.is_read)) {
       await supabase
         .from('notifications')
         .update({ is_read: true })
-        .eq('user_id', employee.id);
+        .eq('user_id', employee.employee_id);
       fetchNotifications();
     }
     setShowNotifMenu(!showNotifMenu);
   };
 
-  // --- 3. جلب البيانات الأساسية ---
+  // --- 3. جلب البيانات الأساسية + Realtime ---
   const fetchAllData = async () => {
     try {
-      const { data: att } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('employee_id', employee.employee_id);
-      
-      const { data: reqs } = await supabase
-        .from('leave_requests')
-        .select('*')
-        .eq('employee_id', employee.employee_id);
-
-      const { data: evs } = await supabase
-        .from('evaluations')
-        .select('*')
-        .eq('employee_id', employee.employee_id);
+      const { data: att } = await supabase.from('attendance').select('*').eq('employee_id', employee.employee_id);
+      const { data: reqs } = await supabase.from('leave_requests').select('*').eq('employee_id', employee.employee_id);
+      const { data: evs } = await supabase.from('evaluations').select('*').eq('employee_id', employee.employee_id);
 
       if (att) setAttendanceData(att);
       if (reqs) setLeaveRequests(reqs);
@@ -120,19 +120,37 @@ export default function StaffDashboard({ employee }: Props) {
   useEffect(() => {
     fetchAllData();
     fetchNotifications();
+    fetchTaskCount(); // ✅ جلب عدد التكليفات عند التحميل
 
-    const channel = supabase.channel('dashboard_realtime_staff')
+    // ✅ الاشتراك في قناتين: الإشعارات + التكليفات
+    const channel = supabase.channel('staff_dashboard_updates')
+      // 1. مراقبة الإشعارات الجديدة (للجرس)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'notifications', 
-        filter: `user_id=eq.${employee.id}` 
-      }, () => fetchNotifications())
+        filter: `user_id=eq.${employee.employee_id}` 
+      }, (payload) => {
+          setNotifications(prev => [payload.new, ...prev]);
+          // تشغيل صوت تنبيه بسيط إذا أمكن
+          const audio = new Audio('/notification.mp3'); // تأكد من وجود ملف صوتي في مجلد public
+          audio.play().catch(() => {}); 
+      })
+      // 2. مراقبة التكليفات الجديدة (للبادج في القائمة)
+      .on('postgres_changes', {
+          event: '*', // أي تغيير (إضافة أو تعديل)
+          schema: 'public',
+          table: 'tasks',
+          filter: `employee_id=eq.${employee.employee_id}`
+      }, () => {
+          fetchTaskCount(); // تحديث رقم البادج
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [employee.id, employee.employee_id]);
+  }, [employee.employee_id]);
 
+  // إعدادات السحب (Swipe)
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => {
       if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true);
@@ -142,6 +160,7 @@ export default function StaffDashboard({ employee }: Props) {
     delta: 50,
   });
 
+  // عداد الجودة (OVR)
   useEffect(() => {
     if (employee.role === 'quality_manager') {
         const checkNewReports = async () => {
@@ -155,6 +174,7 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.role]);
 
+  // PWA Install Logic
   useEffect(() => {
     const checkStandalone = () => {
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
@@ -186,9 +206,14 @@ export default function StaffDashboard({ employee }: Props) {
     } catch (err) { console.error(err); }
   };
 
+  // ✅ تعريف عناصر القائمة مع البادج الجديد
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
+    
+    // ✅ إضافة بادج للتكليفات
+    { id: 'tasks', label: 'التكليفات', icon: ListTodo, badge: pendingTasksCount },
+    
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
@@ -198,7 +223,6 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
     { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle },
-    { id: 'tasks', label: 'التكليفات', icon: ListTodo },
     { id: 'requests-history', label: 'سجل الطلبات', icon: List },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
@@ -257,8 +281,10 @@ export default function StaffDashboard({ employee }: Props) {
               >
                 <Icon className={`w-4.5 h-4.5 ${isActive ? 'text-white' : 'text-gray-400'}`} />
                 <span className="text-sm">{item.label}</span>
+                
+                {/* 🔥 عرض البادج إذا وجد رقم */}
                 {item.badge && item.badge > 0 && (
-                    <span className="absolute left-4 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    <span className="absolute left-4 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm">
                         {item.badge}
                     </span>
                 )}
@@ -285,12 +311,13 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
 
             <div className="flex items-center gap-4">
+                {/* أيقونة الجرس */}
                 <div className="relative">
                     <button 
                       onClick={markNotifsAsRead}
                       className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors relative"
                     >
-                        <Bell className="w-6 h-6 text-gray-600" />
+                        <Bell className={`w-6 h-6 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
                         {unreadNotifsCount > 0 && (
                             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white animate-bounce">
                                 {unreadNotifsCount}
@@ -298,6 +325,7 @@ export default function StaffDashboard({ employee }: Props) {
                         )}
                     </button>
 
+                    {/* قائمة الإشعارات المنسدلة */}
                     {showNotifMenu && (
                         <div className="absolute left-0 mt-3 w-80 bg-white rounded-3xl shadow-xl border border-gray-100 z-[100] overflow-hidden animate-in fade-in zoom-in-95">
                             <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
@@ -309,10 +337,23 @@ export default function StaffDashboard({ employee }: Props) {
                                     <p className="p-8 text-center text-gray-400 text-xs">لا توجد إشعارات حالياً</p>
                                 ) : (
                                     notifications.map(n => (
-                                        <div key={n.id} className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 ${!n.is_read ? 'bg-emerald-50/30' : ''}`}>
-                                            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">{n.sender_name[0]}</div>
+                                        <div 
+                                            key={n.id} 
+                                            // توجيه المستخدم لصفحة التكليفات عند الضغط على إشعار تكليف
+                                            onClick={() => {
+                                                if(n.type === 'task' || n.type === 'task_update') {
+                                                    setActiveTab('tasks');
+                                                    setShowNotifMenu(false);
+                                                }
+                                            }}
+                                            className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
+                                        >
+                                            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
+                                                {n.type === 'task' ? <ListTodo size={16}/> : <Bell size={16}/>}
+                                            </div>
                                             <div className="space-y-0.5">
-                                                <p className="text-xs text-gray-800 leading-relaxed"><span className="font-bold">{n.sender_name}</span> {n.message}</p>
+                                                <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
+                                                <p className="text-xs text-gray-500 leading-relaxed">{n.message}</p>
                                                 <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
                                             </div>
                                         </div>
@@ -333,18 +374,18 @@ export default function StaffDashboard({ employee }: Props) {
         <main className="flex-1 overflow-y-auto p-3 md:p-6 custom-scrollbar">
             <div className="max-w-6xl mx-auto space-y-4">
                 
-                {/* الحاوية البيضاء الرئيسية (تم تقليل الحواف والـ Padding) */}
+                {/* الحاوية البيضاء الرئيسية */}
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-4 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
                         <div className="space-y-4">
-                            {/* 🔥 كارت ترحيب جديد ومدمج (Compact Welcome Banner) */}
+                            {/* كارت ترحيب */}
                             <div className="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-4 text-white shadow-md flex items-center justify-between relative overflow-hidden">
                                 <div className="relative z-10">
                                     <h2 className="font-bold text-lg flex items-center gap-2">
                                         مرحباً، {employee.name.split(' ')[0]} 👋
                                     </h2>
                                     <p className="text-xs text-emerald-100 mt-1 opacity-90">
-                                        نتمنى لك يوماً سعيداً ومليئاً بالإنجازات في المركز الطبي
+                                        نتمنى لك يوماً سعيداً ومليئاً بالإنجازات
                                     </p>
                                 </div>
                                 <div className="hidden sm:block text-right relative z-10">
@@ -354,7 +395,6 @@ export default function StaffDashboard({ employee }: Props) {
                                         {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
                                     </div>
                                 </div>
-                                {/* زخرفة خلفية */}
                                 <Sparkles className="absolute -bottom-4 -left-4 w-24 h-24 text-white opacity-10 rotate-12" />
                             </div>
 
