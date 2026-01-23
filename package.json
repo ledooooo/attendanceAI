@@ -18,7 +18,9 @@
     "react-swipeable": "^7.0.1", 
     "react-to-print": "^2.14.15",
     "xlsx": "^0.18.5",
-    "react-hot-toast": "^2.4.1" 
+    "react-hot-toast": "^2.4.1",
+    "@tanstack/react-query": "^5.28.4",
+    "@tanstack/react-query-devtools": "^5.28.4"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",
