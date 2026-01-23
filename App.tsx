@@ -6,6 +6,8 @@ import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
 import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications'; 
+// 1. ✅ استيراد Toaster
+import { Toaster } from 'react-hot-toast';
 
 const AppContent = () => {
   const { user, employeeProfile, loading, isAdmin } = useAuth();
@@ -21,11 +23,10 @@ const AppContent = () => {
 
   // 2. 🔔 طلب إذن الإشعارات وحفظه
   useEffect(() => {
-    // نستخدم user.id لأنه UUID الخاص بـ Supabase Auth
     if (user?.id) {
       const timer = setTimeout(() => {
         requestNotificationPermission(user.id);
-      }, 3000); // تأخير 3 ثواني
+      }, 3000); 
       return () => clearTimeout(timer);
     }
   }, [user?.id]);
@@ -76,6 +77,52 @@ export default function App() {
     <AuthProvider>
       <NotificationProvider>
         <AppContent />
+        
+        {/* 2. ✅ إعدادات التنبيهات العامة */}
+        <Toaster 
+            position="top-center" 
+            reverseOrder={false}
+            toastOptions={{
+                duration: 4000,
+                style: {
+                    fontFamily: 'inherit', // ليرث الخط العربي من التطبيق
+                    borderRadius: '16px',
+                    background: '#1f2937', // رمادي غامق
+                    color: '#fff',
+                    padding: '12px 16px',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                    zIndex: 99999,
+                },
+                success: {
+                    style: {
+                        background: '#10B981', // أخضر (Emerald)
+                        color: 'white',
+                    },
+                    iconTheme: {
+                        primary: 'white',
+                        secondary: '#10B981',
+                    },
+                },
+                error: {
+                    style: {
+                        background: '#EF4444', // أحمر
+                        color: 'white',
+                    },
+                    iconTheme: {
+                        primary: 'white',
+                        secondary: '#EF4444',
+                    },
+                },
+                loading: {
+                    style: {
+                        background: '#F3F4F6',
+                        color: '#374151',
+                    },
+                }
+            }}
+        />
       </NotificationProvider>
     </AuthProvider>
   );
