@@ -1,44 +1,67 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Clock, CheckCircle2, XCircle, Trash2, AlertCircle, FileText } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, Trash2, AlertCircle, FileText, Loader2, RefreshCw } from 'lucide-react';
 import { Employee } from '../../../types';
+import toast from 'react-hot-toast';
+// 1. ✅ استيراد React Query
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-export default function StaffRequestsHistory({ requests: initialData, employee }: { requests: any[], employee: Employee }) {
-    const [requests, setRequests] = useState<any[]>(initialData || []);
-    const [loading, setLoading] = useState(true);
+export default function StaffRequestsHistory({ employee }: { employee: Employee }) {
+    const queryClient = useQueryClient();
 
-    const fetchRequests = async () => {
-        if (!employee?.employee_id) return;
-        const { data } = await supabase
-            .from('leave_requests')
-            .select('*')
-            .eq('employee_id', employee.employee_id)
-            .order('created_at', { ascending: false });
-        
-        if (data) setRequests(data);
-        setLoading(false);
-    };
+    // ------------------------------------------------------------------
+    // 1. 📥 جلب سجل الطلبات
+    // ------------------------------------------------------------------
+    const { data: requests = [], isLoading, isRefetching, refetch } = useQuery({
+        queryKey: ['staff_requests', employee.employee_id],
+        queryFn: async () => {
+            if (!employee?.employee_id) return [];
+            const { data, error } = await supabase
+                .from('leave_requests')
+                .select('*')
+                .eq('employee_id', employee.employee_id)
+                .order('created_at', { ascending: false });
+            
+            if (error) throw error;
+            return data;
+        },
+        enabled: !!employee.employee_id, // لا يعمل إلا بوجود رقم الموظف
+        staleTime: 1000 * 60 * 5, // البيانات صالحة لمدة 5 دقائق
+    });
 
-    useEffect(() => {
-        fetchRequests();
-    }, [employee]);
+    // ------------------------------------------------------------------
+    // 2. 🗑️ حذف الطلب (Mutation)
+    // ------------------------------------------------------------------
+    const deleteMutation = useMutation({
+        mutationFn: async (id: string) => {
+            const { error } = await supabase
+                .from('leave_requests')
+                .delete()
+                .eq('id', id)
+                .eq('status', 'معلق'); // شرط أمني: حذف المعلق فقط
 
-    // دالة حذف الطلب (فقط اذا كان معلق)
-    const handleCancel = async (id: string) => {
-        if (!confirm('هل أنت متأكد من إلغاء هذا الطلب؟')) return;
-        
-        const { error } = await supabase
-            .from('leave_requests')
-            .delete()
-            .eq('id', id)
-            .eq('status', 'معلق'); // شرط أمني إضافي
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            toast.success('تم حذف الطلب بنجاح');
+            // تحديث القائمة فوراً
+            queryClient.invalidateQueries({ queryKey: ['staff_requests'] });
+        },
+        onError: () => {
+            toast.error('تعذر الحذف، قد يكون تم الرد على الطلب بالفعل');
+            refetch(); // تحديث القائمة لرؤية الحالة الجديدة
+        }
+    });
 
-        if (error) {
-            alert('لا يمكن حذف الطلب (قد يكون تم الرد عليه بالفعل)');
-        } else {
-            fetchRequests(); // تحديث القائمة
+    const handleCancel = (id: string) => {
+        if (confirm('هل أنت متأكد من إلغاء هذا الطلب؟')) {
+            deleteMutation.mutate(id);
         }
     };
+
+    // ------------------------------------------------------------------
+    // 3. 🎨 واجهة المستخدم
+    // ------------------------------------------------------------------
 
     const getStatusBadge = (status: string) => {
         switch (status) {
@@ -54,11 +77,20 @@ export default function StaffRequestsHistory({ requests: initialData, employee }
                 <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
                     <FileText className="w-6 h-6 text-orange-600"/> سجل الطلبات
                 </h3>
-                <button onClick={fetchRequests} className="text-xs text-blue-600 hover:underline font-bold">تحديث</button>
+                <button 
+                    onClick={() => refetch()} 
+                    disabled={isRefetching}
+                    className="text-xs text-blue-600 hover:bg-blue-50 px-3 py-1 rounded-lg font-bold flex items-center gap-1 transition-colors"
+                >
+                    <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`}/> تحديث
+                </button>
             </div>
 
-            {loading ? (
-                <div className="text-center py-8 text-gray-400">جاري التحميل...</div>
+            {isLoading ? (
+                <div className="text-center py-12 text-gray-400 flex flex-col items-center gap-2">
+                    <Loader2 className="w-8 h-8 animate-spin text-emerald-500"/>
+                    <span>جاري تحميل السجل...</span>
+                </div>
             ) : requests.length === 0 ? (
                 <div className="text-center py-12 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
                     <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-3"/>
@@ -78,7 +110,7 @@ export default function StaffRequestsHistory({ requests: initialData, employee }
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {requests.map((req) => {
+                            {requests.map((req: any) => {
                                 const days = Math.ceil((new Date(req.end_date).getTime() - new Date(req.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1;
                                 return (
                                     <tr key={req.id} className="hover:bg-gray-50 transition-colors">
@@ -93,10 +125,11 @@ export default function StaffRequestsHistory({ requests: initialData, employee }
                                             {req.status === 'معلق' && (
                                                 <button 
                                                     onClick={() => handleCancel(req.id)}
-                                                    className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"
+                                                    disabled={deleteMutation.isPending}
+                                                    className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
                                                     title="إلغاء الطلب"
                                                 >
-                                                    <Trash2 className="w-4 h-4"/>
+                                                    {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4"/>}
                                                 </button>
                                             )}
                                         </td>
