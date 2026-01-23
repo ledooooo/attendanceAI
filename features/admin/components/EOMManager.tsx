@@ -1,29 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { EOMCycle } from '../../../types';
-import toast from 'react-hot-toast'; // ✅ استخدام نظام التنبيهات الجديد
+import toast from 'react-hot-toast';
 import { 
     Trophy, CheckCircle2, Loader2, Play, StopCircle, 
     Trash2, BarChart3, RotateCcw, History, PlusCircle, X 
 } from 'lucide-react';
+// 1. ✅ استيراد الخطافات من React Query
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function EOMManager() {
-    const [employees, setEmployees] = useState<any[]>([]);
+    const queryClient = useQueryClient(); // للتحكم في الكاش
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
-    const [loading, setLoading] = useState(false);
-    
-    const [activeCycle, setActiveCycle] = useState<EOMCycle | null>(null);
-    const [nomineesStats, setNomineesStats] = useState<any[]>([]);
-    const [totalVotes, setTotalVotes] = useState(0);
-
     const [showHistory, setShowHistory] = useState(false);
-    const [historyCycles, setHistoryCycles] = useState<any[]>([]);
 
-    // 1. جلب المرشحين المحتملين والدورة النشطة
-    const fetchCandidates = async () => {
-        setLoading(true);
-        try {
-            // أ) جلب المرشحين بناءً على تقييم الشهر الماضي
+    // ----------------------------------------------------------------
+    // 1. 📥 القراءات (Queries)
+    // ----------------------------------------------------------------
+
+    // أ) جلب المرشحين (الموظفين + التقييمات)
+    const { data: employees = [], isLoading: loadingCandidates } = useQuery({
+        queryKey: ['eom_candidates'],
+        queryFn: async () => {
             const date = new Date();
             date.setMonth(date.getMonth() - 1);
             const lastMonth = date.toISOString().slice(0, 7); 
@@ -32,175 +30,192 @@ export default function EOMManager() {
             const { data: evals } = await supabase.from('evaluations').select('*').eq('month', lastMonth);
 
             if (emps && evals) {
-                const ranked = emps.map(emp => {
+                return emps.map(emp => {
                     const ev = evals.find(e => e.employee_id === emp.employee_id);
                     return {
                         ...emp,
                         score: ev ? ev.total_score : 0,
                     };
                 }).sort((a, b) => b.score - a.score);
-                setEmployees(ranked);
             }
-            
-            // ب) البحث عن الدورة الحالية
+            return [];
+        },
+        staleTime: 1000 * 60 * 10, // البيانات صالحة لمدة 10 دقائق
+    });
+
+    // ب) جلب الدورة النشطة الحالية
+    const { data: activeCycle } = useQuery({
+        queryKey: ['eom_active_cycle'],
+        queryFn: async () => {
             const currentMonth = new Date().toISOString().slice(0, 7);
-            const { data: cycle } = await supabase.from('eom_cycles')
+            const { data } = await supabase.from('eom_cycles')
                 .select('*')
                 .eq('month', currentMonth)
                 .order('created_at', { ascending: false })
                 .maybeSingle();
-
-            if (cycle) {
-                setActiveCycle(cycle);
-                // جلب النتائج فوراً إذا وجدت دورة
-                fetchCycleStats(cycle.id);
-            }
-        } catch (error) {
-            console.error(error);
-            toast.error('فشل تحميل البيانات');
-        } finally {
-            setLoading(false);
+            return data as EOMCycle | null;
         }
-    };
+    });
 
-    // 🔥 2. جلب الإحصائيات (أسرع 100 مرة باستخدام View)
-    const fetchCycleStats = async (cycleId: string) => {
-        // نطلب البيانات الجاهزة من الـ View مباشرة
-        const { data: stats, error } = await supabase
-            .from('eom_vote_results') // ⚡ اسم الـ View الجديد
-            .select('*')
-            .eq('cycle_id', cycleId)
-            .order('vote_count', { ascending: false });
+    // ج) جلب إحصائيات الدورة (يعتمد على ID الدورة النشطة)
+    const { data: nomineesStats = [] } = useQuery({
+        queryKey: ['eom_stats', activeCycle?.id],
+        queryFn: async () => {
+            if (!activeCycle?.id) return [];
+            const { data, error } = await supabase
+                .from('eom_vote_results') // View
+                .select('*')
+                .eq('cycle_id', activeCycle.id)
+                .order('vote_count', { ascending: false });
+            if (error) throw error;
+            return data;
+        },
+        enabled: !!activeCycle?.id, // لا يعمل إلا بوجود دورة
+        refetchInterval: 10000, // تحديث كل 10 ثواني (احتياطي)
+    });
 
-        if (error) {
-            console.error("Error fetching stats:", error);
-            return;
-        }
+    // د) جلب السجل (الأرشيف)
+    const { data: historyCycles = [] } = useQuery({
+        queryKey: ['eom_history'],
+        queryFn: async () => {
+            const { data } = await supabase.from('eom_cycles')
+                .select('*, winner:employees(name)')
+                .eq('status', 'completed')
+                .order('month', { ascending: false });
+            return data || [];
+        },
+        enabled: showHistory // لا يتم الجلب إلا عند فتح النافذة
+    });
 
-        if (stats) {
-            setNomineesStats(stats);
-            // حساب الإجمالي
-            const total = stats.reduce((sum, item) => sum + (item.vote_count || 0), 0);
-            setTotalVotes(total);
-        }
-    };
+    // حساب إجمالي الأصوات (Computed)
+    const totalVotes = nomineesStats.reduce((sum: number, item: any) => sum + (item.vote_count || 0), 0);
 
-    // 3. الاشتراك اللحظي (لتحديث الأصوات فوراً)
+    // ----------------------------------------------------------------
+    // 2. ⚡ التحديث اللحظي (Realtime Subscription)
+    // ----------------------------------------------------------------
     useEffect(() => {
-        if (activeCycle) {
+        if (activeCycle?.id) {
             const channel = supabase.channel('realtime_votes')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'eom_votes' }, () => {
-                    fetchCycleStats(activeCycle.id); // إعادة طلب الـ View عند أي تغيير
+                    // عند حدوث أي تغيير، نجبر الكاش على التحديث
+                    queryClient.invalidateQueries({ queryKey: ['eom_stats', activeCycle.id] });
                 })
                 .subscribe();
             return () => { supabase.removeChannel(channel); };
         }
-    }, [activeCycle?.id]);
+    }, [activeCycle?.id, queryClient]);
 
-    useEffect(() => { fetchCandidates(); }, []);
+    // ----------------------------------------------------------------
+    // 3. 🛠️ العمليات (Mutations)
+    // ----------------------------------------------------------------
 
-    // 4. بدء التصويت
-    const startVoting = async () => {
-        if (selectedIds.length < 2) {
-            toast.error('اختر موظفين اثنين على الأقل');
-            return;
-        }
-        
-        const toastId = toast.loading('جاري بدء الدورة...');
-        const currentMonth = new Date().toISOString().slice(0, 7);
-        
-        const { data: cycle, error } = await supabase.from('eom_cycles')
-            .insert({ month: currentMonth, status: 'voting' })
-            .select().single();
-
-        if (error) { 
-            toast.error('فشل البدء (ربما توجد دورة بالفعل)', { id: toastId });
-            return; 
-        }
-
-        const nomineesData = selectedIds.map(id => {
-            const emp = employees.find(e => e.id === id);
-            return { cycle_id: cycle.id, employee_id: emp.employee_id };
-        });
-
-        await supabase.from('eom_nominees').insert(nomineesData);
-
-        // نشر خبر تلقائي
-        await supabase.from('news_posts').insert({
-            title: '⭐ انطلاق سباق الموظف المثالي',
-            content: 'تم فتح باب التصويت لاختيار الموظف المثالي لهذا الشهر. صوتك يفرق!',
-            is_pinned: true,
-        });
-
-        toast.success('تم بدء التصويت بنجاح!', { id: toastId });
-        setActiveCycle(cycle);
-        fetchCycleStats(cycle.id);
-    };
-
-    // 5. إنهاء التصويت
-    const endVoting = async () => {
-        if (!activeCycle || nomineesStats.length === 0) return;
-        if (!confirm('هل أنت متأكد من إنهاء التصويت وإعلان الفائز؟')) return;
-
-        const toastId = toast.loading('جاري إعلان النتيجة...');
-        
-        try {
-            const winner = nomineesStats[0]; // الأول في القائمة (لأنها مرتبة من الـ View)
+    // أ) بدء التصويت
+    const startVotingMutation = useMutation({
+        mutationFn: async () => {
+            if (selectedIds.length < 2) throw new Error('اختر موظفين اثنين على الأقل');
             
-            // تحديث الدورة
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            const { data: cycle, error } = await supabase.from('eom_cycles')
+                .insert({ month: currentMonth, status: 'voting' })
+                .select().single();
+            
+            if (error) throw error;
+
+            const nomineesData = selectedIds.map(id => {
+                const emp = employees.find((e: any) => e.id === id);
+                return { cycle_id: cycle.id, employee_id: emp.employee_id };
+            });
+
+            await supabase.from('eom_nominees').insert(nomineesData);
+            await supabase.from('news_posts').insert({
+                title: '⭐ انطلاق سباق الموظف المثالي',
+                content: 'تم فتح باب التصويت لاختيار الموظف المثالي لهذا الشهر. صوتك يفرق!',
+                is_pinned: true,
+            });
+            return cycle;
+        },
+        onSuccess: () => {
+            toast.success('تم بدء التصويت بنجاح!');
+            queryClient.invalidateQueries({ queryKey: ['eom_active_cycle'] }); // تحديث الواجهة
+            setSelectedIds([]);
+        },
+        onError: (err: any) => toast.error(err.message || 'فشل البدء')
+    });
+
+    // ب) إنهاء التصويت
+    const endVotingMutation = useMutation({
+        mutationFn: async () => {
+            if (!activeCycle || nomineesStats.length === 0) return;
+            const winner = nomineesStats[0];
+            
             await supabase.from('eom_cycles')
                 .update({ status: 'completed', winner_id: winner.employee_id })
                 .eq('id', activeCycle.id);
 
-            // نشر خبر الاحتفال
             await supabase.from('news_posts').insert({
                 title: `🏆 الموظف المثالي: ${winner.employee_name}`,
                 content: `نبارك للزميل/ة **${winner.employee_name}** الفوز بلقب الموظف المثالي لهذا الشهر بعدد أصوات (${winner.vote_count}). \nنتمنى له وللجميع دوام التوفيق! 🎉`,
                 is_pinned: true,
                 image_url: 'https://cdn-icons-png.flaticon.com/512/744/744984.png',
             });
+            return winner;
+        },
+        onSuccess: (winner) => {
+            toast.success(`الفائز هو: ${winner.employee_name}`);
+            queryClient.invalidateQueries({ queryKey: ['eom_active_cycle'] });
+            queryClient.invalidateQueries({ queryKey: ['eom_history'] }); // تحديث السجل
+        },
+        onError: () => toast.error('حدث خطأ أثناء الإنهاء')
+    });
 
-            toast.success(`الفائز هو: ${winner.employee_name}`, { id: toastId });
-            setActiveCycle({ ...activeCycle, status: 'completed', winner_id: winner.employee_id });
+    // ج) العمليات الإدارية (حذف، تراجع)
+    const manageCycleMutation = useMutation({
+        mutationFn: async ({ action }: { action: 'delete' | 'undo' | 'new' }) => {
+            if (!activeCycle && action !== 'new') return;
 
-        } catch (error: any) {
-            toast.error('حدث خطأ أثناء الإنهاء', { id: toastId });
+            if (action === 'delete') {
+                await supabase.from('eom_cycles').delete().eq('id', activeCycle!.id);
+            } else if (action === 'undo') {
+                await supabase.from('eom_cycles').update({ status: 'voting', winner_id: null }).eq('id', activeCycle!.id);
+            }
+            // 'new' doesn't need API call here, just state reset, but we handle logic below
+        },
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['eom_active_cycle'] });
+            queryClient.invalidateQueries({ queryKey: ['eom_stats'] });
+            if (variables.action === 'delete') {
+                toast.success('تم حذف الدورة');
+                setNomineesStats([]);
+                setSelectedIds([]);
+            } else if (variables.action === 'undo') {
+                toast.success('تم إعادة فتح التصويت');
+            }
+        }
+    });
+
+    // دوال المساعدة للأزرار
+    const handleStart = () => toast.promise(startVotingMutation.mutateAsync(), {
+        loading: 'جاري بدء الدورة...',
+        success: 'تم!',
+        error: 'خطأ'
+    });
+
+    const handleEnd = () => {
+        if (confirm('إنهاء التصويت وإعلان الفائز؟')) {
+            toast.promise(endVotingMutation.mutateAsync(), {
+                loading: 'جاري إعلان النتيجة...',
+                success: 'مبروك للفائز!',
+                error: 'خطأ'
+            });
         }
     };
 
-    // العمليات الإدارية الأخرى
-    const undoEndVoting = async () => {
-        if (!confirm('إعادة فتح التصويت؟')) return;
-        await supabase.from('eom_cycles').update({ status: 'voting', winner_id: null }).eq('id', activeCycle!.id);
-        setActiveCycle({ ...activeCycle!, status: 'voting', winner_id: null });
-        toast.success('تم إعادة فتح التصويت');
+    const handleReset = () => {
+        if (confirm('⚠️ حذف نهائي؟')) manageCycleMutation.mutate({ action: 'delete' });
     };
 
-    const resetCycle = async () => {
-        if (!confirm('⚠️ تحذير: سيتم حذف الدورة والأصوات نهائياً!')) return;
-        await supabase.from('eom_cycles').delete().eq('id', activeCycle!.id);
-        setActiveCycle(null);
-        setNomineesStats([]);
-        setSelectedIds([]);
-        toast.success('تم حذف الدورة');
-    };
-
-    const startNewCycleSameMonth = () => {
-        if (!confirm('هل تريد بدء دورة جديدة إضافية لهذا الشهر؟')) return;
-        setActiveCycle(null);
-        setNomineesStats([]);
-        setSelectedIds([]);
-    };
-
-    // جلب السجل التاريخي
-    const fetchHistory = async () => {
-        const { data: cycles } = await supabase.from('eom_cycles')
-            .select('*, winner:employees(name)') // Join بسيط لجلب اسم الفائز
-            .eq('status', 'completed')
-            .order('month', { ascending: false });
-        
-        if (cycles) setHistoryCycles(cycles);
-        setShowHistory(true);
+    const handleUndo = () => {
+        if (confirm('إعادة فتح التصويت؟')) manageCycleMutation.mutate({ action: 'undo' });
     };
 
     const toggleSelect = (id: string) => {
@@ -211,7 +226,7 @@ export default function EOMManager() {
         }
     };
 
-    // --- واجهة العرض ---
+    // --- واجهة العرض (Render) ---
     if (showHistory) {
         return (
             <div className="bg-white p-4 rounded-3xl border shadow-sm space-y-4 animate-in fade-in">
@@ -222,7 +237,8 @@ export default function EOMManager() {
                     <button onClick={() => setShowHistory(false)} className="p-1.5 hover:bg-gray-100 rounded-full"><X className="w-4 h-4"/></button>
                 </div>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                    {historyCycles.map(c => (
+                    {historyCycles.length === 0 ? <p className="text-center text-gray-400 text-xs">لا يوجد سجلات</p> : 
+                    historyCycles.map((c: any) => (
                         <div key={c.id} className="flex justify-between p-3 bg-gray-50 rounded-2xl border border-gray-100 text-xs">
                             <span className="font-bold text-gray-600">{c.month}</span>
                             <span className="text-emerald-600 font-black flex items-center gap-1">
@@ -244,7 +260,7 @@ export default function EOMManager() {
                 </h3>
                 
                 <div className="flex gap-1.5">
-                    <button onClick={fetchHistory} className="p-2 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="السجل">
+                    <button onClick={() => setShowHistory(true)} className="p-2 bg-purple-50 text-purple-600 rounded-xl hover:bg-purple-100 transition-colors" title="السجل">
                         <History className="w-4 h-4"/>
                     </button>
                     
@@ -255,27 +271,27 @@ export default function EOMManager() {
                                     <span className="hidden md:inline-block bg-green-100 text-green-700 px-2 py-1 rounded-lg text-[10px] font-bold animate-pulse">
                                         جاري التصويت
                                     </span>
-                                    <button onClick={endVoting} className="bg-red-600 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-red-700 text-xs flex items-center gap-1 shadow-md shadow-red-100">
-                                        {loading ? <Loader2 className="w-3 h-3 animate-spin"/> : <StopCircle className="w-3 h-3"/>} إنهاء
+                                    <button onClick={handleEnd} disabled={endVotingMutation.isPending} className="bg-red-600 text-white px-3 py-1.5 rounded-xl font-bold hover:bg-red-700 text-xs flex items-center gap-1 shadow-md shadow-red-100">
+                                        {endVotingMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin"/> : <StopCircle className="w-3 h-3"/>} إنهاء
                                     </button>
                                 </>
                             ) : (
                                 <div className="flex gap-1">
-                                    <button onClick={undoEndVoting} className="p-2 bg-yellow-50 text-yellow-600 rounded-xl hover:bg-yellow-100" title="تراجع">
+                                    <button onClick={handleUndo} className="p-2 bg-yellow-50 text-yellow-600 rounded-xl hover:bg-yellow-100" title="تراجع">
                                         <RotateCcw className="w-4 h-4"/>
                                     </button>
-                                    <button onClick={startNewCycleSameMonth} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100" title="دورة جديدة">
+                                    <button onClick={() => { if(confirm('بدء دورة جديدة؟')) { queryClient.setQueryData(['eom_active_cycle'], null); setSelectedIds([]); } }} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100" title="دورة جديدة">
                                         <PlusCircle className="w-4 h-4"/>
                                     </button>
                                 </div>
                             )}
-                            <button onClick={resetCycle} className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors" title="حذف">
+                            <button onClick={handleReset} className="p-2 bg-gray-100 text-gray-400 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors" title="حذف">
                                 <Trash2 className="w-4 h-4"/>
                             </button>
                         </div>
                     ) : (
-                        <button onClick={startVoting} disabled={loading || selectedIds.length === 0} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 text-xs shadow-md shadow-emerald-100">
-                            {loading ? <Loader2 className="w-3 h-3 animate-spin"/> : <Play className="w-3 h-3"/>} بدء
+                        <button onClick={handleStart} disabled={startVotingMutation.isPending || selectedIds.length === 0} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 text-xs shadow-md shadow-emerald-100">
+                            {startVotingMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin"/> : <Play className="w-3 h-3"/>} بدء
                         </button>
                     )}
                 </div>
@@ -293,15 +309,13 @@ export default function EOMManager() {
                     </div>
                     
                     <div className="space-y-3">
-                        {nomineesStats.map((nom, idx) => {
+                        {nomineesStats.map((nom: any, idx: number) => {
                             const percentage = totalVotes > 0 ? Math.round((nom.vote_count / totalVotes) * 100) : 0;
                             const isWinner = activeCycle.status === 'completed' && idx === 0;
                             
                             return (
                                 <div key={nom.nominee_id} className={`relative overflow-hidden rounded-2xl border p-3 transition-all ${isWinner ? 'bg-yellow-50 border-yellow-200 ring-1 ring-yellow-300' : 'bg-white border-gray-100'}`}>
-                                    {/* شريط التقدم الخلفي */}
                                     <div className="absolute bottom-0 left-0 top-0 bg-gray-100/50 transition-all duration-1000 ease-out" style={{ width: `${percentage}%`, zIndex: 0 }} />
-                                    
                                     <div className="relative z-10 flex justify-between items-center">
                                         <div className="flex items-center gap-3">
                                             <div className="w-9 h-9 rounded-xl bg-white border flex items-center justify-center font-bold text-gray-500 shadow-sm overflow-hidden">
@@ -329,7 +343,8 @@ export default function EOMManager() {
                         قم باختيار المرشحين من القائمة أدناه لبدء دورة تصويت جديدة لهذا الشهر.
                     </p>
                     <div className="grid gap-2 max-h-[350px] overflow-y-auto custom-scrollbar">
-                        {employees.map((emp, idx) => (
+                        {loadingCandidates ? <div className="text-center p-4"><Loader2 className="animate-spin mx-auto text-emerald-500"/></div> : 
+                        employees.map((emp: any, idx: number) => (
                             <div key={emp.id} onClick={() => toggleSelect(emp.id)} className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all ${selectedIds.includes(emp.id) ? 'bg-yellow-50 border-yellow-400 ring-1 ring-yellow-200' : 'hover:bg-gray-50 border-gray-100'}`}>
                                 <div className="flex items-center gap-3">
                                     <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold ${idx < 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>#{idx + 1}</span>
