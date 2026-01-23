@@ -7,6 +7,8 @@ import {
     Send, Clock, CheckCircle2, Loader2, AlertCircle, Eye, Play, 
     Filter, Users, RefreshCw, Layers, CheckSquare, XCircle
 } from 'lucide-react';
+// ✅ استيراد دالة التنبيهات الموحدة
+import { sendSystemNotification } from '../../../utils/sendNotification';
 
 export default function TasksManager({ employees }: { employees: Employee[] }) {
     const queryClient = useQueryClient();
@@ -46,7 +48,7 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
 
             let targetEmployees: Employee[] = [];
 
-            // تحديد المستلمين بناءً على نوع الإرسال
+            // منطق تحديد المستلمين
             if (targetType === 'individual') {
                 if (!selectedEmp) throw new Error("اختر الموظف");
                 const emp = employees.find(e => e.employee_id === selectedEmp);
@@ -62,7 +64,7 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
 
             if (targetEmployees.length === 0) throw new Error("لا يوجد موظفين مستهدفين");
 
-            // تجهيز البيانات للإدخال الجماعي
+            // أ) تجهيز وإدخال التكليفات في جدول المهام
             const tasksPayload = targetEmployees.map(emp => ({
                 title,
                 description: desc,
@@ -72,22 +74,19 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
                 status: 'pending'
             }));
 
-            // أ) إدخال التكليفات
             const { error: taskError } = await supabase.from('tasks').insert(tasksPayload);
             if (taskError) throw taskError;
 
-            // ب) إرسال التنبيهات (Notifications)
-            const notificationsPayload = targetEmployees.map(emp => ({
-                user_id: emp.employee_id,
-                title: '⚡ تكليف جديد',
-                message: `وصلك تكليف جديد: ${title}`,
-                type: 'task',
-                is_read: false,
-                created_at: new Date()
-            }));
-
-            const { error: notifError } = await supabase.from('notifications').insert(notificationsPayload);
-            if (notifError) console.error("Notification Error:", notifError);
+            // ب) 🔥 إرسال التنبيهات (داخلي + خارجي) لكل موظف
+            // نستخدم Promise.all لضمان السرعة وعدم انتظار كل واحد على حدة
+            await Promise.all(targetEmployees.map(emp => 
+                sendSystemNotification(
+                    emp.employee_id,
+                    '⚡ تكليف جديد',
+                    `وصلك تكليف جديد: ${title}`,
+                    'task'
+                )
+            ));
 
             return targetEmployees.length;
         },
@@ -100,6 +99,19 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
             setActiveTab('history'); // الانتقال للسجل للمتابعة
         },
         onError: (err: any) => toast.error(err.message)
+    });
+
+    // 3. 🗑️ حذف تكليف
+    const deleteTaskMutation = useMutation({
+        mutationFn: async (id: string) => {
+            const { error } = await supabase.from('tasks').delete().eq('id', id);
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            toast.success('تم الحذف');
+            queryClient.invalidateQueries({ queryKey: ['admin_tasks_history'] });
+        },
+        onError: () => toast.error('فشل الحذف')
     });
 
     // --- المنطق المساعد ---
@@ -332,11 +344,8 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
                                             </td>
                                             <td className="p-4 text-center">
                                                 <button 
-                                                    onClick={async () => {
-                                                        if(confirm('حذف هذا التكليف؟')) {
-                                                            await supabase.from('tasks').delete().eq('id', task.id);
-                                                            refetch();
-                                                        }
+                                                    onClick={() => {
+                                                        if(confirm('حذف هذا التكليف؟')) deleteTaskMutation.mutate(task.id);
                                                     }}
                                                     className="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                                                 >
