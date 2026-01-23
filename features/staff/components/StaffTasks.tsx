@@ -3,7 +3,7 @@ import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Clock, CheckCircle2, AlertCircle, Play, Eye, FileText, Loader2, Calendar, Timer } from 'lucide-react';
+import { Clock, CheckCircle2, AlertCircle, Play, Eye, FileText, Loader2, Timer } from 'lucide-react';
 import { sendSystemNotification } from '../../../utils/pushNotifications';
 
 export default function StaffTasks({ employee }: { employee: Employee }) {
@@ -11,13 +11,13 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
     const [notes, setNotes] = useState<{ [key: string]: string }>({});
     const [currentTime, setCurrentTime] = useState(new Date());
 
-    // تحديث الوقت كل دقيقة لتحديث العداد
+    // تحديث العداد كل دقيقة
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
         return () => clearInterval(timer);
     }, []);
 
-    // 1. جلب تكليفات الموظف
+    // 1. جلب التكليفات
     const { data: tasks = [], isLoading } = useQuery({
         queryKey: ['staff_tasks', employee.employee_id],
         queryFn: async () => {
@@ -31,11 +31,11 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
         refetchInterval: 10000, 
     });
 
-    // 2. تغيير الحالة (Mutation)
+    // 2. معالجة تحديث الحالة + التنبيهات
     const updateStatusMutation = useMutation({
         mutationFn: async ({ taskId, newStatus, replyNote, taskTitle }: { taskId: string, newStatus: string, replyNote?: string, taskTitle?: string }) => {
             
-            // أ) التحديث في قاعدة البيانات
+            // أ) تحديث الحالة في قاعدة البيانات
             const updates: any = { status: newStatus };
             if (newStatus === 'completed') {
                 updates.completed_at = new Date();
@@ -44,57 +44,65 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
             const { error: updateError } = await supabase.from('tasks').update(updates).eq('id', taskId);
             if (updateError) throw updateError;
 
-            // ب) إعداد رسالة التنبيه
+            // ب) تجهيز نصوص التنبيه
             let notifTitle = '';
             let notifMsg = '';
 
             if (newStatus === 'acknowledged') {
                 notifTitle = '👀 تم العلم';
-                notifMsg = `الموظف ${employee.name}: تم العلم بالتكليف "${taskTitle}"`;
+                notifMsg = `قام ${employee.name} بالاطلاع على التكليف: ${taskTitle}`;
             } else if (newStatus === 'in_progress') {
                 notifTitle = '🚀 جاري التنفيذ';
-                notifMsg = `بدأ ${employee.name} العمل على المهمة: "${taskTitle}"`;
+                notifMsg = `بدأ ${employee.name} العمل على: ${taskTitle}`;
             } else if (newStatus === 'completed') {
-                notifTitle = '✅ تم الانتهاء';
-                notifMsg = `أنهى ${employee.name} المهمة "${taskTitle}". الملاحظات: ${replyNote || 'لا يوجد'}`;
+                notifTitle = '✅ تم الإنجاز';
+                notifMsg = `أنهى ${employee.name} المهمة: ${taskTitle}`;
             }
 
-            // ج) 🔥 إرسال التنبيه للمدير (تم التصحيح)
-            // 1. جلب معرفات المديرين (UUID و EmployeeID)
+            // ج) 🔥 إرسال التنبيه للمديرين (تم التحسين)
+            // نجلب المديرين ببياناتهم الكاملة لضمان وجود المعرفات
             const { data: admins } = await supabase
                 .from('employees')
                 .select('id, employee_id')
                 .eq('role', 'admin');
             
             if (admins && admins.length > 0) {
+                // نستخدم Promise.all لضمان الإرسال للكل
                 await Promise.all(admins.map(async (admin) => {
-                    // إشعار داخلي
+                    // 1. تنبيه داخلي (نرسل لـ employee_id والـ id لضمان الظهور أينما كان)
+                    // نفضل الـ id (UUID) لأنه الأدق في Auth
+                    const targetId = admin.id || admin.employee_id;
+                    
                     await supabase.from('notifications').insert({
-                        user_id: admin.employee_id, // يفضل employee_id للتوافق مع لوحة المدير
+                        user_id: targetId, 
                         title: notifTitle,
                         message: notifMsg,
-                        type: 'task_update',
+                        type: 'task_update', // نوع خاص لتمييزه
                         sender_name: employee.name,
                         is_read: false
                     });
 
-                    // إشعار خارجي (يحتاج UUID حصراً)
+                    // 2. تنبيه خارجي (Push) - حصراً نستخدم admin.id (UUID)
                     if (admin.id) {
-                        await supabase.functions.invoke('send-push-notification', {
-                            body: {
-                                userId: admin.id,
-                                title: notifTitle,
-                                body: notifMsg,
-                                url: '/tasks'
-                            }
-                        });
+                        try {
+                            await supabase.functions.invoke('send-push-notification', {
+                                body: {
+                                    userId: admin.id,
+                                    title: notifTitle,
+                                    body: notifMsg,
+                                    url: '/tasks' // يفتح صفحة التكليفات عند الضغط
+                                }
+                            });
+                        } catch (e) {
+                            console.error("Push failed for admin:", admin.id);
+                        }
                     }
                 }));
             }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['staff_tasks'] });
-            toast.success('تم تحديث الحالة وإبلاغ الإدارة');
+            toast.success('تم إبلاغ الإدارة بنجاح');
         },
         onError: (err: any) => {
             console.error(err);
@@ -106,14 +114,14 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
         toast.promise(
             updateStatusMutation.mutateAsync({ taskId, newStatus, replyNote, taskTitle: title }),
             {
-                loading: 'جاري التحديث...',
-                success: 'تم التحديث!',
-                error: 'فشل التحديث'
+                loading: 'جاري تحديث الحالة وإرسال التنبيه...',
+                success: 'تم!',
+                error: 'فشل العملية'
             }
         );
     };
 
-    // دالة لحساب الوقت المتبقي
+    // دالة حساب الوقت المتبقي
     const getTimeRemaining = (dueDateStr: string) => {
         const due = new Date(dueDateStr);
         const diff = due.getTime() - currentTime.getTime();
@@ -126,8 +134,8 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
 
         let text = '';
         if (days > 0) text += `${days} يوم `;
-        if (hours > 0) text += `${hours} ساعة `;
-        text += `${minutes} دقيقة`;
+        if (hours > 0) text += `${hours} س `;
+        text += `${minutes} د`;
 
         return { text: `متبقي: ${text}`, color: 'text-emerald-600 bg-emerald-50', isOverdue: false };
     };
@@ -178,18 +186,18 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                             {/* 1. زر تأكيد العلم */}
                             {task.status === 'pending' && (
                                 <button onClick={() => handleUpdate(task.id, 'acknowledged', task.title)} className="w-full bg-blue-50 text-blue-700 py-2.5 rounded-xl font-bold text-xs hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors active:scale-95">
-                                    <Eye className="w-4 h-4"/> تم العلم
+                                    <Eye className="w-4 h-4"/> اضغط لتأكيد العلم
                                 </button>
                             )}
 
-                            {/* 2. زر بدء التنفيذ (النص الجديد) */}
+                            {/* 2. زر بدء التنفيذ */}
                             {task.status === 'acknowledged' && (
                                 <button onClick={() => handleUpdate(task.id, 'in_progress', task.title)} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-indigo-700 flex items-center justify-center gap-2 transition-colors active:scale-95 shadow-md shadow-indigo-200">
                                     <Play className="w-4 h-4 rtl:rotate-180"/> اضغط لبدء التنفيذ
                                 </button>
                             )}
 
-                            {/* 3. نموذج الانتهاء (النص الجديد) */}
+                            {/* 3. نموذج الانتهاء */}
                             {task.status === 'in_progress' && (
                                 <div className="space-y-3 animate-in fade-in">
                                     <textarea 
