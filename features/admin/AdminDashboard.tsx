@@ -30,6 +30,7 @@ import AdminLibraryManager from './components/AdminLibraryManager';
 import AdminDataReports from './components/AdminDataReports'; 
 import AbsenceReportTab from './components/AbsenceReportTab';
 import TasksManager from './components/TasksManager';
+
 // 1. ✅ استيراد React Query
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -46,7 +47,7 @@ export default function AdminDashboard() {
     // 1. 📥 جلب البيانات (Queries)
     // ------------------------------------------------------------------
 
-    // أ) جلب الموظفين (Cache لمدة طويلة)
+    // أ) جلب الموظفين
     const { data: employees = [], refetch: refetchEmployees } = useQuery({
         queryKey: ['admin_employees'],
         queryFn: async () => {
@@ -56,45 +57,45 @@ export default function AdminDashboard() {
         staleTime: 1000 * 60 * 15, // 15 دقيقة
     });
 
-    // ب) جلب الإعدادات العامة (اسم المركز)
+    // ب) جلب الإعدادات العامة
     const { data: settings } = useQuery({
         queryKey: ['general_settings'],
         queryFn: async () => {
             const { data } = await supabase.from('general_settings').select('center_name, id').maybeSingle();
             return data || { center_name: 'المركز الطبي', id: '' };
         },
-        staleTime: Infinity, // لا تتغير غالباً
+        staleTime: Infinity,
     });
 
-    // ج) عداد تنبيهات الجودة (OVR)
-    const { data: qualityAlerts = 0 } = useQuery({
-        queryKey: ['ovr_alerts_count'],
+    // ج) 🔥 جلب العدادات (Badges) للأزرار
+    const { data: badges = { messages: 0, leaves: 0, ovr: 0 } } = useQuery({
+        queryKey: ['admin_badges'],
         queryFn: async () => {
-            const { count } = await supabase
-                .from('ovr_reports')
-                .select('*', { count: 'exact', head: true })
-                .neq('status', 'new'); 
-            return count || 0;
-        }
+            const [msg, leaves, ovr] = await Promise.all([
+                // 1. رسائل غير مقروءة (to_user = 'admin')
+                supabase.from('messages').select('*', { count: 'exact', head: true })
+                    .eq('to_user', 'admin').eq('is_read', false),
+                
+                // 2. طلبات إجازة معلقة
+                supabase.from('leave_requests').select('*', { count: 'exact', head: true })
+                    .eq('status', 'قيد الانتظار'),
+
+                // 3. تقارير OVR جديدة
+                supabase.from('ovr_reports').select('*', { count: 'exact', head: true })
+                    .eq('status', 'new')
+            ]);
+
+            return {
+                messages: msg.count || 0,
+                leaves: leaves.count || 0,
+                ovr: ovr.count || 0
+            };
+        },
+        refetchInterval: 5000, // تحديث كل 5 ثواني
     });
 
     // ------------------------------------------------------------------
-    // 2. ⚡ التحديث اللحظي (Realtime)
-    // ------------------------------------------------------------------
-    useEffect(() => {
-        // اشتراك لتحديث عداد الجودة عند حدوث أي تغيير
-        const subscription = supabase
-            .channel('admin_ovr_watch')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ovr_reports' }, () => {
-                queryClient.invalidateQueries({ queryKey: ['ovr_alerts_count'] });
-            })
-            .subscribe();
-
-        return () => { supabase.removeChannel(subscription); };
-    }, [queryClient]);
-
-    // ------------------------------------------------------------------
-    // 3. 🛠️ العمليات (Mutations)
+    // 2. 🛠️ العمليات (Mutations)
     // ------------------------------------------------------------------
 
     // إرسال التنبيه التجريبي
@@ -124,7 +125,7 @@ export default function AdminDashboard() {
     });
 
     // ------------------------------------------------------------------
-    // 4. 🎨 واجهة المستخدم
+    // 3. 🎨 واجهة المستخدم
     // ------------------------------------------------------------------
 
     // إعدادات السحب (Swipe)
@@ -144,22 +145,20 @@ export default function AdminDashboard() {
         { id: 'doctors', label: 'شئون الموظفين', icon: Users },
         { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
         { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
-        { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle },
+        
+        // ✅ إضافة البادجات
+        { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges.messages },
+        { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: badges.leaves },
+        { id: 'quality', label: 'إدارة الجودة (OVR)', icon: AlertTriangle, badge: badges.ovr },
+        
         { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
         { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
         { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
-        { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList },
         { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
         { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
         { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
         { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
         { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare },
-        { 
-            id: 'quality', 
-            label: 'إدارة الجودة (OVR)', 
-            icon: AlertTriangle,
-            badge: qualityAlerts 
-        },
         { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
         { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing },
         { id: 'settings', label: 'إعدادات النظام', icon: Settings },
@@ -200,17 +199,18 @@ export default function AdminDashboard() {
                                 setActiveTab(item.id);
                                 setIsSidebarOpen(false); 
                             }}
-                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200 relative group ${
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 relative group ${
                                 activeTab === item.id 
-                                    ? 'bg-emerald-600 text-white shadow-sm font-bold' 
+                                    ? 'bg-emerald-600 text-white shadow-md font-bold' 
                                     : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 font-medium'
                             }`}
                         >
                             <item.icon className={`w-4 h-4 shrink-0 ${activeTab === item.id ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                             <span className="text-xs">{item.label}</span>
                             
+                            {/* 🔥 عرض البادج */}
                             {item.badge && item.badge > 0 && (
-                                <span className="absolute left-2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm animate-pulse">
+                                <span className="absolute left-2 bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full shadow-sm animate-pulse">
                                     {item.badge}
                                 </span>
                             )}
@@ -270,7 +270,7 @@ export default function AdminDashboard() {
                     {activeTab === 'absence-report' && <AbsenceReportTab />}      
                     {activeTab === 'tasks' && <TasksManager employees={employees} />}
                     
-                    {/* 🔥 واجهة اختبار التنبيهات */}
+                    {/* واجهة اختبار التنبيهات */}
                     {activeTab === 'test_push' && (
                         <div className="max-w-md mx-auto bg-white p-8 rounded-3xl shadow-sm border border-gray-100 text-center space-y-6 mt-10">
                             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto text-blue-600">
@@ -280,8 +280,6 @@ export default function AdminDashboard() {
                                 <h2 className="text-xl font-black text-gray-800">اختبار إشعارات الموبايل</h2>
                                 <p className="text-gray-500 mt-2 text-sm leading-relaxed">
                                     اضغط على الزر أدناه لإرسال إشعار تجريبي إلى جهازك فوراً.
-                                    <br />
-                                    (تأكد أنك سمحت بالإشعارات، وأن التطبيق مغلق للتجربة الحقيقية)
                                 </p>
                             </div>
 
