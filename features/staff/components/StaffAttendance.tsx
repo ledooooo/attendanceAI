@@ -1,38 +1,42 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
     Clock, Calendar, CheckCircle2, XCircle, 
-    AlertTriangle, Star, Timer, Briefcase, Info, FileCheck, PartyPopper // أيقونة العطلات
+    AlertTriangle, Star, Info, FileCheck, PartyPopper, Loader2
 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRule } from '../../../types';
 import StaffNewRequest from './StaffNewRequest';
+// 1. ✅ استيراد React Query
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-// تحويل الوقت لدقائق
+// دوال مساعدة (خارج المكون لمنع إعادة تعريفها)
 const toMinutes = (timeStr: string) => {
     if (!timeStr) return 0;
     const [h, m] = timeStr.split(':').map(Number);
     return h * 60 + m;
 };
 
-// حساب فرق الساعات
 const calcHours = (t1: string, t2: string) => {
     if (!t1 || !t2) return 0;
     const diff = toMinutes(t2) - toMinutes(t1);
     return diff > 0 ? parseFloat((diff / 60).toFixed(1)) : 0;
 };
 
-export default function StaffAttendance({ attendance: initialAttendance, selectedMonth: initialMonth, setSelectedMonth, employee }: { attendance: any[], selectedMonth: string, setSelectedMonth: any, employee: Employee }) {
-    const [attendanceData, setAttendanceData] = useState<any[]>(initialAttendance || []);
-    const [rules, setRules] = useState<AttendanceRule[]>([]);
-    const [leaves, setLeaves] = useState<any[]>([]); 
-    const [holidays, setHolidays] = useState<{name: string, date: string}[]>([]); // state للعطلات الرسمية
+export default function StaffAttendance({ 
+    selectedMonth: initialMonth, 
+    setSelectedMonth, 
+    employee 
+}: { 
+    attendance?: any[], // لم نعد بحاجة له لأننا سنجلب الأحدث
+    selectedMonth: string, 
+    setSelectedMonth: any, 
+    employee: Employee 
+}) {
+    const queryClient = useQueryClient();
     const [viewMonth, setViewMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7));
-    const [loading, setLoading] = useState(false);
-    const [monthlyEval, setMonthlyEval] = useState<number | null>(null);
     const [selectedAbsenceDate, setSelectedAbsenceDate] = useState<string | null>(null);
-    const [lastUpdate, setLastUpdate] = useState<string>('');
 
     // أيام العمل
     const workDays = employee.work_days && employee.work_days.length > 0 
@@ -41,87 +45,75 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
     
     const isPartTime = workDays.length < 5;
 
-    const [stats, setStats] = useState({
-        present: 0,
-        absent: 0,
-        late: 0,
-        totalHours: 0,
-        leavesCount: 0 
-    });
+    // ------------------------------------------------------------------
+    // 1. 📥 جلب البيانات (Queries)
+    // ------------------------------------------------------------------
 
-    // 1. جلب البيانات
-    useEffect(() => {
-        const fetchData = async () => {
-            if (!employee?.employee_id) return;
-            setLoading(true);
-
-            // جلب الإعدادات والعطلات
-            const { data: settings } = await supabase.from('general_settings').select('last_attendance_update, holidays_name, holidays_date').limit(1).maybeSingle();
-            if (settings) {
-                if (settings.last_attendance_update) {
-                    setLastUpdate(new Date(settings.last_attendance_update).toLocaleString('ar-EG', { dateStyle: 'full', timeStyle: 'short' }));
-                }
-                
-                // دمج العطلات في مصفوفة كائنات
-                if (settings.holidays_name && settings.holidays_date) {
-                    const h = settings.holidays_name.map((name: string, i: number) => ({
-                        name: name,
-                        date: settings.holidays_date[i]
-                    }));
-                    setHolidays(h);
-                }
+    // أ) جلب الإعدادات والقواعد والعطلات (بيانات عامة)
+    const { data: settingsData } = useQuery({
+        queryKey: ['attendance_settings_rules'],
+        queryFn: async () => {
+            const { data: settings } = await supabase.from('general_settings').select('*').limit(1).single();
+            const { data: rules } = await supabase.from('attendance_rules').select('*');
+            
+            // معالجة العطلات
+            let formattedHolidays: {name: string, date: string}[] = [];
+            if (settings?.holidays_name && settings?.holidays_date) {
+                formattedHolidays = settings.holidays_name.map((name: string, i: number) => ({
+                    name: name,
+                    date: settings.holidays_date[i]
+                }));
             }
 
+            return {
+                rules: rules as AttendanceRule[] || [],
+                holidays: formattedHolidays,
+                lastUpdate: settings?.last_attendance_update 
+                    ? new Date(settings.last_attendance_update).toLocaleString('ar-EG', { dateStyle: 'full', timeStyle: 'short' }) 
+                    : ''
+            };
+        },
+        staleTime: 1000 * 60 * 10 // تحديث كل 10 دقائق
+    });
+
+    // ب) جلب بيانات الشهر (حضور، إجازات، تقييم)
+    const { data: monthData, isLoading } = useQuery({
+        queryKey: ['staff_month_data', employee.employee_id, viewMonth],
+        queryFn: async () => {
             const [y, m] = viewMonth.split('-').map(Number);
             const daysInMonth = new Date(y, m, 0).getDate();
             const startOfMonth = `${viewMonth}-01`;
             const endOfMonth = `${viewMonth}-${daysInMonth}`;
 
-            // أ) الحضور
-            const { data: attData } = await supabase
-                .from('attendance')
-                .select('*')
-                .eq('employee_id', employee.employee_id)
-                .gte('date', startOfMonth)
-                .lte('date', endOfMonth);
-            
-            if (attData) setAttendanceData(attData);
+            // طلبات متوازية (Parallel Fetching) لسرعة أكبر
+            const [attRes, leavesRes, evalRes] = await Promise.all([
+                supabase.from('attendance').select('*')
+                    .eq('employee_id', employee.employee_id)
+                    .gte('date', startOfMonth).lte('date', endOfMonth),
+                
+                supabase.from('leave_requests').select('*')
+                    .eq('employee_id', employee.employee_id)
+                    .eq('status', 'مقبول')
+                    .lte('start_date', endOfMonth).gte('end_date', startOfMonth),
 
-            // ب) الطلبات المقبولة
-            const { data: leavesData, error: leavesError } = await supabase
-                .from('leave_requests')
-                .select('*')
-                .eq('employee_id', employee.employee_id)
-                .eq('status', 'مقبول')
-                .lte('start_date', endOfMonth) 
-                .gte('end_date', startOfMonth);
-            
-            if (leavesError) {
-                console.error("Error fetching leaves:", leavesError);
-            } else {
-                setLeaves(leavesData || []);
-            }
+                supabase.from('evaluations').select('total_score')
+                    .eq('employee_id', employee.employee_id)
+                    .eq('month', viewMonth).maybeSingle()
+            ]);
 
-            // ج) القواعد
-            const { data: rulesData } = await supabase.from('attendance_rules').select('*');
-            if (rulesData) setRules(rulesData);
+            return {
+                attendance: attRes.data || [],
+                leaves: leavesRes.data || [],
+                evaluation: evalRes.data?.total_score || null
+            };
+        }
+    });
 
-            // د) التقييم
-            const { data: evalData } = await supabase
-                .from('evaluations')
-                .select('total_score')
-                .eq('employee_id', employee.employee_id)
-                .eq('month', viewMonth)
-                .maybeSingle();
-            
-            setMonthlyEval(evalData ? evalData.total_score : null);
-            setLoading(false);
-        };
+    // ------------------------------------------------------------------
+    // 2. 🧮 معالجة البيانات والحسابات (Logic Layer)
+    // ------------------------------------------------------------------
 
-        fetchData();
-    }, [viewMonth, employee]);
-
-    // 2. تحليل بصمة اليوم
+    // دالة تحليل اليوم (Memoized Logic)
     const analyzeDay = (attRecord: any, rulesList: AttendanceRule[]) => {
         const times = attRecord?.times?.match(/\d{1,2}:\d{2}/g) || [];
         const sortedTimes = times.sort(); 
@@ -152,61 +144,66 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         return { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours };
     };
 
-    // 3. حساب الجدول والإحصائيات
-    useEffect(() => {
-        let present = 0;
-        let absent = 0;
-        let late = 0;
-        let totalHours = 0;
-        let leavesCount = 0;
+    // حساب الجدول والإحصائيات (Computed Data)
+    const { tableRows, stats } = useMemo(() => {
+        if (!monthData || !settingsData) return { tableRows: [], stats: { present: 0, absent: 0, late: 0, totalHours: 0, leavesCount: 0 } };
 
+        let present = 0, absent = 0, late = 0, totalHours = 0, leavesCount = 0;
         const [y, m] = viewMonth.split('-').map(Number);
         const daysInMonth = new Date(y, m, 0).getDate();
+        const rows = [];
 
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = `${viewMonth}-${String(i).padStart(2, '0')}`;
-            
             const currentDate = new Date(dateStr);
             currentDate.setHours(0,0,0,0);
-
+            
             const isFuture = currentDate > new Date();
-
             const dayName = DAYS_AR[currentDate.getDay()];
             const isWorkDay = workDays.includes(dayName);
-            const record = attendanceData.find(a => a.date === dateStr);
+            
+            const record = monthData.attendance.find((a: any) => a.date === dateStr);
             const hasTimes = record && record.times && record.times.trim().length > 0;
 
-            // التحقق من الإجازة
-            const matchingLeave = leaves.find(l => {
-                const start = new Date(l.start_date);
-                start.setHours(0,0,0,0);
-                const end = new Date(l.end_date);
-                end.setHours(0,0,0,0);
+            const matchingLeave = monthData.leaves.find((l: any) => {
+                const start = new Date(l.start_date); start.setHours(0,0,0,0);
+                const end = new Date(l.end_date); end.setHours(0,0,0,0);
                 return currentDate >= start && currentDate <= end;
             });
 
-            // التحقق من العطلة الرسمية
-            const officialHoliday = holidays.find(h => h.date === dateStr);
+            const officialHoliday = settingsData.holidays.find(h => h.date === dateStr);
 
             if (hasTimes) {
                 present++;
-                const info = analyzeDay(record, rules);
+                const info = analyzeDay(record, settingsData.rules);
                 if (isWorkDay && (info.inStatusColor === 'orange' || info.inStatusColor === 'red')) {
                     late++;
                 }
                 totalHours += info.hours;
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'present', data: info });
             } else if (matchingLeave) {
                 leavesCount++; 
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'leave', data: matchingLeave });
             } else if (officialHoliday) {
-                // العطلة الرسمية لا تحسب غياب
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'holiday', data: officialHoliday });
             } else if (isWorkDay && !isFuture) {
                 absent++;
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'absent' });
+            } else {
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'rest' });
             }
         }
 
-        setStats({ present, absent, late, totalHours, leavesCount });
+        return { 
+            tableRows: rows, 
+            stats: { present, absent, late, totalHours, leavesCount } 
+        };
 
-    }, [attendanceData, rules, viewMonth, workDays, leaves, holidays]);
+    }, [monthData, settingsData, viewMonth, workDays]);
+
+    // ------------------------------------------------------------------
+    // 3. 🎨 واجهة المستخدم (UI)
+    // ------------------------------------------------------------------
 
     const handleMonthChange = (e: any) => {
         const val = e.target.value;
@@ -226,6 +223,12 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
         return map[colorName] || map['gray'];
     };
 
+    // إعادة تحديث البيانات عند إغلاق طلب التبرير
+    const handleRequestRefresh = () => {
+        setSelectedAbsenceDate(null);
+        queryClient.invalidateQueries({ queryKey: ['staff_month_data'] });
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-20">
             {/* Header */}
@@ -234,9 +237,9 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                     <h3 className="font-black text-gray-800 text-lg flex items-center gap-2">
                         <Calendar className="text-emerald-600"/> تقرير الحضور
                     </h3>
-                    {lastUpdate && (
+                    {settingsData?.lastUpdate && (
                         <div className="text-[10px] md:text-xs text-blue-600 font-bold mt-2 flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 w-fit">
-                            <Info className="w-3 h-3"/> آخر تحديث: {lastUpdate}
+                            <Info className="w-3 h-3"/> آخر تحديث: {settingsData.lastUpdate}
                         </div>
                     )}
                 </div>
@@ -262,7 +265,6 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                     <span className="text-xl font-black text-gray-800">{stats.absent}</span>
                     <span className="text-[10px] text-gray-400 font-bold">غياب</span>
                 </div>
-                {/* مربع الإجازات */}
                 <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
                     <div className="p-2 bg-purple-50 text-purple-600 rounded-full"><FileCheck className="w-5 h-5"/></div>
                     <span className="text-xl font-black text-gray-800">{stats.leavesCount}</span>
@@ -275,7 +277,7 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                 </div>
                 <div className="bg-gradient-to-br from-yellow-50 to-orange-50 p-3 rounded-2xl border border-yellow-100 shadow-sm flex flex-col items-center justify-center gap-1 col-span-2 md:col-span-1">
                     <div className="p-2 bg-yellow-100 text-yellow-600 rounded-full"><Star className="w-5 h-5 fill-yellow-500"/></div>
-                    <span className="text-xl font-black text-yellow-700">{monthlyEval ? `${monthlyEval}%` : '-'}</span>
+                    <span className="text-xl font-black text-yellow-700">{monthData?.evaluation ? `${monthData.evaluation}%` : '-'}</span>
                     <span className="text-[10px] text-yellow-600 font-bold">التقييم الشهري</span>
                 </div>
             </div>
@@ -296,89 +298,69 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {loading ? (
-                                <tr><td colSpan={7} className="p-10 text-center text-gray-400">جاري تحميل البيانات...</td></tr>
-                            ) : Array.from({ length: new Date(Number(viewMonth.split('-')[0]), Number(viewMonth.split('-')[1]), 0).getDate() }, (_, i) => {
-                                const day = i + 1;
-                                const dateStr = `${viewMonth}-${String(day).padStart(2, '0')}`;
-                                const currentDate = new Date(dateStr);
-                                currentDate.setHours(0,0,0,0);
-                                
-                                const isFuture = currentDate > new Date();
-                                const dayName = DAYS_AR[currentDate.getDay()];
-                                const isWorkDay = workDays.includes(dayName);
-                                
-                                const att = attendanceData.find((a:any) => a.date === dateStr);
-                                const hasTimes = att && att.times && att.times.trim().length > 0;
-                                const { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours } = analyzeDay(att, rules);
+                            {isLoading ? (
+                                <tr><td colSpan={7} className="p-10 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2"/>جاري تحميل البيانات...</td></tr>
+                            ) : tableRows.map((row: any) => (
+                                <tr 
+                                    key={row.dateStr} 
+                                    className={`
+                                        transition-colors
+                                        ${!row.isWorkDay ? 'bg-gray-50/50' : 'hover:bg-gray-50'}
+                                        ${row.type === 'absent' ? 'bg-red-50/30 cursor-pointer hover:bg-red-100/30' : ''}
+                                        ${row.type === 'leave' ? 'bg-purple-50/30' : ''}
+                                        ${row.type === 'holiday' ? 'bg-orange-50/30' : ''}
+                                    `}
+                                    onClick={() => row.type === 'absent' && setSelectedAbsenceDate(row.dateStr)}
+                                >
+                                    <td className="p-4 font-bold text-gray-700">{row.dateStr}</td>
+                                    <td className={`p-4 font-bold ${!row.isWorkDay ? 'text-gray-400' : 'text-gray-600'}`}>{row.dayName}</td>
+                                    
+                                    {/* تفاصيل الحضور والانصراف */}
+                                    <td className="p-4">{row.type === 'present' ? <span className="font-mono font-black text-gray-800">{row.data.cin}</span> : '--'}</td>
+                                    <td className="p-4">{row.type === 'present' && row.data.cout ? <span className="font-mono font-black text-gray-800">{row.data.cout}</span> : '--'}</td>
 
-                                const matchingLeave = leaves.find(l => {
-                                    const start = new Date(l.start_date);
-                                    start.setHours(0,0,0,0);
-                                    const end = new Date(l.end_date);
-                                    end.setHours(0,0,0,0);
-                                    return currentDate >= start && currentDate <= end;
-                                });
+                                    {/* حالة الحضور */}
+                                    <td className="p-4">
+                                        {row.type === 'present' ? (
+                                            <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getColorClass(row.data.inStatusColor)}`}>{row.data.inStatus}</span>
+                                        ) : row.type === 'leave' ? (
+                                            <span className="text-purple-600 text-[10px] font-bold flex items-center gap-1">
+                                                <FileCheck className="w-3 h-3"/> {row.data.type}
+                                            </span>
+                                        ) : row.type === 'holiday' ? (
+                                            <span className="text-orange-600 text-[10px] font-bold flex items-center gap-1">
+                                                <PartyPopper className="w-3 h-3"/> {row.data.name}
+                                            </span>
+                                        ) : row.type === 'absent' ? (
+                                            <span className="text-red-500 text-xs font-bold flex items-center gap-1"><XCircle className="w-3 h-3"/> غياب</span>
+                                        ) : !row.isWorkDay && !row.isFuture ? (
+                                            <span className="text-gray-400 text-[10px] font-bold">راحة</span>
+                                        ) : '-'}
+                                    </td>
 
-                                const officialHoliday = holidays.find(h => h.date === dateStr);
+                                    {/* حالة الانصراف */}
+                                    <td className="p-4">
+                                        {row.type === 'present' && row.data.cout ? (
+                                            <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getColorClass(row.data.outStatusColor)}`}>{row.data.outStatus}</span>
+                                        ) : '-'}
+                                    </td>
 
-                                const isAbsent = !hasTimes && isWorkDay && !matchingLeave && !officialHoliday && !isFuture;
-
-                                return (
-                                    <tr 
-                                        key={dateStr} 
-                                        className={`
-                                            transition-colors
-                                            ${!isWorkDay ? 'bg-gray-50/50' : 'hover:bg-gray-50'}
-                                            ${isAbsent ? 'bg-red-50/30 cursor-pointer hover:bg-red-100/30' : ''}
-                                            ${matchingLeave ? 'bg-purple-50/30' : ''}
-                                            ${officialHoliday ? 'bg-orange-50/30' : ''}
-                                        `}
-                                        onClick={() => isAbsent && setSelectedAbsenceDate(dateStr)}
-                                    >
-                                        <td className="p-4 font-bold text-gray-700">{dateStr}</td>
-                                        <td className={`p-4 font-bold ${!isWorkDay ? 'text-gray-400' : 'text-gray-600'}`}>{dayName}</td>
-                                        <td className="p-4">{cin ? <span className="font-mono font-black text-gray-800">{cin}</span> : '--'}</td>
-                                        <td className="p-4">{cout ? <span className="font-mono font-black text-gray-800">{cout}</span> : '--'}</td>
-
-                                        <td className="p-4">
-                                            {cin ? (
-                                                <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getColorClass(inStatusColor)}`}>{inStatus}</span>
-                                            ) : matchingLeave ? (
-                                                <span className="text-purple-600 text-[10px] font-bold flex items-center gap-1">
-                                                    <FileCheck className="w-3 h-3"/> {matchingLeave.type}
-                                                </span>
-                                            ) : officialHoliday ? (
-                                                <span className="text-orange-600 text-[10px] font-bold flex items-center gap-1">
-                                                    <PartyPopper className="w-3 h-3"/> {officialHoliday.name}
-                                                </span>
-                                            ) : isAbsent ? (
-                                                <span className="text-red-500 text-xs font-bold flex items-center gap-1"><XCircle className="w-3 h-3"/> غياب</span>
-                                            ) : !isWorkDay && !isFuture ? (
-                                                <span className="text-gray-400 text-[10px] font-bold">راحة</span>
-                                            ) : '-'}
-                                        </td>
-
-                                        <td className="p-4">
-                                             {cout ? <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getColorClass(outStatusColor)}`}>{outStatus}</span> : '-'}
-                                        </td>
-
-                                        <td className="p-4 font-mono font-bold text-blue-600">
-                                            {hours > 0 ? (
-                                                <span>{hours} س {!isWorkDay && <span className="text-[10px] text-orange-500 mr-1">(إضافي)</span>}</span>
-                                            ) : matchingLeave ? (
-                                                <span className="text-purple-400 text-xs">طلب مقبول</span>
-                                            ) : officialHoliday ? (
-                                                <span className="text-orange-400 text-xs">عطلة رسمية</span>
-                                            ) : (
-                                                <span className="text-gray-400 text-xs">
-                                                    {!isWorkDay && !isFuture ? (isPartTime ? 'غير مطالب' : 'عطلة') : '-'}
-                                                </span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                                    {/* الحالة العامة */}
+                                    <td className="p-4 font-mono font-bold text-blue-600">
+                                        {row.type === 'present' && row.data.hours > 0 ? (
+                                            <span>{row.data.hours} س {!row.isWorkDay && <span className="text-[10px] text-orange-500 mr-1">(إضافي)</span>}</span>
+                                        ) : row.type === 'leave' ? (
+                                            <span className="text-purple-400 text-xs">طلب مقبول</span>
+                                        ) : row.type === 'holiday' ? (
+                                            <span className="text-orange-400 text-xs">عطلة رسمية</span>
+                                        ) : row.type === 'rest' ? (
+                                            <span className="text-gray-400 text-xs">
+                                                {!row.isWorkDay && !row.isFuture ? (isPartTime ? 'غير مطالب' : 'عطلة') : '-'}
+                                            </span>
+                                        ) : ''}
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
@@ -389,8 +371,8 @@ export default function StaffAttendance({ attendance: initialAttendance, selecte
                     <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl relative animate-in zoom-in-95 max-h-[90vh] overflow-y-auto custom-scrollbar">
                         <button onClick={() => setSelectedAbsenceDate(null)} className="absolute top-6 left-6 p-2 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><XCircle className="w-6 h-6"/></button>
                         <div className="p-8">
-                            <h3 className="text-xl font-black text-gray-800 mb-2 flex items-center gap-2"><Briefcase className="text-red-500 w-6 h-6"/> تبرير غياب يوم {selectedAbsenceDate}</h3>
-                            <StaffNewRequest employee={employee} refresh={() => { setSelectedAbsenceDate(null); }} initialDate={selectedAbsenceDate} />
+                            <h3 className="text-xl font-black text-gray-800 mb-2 flex items-center gap-2"> تبرير غياب يوم {selectedAbsenceDate}</h3>
+                            <StaffNewRequest employee={employee} refresh={handleRequestRefresh} initialDate={selectedAbsenceDate} />
                         </div>
                     </div>
                 </div>
