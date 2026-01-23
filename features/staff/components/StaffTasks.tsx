@@ -4,14 +4,12 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Clock, CheckCircle2, AlertCircle, Play, Eye, FileText, Loader2 } from 'lucide-react';
-// ✅ Import the unified notification function
-import { sendSystemNotification } from '../../../utils/pushNotifications';
 
 export default function StaffTasks({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
     const [notes, setNotes] = useState<{ [key: string]: string }>({});
 
-    // 1. Fetch Staff Tasks
+    // 1. جلب تكليفات الموظف
     const { data: tasks = [], isLoading } = useQuery({
         queryKey: ['staff_tasks', employee.employee_id],
         queryFn: async () => {
@@ -22,14 +20,14 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                 .order('created_at', { ascending: false });
             return data || [];
         },
-        refetchInterval: 10000, // Refresh every 10 seconds for new tasks
+        refetchInterval: 10000, 
     });
 
-    // 2. Change Status Mutation
+    // 2. تغيير الحالة (Mutation)
     const updateStatusMutation = useMutation({
         mutationFn: async ({ taskId, newStatus, replyNote }: { taskId: string, newStatus: string, replyNote?: string }) => {
             
-            // a) Update task status in DB
+            // أ) تحديث حالة المهمة في قاعدة البيانات
             const updates: any = { status: newStatus };
             if (newStatus === 'completed') {
                 updates.completed_at = new Date();
@@ -39,37 +37,58 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
             const { error: updateError } = await supabase.from('tasks').update(updates).eq('id', taskId);
             if (updateError) throw updateError;
 
-            // b) Prepare notification data
+            // ب) تجهيز بيانات التنبيه
             let notifTitle = '';
             let notifMsg = '';
 
             if (newStatus === 'acknowledged') {
                 notifTitle = '👀 تم العلم';
-                notifMsg = `قام الموظف ${employee.name} بالاطلاع على التكليف.`;
+                notifMsg = `قام ${employee.name} بالاطلاع على التكليف`;
             } else if (newStatus === 'in_progress') {
                 notifTitle = '🚀 جاري التنفيذ';
-                notifMsg = `بدأ الموظف ${employee.name} العمل على المهمة.`;
+                notifMsg = `بدأ ${employee.name} العمل على المهمة`;
             } else if (newStatus === 'completed') {
                 notifTitle = '✅ تم الانتهاء';
-                notifMsg = `أنهى الموظف ${employee.name} المهمة: ${replyNote || ''}`;
+                notifMsg = `أنهى ${employee.name} المهمة: ${replyNote || ''}`;
             }
 
-            // c) 🔥 Send notifications to all admins
-            const { data: admins } = await supabase.from('employees').select('employee_id').eq('role', 'admin');
+            // ج) 🔥 إرسال التنبيهات لكل من يحمل صلاحية 'admin' 🔥
+            // التعديل: نجلب id (UUID) و employee_id
+            const { data: admins } = await supabase
+                .from('employees')
+                .select('id, employee_id') // ✅ جلب المعرفين
+                .eq('role', 'admin');
             
             if (admins && admins.length > 0) {
-                await Promise.all(admins.map(admin => 
-                    sendSystemNotification(
-                        admin.employee_id,
-                        notifTitle,
-                        notifMsg,
-                        'task_update'
-                    )
-                ));
+                await Promise.all(admins.map(async (admin) => {
+                    
+                    // 1. إشعار داخلي (للجرس)
+                    await supabase.from('notifications').insert({
+                        user_id: admin.id || admin.employee_id, // نفضل UUID لضمان المطابقة
+                        title: notifTitle,
+                        message: notifMsg,
+                        type: 'task_update',
+                        sender_name: employee.name, // ✅ إضافة اسم المرسل
+                        is_read: false
+                    });
+
+                    // 2. إشعار خارجي (للموبايل) - يتطلب UUID
+                    if (admin.id) {
+                        await supabase.functions.invoke('send-push-notification', {
+                            body: {
+                                userId: admin.id, // ✅ استخدام UUID حصراً هنا
+                                title: notifTitle,
+                                body: notifMsg,
+                                url: '/tasks' // يوجه المدير لصفحة التكليفات
+                            }
+                        });
+                    }
+                }));
             }
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['staff_tasks'] });
+            toast.success('تم تحديث الحالة وإبلاغ المدير');
         },
         onError: (err: any) => {
             console.error(err);
@@ -77,12 +96,11 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
         }
     });
 
-    // Helper function to run mutation with toast promise
     const handleUpdate = (taskId: string, newStatus: string, replyNote?: string) => {
         toast.promise(
             updateStatusMutation.mutateAsync({ taskId, newStatus, replyNote }),
             {
-                loading: 'جاري التحديث وإبلاغ المدير...',
+                loading: 'جاري التحديث...',
                 success: 'تم التحديث بنجاح!',
                 error: 'فشل التحديث'
             }
@@ -108,7 +126,6 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
             {tasks.map((task: any) => (
                 <div key={task.id} className={`bg-white p-5 rounded-2xl border shadow-sm transition-all hover:shadow-md ${task.priority === 'urgent' ? 'border-red-200 ring-1 ring-red-100' : 'border-gray-100'}`}>
                     
-                    {/* Header */}
                     <div className="flex justify-between items-start mb-3">
                         <div>
                             <h4 className="font-bold text-gray-800 text-base flex items-center gap-2">
@@ -122,30 +139,19 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                         </span>
                     </div>
 
-                    {/* Actions Area */}
                     <div className="mt-4 pt-3 border-t border-gray-50 flex flex-col gap-3">
-                        
-                        {/* Status: Pending -> Button "Acknowledged" */}
                         {task.status === 'pending' && (
-                            <button 
-                                onClick={() => handleUpdate(task.id, 'acknowledged')}
-                                className="w-full bg-blue-50 text-blue-700 py-2.5 rounded-xl font-bold text-xs hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors active:scale-95"
-                            >
+                            <button onClick={() => handleUpdate(task.id, 'acknowledged')} className="w-full bg-blue-50 text-blue-700 py-2.5 rounded-xl font-bold text-xs hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors active:scale-95">
                                 <Eye className="w-4 h-4"/> تأكيد العلم والاستلام
                             </button>
                         )}
 
-                        {/* Status: Acknowledged -> Button "In Progress" */}
                         {task.status === 'acknowledged' && (
-                            <button 
-                                onClick={() => handleUpdate(task.id, 'in_progress')}
-                                className="w-full bg-orange-50 text-orange-700 py-2.5 rounded-xl font-bold text-xs hover:bg-orange-100 flex items-center justify-center gap-2 transition-colors active:scale-95"
-                            >
+                            <button onClick={() => handleUpdate(task.id, 'in_progress')} className="w-full bg-orange-50 text-orange-700 py-2.5 rounded-xl font-bold text-xs hover:bg-orange-100 flex items-center justify-center gap-2 transition-colors active:scale-95">
                                 <Play className="w-4 h-4"/> بدء التنفيذ
                             </button>
                         )}
 
-                        {/* Status: In Progress -> Completion Form */}
                         {task.status === 'in_progress' && (
                             <div className="space-y-3 animate-in fade-in">
                                 <textarea 
@@ -154,16 +160,12 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                                     value={notes[task.id] || ''}
                                     onChange={(e) => setNotes({...notes, [task.id]: e.target.value})}
                                 />
-                                <button 
-                                    onClick={() => handleUpdate(task.id, 'completed', notes[task.id])}
-                                    className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-green-700 flex items-center justify-center gap-2 transition-colors shadow-md shadow-green-200 active:scale-95"
-                                >
+                                <button onClick={() => handleUpdate(task.id, 'completed', notes[task.id])} className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-green-700 flex items-center justify-center gap-2 transition-colors shadow-md shadow-green-200 active:scale-95">
                                     <CheckCircle2 className="w-4 h-4"/> إبلاغ بالانتهاء
                                 </button>
                             </div>
                         )}
 
-                        {/* Status: Completed */}
                         {task.status === 'completed' && (
                             <div className="bg-green-50 p-3 rounded-xl border border-green-100 text-center">
                                 <span className="text-green-700 font-bold text-xs flex items-center justify-center gap-1 mb-1">
