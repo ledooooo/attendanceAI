@@ -4,6 +4,8 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Clock, CheckCircle2, AlertCircle, Play, Eye, FileText, Send, Loader2 } from 'lucide-react';
+// ✅ استيراد دالة التنبيهات الموحدة
+import { sendSystemNotification } from '../../../utils/sendNotification';
 
 export default function StaffTasks({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
@@ -37,7 +39,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
             const { error: updateError } = await supabase.from('tasks').update(updates).eq('id', taskId);
             if (updateError) throw updateError;
 
-            // ب) تجهيز التنبيه للمدير
+            // ب) تجهيز بيانات التنبيه
             let notifTitle = '';
             let notifMsg = '';
 
@@ -52,21 +54,18 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                 notifMsg = `أنهى الموظف ${employee.name} المهمة: ${replyNote || ''}`;
             }
 
-            // ج) إرسال التنبيه لكل من يحمل صلاحية 'admin'
+            // ج) 🔥 إرسال التنبيهات لكل من يحمل صلاحية 'admin'
             const { data: admins } = await supabase.from('employees').select('employee_id').eq('role', 'admin');
             
             if (admins && admins.length > 0) {
-                const notifications = admins.map(admin => ({
-                    user_id: admin.employee_id,
-                    title: notifTitle,
-                    message: notifMsg,
-                    type: 'task_update', // نوع التنبيه
-                    is_read: false,
-                    created_at: new Date()
-                }));
-
-                const { error: notifError } = await supabase.from('notifications').insert(notifications);
-                if (notifError) console.error("Notification Error:", notifError);
+                await Promise.all(admins.map(admin => 
+                    sendSystemNotification(
+                        admin.employee_id,
+                        notifTitle,
+                        notifMsg,
+                        'task_update'
+                    )
+                ));
             }
         },
         onSuccess: () => {
