@@ -6,13 +6,28 @@ import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
 import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications'; 
-// 1. ✅ استيراد Toaster
 import { Toaster } from 'react-hot-toast';
+
+// 1. ✅ استيراد مكتبة React Query
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+
+// 2. ✅ إعداد عميل التخزين المؤقت (Cache Client)
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // البيانات تبقى "طازجة" لمدة 5 دقائق
+      gcTime: 1000 * 60 * 30,   // الاحتفاظ بالبيانات في الذاكرة لمدة 30 دقيقة
+      refetchOnWindowFocus: false, // منع إعادة التحميل عند التنقل بين التبويبات
+      retry: 1, // المحاولة مرة واحدة فقط عند الفشل
+    },
+  },
+});
 
 const AppContent = () => {
   const { user, employeeProfile, loading, isAdmin } = useAuth();
 
-  // 1. تسجيل Service Worker
+  // تسجيل Service Worker
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
@@ -21,7 +36,7 @@ const AppContent = () => {
     }
   }, []);
 
-  // 2. 🔔 طلب إذن الإشعارات وحفظه
+  // طلب إذن الإشعارات
   useEffect(() => {
     if (user?.id) {
       const timer = setTimeout(() => {
@@ -31,7 +46,7 @@ const AppContent = () => {
     }
   }, [user?.id]);
 
-  // 3. 🛠️ حل مشكلة التعليق (Timeout)
+  // حل مشكلة التعليق (Timeout)
   useEffect(() => {
     let timer: any;
     if (loading) {
@@ -76,18 +91,23 @@ export default function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <AppContent />
-        
-        {/* 2. ✅ إعدادات التنبيهات العامة */}
-        <Toaster 
+        {/* 3. ✅ تغليف التطبيق بـ QueryClientProvider */}
+        <QueryClientProvider client={queryClient}>
+          
+          <AppContent />
+
+          {/* أداة المطورين (تظهر فقط في Localhost ولن تظهر للمستخدمين) */}
+          <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
+
+          <Toaster 
             position="top-center" 
             reverseOrder={false}
             toastOptions={{
                 duration: 4000,
                 style: {
-                    fontFamily: 'inherit', // ليرث الخط العربي من التطبيق
+                    fontFamily: 'inherit',
                     borderRadius: '16px',
-                    background: '#1f2937', // رمادي غامق
+                    background: '#1f2937',
                     color: '#fff',
                     padding: '12px 16px',
                     fontSize: '14px',
@@ -96,33 +116,19 @@ export default function App() {
                     zIndex: 99999,
                 },
                 success: {
-                    style: {
-                        background: '#10B981', // أخضر (Emerald)
-                        color: 'white',
-                    },
-                    iconTheme: {
-                        primary: 'white',
-                        secondary: '#10B981',
-                    },
+                    style: { background: '#10B981', color: 'white' },
+                    iconTheme: { primary: 'white', secondary: '#10B981' },
                 },
                 error: {
-                    style: {
-                        background: '#EF4444', // أحمر
-                        color: 'white',
-                    },
-                    iconTheme: {
-                        primary: 'white',
-                        secondary: '#EF4444',
-                    },
+                    style: { background: '#EF4444', color: 'white' },
+                    iconTheme: { primary: 'white', secondary: '#EF4444' },
                 },
                 loading: {
-                    style: {
-                        background: '#F3F4F6',
-                        color: '#374151',
-                    },
+                    style: { background: '#F3F4F6', color: '#374151' },
                 }
             }}
-        />
+          />
+        </QueryClientProvider>
       </NotificationProvider>
     </AuthProvider>
   );
