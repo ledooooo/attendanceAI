@@ -1,29 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { Award, Star, TrendingUp, Plus, Save, X, Edit, Trash2, CheckSquare, Loader2, Calendar, Search } from 'lucide-react';
+import React, { useState } from 'react';
+import { Award, Edit, Trash2, Plus, Save, X, Calendar, Search, Loader2 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, Evaluation } from '../../../types';
+import toast from 'react-hot-toast';
+// 1. ✅ استيراد React Query
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface Props {
-    evals: Evaluation[]; 
+    // evals: Evaluation[]; // لم نعد بحاجة لتمريرها كـ prop لأننا سنجلبها هنا
     employee?: Employee;
     isAdmin?: boolean;
     onUpdate?: () => void;
 }
 
-export default function StaffEvaluations({ evals: initialEvals, employee, isAdmin = false, onUpdate }: Props) {
-    // حالة لتخزين التقييمات
-    const [evals, setEvals] = useState<Evaluation[]>(initialEvals || []);
-    const [loadingData, setLoadingData] = useState(false);
-
-    // ✅ حالة جديدة: شهر العرض المختار
+export default function StaffEvaluations({ employee, isAdmin = false }: Props) {
+    const queryClient = useQueryClient();
+    
+    // UI State
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
-
     const [showForm, setShowForm] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [currentEvalId, setCurrentEvalId] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
-    
-    // الحالة الأولية للنموذج
+
+    // Initial Form State
     const initialFormState = {
         month: new Date().toISOString().slice(0, 7),
         score_appearance: 0,
@@ -38,37 +37,94 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
 
     const [formData, setFormData] = useState(initialFormState);
 
-    // --- جلب البيانات ---
-    useEffect(() => {
-        if (initialEvals && initialEvals.length > 0) {
-            setEvals(initialEvals);
-            return;
-        }
-
-        const fetchEvaluations = async () => {
-            if (!employee?.employee_id) return;
-            setLoadingData(true);
-            
+    // ------------------------------------------------------------------
+    // 1. 📥 جلب التقييمات (Query)
+    // ------------------------------------------------------------------
+    const { data: evals = [], isLoading } = useQuery({
+        queryKey: ['staff_evaluations', employee?.employee_id],
+        queryFn: async () => {
+            if (!employee?.employee_id) return [];
             const { data, error } = await supabase
                 .from('evaluations')
                 .select('*')
                 .eq('employee_id', employee.employee_id)
                 .order('month', { ascending: false });
+            
+            if (error) throw error;
+            return data as Evaluation[];
+        },
+        enabled: !!employee?.employee_id, // لا يعمل إلا بوجود موظف
+        staleTime: 1000 * 60 * 10, // البيانات صالحة لمدة 10 دقائق
+    });
 
-            if (!error && data) {
-                // @ts-ignore
-                setEvals(data);
+    // ------------------------------------------------------------------
+    // 2. 🛠️ الحفظ (Insert/Update Mutation)
+    // ------------------------------------------------------------------
+    const saveMutation = useMutation({
+        mutationFn: async (data: any) => {
+            const total = 
+                Number(data.score_appearance) + 
+                Number(data.score_attendance) + 
+                Number(data.score_quality) + 
+                Number(data.score_infection) + 
+                Number(data.score_training) + 
+                Number(data.score_records) + 
+                Number(data.score_tasks);
+
+            const payload = {
+                employee_id: employee?.employee_id,
+                month: data.month,
+                year: parseInt(data.month.split('-')[0]),
+                score_appearance: Number(data.score_appearance),
+                score_attendance: Number(data.score_attendance),
+                score_quality: Number(data.score_quality),
+                score_infection: Number(data.score_infection),
+                score_training: Number(data.score_training),
+                score_records: Number(data.score_records),
+                score_tasks: Number(data.score_tasks),
+                total_score: total,
+                notes: data.notes
+            };
+
+            if (editMode && currentEvalId) {
+                const { error } = await supabase.from('evaluations').update(payload).eq('id', currentEvalId);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('evaluations').insert(payload);
+                if (error) throw error;
             }
-            setLoadingData(false);
-        };
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['staff_evaluations'] });
+            toast.success(editMode ? 'تم تحديث التقييم بنجاح' : 'تم إضافة التقييم بنجاح');
+            setShowForm(false);
+            setEditMode(false);
+            setFormData(initialFormState);
+        },
+        onError: (err: any) => toast.error(`حدث خطأ: ${err.message}`)
+    });
 
-        fetchEvaluations();
-    }, [employee?.employee_id, initialEvals]);
+    // ------------------------------------------------------------------
+    // 3. 🗑️ الحذف (Delete Mutation)
+    // ------------------------------------------------------------------
+    const deleteMutation = useMutation({
+        mutationFn: async (id: string) => {
+            const { error } = await supabase.from('evaluations').delete().eq('id', id);
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['staff_evaluations'] });
+            toast.success('تم حذف التقييم');
+        },
+        onError: () => toast.error('فشل الحذف')
+    });
 
-    // ✅ تصفية التقييمات بناءً على الشهر المختار
+    // ------------------------------------------------------------------
+    // 4. 🎨 دوال المساعدة والعرض
+    // ------------------------------------------------------------------
+
     const filteredEvals = evals.filter(ev => ev.month === selectedMonth);
 
-    // دالة لفتح وضع التعديل
     const openEdit = (evalItem: any) => {
         setFormData({
             month: evalItem.month,
@@ -87,65 +143,15 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    // دالة الحفظ
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!employee) return;
-        setLoading(true);
-
-        const total = 
-            Number(formData.score_appearance) + 
-            Number(formData.score_attendance) + 
-            Number(formData.score_quality) + 
-            Number(formData.score_infection) + 
-            Number(formData.score_training) + 
-            Number(formData.score_records) + 
-            Number(formData.score_tasks);
-
-        const payload = {
-            employee_id: employee.employee_id,
-            month: formData.month,
-            year: parseInt(formData.month.split('-')[0]),
-            score_appearance: Number(formData.score_appearance),
-            score_attendance: Number(formData.score_attendance),
-            score_quality: Number(formData.score_quality),
-            score_infection: Number(formData.score_infection),
-            score_training: Number(formData.score_training),
-            score_records: Number(formData.score_records),
-            score_tasks: Number(formData.score_tasks),
-            total_score: total,
-            notes: formData.notes
-        };
-
-        try {
-            let error;
-            if (editMode && currentEvalId) {
-                const res = await supabase.from('evaluations').update(payload).eq('id', currentEvalId);
-                error = res.error;
-            } else {
-                const res = await supabase.from('evaluations').insert(payload);
-                error = res.error;
-            }
-
-            if (error) throw error;
-
-            alert(editMode ? 'تم تعديل التقييم بنجاح ✅' : 'تم إضافة التقييم بنجاح ✅');
-            setShowForm(false);
-            setEditMode(false);
-            setFormData(initialFormState);
-            if (onUpdate) onUpdate();
-
-        } catch (err: any) {
-            alert('حدث خطأ: ' + err.message);
-        } finally {
-            setLoading(false);
-        }
+        saveMutation.mutate(formData);
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('هل أنت متأكد من حذف هذا التقييم؟')) return;
-        const { error } = await supabase.from('evaluations').delete().eq('id', id);
-        if (!error && onUpdate) onUpdate();
+    const handleDelete = (id: string) => {
+        if (confirm('هل أنت متأكد من حذف هذا التقييم؟')) {
+            deleteMutation.mutate(id);
+        }
     };
 
     const currentTotal = 
@@ -157,8 +163,8 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
         Number(formData.score_records) + 
         Number(formData.score_tasks);
 
-    if (loadingData && !evals.length) {
-        return <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600"/></div>;
+    if (isLoading) {
+        return <div className="text-center py-10 flex flex-col items-center gap-2"><Loader2 className="w-8 h-8 animate-spin text-purple-600"/><span>جاري تحميل التقييمات...</span></div>;
     }
 
     return (
@@ -198,7 +204,7 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
 
             {/* Form (Admin Only) */}
             {showForm && isAdmin && (
-                <div className="bg-gray-50 border border-purple-200 rounded-[2.5rem] p-6 mb-8 shadow-sm relative overflow-hidden">
+                <div className="bg-gray-50 border border-purple-200 rounded-[2.5rem] p-6 mb-8 shadow-sm relative overflow-hidden animate-in fade-in">
                     <div className="absolute top-0 right-0 w-20 h-20 bg-purple-100 rounded-bl-full opacity-50 pointer-events-none"></div>
                     
                     <div className="flex justify-between items-center mb-6 relative z-10">
@@ -254,10 +260,11 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
 
                         <button 
                             type="submit" 
-                            disabled={loading}
+                            disabled={saveMutation.isPending}
                             className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 flex justify-center items-center gap-2 transition-all shadow-xl hover:shadow-2xl disabled:opacity-70"
                         >
-                            <Save className="w-5 h-5"/> {loading ? 'جاري الحفظ...' : 'حفظ التقييم'}
+                            {saveMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>} 
+                            {saveMutation.isPending ? 'جاري الحفظ...' : 'حفظ التقييم'}
                         </button>
                     </form>
                 </div>
@@ -321,10 +328,11 @@ export default function StaffEvaluations({ evals: initialEvals, employee, isAdmi
                                 </button>
                                 <button 
                                     onClick={() => handleDelete(ev.id)} 
-                                    className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors tooltip"
+                                    disabled={deleteMutation.isPending}
+                                    className="p-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors tooltip disabled:opacity-50"
                                     title="حذف"
                                 >
-                                    <Trash2 className="w-5 h-5"/>
+                                    {deleteMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Trash2 className="w-5 h-5"/>}
                                 </button>
                             </div>
                         )}
