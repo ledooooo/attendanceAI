@@ -7,7 +7,7 @@ import {
     Users, Clock, CalendarRange, ClipboardList, 
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
-    Database, BellRing, Smartphone, FileX, Loader2
+    Database, BellRing, Smartphone, FileX, Loader2, CheckSquare
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
@@ -29,7 +29,7 @@ import QualityDashboard from './components/QualityDashboard';
 import AdminLibraryManager from './components/AdminLibraryManager'; 
 import AdminDataReports from './components/AdminDataReports'; 
 import AbsenceReportTab from './components/AbsenceReportTab';
-
+import TasksManager from './components/TasksManager';
 // 1. ✅ استيراد React Query
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -153,6 +153,7 @@ export default function AdminDashboard() {
         { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
         { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
         { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
+        { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare },
         { 
             id: 'quality', 
             label: 'إدارة الجودة (OVR)', 
@@ -267,6 +268,7 @@ export default function AdminDashboard() {
                     {activeTab === 'settings' && <SettingsTab onUpdateName={() => queryClient.invalidateQueries({ queryKey: ['general_settings'] })} />}
                     {activeTab === 'send_reports' && <SendReportsTab />}
                     {activeTab === 'absence-report' && <AbsenceReportTab />}      
+                    {activeTab === 'tasks' && <TasksManager employees={employees} />}
                     
                     {/* 🔥 واجهة اختبار التنبيهات */}
                     {activeTab === 'test_push' && (
