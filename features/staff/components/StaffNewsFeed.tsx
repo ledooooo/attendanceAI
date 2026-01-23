@@ -1,20 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { NewsPost, NewsComment, Employee } from '../../../types';
-import toast from 'react-hot-toast'; // ✅ استيراد المكتبة
+import { Employee } from '../../../types';
+import toast from 'react-hot-toast';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, 
-    Reply, AtSign, X, Calendar, User, Sparkles
+    Reply, X, Calendar, Sparkles, Loader2
 } from 'lucide-react';
+// 1. ✅ استيراد React Query
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
-    const [posts, setPosts] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
+    
+    // UI State (حالات الواجهة فقط)
     const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
     const [replyTo, setReplyTo] = useState<{postId: string, commentId: string, name: string, userId: string} | null>(null);
     const [expandedPost, setExpandedPost] = useState<string | null>(null);
-    
-    // حالات التحكم في القوائم العائمة
     const [showPostReactions, setShowPostReactions] = useState<string | null>(null);
     const [showCommentReactions, setShowCommentReactions] = useState<string | null>(null);
 
@@ -26,17 +27,52 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         { e: '👍', l: 'تمام' }
     ];
 
-    useEffect(() => { fetchNews(); }, []);
+    // ------------------------------------------------------------------
+    // 1. 📥 جلب البيانات (Query)
+    // ------------------------------------------------------------------
+    const { data: posts = [], isLoading } = useQuery({
+        queryKey: ['news_feed'],
+        queryFn: async () => {
+            // جلب كل البيانات بالتوازي لسرعة أكبر
+            const [postsRes, commentsRes, pReactRes, cReactRes] = await Promise.all([
+                supabase.from('news_posts').select('*').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
+                supabase.from('news_comments').select('*').order('created_at', { ascending: true }),
+                supabase.from('post_reactions').select('*'),
+                supabase.from('comment_reactions').select('*')
+            ]);
 
-    // تنسيق التاريخ والوقت
-    const formatDateTime = (dateStr: string) => {
-        const date = new Date(dateStr);
-        return {
-            date: date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }),
-            time: date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
-        };
-    };
+            if (postsRes.error) throw postsRes.error;
 
+            const postsData = postsRes.data || [];
+            const commentsData = commentsRes.data || [];
+            const pReactions = pReactRes.data || [];
+            const cReactions = cReactRes.data || [];
+
+            // معالجة ودمج البيانات
+            return postsData.map(p => {
+                const postComments = commentsData.filter(c => c.post_id === p.id);
+                return {
+                    ...p,
+                    reactions: pReactions.filter(r => r.post_id === p.id),
+                    mainComments: postComments.filter(c => !c.parent_id).map(mc => ({
+                        ...mc,
+                        reactions: cReactions.filter(r => r.comment_id === mc.id),
+                        replies: postComments.filter(r => r.parent_id === mc.id).map(rep => ({
+                            ...rep,
+                            reactions: cReactions.filter(r => r.comment_id === rep.id)
+                        }))
+                    }))
+                };
+            });
+        },
+        staleTime: 1000 * 60 * 1, // تحديث كل دقيقة تلقائياً
+    });
+
+    // ------------------------------------------------------------------
+    // 2. 🛠️ العمليات (Mutations)
+    // ------------------------------------------------------------------
+
+    // أ) إرسال إشعار (دالة مساعدة)
     const sendNotification = async (recipientId: string, type: string, postId: string, message: string) => {
         if (recipientId === employee.employee_id) return;
         await supabase.from('notifications').insert({
@@ -45,87 +81,98 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         });
     };
 
-    const fetchNews = async () => {
-        setLoading(true);
-        try {
-            const { data: postsData } = await supabase.from('news_posts').select('*').order('is_pinned', { ascending: false }).order('created_at', { ascending: false });
-            const { data: commentsData } = await supabase.from('news_comments').select('*').order('created_at', { ascending: true });
-            const { data: pReactions } = await supabase.from('post_reactions').select('*');
-            const { data: cReactions } = await supabase.from('comment_reactions').select('*');
+    // ب) إضافة/حذف تفاعل
+    const reactionMutation = useMutation({
+        mutationFn: async ({ id, emoji, type, targetUserId }: { id: string, emoji: string, type: 'post' | 'comment', targetUserId: string }) => {
+            const table = type === 'post' ? 'post_reactions' : 'comment_reactions';
+            const field = type === 'post' ? 'post_id' : 'comment_id';
+            
+            // التحقق هل التفاعل موجود
+            const { data: existing } = await supabase.from(table)
+                .select('id')
+                .eq(field, id)
+                .eq('user_id', employee.employee_id)
+                .eq('emoji', emoji)
+                .maybeSingle();
 
-            if (postsData) {
-                const enriched = postsData.map(p => {
-                    const postComments = (commentsData || []).filter(c => c.post_id === p.id);
-                    return {
-                        ...p,
-                        reactions: (pReactions || []).filter(r => r.post_id === p.id),
-                        mainComments: postComments.filter(c => !c.parent_id).map(mc => ({
-                            ...mc,
-                            reactions: (cReactions || []).filter(r => r.comment_id === mc.id),
-                            replies: postComments.filter(r => r.parent_id === mc.id).map(rep => ({
-                                ...rep,
-                                reactions: (cReactions || []).filter(r => r.comment_id === rep.id)
-                            }))
-                        }))
-                    };
-                });
-                setPosts(enriched);
+            if (existing) {
+                await supabase.from(table).delete().eq('id', existing.id);
+                return { action: 'removed', emoji };
+            } else {
+                await supabase.from(table).insert({ [field]: id, user_id: employee.employee_id, user_name: employee.name, emoji });
+                // إرسال إشعار فقط عند الإضافة
+                sendNotification(targetUserId, 'reaction', id, `تفاعل ${employee.name} بـ ${emoji} على ${type === 'post' ? 'منشورك' : 'تعليقك'}`);
+                return { action: 'added', emoji };
             }
-        } catch (error) { 
-            console.error(error);
-            toast.error('فشل تحميل الأخبار');
-        } finally { setLoading(false); }
-    };
+        },
+        onSuccess: (data) => {
+            // تحديث البيانات فوراً
+            queryClient.invalidateQueries({ queryKey: ['news_feed'] });
+            if (data.action === 'added') toast.success(`تم التفاعل ${data.emoji}`, { duration: 1000 });
+            else toast('تم إزالة التفاعل', { icon: '↩️', duration: 1000 });
+            
+            setShowPostReactions(null);
+            setShowCommentReactions(null);
+        },
+        onError: () => toast.error('حدث خطأ في التفاعل')
+    });
 
-    const handleReaction = async (id: string, emoji: string, type: 'post' | 'comment', targetUserId: string) => {
-        const table = type === 'post' ? 'post_reactions' : 'comment_reactions';
-        const field = type === 'post' ? 'post_id' : 'comment_id';
-        const { data: existing } = await supabase.from(table).select('*').eq(field, id).eq('user_id', employee.employee_id).eq('emoji', emoji).maybeSingle();
-
-        if (existing) {
-            await supabase.from(table).delete().eq('id', existing.id);
-            toast.success('تم إزالة التفاعل', { icon: '↩️', duration: 1500 }); // ✅ تنبيه
-        } else {
-            await supabase.from(table).insert({ [field]: id, user_id: employee.employee_id, user_name: employee.name, emoji });
-            toast.success('تم التفاعل', { icon: emoji, duration: 1500 }); // ✅ تنبيه
-            sendNotification(targetUserId, 'reaction', id, `تفاعل ${employee.name} بـ ${emoji} على ${type === 'post' ? 'منشورك' : 'تعليقك'}`);
-        }
-        setShowPostReactions(null);
-        setShowCommentReactions(null);
-        fetchNews();
-    };
-
-    const handleSubmitComment = async (postId: string) => {
-        const text = commentText[postId]?.trim();
-        if (!text) {
-            toast.error('اكتب تعليقاً أولاً!'); // ✅ تنبيه خطأ
-            return;
-        }
-
-        const toastId = toast.loading('جاري نشر التعليق...'); // ✅ تنبيه تحميل
-
-        const payload: any = { post_id: postId, user_id: employee.employee_id, user_name: employee.name, comment_text: text };
-        if (replyTo && replyTo.postId === postId) payload.parent_id = replyTo.commentId;
-        
-        const { error } = await supabase.from('news_comments').insert(payload);
-        
-        if (!error) {
-            toast.success('تم النشر بنجاح!', { id: toastId }); // ✅ تحديث التنبيه لنجاح
-            if (replyTo) sendNotification(replyTo.userId, 'reply', postId, `ردَّ ${employee.name} على تعليقك`);
-            setCommentText({ ...commentText, [postId]: '' });
+    // ج) إضافة تعليق
+    const commentMutation = useMutation({
+        mutationFn: async ({ postId, text }: { postId: string, text: string }) => {
+            const payload: any = { 
+                post_id: postId, 
+                user_id: employee.employee_id, 
+                user_name: employee.name, 
+                comment_text: text 
+            };
+            if (replyTo && replyTo.postId === postId) payload.parent_id = replyTo.commentId;
+            
+            const { error } = await supabase.from('news_comments').insert(payload);
+            if (error) throw error;
+            return { postId };
+        },
+        onSuccess: (data) => {
+            toast.success('تم النشر بنجاح!');
+            if (replyTo) sendNotification(replyTo.userId, 'reply', data.postId, `ردَّ ${employee.name} على تعليقك`);
+            
+            // تنظيف الحقول وتحديث البيانات
+            setCommentText(prev => ({ ...prev, [data.postId]: '' }));
             setReplyTo(null);
-            fetchNews();
-        } else {
-            toast.error('فشل النشر، حاول مرة أخرى', { id: toastId }); // ✅ تحديث التنبيه لخطأ
-        }
+            queryClient.invalidateQueries({ queryKey: ['news_feed'] });
+        },
+        onError: () => toast.error('فشل نشر التعليق')
+    });
+
+    // ------------------------------------------------------------------
+    // 3. 🎨 واجهة المستخدم
+    // ------------------------------------------------------------------
+
+    const formatDateTime = (dateStr: string) => {
+        const date = new Date(dateStr);
+        return {
+            date: date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' }),
+            time: date.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+        };
     };
 
-    if (loading) return <div className="p-10 text-center text-gray-400 font-black animate-pulse px-4">جاري تحميل الأخبار...</div>;
+    const handleCommentSubmit = (postId: string) => {
+        const text = commentText[postId]?.trim();
+        if (!text) return toast.error('اكتب تعليقاً أولاً!');
+        
+        toast.promise(commentMutation.mutateAsync({ postId, text }), {
+            loading: 'جاري النشر...',
+            success: 'تم النشر!',
+            error: 'خطأ'
+        });
+    };
+
+    if (isLoading) return <div className="p-10 text-center text-gray-400 font-black animate-pulse px-4 flex flex-col items-center gap-2"><Loader2 className="animate-spin w-8 h-8 text-emerald-500"/> جاري تحميل الأخبار...</div>;
 
     return (
         <div className="max-w-4xl mx-auto pb-20 text-right space-y-6 px-2" dir="rtl">
             
-            {/* 1. قسم الترحيب (Compact) */}
+            {/* قسم الترحيب */}
             <div className="sticky top-4 z-40 bg-white/90 backdrop-blur-xl border border-emerald-100 rounded-3xl p-4 shadow-sm flex items-center justify-between overflow-hidden">
                 <div className="absolute -left-4 -top-4 w-20 h-20 bg-emerald-50 rounded-full blur-2xl opacity-60"></div>
                 <div className="relative flex items-center gap-3">
@@ -144,7 +191,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             </div>
 
             <div className="space-y-6">
-                {posts.map(post => {
+                {posts.map((post: any) => {
                     const postTime = formatDateTime(post.created_at);
                     return (
                         <div key={post.id} className={`bg-white rounded-3xl border transition-all duration-300 ${post.is_pinned ? 'border-emerald-200 ring-2 ring-emerald-50' : 'border-gray-100 shadow-sm'}`}>
@@ -154,7 +201,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                 </div>
                             )}
 
-                            {/* 2. محتوى المنشور (Padding مضغوط) */}
                             <div className="p-4 md:p-5">
                                 <div className="flex justify-between items-center mb-3">
                                     <div className="flex items-center gap-2 text-gray-400 text-[10px] font-bold">
@@ -181,7 +227,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                         {showPostReactions === post.id && (
                                             <div className="absolute bottom-full mb-2 right-0 bg-white shadow-xl border border-gray-100 rounded-full p-1.5 flex gap-2 animate-in fade-in slide-in-from-bottom-2 z-50">
                                                 {REACTION_OPTIONS.map(item => (
-                                                    <button key={item.e} onClick={() => handleReaction(post.id, item.e, 'post', post.created_by)} className="text-lg hover:scale-125 transition-transform active:scale-90">{item.e}</button>
+                                                    <button key={item.e} onClick={() => reactionMutation.mutate({ id: post.id, emoji: item.e, type: 'post', targetUserId: post.created_by })} className="text-lg hover:scale-125 transition-transform active:scale-90">{item.e}</button>
                                                 ))}
                                             </div>
                                         )}
@@ -200,9 +246,9 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                 </div>
                             </div>
 
-                            {/* 3. قسم التعليقات (مضغوط) */}
+                            {/* قسم التعليقات */}
                             {expandedPost === post.id && (
-                                <div className="bg-gray-50/50 p-4 border-t border-gray-50 rounded-b-3xl">
+                                <div className="bg-gray-50/50 p-4 border-t border-gray-50 rounded-b-3xl animate-in slide-in-from-top-2">
                                     <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pl-1">
                                         {post.mainComments.map((comment: any) => {
                                             const commentTime = formatDateTime(comment.created_at);
@@ -237,7 +283,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                                         {showCommentReactions === comment.id && (
                                                                             <div className="absolute bottom-full mb-1 right-0 bg-white shadow-lg border border-gray-100 rounded-full p-1.5 flex gap-2 z-50">
                                                                                 {REACTION_OPTIONS.map(item => (
-                                                                                    <button key={item.e} onClick={() => handleReaction(comment.id, item.e, 'comment', comment.user_id)} className="text-sm hover:scale-125 transition-transform">{item.e}</button>
+                                                                                    <button key={item.e} onClick={() => reactionMutation.mutate({ id: comment.id, emoji: item.e, type: 'comment', targetUserId: comment.user_id })} className="text-sm hover:scale-125 transition-transform">{item.e}</button>
                                                                                 ))}
                                                                             </div>
                                                                         )}
@@ -288,7 +334,9 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                 value={commentText[post.id] || ''}
                                                 onChange={(e) => setCommentText({...commentText, [post.id]: e.target.value})}
                                             />
-                                            <button onClick={() => handleSubmitComment(post.id)} className="bg-emerald-600 text-white p-3 rounded-xl shadow-md shadow-emerald-100 hover:scale-105 active:scale-95 transition-all"><Send size={16}/></button>
+                                            <button onClick={() => handleCommentSubmit(post.id)} disabled={commentMutation.isPending} className="bg-emerald-600 text-white p-3 rounded-xl shadow-md shadow-emerald-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
+                                                {commentMutation.isPending ? <Loader2 className="animate-spin w-4 h-4"/> : <Send size={16}/>}
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
