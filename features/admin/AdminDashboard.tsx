@@ -67,7 +67,7 @@ export default function AdminDashboard() {
         staleTime: Infinity,
     });
 
-    // ج) 🔥 جلب العدادات (Badges) للأزرار - تم إضافة عداد التكليفات
+    // ج) 🔥 جلب العدادات (Badges) للأزرار
     const { data: badges = { messages: 0, leaves: 0, ovr: 0, tasks: 0 } } = useQuery({
         queryKey: ['admin_badges'],
         queryFn: async () => {
@@ -85,7 +85,6 @@ export default function AdminDashboard() {
                     .eq('status', 'new'),
 
                 // 4. ✅ تحديثات التكليفات (إشعارات غير مقروءة من نوع task_update)
-                // هذا سيجلب الإشعارات التي أرسلها الموظف عند الرد (العلم/البدء/الإنهاء)
                 supabase.from('notifications')
                     .select('*', { count: 'exact', head: true })
                     .eq('type', 'task_update')
@@ -96,26 +95,34 @@ export default function AdminDashboard() {
                 messages: msg.count || 0,
                 leaves: leaves.count || 0,
                 ovr: ovr.count || 0,
-                tasks: taskUpdates.count || 0 // ✅ تخزين عدد تنبيهات التكليفات
+                tasks: taskUpdates.count || 0
             };
         },
         refetchInterval: 5000, // تحديث كل 5 ثواني
     });
 
     // ------------------------------------------------------------------
-    // 2. ⚡ التحديث اللحظي (Realtime)
+    // 2. ⚡ التحديث اللحظي + تصفير العدادات
     // ------------------------------------------------------------------
+    
+    // ✅ هذا هو الكود الجديد: تصفير بادج التكليفات عند فتح الصفحة
     useEffect(() => {
-        // اشتراك لتحديث العدادات عند حدوث أي تغيير في الجداول المهمة
-        const subscription = supabase
-            .channel('admin_badges_watch')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'ovr_reports' }, () => queryClient.invalidateQueries({ queryKey: ['admin_badges'] }))
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => queryClient.invalidateQueries({ queryKey: ['admin_badges'] }))
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => queryClient.invalidateQueries({ queryKey: ['admin_badges'] })) // ✅ تحديث عند وصول إشعار جديد
-            .subscribe();
+        if (activeTab === 'tasks' && badges.tasks > 0) {
+            const markTasksAsRead = async () => {
+                // نحدث حالة الإشعارات الخاصة بالتكليفات لتصبح "مقروءة" للمستخدم الحالي
+                await supabase
+                    .from('notifications')
+                    .update({ is_read: true })
+                    .eq('type', 'task_update')
+                    .eq('is_read', false); // نحدث فقط غير المقروءة لتقليل الضغط
+                
+                // تحديث العداد في الواجهة فوراً ليصبح 0
+                queryClient.invalidateQueries({ queryKey: ['admin_badges'] });
+            };
+            markTasksAsRead();
+        }
+    }, [activeTab, badges.tasks, queryClient]);
 
-        return () => { supabase.removeChannel(subscription); };
-    }, [queryClient]);
 
     // ------------------------------------------------------------------
     // 3. 🛠️ العمليات (Mutations)
@@ -173,7 +180,7 @@ export default function AdminDashboard() {
         { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges.messages },
         { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: badges.leaves },
         { id: 'quality', label: 'إدارة الجودة (OVR)', icon: AlertTriangle, badge: badges.ovr },
-        { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare, badge: badges.tasks }, // ✅ تم إضافة البادج هنا
+        { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare, badge: badges.tasks }, 
         
         { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
         { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
