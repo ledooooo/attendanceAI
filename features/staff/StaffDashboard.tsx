@@ -8,9 +8,9 @@ import { requestNotificationPermission } from '../../utils/pushNotifications';
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Info, Moon, FileText, 
+  Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Sparkles, Calendar
+  Sparkles, Calendar 
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -31,6 +31,7 @@ import StaffOVR from './components/StaffOVR';
 import ShiftRequestsTab from './components/ShiftRequestsTab';
 import QualityDashboard from '../admin/components/QualityDashboard'; 
 import StaffLibrary from './components/StaffLibrary';
+import StaffTasks from './components/StaffTasks';
 
 interface Props {
   employee: Employee;
@@ -197,6 +198,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
     { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle },
+    { id: 'tasks', label: 'التكليفات', icon: ListTodo },
     { id: 'requests-history', label: 'سجل الطلبات', icon: List },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
@@ -382,6 +384,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'links' && <StaffLinksTab />}
+                    {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
                     {activeTab === 'evaluations' && <StaffEvaluations evals={evaluations} employee={employee} />}
                     {activeTab === 'messages' && <StaffMessages messages={[]} employee={employee} currentUserId={employee.employee_id} />}
