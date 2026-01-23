@@ -1,41 +1,41 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Employee, LeaveRequest } from '../../../types';
+import { Employee } from '../../../types';
+import toast from 'react-hot-toast';
 import { 
-    CheckCircle2, XCircle, Clock, User, FileText, 
-    Check, X, Filter, Search, Calendar, AlertCircle 
+    CheckCircle2, Clock, User, FileText, 
+    Check, X, Filter, Search, Calendar, AlertCircle, Loader2
 } from 'lucide-react';
+// 1. ✅ استيراد React Query
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function DepartmentRequests({ hod }: { hod: Employee }) {
-    const [requests, setRequests] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
 
-    // --- حالات الفلترة ---
+    // --- حالات الفلترة (Local UI State) ---
     const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7));
     const [filterStatus, setFilterStatus] = useState('all');
     const [filterType, setFilterType] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
 
-    // جلب الطلبات
-    const fetchDeptRequests = async () => {
-        setLoading(true);
-        try {
-            // 1. جلب موظفي القسم (نفس التخصص) مع استبعاد رئيس القسم
+    // ------------------------------------------------------------------
+    // 1. 📥 جلب طلبات القسم (Query)
+    // ------------------------------------------------------------------
+    const { data: requests = [], isLoading } = useQuery({
+        queryKey: ['dept_requests', hod.specialty, filterMonth], // مفتاح الكاش يعتمد على التخصص والشهر
+        queryFn: async () => {
+            // أ) جلب موظفي القسم
             const { data: deptEmployees } = await supabase
                 .from('employees')
                 .select('employee_id, name')
                 .eq('specialty', hod.specialty)
                 .neq('employee_id', hod.employee_id);
 
-            if (!deptEmployees || deptEmployees.length === 0) {
-                setRequests([]);
-                setLoading(false);
-                return;
-            }
+            if (!deptEmployees || deptEmployees.length === 0) return [];
 
             const empIds = deptEmployees.map(e => e.employee_id);
 
-            // 2. جلب الطلبات بناءً على الشهر المحدد
+            // ب) جلب الطلبات للشهر المحدد
             const startOfMonth = `${filterMonth}-01`;
             const endOfMonth = `${filterMonth}-31`;
 
@@ -47,8 +47,8 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                 .lte('start_date', endOfMonth)
                 .order('created_at', { ascending: false });
 
-            // 3. دمج أسماء الموظفين
-            const enrichedRequests = (reqs || []).map(r => {
+            // ج) دمج الأسماء مع الطلبات
+            return (reqs || []).map(r => {
                 const emp = deptEmployees.find(e => e.employee_id === r.employee_id);
                 return { 
                     ...r, 
@@ -56,21 +56,50 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                     employee_code: r.employee_id 
                 };
             });
+        },
+        staleTime: 1000 * 60 * 5, // البيانات صالحة لمدة 5 دقائق
+    });
 
-            setRequests(enrichedRequests);
-        } catch (error) {
-            console.error("Error fetching dept requests:", error);
-        } finally {
-            setLoading(false);
+    // ------------------------------------------------------------------
+    // 2. 🛠️ اتخاذ الإجراء (Mutation)
+    // ------------------------------------------------------------------
+    const actionMutation = useMutation({
+        mutationFn: async ({ id, action }: { id: string, action: 'approve' | 'reject' }) => {
+            const newStatus = action === 'approve' ? 'موافقة_رئيس_القسم' : 'مرفوض';
+            
+            const { error } = await supabase
+                .from('leave_requests')
+                .update({ 
+                    status: newStatus,
+                    approved_by: hod.name 
+                })
+                .eq('id', id);
+
+            if (error) throw error;
+            return { action, newStatus };
+        },
+        onSuccess: (data) => {
+            // تحديث القائمة فوراً
+            queryClient.invalidateQueries({ queryKey: ['dept_requests'] });
+            
+            if (data.action === 'approve') toast.success('تمت الموافقة ورفع الطلب للمدير');
+            else toast.error('تم رفض الطلب');
+        },
+        onError: () => toast.error('حدث خطأ أثناء تنفيذ الإجراء')
+    });
+
+    const handleAction = (id: string, action: 'approve' | 'reject') => {
+        const confirmMsg = action === 'approve' ? 'الموافقة المبدئية ورفعه للمدير' : 'رفض الطلب نهائياً';
+        if (confirm(`هل أنت متأكد من ${confirmMsg}؟`)) {
+            actionMutation.mutate({ id, action });
         }
     };
 
-    useEffect(() => {
-        if (hod) fetchDeptRequests();
-    }, [hod, filterMonth]);
+    // ------------------------------------------------------------------
+    // 3. 🎨 المنطق والفلترة (UI Logic)
+    // ------------------------------------------------------------------
 
-    // تنفيذ الفلترة المحلية
-    const filteredRequests = requests.filter(req => {
+    const filteredRequests = requests.filter((req: any) => {
         if (filterStatus !== 'all' && req.status !== filterStatus) return false;
         if (filterType !== 'all' && req.type !== filterType) return false;
         if (searchTerm) {
@@ -82,30 +111,6 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
         return true;
     });
 
-    // دالة اتخاذ القرار (تعديل الحالة إلى "موافقة رئيس القسم")
-    const handleAction = async (id: string, action: 'approve' | 'reject') => {
-        const newStatus = action === 'approve' ? 'موافقة_رئيس_القسم' : 'مرفوض';
-        const confirmMsg = action === 'approve' ? 'الموافقة المبدئية ورفعه للمدير' : 'رفض الطلب نهائياً';
-
-        if (!confirm(`هل أنت متأكد من ${confirmMsg}؟`)) return;
-
-        const { error } = await supabase
-            .from('leave_requests')
-            .update({ 
-                status: newStatus,
-                approved_by: hod.name // تسجيل اسم رئيس القسم
-            })
-            .eq('id', id);
-
-        if (!error) {
-            setRequests(prev => prev.map(r => r.id === id ? { ...r, status: newStatus, approved_by: hod.name } : r));
-            alert('تم تسجيل الإجراء بنجاح');
-        } else {
-            alert('حدث خطأ أثناء التحديث');
-        }
-    };
-
-    // ألوان الحالة
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'مقبول': return 'bg-green-100 text-green-700 border-green-200';
@@ -185,8 +190,11 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
             </div>
 
             {/* Requests List */}
-            {loading ? (
-                <div className="text-center py-10 text-gray-400">جاري تحميل البيانات...</div>
+            {isLoading ? (
+                <div className="text-center py-12 text-gray-400 flex flex-col items-center gap-2">
+                    <Loader2 className="w-8 h-8 animate-spin text-emerald-500"/>
+                    <span>جاري تحميل الطلبات...</span>
+                </div>
             ) : filteredRequests.length === 0 ? (
                 <div className="text-center py-16 bg-white rounded-[30px] border border-dashed border-gray-200">
                     <CheckCircle2 className="w-16 h-16 text-gray-300 mx-auto mb-4"/>
@@ -194,7 +202,7 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                 </div>
             ) : (
                 <div className="grid gap-4">
-                    {filteredRequests.map(req => (
+                    {filteredRequests.map((req: any) => (
                         <div key={req.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
                             {/* Card Header */}
                             <div className="flex justify-between items-start mb-3">
@@ -247,15 +255,17 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                                 <div className="flex gap-2 pt-2 border-t border-gray-50">
                                     <button 
                                         onClick={() => handleAction(req.id, 'approve')}
-                                        className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-700 flex items-center justify-center gap-1 transition-all shadow-sm active:scale-95"
+                                        disabled={actionMutation.isPending}
+                                        className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-700 flex items-center justify-center gap-1 transition-all shadow-sm active:scale-95 disabled:opacity-50"
                                     >
-                                        <Check className="w-4 h-4"/> موافقة ورفع للمدير
+                                        {actionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin"/> : <Check className="w-4 h-4"/>} موافقة ورفع للمدير
                                     </button>
                                     <button 
                                         onClick={() => handleAction(req.id, 'reject')}
-                                        className="flex-1 bg-white text-red-600 border border-red-100 py-2.5 rounded-xl text-xs font-bold hover:bg-red-50 flex items-center justify-center gap-1 transition-all active:scale-95"
+                                        disabled={actionMutation.isPending}
+                                        className="flex-1 bg-white text-red-600 border border-red-100 py-2.5 rounded-xl text-xs font-bold hover:bg-red-50 flex items-center justify-center gap-1 transition-all active:scale-95 disabled:opacity-50"
                                     >
-                                        <X className="w-4 h-4"/> رفض
+                                        {actionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin"/> : <X className="w-4 h-4"/>} رفض
                                     </button>
                                 </div>
                             ) : (
