@@ -3,15 +3,15 @@ import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Clock, CheckCircle2, AlertCircle, Play, Eye, FileText, Send, Loader2 } from 'lucide-react';
-// ✅ استيراد دالة التنبيهات الموحدة
+import { Clock, CheckCircle2, AlertCircle, Play, Eye, FileText, Loader2 } from 'lucide-react';
+// ✅ Import the unified notification function
 import { sendSystemNotification } from '../../../utils/pushNotifications';
 
 export default function StaffTasks({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
     const [notes, setNotes] = useState<{ [key: string]: string }>({});
 
-    // 1. جلب تكليفات الموظف
+    // 1. Fetch Staff Tasks
     const { data: tasks = [], isLoading } = useQuery({
         queryKey: ['staff_tasks', employee.employee_id],
         queryFn: async () => {
@@ -22,14 +22,14 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                 .order('created_at', { ascending: false });
             return data || [];
         },
-        refetchInterval: 10000, // تحديث كل 10 ثواني لجلب المهام الجديدة
+        refetchInterval: 10000, // Refresh every 10 seconds for new tasks
     });
 
-    // 2. تغيير الحالة (Mutation)
+    // 2. Change Status Mutation
     const updateStatusMutation = useMutation({
         mutationFn: async ({ taskId, newStatus, replyNote }: { taskId: string, newStatus: string, replyNote?: string }) => {
             
-            // أ) تحديث حالة المهمة في قاعدة البيانات
+            // a) Update task status in DB
             const updates: any = { status: newStatus };
             if (newStatus === 'completed') {
                 updates.completed_at = new Date();
@@ -39,7 +39,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
             const { error: updateError } = await supabase.from('tasks').update(updates).eq('id', taskId);
             if (updateError) throw updateError;
 
-            // ب) تجهيز بيانات التنبيه
+            // b) Prepare notification data
             let notifTitle = '';
             let notifMsg = '';
 
@@ -54,7 +54,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                 notifMsg = `أنهى الموظف ${employee.name} المهمة: ${replyNote || ''}`;
             }
 
-            // ج) 🔥 إرسال التنبيهات لكل من يحمل صلاحية 'admin'
+            // c) 🔥 Send notifications to all admins
             const { data: admins } = await supabase.from('employees').select('employee_id').eq('role', 'admin');
             
             if (admins && admins.length > 0) {
@@ -77,7 +77,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
         }
     });
 
-    // دالة مساعدة لتشغيل الـ Mutation مع Toast
+    // Helper function to run mutation with toast promise
     const handleUpdate = (taskId: string, newStatus: string, replyNote?: string) => {
         toast.promise(
             updateStatusMutation.mutateAsync({ taskId, newStatus, replyNote }),
@@ -125,7 +125,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                     {/* Actions Area */}
                     <div className="mt-4 pt-3 border-t border-gray-50 flex flex-col gap-3">
                         
-                        {/* الحالة 1: جديد (معلق) -> زر "تم العلم" */}
+                        {/* Status: Pending -> Button "Acknowledged" */}
                         {task.status === 'pending' && (
                             <button 
                                 onClick={() => handleUpdate(task.id, 'acknowledged')}
@@ -135,7 +135,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                             </button>
                         )}
 
-                        {/* الحالة 2: تم العلم -> زر "جاري التنفيذ" */}
+                        {/* Status: Acknowledged -> Button "In Progress" */}
                         {task.status === 'acknowledged' && (
                             <button 
                                 onClick={() => handleUpdate(task.id, 'in_progress')}
@@ -145,7 +145,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                             </button>
                         )}
 
-                        {/* الحالة 3: جاري التنفيذ -> نموذج الإنتهاء */}
+                        {/* Status: In Progress -> Completion Form */}
                         {task.status === 'in_progress' && (
                             <div className="space-y-3 animate-in fade-in">
                                 <textarea 
@@ -163,7 +163,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                             </div>
                         )}
 
-                        {/* الحالة 4: منتهي */}
+                        {/* Status: Completed */}
                         {task.status === 'completed' && (
                             <div className="bg-green-50 p-3 rounded-xl border border-green-100 text-center">
                                 <span className="text-green-700 font-bold text-xs flex items-center justify-center gap-1 mb-1">
