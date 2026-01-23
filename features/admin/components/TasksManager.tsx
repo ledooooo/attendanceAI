@@ -8,8 +8,7 @@ import {
     Filter, Users, RefreshCw, Layers, CheckSquare, XCircle
 } from 'lucide-react';
 // ✅ استيراد دالة التنبيهات الموحدة
-import { sendSystemNotification } from '../../../utils/sendNotification';
-
+import { sendSystemNotification } from '../../../utils/pushNotifications';
 export default function TasksManager({ employees }: { employees: Employee[] }) {
     const queryClient = useQueryClient();
     
