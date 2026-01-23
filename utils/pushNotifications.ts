@@ -1,6 +1,8 @@
 import { supabase } from '../supabaseClient';
 
-// يفضل وضع المفتاح في ملف .env باسم VITE_VAPID_PUBLIC_KEY
+// ---------------------------------------------------------
+// 1. الجزء الخاص بتسجيل الجهاز (موجود سابقاً)
+// ---------------------------------------------------------
 const VAPID_PUBLIC_KEY = 'BM0IXAut6bPbAvWuDvT7hlT9Twhl1j_BtSBo6UEUplxqXAnJ3XtkD30SvDe0w-B-KjmVqwOknpfqhTIVMwQmurk';
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -23,21 +25,16 @@ export async function requestNotificationPermission(userId: string) {
   }
 
   try {
-    // 1. طلب الإذن من المستخدم
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
       console.warn('⚠️ المستخدم رفض إذن الإشعارات');
       return false;
     }
 
-    // 2. تسجيل Service Worker (أو التأكد من وجوده)
-    // نستخدم register مباشرة لضمان وجوده، ثم ننتظر ready
     const registration = await navigator.serviceWorker.register('/sw.js');
     await navigator.serviceWorker.ready;
 
-    // 3. الاشتراك في خدمة الدفع (Push Service)
     let subscription = await registration.pushManager.getSubscription();
-    
     if (!subscription) {
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
@@ -45,20 +42,17 @@ export async function requestNotificationPermission(userId: string) {
       });
     }
 
-    // 4. تجهيز البيانات للإرسال
-    // تحويل الاشتراك إلى كائن JSON عادي ليتم تخزينه في قاعدة البيانات
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
     console.log("📡 جاري حفظ الاشتراك في Supabase...");
 
-    // 5. الحفظ في Supabase
     const { error } = await supabase
       .from('push_subscriptions')
       .upsert({
         user_id: userId,
-        subscription_data: subscriptionJson, // JSONb column
-        endpoint: endpoint, // Text column (Primary Key part or Unique)
+        subscription_data: subscriptionJson,
+        endpoint: endpoint,
         device_info: {
              userAgent: navigator.userAgent,
              platform: navigator.platform,
@@ -66,19 +60,59 @@ export async function requestNotificationPermission(userId: string) {
         },
         updated_at: new Date().toISOString()
       }, {
-        onConflict: 'user_id, endpoint' // ✅ يجب أن يكون هناك Unique Index في الجدول على هذين الحقلين
+        onConflict: 'user_id, endpoint'
       });
 
     if (error) {
-      console.error('❌ فشل الحفظ في قاعدة البيانات:', error.message);
+      console.error('❌ فشل الحفظ:', error.message);
       return false;
     } 
     
-    console.log('✅ تم تفعيل الإشعارات وحفظ الاشتراك بنجاح!');
     return true;
 
   } catch (error) {
-    console.error('❌ خطأ غير متوقع أثناء تفعيل الإشعارات:', error);
+    console.error('❌ خطأ غير متوقع:', error);
     return false;
   }
 }
+
+// ---------------------------------------------------------
+// 2. ✅ الجزء الجديد: دالة إرسال الإشعارات الموحدة
+// ---------------------------------------------------------
+export const sendSystemNotification = async (
+  userId: string,
+  title: string,
+  message: string,
+  type: 'task' | 'task_update' | 'general' = 'general'
+) => {
+  try {
+    // أ) إرسال إشعار داخلي (Database)
+    const { error: dbError } = await supabase.from('notifications').insert({
+      user_id: userId,
+      title,
+      message,
+      type,
+      is_read: false,
+      created_at: new Date().toISOString()
+    });
+
+    if (dbError) console.error('Database Notification Error:', dbError);
+
+    // ب) إرسال إشعار خارجي (Push Notification) عبر Edge Function
+    try {
+        await supabase.functions.invoke('send-push-notification', {
+          body: {
+            userId: userId,
+            title: title,
+            body: message,
+            url: type === 'task' ? '/staff/tasks' : '/admin/tasks'
+          }
+        });
+    } catch (pushError) {
+        console.warn('Push failed:', pushError);
+    }
+
+  } catch (error) {
+    console.error('Notification System Error:', error);
+  }
+};
