@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { NewsPost, NewsComment, Employee } from '../../../types';
+import toast from 'react-hot-toast'; // ✅ استيراد المكتبة
 import { 
     Pin, MessageCircle, Send, Clock, Heart, 
     Reply, AtSign, X, Calendar, User, Sparkles
@@ -70,7 +71,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 });
                 setPosts(enriched);
             }
-        } catch (error) { console.error(error); } finally { setLoading(false); }
+        } catch (error) { 
+            console.error(error);
+            toast.error('فشل تحميل الأخبار');
+        } finally { setLoading(false); }
     };
 
     const handleReaction = async (id: string, emoji: string, type: 'post' | 'comment', targetUserId: string) => {
@@ -80,8 +84,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
 
         if (existing) {
             await supabase.from(table).delete().eq('id', existing.id);
+            toast.success('تم إزالة التفاعل', { icon: '↩️', duration: 1500 }); // ✅ تنبيه
         } else {
             await supabase.from(table).insert({ [field]: id, user_id: employee.employee_id, user_name: employee.name, emoji });
+            toast.success('تم التفاعل', { icon: emoji, duration: 1500 }); // ✅ تنبيه
             sendNotification(targetUserId, 'reaction', id, `تفاعل ${employee.name} بـ ${emoji} على ${type === 'post' ? 'منشورك' : 'تعليقك'}`);
         }
         setShowPostReactions(null);
@@ -91,15 +97,26 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
 
     const handleSubmitComment = async (postId: string) => {
         const text = commentText[postId]?.trim();
-        if (!text) return;
+        if (!text) {
+            toast.error('اكتب تعليقاً أولاً!'); // ✅ تنبيه خطأ
+            return;
+        }
+
+        const toastId = toast.loading('جاري نشر التعليق...'); // ✅ تنبيه تحميل
+
         const payload: any = { post_id: postId, user_id: employee.employee_id, user_name: employee.name, comment_text: text };
         if (replyTo && replyTo.postId === postId) payload.parent_id = replyTo.commentId;
+        
         const { error } = await supabase.from('news_comments').insert(payload);
+        
         if (!error) {
+            toast.success('تم النشر بنجاح!', { id: toastId }); // ✅ تحديث التنبيه لنجاح
             if (replyTo) sendNotification(replyTo.userId, 'reply', postId, `ردَّ ${employee.name} على تعليقك`);
             setCommentText({ ...commentText, [postId]: '' });
             setReplyTo(null);
             fetchNews();
+        } else {
+            toast.error('فشل النشر، حاول مرة أخرى', { id: toastId }); // ✅ تحديث التنبيه لخطأ
         }
     };
 
