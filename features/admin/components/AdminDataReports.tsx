@@ -3,9 +3,11 @@ import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord } from '../../../types';
 import { 
     Users, BarChart3, Clock, Printer, 
-    CheckSquare, Square, Type
+    CheckSquare, Square, Type, Loader2
 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
+// 1. ✅ استيراد React Query
+import { useQuery } from '@tanstack/react-query';
 
 interface Props { employees: Employee[] }
 
@@ -13,37 +15,46 @@ type ReportView = 'staff_names' | 'staff_counts' | 'daily_io';
 
 export default function AdminDataReports({ employees }: Props) {
     const [view, setView] = useState<ReportView>('staff_names');
-    const [loading, setLoading] = useState(false);
-    const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
     
+    // حالات الواجهة (UI State)
     const [selectedRows, setSelectedRows] = useState<string[]>([]);
-    const [fontSize, setFontSize] = useState(8.5); // تصغير افتراضي طفيف للخط
+    const [fontSize, setFontSize] = useState(8.5);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [filterStatus, setFilterStatus] = useState('all');
     const [sortBy, setSortBy] = useState<'name' | 'specialty'>('name');
 
     const printRef = useRef(null);
 
-    useEffect(() => {
-        fetchAttendance();
-    }, [date]);
-
-    const fetchAttendance = async () => {
-        setLoading(true);
-        try {
-            const { data: att } = await supabase.from('attendance')
+    // ------------------------------------------------------------------
+    // 1. 📥 جلب بيانات الحضور باستخدام React Query
+    // ------------------------------------------------------------------
+    const { data: attendance = [], isLoading } = useQuery({
+        queryKey: ['admin_daily_attendance', date], // مفتاح الكاش (يتغير بتغير التاريخ)
+        queryFn: async () => {
+            const { data } = await supabase
+                .from('attendance')
                 .select('*')
                 .eq('date', date);
-            
-            setAttendance(att || []);
-            if (employees) {
-                const currentIds = employees
-                    .filter(e => filterStatus === 'all' || e.status === filterStatus)
-                    .map(e => e.employee_id);
-                setSelectedRows(currentIds);
-            }
-        } finally { setLoading(false); }
-    };
+            return data as AttendanceRecord[] || [];
+        },
+        staleTime: 1000 * 60 * 5, // البيانات صالحة لمدة 5 دقائق
+    });
+
+    // ------------------------------------------------------------------
+    // 2. 🔄 تحديث التحديد الافتراضي عند تغيير الفلاتر
+    // ------------------------------------------------------------------
+    useEffect(() => {
+        if (employees) {
+            const currentIds = employees
+                .filter(e => filterStatus === 'all' || e.status === filterStatus)
+                .map(e => e.employee_id);
+            setSelectedRows(currentIds);
+        }
+    }, [employees, filterStatus]);
+
+    // ------------------------------------------------------------------
+    // 3. 🧮 العمليات الحسابية (Memoized Logic)
+    // ------------------------------------------------------------------
 
     const toggleRow = (id: string) => {
         setSelectedRows(prev => 
@@ -113,6 +124,7 @@ export default function AdminDataReports({ employees }: Props) {
 
     return (
         <div className="space-y-4 text-right pb-10" dir="rtl">
+            
             {/* التبويبات */}
             <div className="flex bg-gray-100 p-1.5 rounded-2xl no-print overflow-x-auto shadow-inner border border-gray-200">
                 {[
@@ -139,8 +151,11 @@ export default function AdminDataReports({ employees }: Props) {
                     </div>
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-[10px] font-black text-gray-400 mb-1">تاريخ التقرير</label>
-                        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-                               className="w-full p-2 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 text-sm focus:ring-2 focus:ring-indigo-500" />
+                        <div className="relative">
+                            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+                                className="w-full p-2 bg-gray-50 rounded-xl font-bold border-none ring-1 ring-gray-100 text-sm focus:ring-2 focus:ring-indigo-500 pl-8" />
+                            {isLoading && <Loader2 className="absolute left-2 top-2.5 w-4 h-4 animate-spin text-indigo-500" />}
+                        </div>
                     </div>
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-[10px] font-black text-gray-400 mb-1">حالة القيد</label>
@@ -257,7 +272,7 @@ export default function AdminDataReports({ employees }: Props) {
                                 <tr className="bg-gray-100 font-black h-8">
                                     <th className="p-1 border border-black text-center no-print w-10"><CheckSquare size={16} /></th>
                                     <th className="p-1 border border-black text-center w-10">م</th>
-                                    <th className="p-1 border border-black text-right">الاسم بالكامل</th>
+                                    <th className="p-1 border border-black text-right">اسم الموظف بالكامل</th>
                                     <th className="p-1 border border-black text-center font-mono w-32">الرقم القومي</th>
                                     <th className="p-1 border border-black text-center w-24">التخصص</th>
                                     <th className="p-1 border border-black text-center font-mono w-28">التليفون</th>
