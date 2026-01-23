@@ -7,47 +7,48 @@ import {
     Send, Clock, CheckCircle2, Loader2, AlertCircle, Eye, Play, 
     Filter, Users, RefreshCw, Layers, CheckSquare, XCircle
 } from 'lucide-react';
-// ✅ استيراد دالة التنبيهات الموحدة
+// ✅ Import the unified notification function
 import { sendSystemNotification } from '../../../utils/pushNotifications';
+
 export default function TasksManager({ employees }: { employees: Employee[] }) {
     const queryClient = useQueryClient();
     
-    // --- حالات النموذج ---
+    // --- Form States ---
     const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
     const [title, setTitle] = useState('');
     const [desc, setDesc] = useState('');
     const [priority, setPriority] = useState('normal');
 
-    // --- حالات الفلترة والاختيار ---
+    // --- Filter & Selection States ---
     const [targetType, setTargetType] = useState<'individual' | 'department' | 'all'>('individual');
     const [filterSpecialty, setFilterSpecialty] = useState('all');
     const [filterStatus, setFilterStatus] = useState('active'); // active, all
     const [selectedEmp, setSelectedEmp] = useState('');
     const [selectedDept, setSelectedDept] = useState('');
 
-    // 1. 📥 جلب سجل التكليفات (History Query)
+    // 1. 📥 Fetch Tasks History (Query)
     const { data: tasks = [], isLoading: loadingHistory, refetch, isRefetching } = useQuery({
         queryKey: ['admin_tasks_history'],
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('tasks')
-                .select('*, employee:employees(name, specialty)') // جلب اسم وتخصص الموظف
+                .select('*, employee:employees(name, specialty)') // Join employee info
                 .order('created_at', { ascending: false });
             
             if (error) throw error;
             return data || [];
         },
-        refetchInterval: 15000, // تحديث تلقائي كل 15 ثانية لمتابعة الردود
+        refetchInterval: 15000, // Auto refresh every 15s
     });
 
-    // 2. 🚀 إرسال التكليف (Mutation)
+    // 2. 🚀 Send Task (Mutation)
     const sendTaskMutation = useMutation({
         mutationFn: async () => {
             if (!title) throw new Error("يجب كتابة عنوان للتكليف");
 
             let targetEmployees: Employee[] = [];
 
-            // منطق تحديد المستلمين
+            // Target Logic
             if (targetType === 'individual') {
                 if (!selectedEmp) throw new Error("اختر الموظف");
                 const emp = employees.find(e => e.employee_id === selectedEmp);
@@ -63,7 +64,7 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
 
             if (targetEmployees.length === 0) throw new Error("لا يوجد موظفين مستهدفين");
 
-            // أ) تجهيز وإدخال التكليفات في جدول المهام
+            // a) Prepare & Insert Tasks
             const tasksPayload = targetEmployees.map(emp => ({
                 title,
                 description: desc,
@@ -76,8 +77,8 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
             const { error: taskError } = await supabase.from('tasks').insert(tasksPayload);
             if (taskError) throw taskError;
 
-            // ب) 🔥 إرسال التنبيهات (داخلي + خارجي) لكل موظف
-            // نستخدم Promise.all لضمان السرعة وعدم انتظار كل واحد على حدة
+            // b) 🔥 Send Notifications (Internal + External)
+            // Use Promise.all for parallel execution
             await Promise.all(targetEmployees.map(emp => 
                 sendSystemNotification(
                     emp.employee_id,
@@ -92,15 +93,15 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
         onSuccess: (count) => {
             toast.success(`تم إرسال التكليف لـ ${count} موظف بنجاح`);
             queryClient.invalidateQueries({ queryKey: ['admin_tasks_history'] });
-            // إعادة تعيين النموذج
+            // Reset Form
             setTitle('');
             setDesc('');
-            setActiveTab('history'); // الانتقال للسجل للمتابعة
+            setActiveTab('history'); // Go to history tab
         },
         onError: (err: any) => toast.error(err.message)
     });
 
-    // 3. 🗑️ حذف تكليف
+    // 3. 🗑️ Delete Task Mutation
     const deleteTaskMutation = useMutation({
         mutationFn: async (id: string) => {
             const { error } = await supabase.from('tasks').delete().eq('id', id);
@@ -113,14 +114,14 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
         onError: () => toast.error('فشل الحذف')
     });
 
-    // --- المنطق المساعد ---
+    // --- Helper Logic ---
     
-    // استخراج قائمة التخصصات الفريدة
+    // Extract unique specialties
     const specialties = useMemo(() => 
         ['all', ...Array.from(new Set(employees.map(e => e.specialty)))], 
     [employees]);
 
-    // فلترة الموظفين في القائمة المنسدلة (للوضع الفردي)
+    // Filter employees for dropdown
     const filteredEmployees = useMemo(() => {
         return employees.filter(e => {
             const matchSpec = filterSpecialty === 'all' || e.specialty === filterSpecialty;
