@@ -1,29 +1,18 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-import { Printer, Calendar, Filter, FileSpreadsheet, Download, RefreshCw } from 'lucide-react';
+import { Printer, Filter, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
+// 1. ✅ استيراد React Query
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 type ReportType = 'daily' | 'monthly' | 'absence';
 
-// تعريفات البيانات المحسوبة
-interface ReportRow {
-    id: string;
-    employee_id: string;
-    name: string;
-    specialty: string;
-    jobStatus: string; 
-    [key: string]: any;
-}
-
 export default function ReportsTab() {
+  const queryClient = useQueryClient();
   const [activeReport, setActiveReport] = useState<ReportType>('daily');
-  const [loading, setLoading] = useState(false);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
 
   // فلاتر البحث
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -35,94 +24,81 @@ export default function ReportsTab() {
 
   const componentRef = useRef(null);
 
-  // دالة الطباعة
-  const handlePrint = useReactToPrint({
-    content: () => componentRef.current,
-    documentTitle: `تقرير_${activeReport}_${activeReport === 'monthly' ? month : date}`,
+  // -----------------------------------------------------------
+  // 1. 📥 جلب البيانات باستخدام React Query
+  // -----------------------------------------------------------
+
+  // أ) جلب قائمة الموظفين (Cache لمدة طويلة)
+  const { data: employees = [] } = useQuery({
+    queryKey: ['employees_list'],
+    queryFn: async () => {
+      const { data } = await supabase.from('employees').select('*').order('name');
+      return data as Employee[] || [];
+    },
+    staleTime: 1000 * 60 * 30, // 30 دقيقة (البيانات لا تتغير كثيراً)
   });
 
-  // دالة التصدير للإكسيل
-  const handleExportExcel = () => {
-    let dataToExport: any[] = [];
-    let fileName = '';
+  // ب) جلب بيانات الحضور (يعتمد على نوع التقرير والتاريخ)
+  const { data: attendance = [], isLoading: loadingAtt, refetch: refetchAtt } = useQuery({
+    queryKey: ['report_attendance', activeReport, date, month],
+    queryFn: async () => {
+      let query = supabase.from('attendance').select('*');
 
-    if (activeReport === 'daily') {
-        dataToExport = dailyData.map(row => ({
-            'الكود': row.employee_id,
-            'الاسم': row.name,
-            'التخصص': row.specialty,
-            'حالة القيد': row.jobStatus,
-            'حضور': row.inTime,
-            'انصراف': row.outTime,
-            'الحالة': row.reportStatus,
-            'ملاحظة الطلب': row.leaveInfo || ''
-        }));
-        fileName = `Daily_Report_${date}`;
-    } else if (activeReport === 'monthly') {
-        dataToExport = monthlyData.map(row => ({
-            'الكود': row.employee_id,
-            'الاسم': row.name,
-            'التخصص': row.specialty,
-            'أيام الحضور': row.daysPresent,
-            'عدد الإجازات/الطلبات': row.daysLeaves
-        }));
-        fileName = `Monthly_Report_${month}`;
-    } else {
-        dataToExport = absenceData.map(row => ({
-            'الكود': row.employee_id,
-            'الاسم': row.name,
-            'التخصص': row.specialty,
-            'حالة القيد': row.jobStatus,
-            'الحالة': 'غياب'
-        }));
-        fileName = `Absence_Report_${date}`;
-    }
-
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `${fileName}.xlsx`);
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, [date, month, activeReport]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    
-    // 1. جلب الموظفين
-    const { data: emps } = await supabase.from('employees').select('*').order('name');
-    if (emps) setEmployees(emps);
-
-    // 2. جلب الحضور والطلبات
-    if (activeReport === 'daily' || activeReport === 'absence') {
-        const { data: att } = await supabase.from('attendance').select('*').eq('date', date);
-        const { data: lvs } = await supabase.from('leave_requests').select('*')
-            .lte('start_date', date)
-            .gte('end_date', date);
+      if (activeReport === 'daily' || activeReport === 'absence') {
+        query = query.eq('date', date);
+      } else {
+        // Monthly Logic
+        const startOfMonth = `${month}-01`;
+        // حساب آخر يوم في الشهر المختار
+        const d = new Date(month);
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        const endOfMonth = `${month}-${lastDay}`;
         
-        setAttendance(att || []);
-        setLeaves(lvs || []);
+        query = query.gte('date', startOfMonth).lte('date', endOfMonth);
+      }
 
-    } else if (activeReport === 'monthly') {
+      const { data } = await query;
+      return data as AttendanceRecord[] || [];
+    }
+  });
+
+  // ج) جلب بيانات الإجازات والطلبات
+  const { data: leaves = [], isLoading: loadingLeaves, refetch: refetchLeaves } = useQuery({
+    queryKey: ['report_leaves', activeReport, date, month],
+    queryFn: async () => {
+      let query = supabase.from('leave_requests').select('*');
+
+      if (activeReport === 'daily' || activeReport === 'absence') {
+        // الإجازة السارية في هذا اليوم
+        query = query.lte('start_date', date).gte('end_date', date);
+      } else {
+        // الإجازات خلال الشهر
         const startOfMonth = `${month}-01`;
         const d = new Date(month);
         const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
         const endOfMonth = `${month}-${lastDay}`;
         
-        const { data: att } = await supabase.from('attendance').select('*')
-            .gte('date', startOfMonth)
-            .lte('date', endOfMonth);
-        
-        const { data: lvs } = await supabase.from('leave_requests').select('*')
-            .or(`start_date.gte.${startOfMonth},end_date.lte.${endOfMonth}`);
+        query = query.or(`start_date.gte.${startOfMonth},end_date.lte.${endOfMonth}`);
+      }
 
-        setAttendance(att || []);
-        setLeaves(lvs || []);
+      const { data } = await query;
+      return data as LeaveRequest[] || [];
     }
-    setLoading(false);
+  });
+
+  const loading = loadingAtt || loadingLeaves;
+
+  // زر التحديث اليدوي
+  const handleManualRefresh = () => {
+    refetchAtt();
+    refetchLeaves();
+    // employees لا يحتاج تحديث متكرر، لكن يمكن إضافته إذا أردت
+    queryClient.invalidateQueries({ queryKey: ['employees_list'] });
   };
+
+  // -----------------------------------------------------------
+  // 2. 🧮 معالجة البيانات (Logic) - بقيت كما هي لأنها ممتازة
+  // -----------------------------------------------------------
 
   // --- معالجة البيانات: التقرير اليومي ---
   const dailyData = useMemo(() => {
@@ -196,7 +172,7 @@ export default function ReportsTab() {
       });
   }, [employees, attendance, leaves, filterName, filterSpecialty, filterJobStatus]);
 
-  // --- الإحصائيات (تعتمد على البيانات الكلية قبل الفلترة بالاسم لضمان دقة أرقام المنشأة) ---
+  // --- الإحصائيات ---
   const stats = useMemo(() => {
       const allData = employees.map(emp => {
           const empAtt = attendance.find(a => a.employee_id === emp.employee_id);
@@ -218,6 +194,55 @@ export default function ReportsTab() {
       };
   }, [employees, attendance, leaves]);
 
+  // دالة الطباعة
+  const handlePrint = useReactToPrint({
+    content: () => componentRef.current,
+    documentTitle: `تقرير_${activeReport}_${activeReport === 'monthly' ? month : date}`,
+  });
+
+  // دالة التصدير للإكسيل
+  const handleExportExcel = () => {
+    let dataToExport: any[] = [];
+    let fileName = '';
+
+    if (activeReport === 'daily') {
+        dataToExport = dailyData.map(row => ({
+            'الكود': row.employee_id,
+            'الاسم': row.name,
+            'التخصص': row.specialty,
+            'حالة القيد': row.jobStatus,
+            'حضور': row.inTime,
+            'انصراف': row.outTime,
+            'الحالة': row.reportStatus,
+            'ملاحظة الطلب': row.leaveInfo || ''
+        }));
+        fileName = `Daily_Report_${date}`;
+    } else if (activeReport === 'monthly') {
+        dataToExport = monthlyData.map(row => ({
+            'الكود': row.employee_id,
+            'الاسم': row.name,
+            'التخصص': row.specialty,
+            'أيام الحضور': row.daysPresent,
+            'عدد الإجازات/الطلبات': row.daysLeaves
+        }));
+        fileName = `Monthly_Report_${month}`;
+    } else {
+        dataToExport = absenceData.map(row => ({
+            'الكود': row.employee_id,
+            'الاسم': row.name,
+            'التخصص': row.specialty,
+            'حالة القيد': row.jobStatus,
+            'الحالة': 'غياب'
+        }));
+        fileName = `Absence_Report_${date}`;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Report");
+    XLSX.writeFile(wb, `${fileName}.xlsx`);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
         
@@ -230,7 +255,7 @@ export default function ReportsTab() {
             </div>
             
             <div className="flex gap-2 w-full xl:w-auto">
-                <button onClick={() => fetchData()} disabled={loading} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50">
+                <button onClick={handleManualRefresh} disabled={loading} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50">
                     <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`}/>
                 </button>
                 <button onClick={handleExportExcel} className="flex-1 xl:flex-none justify-center bg-green-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-lg shadow-green-200 transition-all">
