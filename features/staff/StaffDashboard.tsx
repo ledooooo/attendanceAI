@@ -3,6 +3,8 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
+// ✅ استيراد React Query و Notification Permission
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { requestNotificationPermission } from '../../utils/pushNotifications'; 
 
 import { 
@@ -39,13 +41,13 @@ interface Props {
 
 export default function StaffDashboard({ employee }: Props) {
   const { signOut } = useAuth();
+  const queryClient = useQueryClient();
   
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
-  const [pendingTasksCount, setPendingTasksCount] = useState(0); // ✅ عداد التكليفات الجديدة
 
-  // --- 1. حالات تخزين البيانات (States) ---
+  // --- 1. حالات تخزين البيانات (للمكونات القديمة) ---
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
@@ -59,17 +61,15 @@ export default function StaffDashboard({ employee }: Props) {
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // --- 2. إعداد الإشعارات (Push & Internal) ---
+  // --- 2. إعداد الإشعارات ---
   useEffect(() => {
-    // 1. طلب إذن الإشعارات الخارجية (Push)
-    if (employee?.employee_id) { // نستخدم المعرف الوظيفي لضمان التطابق
+    if (employee?.employee_id) {
         requestNotificationPermission(employee.employee_id);
     }
   }, [employee.employee_id]);
 
-  // دالة جلب الإشعارات الداخلية
+  // جلب الإشعارات
   const fetchNotifications = async () => {
-    // ✅ نستخدم employee_id لأن المدير يرسل للكود الوظيفي
     const { data } = await supabase
       .from('notifications')
       .select('*')
@@ -79,30 +79,64 @@ export default function StaffDashboard({ employee }: Props) {
     if (data) setNotifications(data);
   };
 
-  // دالة جلب عدد التكليفات المعلقة (للبادج)
-  const fetchTaskCount = async () => {
-      const { count } = await supabase
-        .from('tasks')
-        .select('*', { count: 'exact', head: true })
-        .eq('employee_id', employee.employee_id)
-        .eq('status', 'pending'); // نحسب فقط المعلقة (التي لم يراها الموظف)
-      
-      setPendingTasksCount(count || 0);
-  };
-
-  // تحديث قراءة الإشعارات
   const markNotifsAsRead = async () => {
     if (notifications.some(n => !n.is_read)) {
       await supabase
         .from('notifications')
         .update({ is_read: true })
         .eq('user_id', employee.employee_id);
+      
+      // تحديث البيانات بعد القراءة
       fetchNotifications();
+      queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
     }
     setShowNotifMenu(!showNotifMenu);
   };
 
-  // --- 3. جلب البيانات الأساسية + Realtime ---
+  // 🔥 3. استعلام قوي لجلب العدادات (Badges) للأزرار
+  const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0 } } = useQuery({
+      queryKey: ['staff_badges', employee.employee_id],
+      queryFn: async () => {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1); // آخر 24 ساعة للأخبار
+
+          const [msg, tasks, swaps, news, ovrReplies] = await Promise.all([
+              // 1. رسائل غير مقروءة
+              supabase.from('messages').select('*', { count: 'exact', head: true })
+                  .eq('to_user', employee.employee_id).eq('is_read', false),
+              
+              // 2. تكليفات معلقة
+              supabase.from('tasks').select('*', { count: 'exact', head: true })
+                  .eq('employee_id', employee.employee_id).eq('status', 'pending'),
+
+              // 3. طلبات تبديل واردة (تستهدفني)
+              supabase.from('shift_swap_requests').select('*', { count: 'exact', head: true })
+                  .eq('target_employee_id', employee.employee_id).eq('status', 'pending_target'),
+
+              // 4. أخبار جديدة
+              supabase.from('news').select('*', { count: 'exact', head: true })
+                  .gte('created_at', yesterday.toISOString()),
+
+              // 5. ردود OVR (عن طريق الإشعارات غير المقروءة)
+              // نبحث في جدول الإشعارات عن نوع 'ovr_reply' غير المقروء
+              supabase.from('notifications').select('*', { count: 'exact', head: true })
+                  .eq('user_id', employee.employee_id)
+                  .eq('type', 'ovr_reply') // تأكد من استخدام هذا النوع عند الرد
+                  .eq('is_read', false)
+          ]);
+
+          return {
+              messages: msg.count || 0,
+              tasks: tasks.count || 0,
+              swaps: swaps.count || 0,
+              news: news.count || 0,
+              ovr_replies: ovrReplies.count || 0
+          };
+      },
+      refetchInterval: 5000, // تحديث كل 5 ثواني
+  });
+
+  // --- 4. جلب البيانات الأساسية + Realtime ---
   const fetchAllData = async () => {
     try {
       const { data: att } = await supabase.from('attendance').select('*').eq('employee_id', employee.employee_id);
@@ -120,114 +154,82 @@ export default function StaffDashboard({ employee }: Props) {
   useEffect(() => {
     fetchAllData();
     fetchNotifications();
-    fetchTaskCount(); // ✅ جلب عدد التكليفات عند التحميل
 
-    // ✅ الاشتراك في قناتين: الإشعارات + التكليفات
     const channel = supabase.channel('staff_dashboard_updates')
-      // 1. مراقبة الإشعارات الجديدة (للجرس)
       .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'notifications', 
+        event: '*', schema: 'public', table: 'notifications', 
         filter: `user_id=eq.${employee.employee_id}` 
       }, (payload) => {
-          setNotifications(prev => [payload.new, ...prev]);
-          // تشغيل صوت تنبيه بسيط إذا أمكن
-          const audio = new Audio('/notification.mp3'); // تأكد من وجود ملف صوتي في مجلد public
-          audio.play().catch(() => {}); 
-      })
-      // 2. مراقبة التكليفات الجديدة (للبادج في القائمة)
-      .on('postgres_changes', {
-          event: '*', // أي تغيير (إضافة أو تعديل)
-          schema: 'public',
-          table: 'tasks',
-          filter: `employee_id=eq.${employee.employee_id}`
-      }, () => {
-          fetchTaskCount(); // تحديث رقم البادج
+          // تحديث الإشعارات والعدادات عند وصول شيء جديد
+          fetchNotifications();
+          queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
+          
+          if (payload.eventType === 'INSERT') {
+              const audio = new Audio('/notification.mp3'); 
+              audio.play().catch(() => {}); 
+          }
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [employee.employee_id]);
 
-  // إعدادات السحب (Swipe)
-  const swipeHandlers = useSwipeable({
-    onSwipedLeft: (eventData) => {
-      if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true);
-    },
-    onSwipedRight: () => setIsSidebarOpen(false),
-    trackMouse: true,
-    delta: 50,
-  });
-
-  // عداد الجودة (OVR)
+  // عداد الجودة (لمدير الجودة فقط)
   useEffect(() => {
     if (employee.role === 'quality_manager') {
         const checkNewReports = async () => {
-            const { count } = await supabase
-                .from('ovr_reports')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'new');
+            const { count } = await supabase.from('ovr_reports').select('*', { count: 'exact', head: true }).eq('status', 'new');
             setOvrCount(count || 0);
         };
         checkNewReports();
     }
   }, [employee.role]);
 
-  // PWA Install Logic
+  // إعدادات القائمة
+  const swipeHandlers = useSwipeable({
+    onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
+    onSwipedRight: () => setIsSidebarOpen(false),
+    trackMouse: true, delta: 50,
+  });
+
+  // PWA Logic
   useEffect(() => {
     const checkStandalone = () => {
-      const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || 
-                               (window.navigator as any).standalone === true;
+      const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
       setIsStandalone(isStandaloneMode);
     };
     checkStandalone();
-    const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      if (!isStandalone) setTimeout(() => setShowInstallPopup(true), 3000);
-    };
+    const handler = (e: any) => { e.preventDefault(); setDeferredPrompt(e); if (!isStandalone) setTimeout(() => setShowInstallPopup(true), 3000); };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, [isStandalone]);
 
   const handleInstallClick = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') { setDeferredPrompt(null); setShowInstallPopup(false); }
-    }
+    if (deferredPrompt) { deferredPrompt.prompt(); const { outcome } = await deferredPrompt.userChoice; if (outcome === 'accepted') { setDeferredPrompt(null); setShowInstallPopup(false); } }
   };
+  const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  const handleShareApp = async () => {
-    try {
-        if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin });
-        else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); }
-    } catch (err) { console.error(err); }
-  };
-
-  // ✅ تعريف عناصر القائمة مع البادج الجديد
+  // ✅ تعريف عناصر القائمة مع البادجات المربوطة بالـ Query
   const menuItems = [
-    { id: 'news', label: 'الرئيسية', icon: LayoutDashboard },
+    { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     
-    // ✅ إضافة بادج للتكليفات
-    { id: 'tasks', label: 'التكليفات', icon: ListTodo, badge: pendingTasksCount },
+    { id: 'tasks', label: 'التكليفات', icon: ListTodo, badge: staffBadges.tasks },
+    { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight, badge: staffBadges.swaps },
+    { id: 'messages', label: 'الرسائل', icon: Inbox, badge: staffBadges.messages },
+    { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle, badge: staffBadges.ovr_replies }, // بادج الردود
     
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
-    { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight },
     ...(employee.role === 'head_of_dept' ? [{ id: 'dept-requests', label: 'إدارة القسم', icon: FileText }] : []),
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
-    { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle },
     { id: 'requests-history', label: 'سجل الطلبات', icon: List },
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
-    { id: 'messages', label: 'الرسائل', icon: Inbox },
   ];
 
   const unreadNotifsCount = notifications.filter(n => !n.is_read).length;
@@ -235,21 +237,9 @@ export default function StaffDashboard({ employee }: Props) {
   return (
     <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+      {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
 
-      {/* القائمة الجانبية */}
-      <aside className={`
-          fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl 
-          transform transition-transform duration-300 ease-in-out flex flex-col
-          ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
-          md:translate-x-0 md:static md:shadow-none
-      `}>
-        {/* ترويسة القائمة */}
+      <aside className={`fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0 md:static md:shadow-none`}>
         <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-emerald-50/50">
             <div className="flex items-center gap-3">
                 <div className="bg-white p-1.5 rounded-xl shadow-sm border border-emerald-100">
@@ -260,9 +250,7 @@ export default function StaffDashboard({ employee }: Props) {
                     <p className="text-[10px] text-gray-500 font-bold">بوابة الموظفين</p>
                 </div>
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400">
-                <X className="w-5 h-5"/>
-            </button>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400"><X className="w-5 h-5"/></button>
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
@@ -273,16 +261,12 @@ export default function StaffDashboard({ employee }: Props) {
               <button
                 key={item.id}
                 onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${
-                  isActive 
-                    ? 'bg-emerald-600 text-white shadow-md font-bold' 
-                    : 'text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 font-medium'
-                }`}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${isActive ? 'bg-emerald-600 text-white shadow-md font-bold' : 'text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 font-medium'}`}
               >
                 <Icon className={`w-4.5 h-4.5 ${isActive ? 'text-white' : 'text-gray-400'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* 🔥 عرض البادج إذا وجد رقم */}
+                {/* 🔥 عرض البادج */}
                 {item.badge && item.badge > 0 && (
                     <span className="absolute left-4 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm">
                         {item.badge}
@@ -300,32 +284,21 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
       </aside>
 
-      {/* المحتوى الرئيسي */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50">
         <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
             <div className="flex items-center gap-3">
-                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl">
-                    <Menu className="w-6 h-6"/>
-                </button>
+                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl"><Menu className="w-6 h-6"/></button>
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
             <div className="flex items-center gap-4">
-                {/* أيقونة الجرس */}
                 <div className="relative">
-                    <button 
-                      onClick={markNotifsAsRead}
-                      className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors relative"
-                    >
+                    <button onClick={markNotifsAsRead} className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors relative">
                         <Bell className={`w-6 h-6 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
                         {unreadNotifsCount > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white animate-bounce">
-                                {unreadNotifsCount}
-                            </span>
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white animate-bounce">{unreadNotifsCount}</span>
                         )}
                     </button>
-
-                    {/* قائمة الإشعارات المنسدلة */}
                     {showNotifMenu && (
                         <div className="absolute left-0 mt-3 w-80 bg-white rounded-3xl shadow-xl border border-gray-100 z-[100] overflow-hidden animate-in fade-in zoom-in-95">
                             <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
@@ -339,12 +312,11 @@ export default function StaffDashboard({ employee }: Props) {
                                     notifications.map(n => (
                                         <div 
                                             key={n.id} 
-                                            // توجيه المستخدم لصفحة التكليفات عند الضغط على إشعار تكليف
                                             onClick={() => {
-                                                if(n.type === 'task' || n.type === 'task_update') {
-                                                    setActiveTab('tasks');
-                                                    setShowNotifMenu(false);
-                                                }
+                                                if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
+                                                else if(n.type === 'message') { setActiveTab('messages'); }
+                                                else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
+                                                setShowNotifMenu(false);
                                             }}
                                             className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
                                         >
@@ -370,23 +342,15 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
         </header>
 
-        {/* --- منطقة المحتوى (تم تقليل الـ Padding هنا) --- */}
         <main className="flex-1 overflow-y-auto p-3 md:p-6 custom-scrollbar">
             <div className="max-w-6xl mx-auto space-y-4">
-                
-                {/* الحاوية البيضاء الرئيسية */}
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-4 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
                         <div className="space-y-4">
-                            {/* كارت ترحيب */}
                             <div className="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-4 text-white shadow-md flex items-center justify-between relative overflow-hidden">
                                 <div className="relative z-10">
-                                    <h2 className="font-bold text-lg flex items-center gap-2">
-                                        مرحباً، {employee.name.split(' ')[0]} 👋
-                                    </h2>
-                                    <p className="text-xs text-emerald-100 mt-1 opacity-90">
-                                        نتمنى لك يوماً سعيداً ومليئاً بالإنجازات
-                                    </p>
+                                    <h2 className="font-bold text-lg flex items-center gap-2">مرحباً، {employee.name.split(' ')[0]} 👋</h2>
+                                    <p className="text-xs text-emerald-100 mt-1 opacity-90">نتمنى لك يوماً سعيداً ومليئاً بالإنجازات</p>
                                 </div>
                                 <div className="hidden sm:block text-right relative z-10">
                                     <div className="text-xs font-medium opacity-80 mb-0.5">التاريخ اليوم</div>
@@ -397,7 +361,6 @@ export default function StaffDashboard({ employee }: Props) {
                                 </div>
                                 <Sparkles className="absolute -bottom-4 -left-4 w-24 h-24 text-white opacity-10 rotate-12" />
                             </div>
-
                             <EOMVotingCard employee={employee} />
                             <StaffNewsFeed employee={employee} />
                         </div>
@@ -405,21 +368,12 @@ export default function StaffDashboard({ employee }: Props) {
                     
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
                     {activeTab === 'library' && <StaffLibrary />}
-                    
-                    {activeTab === 'attendance' && (
-                        <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} /> 
-                    )}
-                    {activeTab === 'evening-schedule' && (
-                        <EmployeeEveningSchedule employeeId={employee.id} employeeCode={employee.employee_id} employeeName={employee.name} specialty={employee.specialty} />
-                    )}
+                    {activeTab === 'attendance' && <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} />}
+                    {activeTab === 'evening-schedule' && <EmployeeEveningSchedule employeeId={employee.id} employeeCode={employee.employee_id} employeeName={employee.name} specialty={employee.specialty} />}
                     {activeTab === 'shift-requests' && <ShiftRequestsTab employee={employee} />}
                     {activeTab === 'dept-requests' && employee.role === 'head_of_dept' && <DepartmentRequests hod={employee} />}
                     {activeTab === 'quality-manager-tab' && employee.role === 'quality_manager' && <QualityDashboard />}
-                    
-                    {activeTab === 'stats' && (
-                        <StaffStats attendance={attendanceData} evals={evaluations} requests={leaveRequests} month={selectedMonth} employee={employee} />
-                    )}
-
+                    {activeTab === 'stats' && <StaffStats attendance={attendanceData} evals={evaluations} requests={leaveRequests} month={selectedMonth} employee={employee} />}
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={fetchAllData} />}
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
@@ -433,7 +387,6 @@ export default function StaffDashboard({ employee }: Props) {
         </main>
       </div>
 
-      {/* About Modal */}
       {showAboutModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
               <div className="bg-white rounded-3xl p-6 w-full max-w-sm text-center relative animate-in zoom-in-95">
