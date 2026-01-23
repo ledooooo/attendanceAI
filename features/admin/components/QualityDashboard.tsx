@@ -1,61 +1,75 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { OVRReport } from '../../../types';
-import { AlertTriangle, Clock, MessageSquare, Send, User, EyeOff, ArrowRight, CheckCircle2 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { AlertTriangle, Clock, MessageSquare, Send, User, EyeOff, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
+// 1. ✅ Import React Query
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function QualityDashboard() {
-    const [reports, setReports] = useState<OVRReport[]>([]);
+    const queryClient = useQueryClient();
+    
+    // UI State
     const [selectedReport, setSelectedReport] = useState<OVRReport | null>(null);
     const [response, setResponse] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [userRole, setUserRole] = useState<string>('');
 
-    useEffect(() => {
-        checkUserRoleAndFetch();
-    }, []);
+    // ------------------------------------------------------------------
+    // 1. 📥 Fetch User Role & Reports (Parallel Queries)
+    // ------------------------------------------------------------------
 
-    const checkUserRoleAndFetch = async () => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-            const { data: emp, error } = await supabase
+    // A) Get Current User Role
+    const { data: userRole = 'user' } = useQuery({
+        queryKey: ['current_user_role_quality'],
+        queryFn: async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return 'user';
+            
+            const { data: emp } = await supabase
                 .from('employees')
                 .select('role')
                 .eq('id', user.id)
                 .maybeSingle();
             
-            // في حالة وجود خطأ في الصلاحيات، سنفترض أنه مستخدم عادي
-            const role = emp?.role || 'user';
-            setUserRole(role);
-            fetchReports(role);
-        }
-    };
+            return emp?.role || 'user';
+        },
+        staleTime: Infinity, // Role rarely changes during session
+    });
 
-const fetchReports = async (role: string) => {
-    // هذا الكود يجلب كل شيء (جديد ومغلق)
-    let query = supabase
-        .from('ovr_reports')
-        .select('*')
-        .order('created_at', { ascending: false });
+    // B) Fetch OVR Reports
+    const { data: reports = [], isLoading: loadingReports } = useQuery({
+        queryKey: ['ovr_reports_list'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('ovr_reports')
+                .select('*')
+                .order('created_at', { ascending: false });
+            
+            if (error) throw error;
+            return data as OVRReport[];
+        },
+        // Auto refetch every 30 seconds to catch new incidents
+        refetchInterval: 30000, 
+    });
 
-    const { data } = await query;
-    if (data) setReports(data as any);
-};
+    // ------------------------------------------------------------------
+    // 2. 🛠️ Submit Response & Notify (Complex Mutation)
+    // ------------------------------------------------------------------
+    const responseMutation = useMutation({
+        mutationFn: async () => {
+            if (!selectedReport || !response) throw new Error("بيانات ناقصة");
 
-    const handleSubmitResponse = async () => {
-        if (!selectedReport || !response) return;
-        setLoading(true);
+            // 1. Update Report to Closed
+            const { error: updateError } = await supabase
+                .from('ovr_reports')
+                .update({
+                    quality_response: response,
+                    status: 'closed' 
+                })
+                .eq('id', selectedReport.id);
 
-        // 1. تحديث التقرير ليصبح مغلقاً
-        const { error } = await supabase
-            .from('ovr_reports')
-            .update({
-                quality_response: response,
-                status: 'closed' 
-            })
-            .eq('id', selectedReport.id);
+            if (updateError) throw updateError;
 
-        if (!error) {
-            // 2. إشعار للموظف صاحب التقرير
+            // 2. Notify Reporter
             await supabase.from('notifications').insert({
                 user_id: selectedReport.reporter_id,
                 title: 'تم الرد على تقرير OVR',
@@ -63,8 +77,7 @@ const fetchReports = async (role: string) => {
                 is_read: false
             });
 
-            // 3. إشعار للمدير (Admin)
-            // نجلب قائمة المديرين
+            // 3. Notify Admins
             const { data: admins } = await supabase
                 .from('employees')
                 .select('employee_id')
@@ -78,19 +91,24 @@ const fetchReports = async (role: string) => {
                     is_read: false
                 }));
                 
-                // إرسال التنبيهات للمديرين
                 await supabase.from('notifications').insert(adminNotifications);
             }
-
-            alert('تم اعتماد الرد وتنبيه الأطراف المعنية ✅');
+        },
+        onSuccess: () => {
+            toast.success('تم اعتماد الرد وتنبيه الأطراف المعنية ✅');
+            queryClient.invalidateQueries({ queryKey: ['ovr_reports_list'] });
+            
             setResponse('');
             setSelectedReport(null);
-            fetchReports(userRole);
-        } else {
-            alert('حدث خطأ: ' + error.message);
+        },
+        onError: (err: any) => {
+            toast.error('حدث خطأ: ' + err.message);
         }
-        setLoading(false);
-    };
+    });
+
+    // ------------------------------------------------------------------
+    // 3. 🎨 UI Render
+    // ------------------------------------------------------------------
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -108,43 +126,47 @@ const fetchReports = async (role: string) => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative">
                 
-                {/* 1. القائمة الجانبية (تختفي في الموبايل عند اختيار تقرير) */}
+                {/* 1. Side List */}
                 <div className={`space-y-3 h-[600px] overflow-y-auto custom-scrollbar pr-2 pb-20 ${selectedReport ? 'hidden lg:block' : 'block'}`}>
-                    {reports.length === 0 && (
+                    {loadingReports ? (
+                        <div className="text-center py-10 flex flex-col items-center gap-2 text-gray-400">
+                            <Loader2 className="w-8 h-8 animate-spin text-emerald-500"/> جاري تحميل التقارير...
+                        </div>
+                    ) : reports.length === 0 ? (
                         <div className="text-center py-10 bg-gray-50 rounded-2xl border border-dashed">
                             <p className="text-gray-400 font-bold">لا توجد تقارير حالياً</p>
                         </div>
+                    ) : (
+                        reports.map(rep => (
+                            <div key={rep.id} onClick={() => setSelectedReport(rep)} 
+                                 className={`p-4 rounded-2xl border cursor-pointer transition-all relative group hover:shadow-md ${selectedReport?.id === rep.id ? 'border-red-500 bg-red-50 shadow-md' : 'border-gray-200 bg-white hover:border-red-200'}`}>
+                                
+                                <div className="flex justify-between items-start mb-2">
+                                    <span className="font-bold text-gray-800 flex items-center gap-2 text-sm">
+                                        {rep.is_anonymous ? (
+                                            <><EyeOff className="w-4 h-4 text-gray-400"/> مجهول</>
+                                        ) : (
+                                            <><User className="w-4 h-4 text-blue-500"/> {rep.reporter_name}</>
+                                        )}
+                                    </span>
+                                    <span className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 ${rep.status === 'new' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                        {rep.status === 'new' ? 'جديد' : <><CheckCircle2 className="w-3 h-3"/> تم الرد</>}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-gray-600 line-clamp-2 mb-3 leading-relaxed">{rep.description}</p>
+                                <div className="flex gap-3 text-[10px] text-gray-400 font-bold border-t pt-2">
+                                    <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {rep.incident_date}</span>
+                                    <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> {rep.location}</span>
+                                </div>
+                            </div>
+                        ))
                     )}
-                    {reports.map(rep => (
-                        <div key={rep.id} onClick={() => setSelectedReport(rep)} 
-                             className={`p-4 rounded-2xl border cursor-pointer transition-all relative group hover:shadow-md ${selectedReport?.id === rep.id ? 'border-red-500 bg-red-50 shadow-md' : 'border-gray-200 bg-white hover:border-red-200'}`}>
-                            
-                            <div className="flex justify-between items-start mb-2">
-                                <span className="font-bold text-gray-800 flex items-center gap-2 text-sm">
-                                    {rep.is_anonymous ? (
-                                        <><EyeOff className="w-4 h-4 text-gray-400"/> مجهول</>
-                                    ) : (
-                                        <><User className="w-4 h-4 text-blue-500"/> {rep.reporter_name}</>
-                                    )}
-                                </span>
-                                <span className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 ${rep.status === 'new' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                    {rep.status === 'new' ? 'جديد' : <><CheckCircle2 className="w-3 h-3"/> تم الرد</>}
-                                </span>
-                            </div>
-                            <p className="text-xs text-gray-600 line-clamp-2 mb-3 leading-relaxed">{rep.description}</p>
-                            <div className="flex gap-3 text-[10px] text-gray-400 font-bold border-t pt-2">
-                                <span className="flex items-center gap-1"><Clock className="w-3 h-3"/> {rep.incident_date}</span>
-                                <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> {rep.location}</span>
-                            </div>
-                        </div>
-                    ))}
                 </div>
 
-                {/* 2. تفاصيل التقرير والرد (يظهر فوق القائمة في الموبايل) */}
+                {/* 2. Detail View */}
                 <div className={`bg-white p-6 rounded-[30px] border shadow-sm h-fit sticky top-4 animate-in slide-in-from-bottom-5 duration-300 ${selectedReport ? 'block' : 'hidden lg:block'}`}>
                     {selectedReport ? (
                         <>
-                            {/* زر الرجوع للموبايل */}
                             <button 
                                 onClick={() => setSelectedReport(null)} 
                                 className="lg:hidden w-full py-3 mb-4 bg-gray-100 rounded-xl flex items-center justify-center gap-2 text-gray-600 font-bold hover:bg-gray-200"
@@ -187,7 +209,6 @@ const fetchReports = async (role: string) => {
                                     </div>
                                 ) : (
                                     <>
-                                        {/* يظهر فقط للمدير ومسؤول الجودة */}
                                         {(userRole === 'quality_manager' || userRole === 'admin') ? (
                                             <div className="animate-in fade-in zoom-in-95">
                                                 <textarea 
@@ -197,11 +218,11 @@ const fetchReports = async (role: string) => {
                                                     onChange={e => setResponse(e.target.value)}
                                                 ></textarea>
                                                 <button 
-                                                    onClick={handleSubmitResponse}
-                                                    disabled={loading || !response}
+                                                    onClick={() => responseMutation.mutate()}
+                                                    disabled={responseMutation.isPending || !response}
                                                     className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 shadow-lg shadow-emerald-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
-                                                    {loading ? 'جاري الحفظ...' : <><Send className="w-4 h-4 rtl:rotate-180"/> اعتماد الرد وإغلاق التقرير</>}
+                                                    {responseMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin"/> جاري الحفظ...</> : <><Send className="w-4 h-4 rtl:rotate-180"/> اعتماد الرد وإغلاق التقرير</>}
                                                 </button>
                                             </div>
                                         ) : (
