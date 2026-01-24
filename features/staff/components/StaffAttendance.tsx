@@ -1,17 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { 
     Clock, Calendar, CheckCircle2, XCircle, 
-    AlertTriangle, Star, Info, FileCheck, PartyPopper, Loader2
+    AlertTriangle, Star, Info, FileCheck, Loader2, Baby
 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRule } from '../../../types';
 import StaffNewRequest from './StaffNewRequest';
-// 1. ✅ استيراد React Query
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
-// دوال مساعدة (خارج المكون لمنع إعادة تعريفها)
 const toMinutes = (timeStr: string) => {
     if (!timeStr) return 0;
     const [h, m] = timeStr.split(':').map(Number);
@@ -29,7 +27,7 @@ export default function StaffAttendance({
     setSelectedMonth, 
     employee 
 }: { 
-    attendance?: any[], // لم نعد بحاجة له لأننا سنجلب الأحدث
+    attendance?: any[], 
     selectedMonth: string, 
     setSelectedMonth: any, 
     employee: Employee 
@@ -38,25 +36,17 @@ export default function StaffAttendance({
     const [viewMonth, setViewMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7));
     const [selectedAbsenceDate, setSelectedAbsenceDate] = useState<string | null>(null);
 
-    // أيام العمل
     const workDays = employee.work_days && employee.work_days.length > 0 
         ? employee.work_days 
         : ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
     
-    const isPartTime = workDays.length < 5;
-
-    // ------------------------------------------------------------------
-    // 1. 📥 جلب البيانات (Queries)
-    // ------------------------------------------------------------------
-
-    // أ) جلب الإعدادات والقواعد والعطلات (بيانات عامة)
+    // 1. جلب البيانات
     const { data: settingsData } = useQuery({
         queryKey: ['attendance_settings_rules'],
         queryFn: async () => {
             const { data: settings } = await supabase.from('general_settings').select('*').limit(1).single();
             const { data: rules } = await supabase.from('attendance_rules').select('*');
             
-            // معالجة العطلات
             let formattedHolidays: {name: string, date: string}[] = [];
             if (settings?.holidays_name && settings?.holidays_date) {
                 formattedHolidays = settings.holidays_name.map((name: string, i: number) => ({
@@ -73,10 +63,9 @@ export default function StaffAttendance({
                     : ''
             };
         },
-        staleTime: 1000 * 60 * 10 // تحديث كل 10 دقائق
+        staleTime: 1000 * 60 * 10 
     });
 
-    // ب) جلب بيانات الشهر (حضور، إجازات، تقييم)
     const { data: monthData, isLoading } = useQuery({
         queryKey: ['staff_month_data', employee.employee_id, viewMonth],
         queryFn: async () => {
@@ -85,7 +74,6 @@ export default function StaffAttendance({
             const startOfMonth = `${viewMonth}-01`;
             const endOfMonth = `${viewMonth}-${daysInMonth}`;
 
-            // طلبات متوازية (Parallel Fetching) لسرعة أكبر
             const [attRes, leavesRes, evalRes] = await Promise.all([
                 supabase.from('attendance').select('*')
                     .eq('employee_id', employee.employee_id)
@@ -109,11 +97,7 @@ export default function StaffAttendance({
         }
     });
 
-    // ------------------------------------------------------------------
-    // 2. 🧮 معالجة البيانات والحسابات (Logic Layer)
-    // ------------------------------------------------------------------
-
-    // دالة تحليل اليوم (Memoized Logic)
+    // 2. تحليل البيانات (المنطق المحدث)
     const analyzeDay = (attRecord: any, rulesList: AttendanceRule[]) => {
         const times = attRecord?.times?.match(/\d{1,2}:\d{2}/g) || [];
         const sortedTimes = times.sort(); 
@@ -144,7 +128,6 @@ export default function StaffAttendance({
         return { cin, cout, inStatus, inStatusColor, outStatus, outStatusColor, hours };
     };
 
-    // حساب الجدول والإحصائيات (Computed Data)
     const { tableRows, stats } = useMemo(() => {
         if (!monthData || !settingsData) return { tableRows: [], stats: { present: 0, absent: 0, late: 0, totalHours: 0, leavesCount: 0 } };
 
@@ -152,6 +135,17 @@ export default function StaffAttendance({
         const [y, m] = viewMonth.split('-').map(Number);
         const daysInMonth = new Date(y, m, 0).getDate();
         const rows = [];
+
+        // تحويل تواريخ الموظف لكائنات Date للمقارنة
+        const joinDateObj = employee.join_date ? new Date(employee.join_date) : null;
+        const resignDateObj = employee.resignation_date ? new Date(employee.resignation_date) : null;
+        const nursingStart = employee.nursing_start_date ? new Date(employee.nursing_start_date) : null;
+        const nursingEnd = employee.nursing_end_date ? new Date(employee.nursing_end_date) : null;
+
+        if (joinDateObj) joinDateObj.setHours(0,0,0,0);
+        if (resignDateObj) resignDateObj.setHours(0,0,0,0);
+        if (nursingStart) nursingStart.setHours(0,0,0,0);
+        if (nursingEnd) nursingEnd.setHours(0,0,0,0);
 
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = `${viewMonth}-${String(i).padStart(2, '0')}`;
@@ -162,6 +156,25 @@ export default function StaffAttendance({
             const dayName = DAYS_AR[currentDate.getDay()];
             const isWorkDay = workDays.includes(dayName);
             
+            // 1. التحقق من تاريخ الاستلام والإخلاء
+            let isNotRequired = false;
+            let notRequiredReason = '';
+
+            if (joinDateObj && currentDate < joinDateObj) {
+                isNotRequired = true;
+                notRequiredReason = 'قبل الاستلام';
+            }
+            if (resignDateObj && currentDate > resignDateObj) {
+                isNotRequired = true;
+                notRequiredReason = 'بعد الإخلاء';
+            }
+
+            // 2. التحقق من فترة الرضاعة
+            let isNursing = false;
+            if (nursingStart && nursingEnd && currentDate >= nursingStart && currentDate <= nursingEnd) {
+                isNursing = true;
+            }
+
             const record = monthData.attendance.find((a: any) => a.date === dateStr);
             const hasTimes = record && record.times && record.times.trim().length > 0;
 
@@ -180,17 +193,20 @@ export default function StaffAttendance({
                     late++;
                 }
                 totalHours += info.hours;
-                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'present', data: info });
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'present', data: info, isNursing, notRequiredReason });
             } else if (matchingLeave) {
                 leavesCount++; 
-                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'leave', data: matchingLeave });
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'leave', data: matchingLeave, isNursing });
             } else if (officialHoliday) {
-                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'holiday', data: officialHoliday });
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'holiday', data: officialHoliday, isNursing });
+            } else if (isNotRequired) {
+                // ✅ حالة جديدة: غير مطالب
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'not_required', notRequiredReason });
             } else if (isWorkDay && !isFuture) {
                 absent++;
-                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'absent' });
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'absent', isNursing });
             } else {
-                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'rest' });
+                rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'rest', isNursing });
             }
         }
 
@@ -199,11 +215,7 @@ export default function StaffAttendance({
             stats: { present, absent, late, totalHours, leavesCount } 
         };
 
-    }, [monthData, settingsData, viewMonth, workDays]);
-
-    // ------------------------------------------------------------------
-    // 3. 🎨 واجهة المستخدم (UI)
-    // ------------------------------------------------------------------
+    }, [monthData, settingsData, viewMonth, workDays, employee]); // تمت إضافة employee للاعتماديات
 
     const handleMonthChange = (e: any) => {
         const val = e.target.value;
@@ -223,7 +235,6 @@ export default function StaffAttendance({
         return map[colorName] || map['gray'];
     };
 
-    // إعادة تحديث البيانات عند إغلاق طلب التبرير
     const handleRequestRefresh = () => {
         setSelectedAbsenceDate(null);
         queryClient.invalidateQueries({ queryKey: ['staff_month_data'] });
@@ -231,7 +242,6 @@ export default function StaffAttendance({
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-            {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-3xl border shadow-sm gap-4">
                 <div>
                     <h3 className="font-black text-gray-800 text-lg flex items-center gap-2">
@@ -253,7 +263,6 @@ export default function StaffAttendance({
                 </div>
             </div>
 
-            {/* Stats Bar */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
                     <div className="p-2 bg-green-50 text-green-600 rounded-full"><CheckCircle2 className="w-5 h-5"/></div>
@@ -268,7 +277,7 @@ export default function StaffAttendance({
                 <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
                     <div className="p-2 bg-purple-50 text-purple-600 rounded-full"><FileCheck className="w-5 h-5"/></div>
                     <span className="text-xl font-black text-gray-800">{stats.leavesCount}</span>
-                    <span className="text-[10px] text-gray-400 font-bold">إجازات/مأموريات</span>
+                    <span className="text-[10px] text-gray-400 font-bold">إجازات</span>
                 </div>
                 <div className="bg-white p-3 rounded-2xl border shadow-sm flex flex-col items-center justify-center gap-1">
                     <div className="p-2 bg-orange-50 text-orange-600 rounded-full"><AlertTriangle className="w-5 h-5"/></div>
@@ -278,11 +287,10 @@ export default function StaffAttendance({
                 <div className="bg-gradient-to-br from-yellow-50 to-orange-50 p-3 rounded-2xl border border-yellow-100 shadow-sm flex flex-col items-center justify-center gap-1 col-span-2 md:col-span-1">
                     <div className="p-2 bg-yellow-100 text-yellow-600 rounded-full"><Star className="w-5 h-5 fill-yellow-500"/></div>
                     <span className="text-xl font-black text-yellow-700">{monthData?.evaluation ? `${monthData.evaluation}%` : '-'}</span>
-                    <span className="text-[10px] text-yellow-600 font-bold">التقييم الشهري</span>
+                    <span className="text-[10px] text-yellow-600 font-bold">التقييم</span>
                 </div>
             </div>
 
-            {/* Attendance Table */}
             <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
                 <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-sm text-right min-w-[800px]">
@@ -309,54 +317,51 @@ export default function StaffAttendance({
                                         ${row.type === 'absent' ? 'bg-red-50/30 cursor-pointer hover:bg-red-100/30' : ''}
                                         ${row.type === 'leave' ? 'bg-purple-50/30' : ''}
                                         ${row.type === 'holiday' ? 'bg-orange-50/30' : ''}
+                                        ${row.type === 'not_required' ? 'bg-gray-100/50 opacity-60' : ''} 
                                     `}
                                     onClick={() => row.type === 'absent' && setSelectedAbsenceDate(row.dateStr)}
                                 >
-                                    <td className="p-4 font-bold text-gray-700">{row.dateStr}</td>
+                                    <td className="p-4 font-bold text-gray-700">
+                                        {row.dateStr}
+                                        {/* شارة الرضاعة */}
+                                        {row.isNursing && row.isWorkDay && (
+                                            <span className="block text-[9px] bg-pink-100 text-pink-600 px-1.5 py-0.5 rounded w-fit mt-1 flex items-center gap-1">
+                                                <Baby className="w-3 h-3"/> ساعة رضاعة
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className={`p-4 font-bold ${!row.isWorkDay ? 'text-gray-400' : 'text-gray-600'}`}>{row.dayName}</td>
                                     
-                                    {/* تفاصيل الحضور والانصراف */}
                                     <td className="p-4">{row.type === 'present' ? <span className="font-mono font-black text-gray-800">{row.data.cin}</span> : '--'}</td>
                                     <td className="p-4">{row.type === 'present' && row.data.cout ? <span className="font-mono font-black text-gray-800">{row.data.cout}</span> : '--'}</td>
 
-                                    {/* حالة الحضور */}
                                     <td className="p-4">
                                         {row.type === 'present' ? (
                                             <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getColorClass(row.data.inStatusColor)}`}>{row.data.inStatus}</span>
                                         ) : row.type === 'leave' ? (
-                                            <span className="text-purple-600 text-[10px] font-bold flex items-center gap-1">
-                                                <FileCheck className="w-3 h-3"/> {row.data.type}
-                                            </span>
+                                            <span className="text-purple-600 text-[10px] font-bold flex items-center gap-1"><FileCheck className="w-3 h-3"/> {row.data.type}</span>
                                         ) : row.type === 'holiday' ? (
-                                            <span className="text-orange-600 text-[10px] font-bold flex items-center gap-1">
-                                                <PartyPopper className="w-3 h-3"/> {row.data.name}
-                                            </span>
+                                            <span className="text-orange-600 text-[10px] font-bold flex items-center gap-1"><Star className="w-3 h-3"/> {row.data.name}</span>
                                         ) : row.type === 'absent' ? (
                                             <span className="text-red-500 text-xs font-bold flex items-center gap-1"><XCircle className="w-3 h-3"/> غياب</span>
+                                        ) : row.type === 'not_required' ? (
+                                            <span className="text-gray-400 text-xs font-bold">{row.notRequiredReason}</span>
                                         ) : !row.isWorkDay && !row.isFuture ? (
                                             <span className="text-gray-400 text-[10px] font-bold">راحة</span>
                                         ) : '-'}
                                     </td>
 
-                                    {/* حالة الانصراف */}
                                     <td className="p-4">
                                         {row.type === 'present' && row.data.cout ? (
                                             <span className={`px-2 py-1 rounded-lg text-xs font-bold ${getColorClass(row.data.outStatusColor)}`}>{row.data.outStatus}</span>
                                         ) : '-'}
                                     </td>
 
-                                    {/* الحالة العامة */}
                                     <td className="p-4 font-mono font-bold text-blue-600">
                                         {row.type === 'present' && row.data.hours > 0 ? (
-                                            <span>{row.data.hours} س {!row.isWorkDay && <span className="text-[10px] text-orange-500 mr-1">(إضافي)</span>}</span>
-                                        ) : row.type === 'leave' ? (
-                                            <span className="text-purple-400 text-xs">طلب مقبول</span>
-                                        ) : row.type === 'holiday' ? (
-                                            <span className="text-orange-400 text-xs">عطلة رسمية</span>
-                                        ) : row.type === 'rest' ? (
-                                            <span className="text-gray-400 text-xs">
-                                                {!row.isWorkDay && !row.isFuture ? (isPartTime ? 'غير مطالب' : 'عطلة') : '-'}
-                                            </span>
+                                            <span>{row.data.hours} س</span>
+                                        ) : row.type === 'not_required' ? (
+                                            <span className="text-gray-400 text-xs">غير مطالب</span>
                                         ) : ''}
                                     </td>
                                 </tr>
