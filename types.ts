@@ -12,6 +12,11 @@ export interface Employee {
   center_id?: string;    // كود المركز الطبي التابع له
   photo_url?: string;    // رابط الصورة الشخصية
   phone?: string;        // رقم الهاتف
+  resignation_date?: string;
+  nursing_start_date?: string;
+  nursing_end_date?: string;
+  nursing_time?: 'morning' | 'evening' | null;
+
   
   // --- حقول المصادقة ---
   email?: string;        // البريد الإلكتروني
