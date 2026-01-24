@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Save, Upload, Camera, Calendar, Briefcase, FileText, Phone, Mail, MapPin, Loader2 } from 'lucide-react';
+import { User, Save, Upload, Camera, Calendar, Briefcase, FileText, Phone, Mail, MapPin, Loader2, Baby, Clock } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 
@@ -17,7 +17,7 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
-        // التأكد من أن work_days هي مصفوفة وليست نصاً
+        // التأكد من أن work_days هي مصفوفة
         let wd = employee.work_days;
         if (typeof wd === 'string') wd = (wd as string).split(',');
         if (!Array.isArray(wd)) wd = [];
@@ -44,7 +44,7 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
         setUploading(true);
         const file = e.target.files[0];
         const fileExt = file.name.split('.').pop();
-        const fileName = `${employee.employee_id}_${Date.now()}.${fileExt}`; // اسم فريد
+        const fileName = `${employee.employee_id}_${Date.now()}.${fileExt}`;
         const filePath = `${fileName}`;
 
         try {
@@ -56,12 +56,11 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
 
             const { data: urlData } = supabase.storage.from('staff-photos').getPublicUrl(filePath);
             
-            // تحديث الواجهة فوراً
             setFormData((prev: any) => ({ ...prev, photo_url: urlData.publicUrl }));
             alert('تم رفع الصورة بنجاح! لا تنس حفظ التعديلات.');
         } catch (error: any) {
             console.error(error);
-            alert('فشل رفع الصورة: تأكد من إنشاء bucket باسم "staff-photos" في Supabase وجعله Public.');
+            alert('فشل رفع الصورة');
         } finally {
             setUploading(false);
         }
@@ -74,12 +73,13 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
         try {
             const payload = {
                 ...formData,
-                work_days: formData.work_days, // Supabase سيقبل المصفوفة إذا كان العمود نصي (سيحولها JSON) أو مصفوفة نصية
+                work_days: formData.work_days,
                 leave_annual_balance: Number(formData.leave_annual_balance),
                 leave_casual_balance: Number(formData.leave_casual_balance),
                 remaining_annual: Number(formData.remaining_annual),
                 remaining_casual: Number(formData.remaining_casual),
                 total_absence: Number(formData.total_absence),
+                // يتم إرسال الحقول الجديدة تلقائياً لأنها موجودة في formData
             };
 
             const { error } = await supabase
@@ -151,39 +151,32 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                     <Field label="الاسم بالكامل" name="name" value={formData.name} onChange={handleChange} disabled={!isEditable} />
                     <div className="grid grid-cols-2 gap-4">
                         <Field label="الرقم القومي" name="national_id" value={formData.national_id} onChange={handleChange} disabled={!isEditable} />
-                        <Field label="تاريخ التعيين" type="date" name="join_date" value={formData.join_date} onChange={handleChange} disabled={!isEditable} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <Field label="الجنس" name="gender" value={formData.gender} onChange={handleChange} disabled={!isEditable} as="select" options={['ذكر', 'أنثى']} />
-                        <Field label="الديانة" name="religion" value={formData.religion} onChange={handleChange} disabled={!isEditable} as="select" options={['مسلم', 'مسيحي']} />
+                        <div className="grid grid-cols-2 gap-4">
+                            <Field label="الجنس" name="gender" value={formData.gender} onChange={handleChange} disabled={!isEditable} as="select" options={['ذكر', 'أنثى']} />
+                            <Field label="الديانة" name="religion" value={formData.religion} onChange={handleChange} disabled={!isEditable} as="select" options={['مسلم', 'مسيحي']} />
+                        </div>
                     </div>
                 </Section>
 
-                {/* 3. Job Details */}
-                <Section title="تفاصيل الوظيفة" icon={Briefcase}>
+                {/* 3. Job Details (Updated with Resignation Date) */}
+                <Section title="تفاصيل الوظيفة والتواريخ" icon={Briefcase}>
                     <div className="grid grid-cols-2 gap-4">
                         <Field label="الكود الوظيفي" name="employee_id" value={formData.employee_id} onChange={handleChange} disabled={!isEditable} />
                         <Field label="الدرجة الوظيفية" name="grade" value={formData.grade} onChange={handleChange} disabled={!isEditable} />
                     </div>
-                    <Field label="التخصص" name="specialty" value={formData.specialty} onChange={handleChange} disabled={!isEditable} />
+                    <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <Field label="تاريخ استلام العمل" type="date" name="join_date" value={formData.join_date} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="تاريخ إخلاء الطرف" type="date" name="resignation_date" value={formData.resignation_date} onChange={handleChange} disabled={!isEditable} placeholder="dd/mm/yyyy" />
+                    </div>
                     <Field label="المركز التابع له" name="center_id" value={formData.center_id} onChange={handleChange} disabled={!isEditable} />
                     <Field label="المهام الإدارية" name="admin_tasks" value={formData.admin_tasks} onChange={handleChange} disabled={!isEditable} />
                 </Section>
 
-                {/* 4. Contact Info */}
-                <Section title="بيانات الاتصال" icon={Phone}>
-                    <div className="grid grid-cols-2 gap-4">
-                        <Field label="رقم الهاتف" name="phone" value={formData.phone} onChange={handleChange} disabled={!isEditable} />
-                        <Field label="البريد الإلكتروني" name="email" value={formData.email} onChange={handleChange} disabled={!isEditable} />
-                    </div>
-                    <Field label="الدورات التدريبية" name="training_courses" value={formData.training_courses} onChange={handleChange} disabled={!isEditable} as="textarea" />
-                </Section>
-
-                {/* 5. Schedule & Work Days */}
+                {/* 4. Schedule & Work Days */}
                 <Section title="المواعيد وأيام العمل" icon={Calendar}>
                     <div className="grid grid-cols-2 gap-4 mb-4">
-                        <Field label="وقت الحضور" type="time" name="start_time" value={formData.start_time} onChange={handleChange} disabled={!isEditable} />
-                        <Field label="وقت الانصراف" type="time" name="end_time" value={formData.end_time} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="وقت الحضور الافتراضي" type="time" name="start_time" value={formData.start_time} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="وقت الانصراف الافتراضي" type="time" name="end_time" value={formData.end_time} onChange={handleChange} disabled={!isEditable} />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-gray-500 mb-2">أيام العمل الأسبوعية</label>
@@ -207,46 +200,93 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                     </div>
                 </Section>
 
-                {/* 6. Leaves Balance */}
+                {/* 5. Leaves Balance & Maternity Settings (Updated) */}
                 <div className="xl:col-span-2">
-                    <Section title="أرصدة الإجازات والغياب" icon={FileText}>
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                            <BalanceCard label="رصيد اعتيادي" value={formData.leave_annual_balance} name="leave_annual_balance" onChange={handleChange} editable={isEditable} color="blue" />
-                            <BalanceCard label="متبقي اعتيادي" value={formData.remaining_annual} name="remaining_annual" onChange={handleChange} editable={isEditable} color="blue" />
+                    <Section title="الإجازات وإعدادات الأمومة" icon={Baby}>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             
-                            <BalanceCard label="رصيد عارضة" value={formData.leave_casual_balance} name="leave_casual_balance" onChange={handleChange} editable={isEditable} color="orange" />
-                            <BalanceCard label="متبقي عارضة" value={formData.remaining_casual} name="remaining_casual" onChange={handleChange} editable={isEditable} color="orange" />
-                            
-                            <BalanceCard label="إجمالي الغياب" value={formData.total_absence} name="total_absence" onChange={handleChange} editable={isEditable} color="red" />
-                            
-                            <div className="bg-gray-50 p-3 rounded-2xl border border-gray-200">
-                                <label className="block text-[10px] font-bold text-gray-500 mb-1">إجازة وضع؟</label>
-                                <select 
-                                    name="maternity" 
-                                    value={formData.maternity} 
-                                    onChange={handleChange} 
-                                    disabled={!isEditable}
-                                    className="w-full bg-transparent font-black text-gray-800 outline-none"
-                                >
-                                    <option value="لا">لا</option>
-                                    <option value="نعم">نعم</option>
-                                </select>
+                            {/* أرصدة الإجازات */}
+                            <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <BalanceCard label="رصيد اعتيادي" value={formData.leave_annual_balance} name="leave_annual_balance" onChange={handleChange} editable={isEditable} color="blue" />
+                                <BalanceCard label="متبقي اعتيادي" value={formData.remaining_annual} name="remaining_annual" onChange={handleChange} editable={isEditable} color="blue" />
+                                <BalanceCard label="رصيد عارضة" value={formData.leave_casual_balance} name="leave_casual_balance" onChange={handleChange} editable={isEditable} color="orange" />
+                                <BalanceCard label="متبقي عارضة" value={formData.remaining_casual} name="remaining_casual" onChange={handleChange} editable={isEditable} color="orange" />
+                            </div>
+
+                            {/* إعدادات الأمومة والرضاعة */}
+                            <div className="bg-pink-50/50 p-4 rounded-2xl border border-pink-100 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                        <Baby className="w-4 h-4 text-pink-500"/>
+                                        إجازة وضع / رضاعة؟
+                                    </label>
+                                    <select 
+                                        name="maternity" 
+                                        value={formData.maternity ? 'نعم' : 'لا'} 
+                                        onChange={(e) => setFormData({...formData, maternity: e.target.value === 'نعم'})}
+                                        disabled={!isEditable}
+                                        className="bg-white border border-pink-200 text-pink-600 font-bold text-sm rounded-lg px-3 py-1 outline-none"
+                                    >
+                                        <option value="لا">لا</option>
+                                        <option value="نعم">نعم</option>
+                                    </select>
+                                </div>
+
+                                {(formData.maternity === true || formData.maternity === 'نعم') && (
+                                    <div className="space-y-3 animate-in slide-in-from-top-2 pt-2 border-t border-pink-100">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <Field label="بداية الرضاعة" type="date" name="nursing_start_date" value={formData.nursing_start_date} onChange={handleChange} disabled={!isEditable} />
+                                            <Field label="نهاية الرضاعة" type="date" name="nursing_end_date" value={formData.nursing_end_date} onChange={handleChange} disabled={!isEditable} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-400 mb-1.5">توقيت ساعة الرضاعة</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => isEditable && setFormData({...formData, nursing_time: 'morning'})}
+                                                    className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1 transition-all ${
+                                                        formData.nursing_time === 'morning' ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-gray-500 border-gray-200'
+                                                    }`}
+                                                >
+                                                    <Clock className="w-3 h-3"/> صباحاً (تأخير)
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => isEditable && setFormData({...formData, nursing_time: 'evening'})}
+                                                    className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1 transition-all ${
+                                                        formData.nursing_time === 'evening' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-500 border-gray-200'
+                                                    }`}
+                                                >
+                                                    <Clock className="w-3 h-3"/> مساءً (انصراف)
+                                                </button>
+                                            </div>
+                                            <p className="text-[10px] text-gray-400 mt-1 mr-1">
+                                                {formData.nursing_time === 'morning' && 'يتم تأخير الحضور ساعة واحدة عن الموعد الرسمي.'}
+                                                {formData.nursing_time === 'evening' && 'يتم التبكير في الانصراف ساعة واحدة عن الموعد الرسمي.'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </Section>
                 </div>
 
-                {/* 7. Files & Notes */}
+                {/* 6. Contact & Files */}
                 <div className="xl:col-span-2">
-                    <Section title="مرفقات وملاحظات" icon={FileText}>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Section title="بيانات الاتصال" icon={Phone}>
+                            <Field label="رقم الهاتف" name="phone" value={formData.phone} onChange={handleChange} disabled={!isEditable} />
+                            <Field label="البريد الإلكتروني" name="email" value={formData.email} onChange={handleChange} disabled={!isEditable} />
+                            <Field label="الدورات التدريبية" name="training_courses" value={formData.training_courses} onChange={handleChange} disabled={!isEditable} as="textarea" />
+                        </Section>
+
+                        <Section title="مرفقات وملاحظات" icon={FileText}>
                             <Field label="رابط البطاقة (وجه)" name="id_front_url" value={formData.id_front_url} onChange={handleChange} disabled={!isEditable} />
                             <Field label="رابط البطاقة (ظهر)" name="id_back_url" value={formData.id_back_url} onChange={handleChange} disabled={!isEditable} />
-                            <div className="md:col-span-2">
-                                <Field label="ملاحظات إضافية" name="notes" value={formData.notes} onChange={handleChange} disabled={!isEditable} as="textarea" />
-                            </div>
-                        </div>
-                    </Section>
+                            <Field label="ملاحظات إضافية" name="notes" value={formData.notes} onChange={handleChange} disabled={!isEditable} as="textarea" />
+                        </Section>
+                    </div>
                 </div>
 
             </div>
@@ -254,9 +294,9 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     );
 }
 
-// Sub-components
+// Sub-components (Reused)
 const Section = ({ title, icon: Icon, children }: any) => (
-    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition-shadow h-full">
         <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2 pb-3 border-b border-gray-50">
             <div className="p-2 bg-gray-50 rounded-xl text-gray-600"><Icon className="w-5 h-5"/></div>
             {title}
@@ -276,7 +316,7 @@ const Field = ({ label, as = 'input', options, ...props }: any) => (
         ) : as === 'textarea' ? (
             <textarea className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-medium text-sm min-h-[80px]" {...props} />
         ) : (
-            <input className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-gray-700 text-sm" {...props} />
+            <input className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-gray-700 text-sm disabled:opacity-60" {...props} />
         )}
     </div>
 );
