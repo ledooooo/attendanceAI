@@ -9,6 +9,7 @@ import StaffNewRequest from './StaffNewRequest';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const DEFAULT_WORK_DAYS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"]; // الدوام الكامل الافتراضي
 
 const toMinutes = (timeStr: string) => {
     if (!timeStr) return 0;
@@ -36,10 +37,6 @@ export default function StaffAttendance({
     const [viewMonth, setViewMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7));
     const [selectedAbsenceDate, setSelectedAbsenceDate] = useState<string | null>(null);
 
-    const workDays = employee.work_days && employee.work_days.length > 0 
-        ? employee.work_days 
-        : ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
-    
     // 1. جلب البيانات
     const { data: settingsData } = useQuery({
         queryKey: ['attendance_settings_rules'],
@@ -97,7 +94,7 @@ export default function StaffAttendance({
         }
     });
 
-    // 2. تحليل البيانات (المنطق المحدث)
+    // 2. تحليل البيانات
     const analyzeDay = (attRecord: any, rulesList: AttendanceRule[]) => {
         const times = attRecord?.times?.match(/\d{1,2}:\d{2}/g) || [];
         const sortedTimes = times.sort(); 
@@ -136,16 +133,25 @@ export default function StaffAttendance({
         const daysInMonth = new Date(y, m, 0).getDate();
         const rows = [];
 
-        // تحويل تواريخ الموظف لكائنات Date للمقارنة
+        // تجهيز التواريخ
         const joinDateObj = employee.join_date ? new Date(employee.join_date) : null;
         const resignDateObj = employee.resignation_date ? new Date(employee.resignation_date) : null;
         const nursingStart = employee.nursing_start_date ? new Date(employee.nursing_start_date) : null;
         const nursingEnd = employee.nursing_end_date ? new Date(employee.nursing_end_date) : null;
+        
+        // تواريخ العمل الجزئي
+        const partTimeStart = employee.part_time_start_date ? new Date(employee.part_time_start_date) : null;
+        const partTimeEnd = employee.part_time_end_date ? new Date(employee.part_time_end_date) : null;
 
         if (joinDateObj) joinDateObj.setHours(0,0,0,0);
         if (resignDateObj) resignDateObj.setHours(0,0,0,0);
         if (nursingStart) nursingStart.setHours(0,0,0,0);
         if (nursingEnd) nursingEnd.setHours(0,0,0,0);
+        if (partTimeStart) partTimeStart.setHours(0,0,0,0);
+        if (partTimeEnd) partTimeEnd.setHours(0,0,0,0);
+
+        // تجهيز أيام العمل المخصصة (إذا وجدت)
+        const customWorkDays = Array.isArray(employee.work_days) ? employee.work_days : [];
 
         for (let i = 1; i <= daysInMonth; i++) {
             const dateStr = `${viewMonth}-${String(i).padStart(2, '0')}`;
@@ -154,9 +160,22 @@ export default function StaffAttendance({
             
             const isFuture = currentDate > new Date();
             const dayName = DAYS_AR[currentDate.getDay()];
-            const isWorkDay = workDays.includes(dayName);
             
-            // 1. التحقق من تاريخ الاستلام والإخلاء
+            // 🔥 منطق تحديد هل اليوم "يوم عمل" أم لا
+            let isWorkDay = false;
+            let isPartTimePeriod = false;
+
+            // هل اليوم يقع ضمن فترة العمل الجزئي؟
+            if (partTimeStart && partTimeEnd && currentDate >= partTimeStart && currentDate <= partTimeEnd) {
+                isPartTimePeriod = true;
+                // في هذه الفترة، نلتزم بالأيام المحددة فقط
+                isWorkDay = customWorkDays.includes(dayName);
+            } else {
+                // خارج الفترة (أو إذا لم تحدد)، نعود للوضع الافتراضي (السبت - الخميس)
+                isWorkDay = DEFAULT_WORK_DAYS.includes(dayName);
+            }
+            
+            // 1. التحقق من التعيين والإخلاء
             let isNotRequired = false;
             let notRequiredReason = '';
 
@@ -200,7 +219,6 @@ export default function StaffAttendance({
             } else if (officialHoliday) {
                 rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'holiday', data: officialHoliday, isNursing });
             } else if (isNotRequired) {
-                // ✅ حالة جديدة: غير مطالب
                 rows.push({ dateStr, dayName, isWorkDay, isFuture, type: 'not_required', notRequiredReason });
             } else if (isWorkDay && !isFuture) {
                 absent++;
@@ -215,7 +233,7 @@ export default function StaffAttendance({
             stats: { present, absent, late, totalHours, leavesCount } 
         };
 
-    }, [monthData, settingsData, viewMonth, workDays, employee]); // تمت إضافة employee للاعتماديات
+    }, [monthData, settingsData, viewMonth, employee]);
 
     const handleMonthChange = (e: any) => {
         const val = e.target.value;
