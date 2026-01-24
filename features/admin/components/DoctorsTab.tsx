@@ -8,10 +8,9 @@ import toast from 'react-hot-toast';
 import { 
     Download, Users, ArrowRight, User, Clock, FileText, 
     Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, 
-    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2
+    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby
 } from 'lucide-react';
 
-// 1. ✅ Import React Query
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // Sub-components
@@ -39,6 +38,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     const [showModal, setShowModal] = useState(false);
     const [editMode, setEditMode] = useState(false);
     
+    // ✅ تحديث الحالة الابتدائية بالحقول الجديدة
     const initialFormState: any = {
         employee_id: '', name: '', national_id: '', specialty: '', phone: '', email: '',
         gender: 'ذكر', grade: '', photo_url: '', id_front_url: '', id_back_url: '',
@@ -46,18 +46,17 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         leave_annual_balance: 21, leave_casual_balance: 7, total_absence: 0,
         remaining_annual: 21, remaining_casual: 7, admin_tasks: '',
         status: 'نشط', join_date: new Date().toISOString().split('T')[0],
-        training_courses: '', notes: '', maternity: 'false', role: 'user'
+        resignation_date: '', // تاريخ الإخلاء
+        training_courses: '', notes: '', maternity: 'false', role: 'user',
+        nursing_start_date: '', nursing_end_date: '', nursing_time: '' // بيانات الرضاعة
     };
     const [formData, setFormData] = useState(initialFormState);
 
-    // ------------------------------------------------------------------
-    // 1. 📥 Fetch Selected Employee Data (Query)
-    // ------------------------------------------------------------------
+    // 1. Fetch Data
     const { data: empData = { attendance: [], requests: [], evals: [], messages: [] }, isLoading: loadingDetails } = useQuery({
         queryKey: ['employee_full_details', selectedEmp?.employee_id],
         queryFn: async () => {
             if (!selectedEmp) return null;
-            // Fetch everything in parallel
             const [att, req, evl, msg] = await Promise.all([
                 supabase.from('attendance').select('*').eq('employee_id', selectedEmp.employee_id),
                 supabase.from('leave_requests').select('*').eq('employee_id', selectedEmp.employee_id).order('created_at', { ascending: false }),
@@ -72,15 +71,11 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 messages: msg.data || [] 
             };
         },
-        enabled: !!selectedEmp, // Only fetch when an employee is selected
-        staleTime: 1000 * 60 * 2, // 2 minutes cache
+        enabled: !!selectedEmp,
+        staleTime: 1000 * 60 * 2,
     });
 
-    // ------------------------------------------------------------------
-    // 2. 🛠️ Mutations (Save, Update Status, Sync)
-    // ------------------------------------------------------------------
-
-    // A) Save/Update Employee
+    // 2. Mutations
     const saveMutation = useMutation({
         mutationFn: async (data: any) => {
             const payload = {
@@ -91,6 +86,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 remaining_annual: Number(data.remaining_annual),
                 remaining_casual: Number(data.remaining_casual),
                 total_absence: Number(data.total_absence),
+                // سيتم إرسال الحقول الجديدة تلقائياً لأنها موجودة في data
             };
 
             if (editMode && data.id) {
@@ -104,14 +100,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         },
         onSuccess: () => {
             toast.success(editMode ? 'تم تعديل البيانات بنجاح' : 'تم إضافة الموظف بنجاح');
-            queryClient.invalidateQueries({ queryKey: ['admin_employees'] }); // Refresh parent list
+            queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
             setShowModal(false);
-            onRefresh(); // Trigger parent refresh prop if needed
+            onRefresh();
         },
         onError: (err: any) => toast.error(err.message)
     });
 
-    // B) Update Status
     const statusMutation = useMutation({
         mutationFn: async ({ id, status }: { id: string, status: string }) => {
             const { error } = await supabase.from('employees').update({ status }).eq('id', id);
@@ -124,7 +119,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         onError: () => toast.error('فشل تحديث الحالة')
     });
 
-    // C) Sync Balances
     const syncMutation = useMutation({
         mutationFn: async () => {
             const { error } = await supabase.rpc('recalculate_all_balances');
@@ -137,10 +131,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         onError: (err: any) => toast.error(err.message)
     });
 
-    // ------------------------------------------------------------------
-    // 3. 🎨 UI Logic & Handlers
-    // ------------------------------------------------------------------
-
+    // 3. UI Logic
     const handleFormSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         saveMutation.mutate(formData);
@@ -195,7 +186,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         }
     };
 
-    // Placeholder functions for Excel (You can implement Mutation for import later if needed)
     const handleExportEmployees = async () => {
         const ws = XLSX.utils.json_to_sheet(employees);
         const wb = XLSX.utils.book_new();
@@ -205,7 +195,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     const handleDownloadSample = () => {}; 
     const handleExcelImport = async (data: any[]) => {}; 
 
-    // --- Single Employee View ---
+    // --- View ---
     if (selectedEmp) {
         return (
             <div className="space-y-6 animate-in slide-in-from-left duration-300">
@@ -263,7 +253,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         );
     }
 
-    // --- Main List View ---
     return (
         <div className="space-y-6 animate-in fade-in duration-500 relative">
             <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
@@ -405,6 +394,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     <Input label="الدرجة الوظيفية" value={formData.grade} onChange={v => setFormData({...formData, grade: v})} />
                                     
                                     <Input type="date" label="تاريخ التعيين" value={formData.join_date} onChange={v => setFormData({...formData, join_date: v})} />
+                                    <Input type="date" label="تاريخ الإخلاء" value={formData.resignation_date} onChange={v => setFormData({...formData, resignation_date: v})} />
                                     <Select label="الحالة" options={['نشط', 'موقوف', 'إجازة', 'خارج المركز']} value={formData.status} onChange={v => setFormData({...formData, status: v})} />
                                     
                                     <div>
@@ -436,7 +426,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                         {['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'].map(day => (
                                             <button 
                                                 type="button" 
-                                                key={day}
+                                                key={day} 
                                                 onClick={() => handleDayToggle(day)}
                                                 className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${
                                                     (formData.work_days || []).includes(day) 
@@ -451,15 +441,47 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                 </div>
                             </div>
 
-                            {/* 3. Balances */}
+                            {/* 3. Balances & Maternity */}
                             <div className="space-y-4">
-                                <h4 className="text-sm font-bold text-gray-500 border-b pb-2">الأرصدة والغياب</h4>
+                                <h4 className="text-sm font-bold text-gray-500 border-b pb-2">الأرصدة والوضع</h4>
                                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                                     <Input type="number" label="رصيد اعتيادي" value={formData.leave_annual_balance} onChange={v => setFormData({...formData, leave_annual_balance: v})} />
                                     <Input type="number" label="رصيد عارضة" value={formData.leave_casual_balance} onChange={v => setFormData({...formData, leave_casual_balance: v})} />
                                     <Input type="number" label="متبقي اعتيادي" value={formData.remaining_annual} onChange={v => setFormData({...formData, remaining_annual: v})} />
                                     <Input type="number" label="متبقي عارضة" value={formData.remaining_casual} onChange={v => setFormData({...formData, remaining_casual: v})} />
                                     <Input type="number" label="إجمالي الغياب" value={formData.total_absence} onChange={v => setFormData({...formData, total_absence: v})} />
+                                </div>
+
+                                {/* إعدادات الوضع والرضاعة (تظهر فقط عند اختيار إجازة وضع) */}
+                                <div className="bg-pink-50 p-4 rounded-xl border border-pink-100">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={formData.maternity === 'true'} 
+                                            onChange={e => setFormData({...formData, maternity: e.target.checked ? 'true' : 'false'})}
+                                            className="w-5 h-5 accent-pink-500"
+                                        />
+                                        <label className="text-sm font-bold text-gray-700">في إجازة وضع / رضاعة</label>
+                                    </div>
+
+                                    {formData.maternity === 'true' && (
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in">
+                                            <Input type="date" label="بداية الرضاعة" value={formData.nursing_start_date} onChange={v => setFormData({...formData, nursing_start_date: v})} />
+                                            <Input type="date" label="نهاية الرضاعة" value={formData.nursing_end_date} onChange={v => setFormData({...formData, nursing_end_date: v})} />
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 mb-1">وقت الرضاعة</label>
+                                                <select 
+                                                    className="w-full p-3 rounded-xl border bg-white focus:border-pink-500 outline-none text-sm"
+                                                    value={formData.nursing_time}
+                                                    onChange={e => setFormData({...formData, nursing_time: e.target.value})}
+                                                >
+                                                    <option value="">اختر التوقيت...</option>
+                                                    <option value="morning">صباحي (تأخير)</option>
+                                                    <option value="evening">مسائي (انصراف)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -470,15 +492,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     <Input label="الدورات التدريبية" value={formData.training_courses} onChange={v => setFormData({...formData, training_courses: v})} />
                                     <Input label="مهام إدارية" value={formData.admin_tasks} onChange={v => setFormData({...formData, admin_tasks: v})} />
                                     <Input label="رابط الصورة الشخصية" value={formData.photo_url} onChange={v => setFormData({...formData, photo_url: v})} />
-                                    <div className="flex items-center gap-2 mt-4 bg-gray-50 p-3 rounded-xl border">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={formData.maternity === 'true'} 
-                                            onChange={e => setFormData({...formData, maternity: e.target.checked ? 'true' : 'false'})}
-                                            className="w-5 h-5 accent-pink-500"
-                                        />
-                                        <label className="text-sm font-bold text-gray-700">في إجازة وضع</label>
-                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات</label>
