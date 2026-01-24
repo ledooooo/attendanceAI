@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { 
     Download, Users, ArrowRight, User, Clock, FileText, 
     Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, 
-    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby
+    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby, Timer, Info
 } from 'lucide-react';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -20,6 +20,8 @@ import StaffRequestsHistory from '../../staff/components/StaffRequestsHistory';
 import StaffEvaluations from '../../staff/components/StaffEvaluations';
 import StaffStats from '../../staff/components/StaffStats';
 import StaffMessages from '../../staff/components/StaffMessages';
+
+const DAYS_OPTIONS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
 
 export default function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
     const queryClient = useQueryClient();
@@ -37,6 +39,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     // Form State
     const [showModal, setShowModal] = useState(false);
     const [editMode, setEditMode] = useState(false);
+    const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false); // ✅ حالة العمل الجزئي
     
     // ✅ تحديث الحالة الابتدائية بالحقول الجديدة
     const initialFormState: any = {
@@ -46,9 +49,10 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         leave_annual_balance: 21, leave_casual_balance: 7, total_absence: 0,
         remaining_annual: 21, remaining_casual: 7, admin_tasks: '',
         status: 'نشط', join_date: new Date().toISOString().split('T')[0],
-        resignation_date: '', // تاريخ الإخلاء
+        resignation_date: '', 
         training_courses: '', notes: '', maternity: 'false', role: 'user',
-        nursing_start_date: '', nursing_end_date: '', nursing_time: '' // بيانات الرضاعة
+        nursing_start_date: '', nursing_end_date: '', nursing_time: '',
+        part_time_start_date: '', part_time_end_date: '' // ✅ حقول العمل الجزئي
     };
     const [formData, setFormData] = useState(initialFormState);
 
@@ -86,7 +90,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 remaining_annual: Number(data.remaining_annual),
                 remaining_casual: Number(data.remaining_casual),
                 total_absence: Number(data.total_absence),
-                // سيتم إرسال الحقول الجديدة تلقائياً لأنها موجودة في data
+                // التعامل مع حقول العمل الجزئي
+                part_time_start_date: isPartTimeEnabled ? data.part_time_start_date : null,
+                part_time_end_date: isPartTimeEnabled ? data.part_time_end_date : null,
             };
 
             if (editMode && data.id) {
@@ -164,6 +170,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     const handleOpenAdd = () => {
         setFormData(initialFormState);
         setEditMode(false);
+        setIsPartTimeEnabled(false);
         setShowModal(true);
     };
 
@@ -174,6 +181,8 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             maternity: String(emp.maternity)
         });
         setEditMode(true);
+        // تفعيل الزر إذا كانت التواريخ موجودة
+        setIsPartTimeEnabled(!!emp.part_time_start_date || !!emp.part_time_end_date);
         setShowModal(true);
     };
 
@@ -183,6 +192,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             setFormData({ ...formData, work_days: currentDays.filter((d:string) => d !== day) });
         } else {
             setFormData({ ...formData, work_days: [...currentDays, day] });
+        }
+    };
+
+    const togglePartTime = (enabled: boolean) => {
+        setIsPartTimeEnabled(enabled);
+        if (!enabled) {
+            setFormData({ ...formData, part_time_start_date: '', part_time_end_date: '' });
         }
     };
 
@@ -413,31 +429,61 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                 </div>
                             </div>
 
-                            {/* 2. Schedule */}
+                            {/* 2. Schedule & Part Time (Updated) */}
                             <div className="space-y-4">
-                                <h4 className="text-sm font-bold text-gray-500 border-b pb-2">مواعيد العمل</h4>
+                                <h4 className="text-sm font-bold text-gray-500 border-b pb-2">مواعيد ونظام العمل</h4>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <Input type="time" label="وقت الحضور" value={formData.start_time} onChange={v => setFormData({...formData, start_time: v})} />
                                     <Input type="time" label="وقت الانصراف" value={formData.end_time} onChange={v => setFormData({...formData, end_time: v})} />
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">أيام العمل</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة'].map(day => (
-                                            <button 
-                                                type="button" 
-                                                key={day} 
-                                                onClick={() => handleDayToggle(day)}
-                                                className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${
-                                                    (formData.work_days || []).includes(day) 
-                                                    ? 'bg-blue-600 text-white border-blue-600' 
-                                                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                                                }`}
-                                            >
-                                                {day}
-                                            </button>
-                                        ))}
+
+                                {/* ✅ إعدادات العمل الجزئي */}
+                                <div className={`p-4 rounded-2xl border transition-all ${isPartTimeEnabled ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-100'}`}>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                            <Timer className={`w-5 h-5 ${isPartTimeEnabled ? 'text-indigo-600' : 'text-gray-400'}`}/>
+                                            تفعيل نظام العمل الجزئي (أيام محددة)؟
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="checkbox" 
+                                                className="toggle-checkbox w-5 h-5 accent-indigo-600"
+                                                checked={isPartTimeEnabled}
+                                                onChange={(e) => togglePartTime(e.target.checked)}
+                                            />
+                                        </div>
                                     </div>
+
+                                    {isPartTimeEnabled && (
+                                        <div className="animate-in fade-in space-y-4">
+                                            <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-indigo-100">
+                                                <Input type="date" label="من تاريخ" value={formData.part_time_start_date} onChange={v => setFormData({...formData, part_time_start_date: v})} />
+                                                <Input type="date" label="إلى تاريخ" value={formData.part_time_end_date} onChange={v => setFormData({...formData, part_time_end_date: v})} />
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block text-xs font-bold text-indigo-700 mb-2">
+                                                    اختر أيام الحضور (خلال الفترة المحددة فقط):
+                                                </label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {DAYS_OPTIONS.map(day => (
+                                                        <button
+                                                            type="button"
+                                                            key={day}
+                                                            onClick={() => handleDayToggle(day)}
+                                                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                                                                (formData.work_days || []).includes(day)
+                                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                                                                    : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
+                                                            }`}
+                                                        >
+                                                            {day}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -452,7 +498,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     <Input type="number" label="إجمالي الغياب" value={formData.total_absence} onChange={v => setFormData({...formData, total_absence: v})} />
                                 </div>
 
-                                {/* إعدادات الوضع والرضاعة (تظهر فقط عند اختيار إجازة وضع) */}
+                                {/* إعدادات الوضع والرضاعة */}
                                 <div className="bg-pink-50 p-4 rounded-xl border border-pink-100">
                                     <div className="flex items-center gap-2 mb-3">
                                         <input 
