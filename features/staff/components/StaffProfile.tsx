@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Save, Upload, Camera, Calendar, Briefcase, FileText, Phone, Mail, MapPin, Loader2, Baby, Clock } from 'lucide-react';
+import { User, Save, Camera, Calendar, Briefcase, FileText, Phone, Mail, Loader2, Baby, Clock, Timer } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 
@@ -15,14 +15,21 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     const [formData, setFormData] = useState<any>({ ...employee });
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
+    
+    // حالة لتفعيل واجهة العمل الجزئي
+    const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false);
 
     useEffect(() => {
-        // التأكد من أن work_days هي مصفوفة
         let wd = employee.work_days;
         if (typeof wd === 'string') wd = (wd as string).split(',');
         if (!Array.isArray(wd)) wd = [];
 
         setFormData({ ...employee, work_days: wd });
+        
+        // تفعيل الزر إذا كانت التواريخ موجودة مسبقاً
+        if (employee.part_time_start_date || employee.part_time_end_date) {
+            setIsPartTimeEnabled(true);
+        }
     }, [employee]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -36,6 +43,15 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
             setFormData({ ...formData, work_days: currentDays.filter((d: string) => d !== day) });
         } else {
             setFormData({ ...formData, work_days: [...currentDays, day] });
+        }
+    };
+
+    // تبديل حالة العمل الجزئي
+    const togglePartTime = (enabled: boolean) => {
+        setIsPartTimeEnabled(enabled);
+        if (!enabled) {
+            // تصفير التواريخ إذا تم إلغاء التفعيل
+            setFormData({ ...formData, part_time_start_date: null, part_time_end_date: null });
         }
     };
 
@@ -79,7 +95,6 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                 remaining_annual: Number(formData.remaining_annual),
                 remaining_casual: Number(formData.remaining_casual),
                 total_absence: Number(formData.total_absence),
-                // يتم إرسال الحقول الجديدة تلقائياً لأنها موجودة في formData
             };
 
             const { error } = await supabase
@@ -158,7 +173,7 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                     </div>
                 </Section>
 
-                {/* 3. Job Details (Updated with Resignation Date) */}
+                {/* 3. Job Details */}
                 <Section title="تفاصيل الوظيفة والتواريخ" icon={Briefcase}>
                     <div className="grid grid-cols-2 gap-4">
                         <Field label="الكود الوظيفي" name="employee_id" value={formData.employee_id} onChange={handleChange} disabled={!isEditable} />
@@ -172,35 +187,79 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                     <Field label="المهام الإدارية" name="admin_tasks" value={formData.admin_tasks} onChange={handleChange} disabled={!isEditable} />
                 </Section>
 
-                {/* 4. Schedule & Work Days */}
-                <Section title="المواعيد وأيام العمل" icon={Calendar}>
+                {/* 4. Schedule & Part Time Settings (Updated) */}
+                <Section title="المواعيد ونظام العمل" icon={Calendar}>
                     <div className="grid grid-cols-2 gap-4 mb-4">
-                        <Field label="وقت الحضور الافتراضي" type="time" name="start_time" value={formData.start_time} onChange={handleChange} disabled={!isEditable} />
-                        <Field label="وقت الانصراف الافتراضي" type="time" name="end_time" value={formData.end_time} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="وقت الحضور" type="time" name="start_time" value={formData.start_time} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="وقت الانصراف" type="time" name="end_time" value={formData.end_time} onChange={handleChange} disabled={!isEditable} />
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 mb-2">أيام العمل الأسبوعية</label>
-                        <div className="flex flex-wrap gap-2">
-                            {DAYS_OPTIONS.map(day => (
-                                <button
-                                    type="button"
-                                    key={day}
-                                    onClick={() => isEditable && handleWorkDayToggle(day)}
+
+                    {/* ✅ إعدادات العمل الجزئي */}
+                    <div className={`p-4 rounded-2xl border transition-all ${isPartTimeEnabled ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-100'}`}>
+                        <div className="flex items-center justify-between mb-4">
+                            <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                                <Timer className={`w-5 h-5 ${isPartTimeEnabled ? 'text-indigo-600' : 'text-gray-400'}`}/>
+                                تفعيل نظام العمل الجزئي (أيام محددة)؟
+                            </label>
+                            <div className="flex items-center gap-2">
+                                <span className={`text-xs font-bold ${isPartTimeEnabled ? 'text-indigo-600' : 'text-gray-400'}`}>
+                                    {isPartTimeEnabled ? 'مفعل' : 'غير مفعل'}
+                                </span>
+                                <input 
+                                    type="checkbox" 
+                                    className="toggle-checkbox w-5 h-5 accent-indigo-600"
+                                    checked={isPartTimeEnabled}
+                                    onChange={(e) => isEditable && togglePartTime(e.target.checked)}
                                     disabled={!isEditable}
-                                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                                        (formData.work_days || []).includes(day)
-                                            ? 'bg-blue-600 text-white border-blue-600 shadow-md'
-                                            : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {day}
-                                </button>
-                            ))}
+                                />
+                            </div>
                         </div>
+
+                        {isPartTimeEnabled && (
+                            <div className="animate-in fade-in space-y-4">
+                                <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-indigo-100">
+                                    <Field label="من تاريخ" type="date" name="part_time_start_date" value={formData.part_time_start_date} onChange={handleChange} disabled={!isEditable} />
+                                    <Field label="إلى تاريخ" type="date" name="part_time_end_date" value={formData.part_time_end_date} onChange={handleChange} disabled={!isEditable} />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-xs font-bold text-indigo-700 mb-2">
+                                        اختر أيام الحضور (خلال الفترة المحددة فقط):
+                                    </label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {DAYS_OPTIONS.map(day => (
+                                            <button
+                                                type="button"
+                                                key={day}
+                                                onClick={() => isEditable && handleWorkDayToggle(day)}
+                                                disabled={!isEditable}
+                                                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+                                                    (formData.work_days || []).includes(day)
+                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                                                        : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
+                                                }`}
+                                            >
+                                                {day}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1">
+                                        <InfoIcon className="w-3 h-3"/>
+                                        ملاحظة: خارج هذه الفترة، يعود الموظف للعمل "دوام كامل" (من السبت إلى الخميس).
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {!isPartTimeEnabled && (
+                            <p className="text-[10px] text-gray-400 text-center">
+                                الموظف يعمل بنظام الدوام الكامل الافتراضي (السبت - الخميس)
+                            </p>
+                        )}
                     </div>
                 </Section>
 
-                {/* 5. Leaves Balance & Maternity Settings (Updated) */}
+                {/* 5. Leaves Balance & Maternity Settings */}
                 <div className="xl:col-span-2">
                     <Section title="الإجازات وإعدادات الأمومة" icon={Baby}>
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -260,10 +319,6 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                                                     <Clock className="w-3 h-3"/> مساءً (انصراف)
                                                 </button>
                                             </div>
-                                            <p className="text-[10px] text-gray-400 mt-1 mr-1">
-                                                {formData.nursing_time === 'morning' && 'يتم تأخير الحضور ساعة واحدة عن الموعد الرسمي.'}
-                                                {formData.nursing_time === 'evening' && 'يتم التبكير في الانصراف ساعة واحدة عن الموعد الرسمي.'}
-                                            </p>
                                         </div>
                                     </div>
                                 )}
@@ -294,7 +349,7 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     );
 }
 
-// Sub-components (Reused)
+// Sub-components
 const Section = ({ title, icon: Icon, children }: any) => (
     <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition-shadow h-full">
         <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2 pb-3 border-b border-gray-50">
@@ -337,4 +392,13 @@ const BalanceCard = ({ label, value, name, onChange, editable, color }: any) => 
             <span className="font-black text-2xl text-gray-800">{value}</span>
         )}
     </div>
+);
+
+// Simple Info Icon Component
+const InfoIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="16" x2="12" y2="12"></line>
+        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+    </svg>
 );
