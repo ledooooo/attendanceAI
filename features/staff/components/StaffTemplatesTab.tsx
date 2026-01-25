@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Search, Printer, ArrowRight, ArrowLeft, PenTool } from 'lucide-react';
+// ✅ تم إضافة FileText هنا
+import { Search, Printer, ArrowRight, ArrowLeft, PenTool, FileText } from 'lucide-react';
 import { Employee } from '../../../types';
 import { TEMPLATES_DATA, Template } from '../../../data/templatesData';
 import { PrintLayout } from '../../../components/templates/PrintLayout';
@@ -7,7 +8,7 @@ import { PrintLayout } from '../../../components/templates/PrintLayout';
 export default function StaffTemplatesTab({ employee }: { employee: Employee }) {
     const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
     const [viewMode, setViewMode] = useState<'list' | 'form' | 'print'>('list');
-    const [templateData, setTemplateData] = useState<any>({}); // لتخزين البيانات المدخلة
+    const [templateData, setTemplateData] = useState<any>({});
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('الكل');
 
@@ -22,8 +23,7 @@ export default function StaffTemplatesTab({ employee }: { employee: Employee }) 
 
     const handleSelectTemplate = (tmpl: Template) => {
         setSelectedTemplate(tmpl);
-        setTemplateData({}); // تصفير البيانات القديمة
-        // إذا كان القالب يحتوي على حقول، نذهب لصفحة الإدخال، وإلا نذهب للطباعة مباشرة
+        setTemplateData({});
         if (tmpl.fields && tmpl.fields.length > 0) {
             setViewMode('form');
         } else {
@@ -33,7 +33,7 @@ export default function StaffTemplatesTab({ employee }: { employee: Employee }) 
 
     const handleBack = () => {
         if (viewMode === 'print' && selectedTemplate?.fields?.length) {
-            setViewMode('form'); // العودة للفورم للتعديل
+            setViewMode('form');
         } else {
             setViewMode('list');
             setSelectedTemplate(null);
@@ -59,7 +59,6 @@ export default function StaffTemplatesTab({ employee }: { employee: Employee }) 
 
                 <div className="py-8 overflow-auto">
                     <PrintLayout title={selectedTemplate.title} employee={employee}>
-                        {/* تمرير بيانات الموظف + البيانات المدخلة في الفورم */}
                         {selectedTemplate.content(employee, templateData)}
                     </PrintLayout>
                 </div>
