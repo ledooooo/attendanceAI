@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { Search, Printer, ArrowRight, ArrowLeft, FileText } from 'lucide-react';
 import { Employee } from '../../../types';
-import { TEMPLATES_DATA } from './templatesData'; // استدعاء الملف المنفصل
-import { PrintLayout } from './PrintLayout'; // استدعاء المكون الموحد
-
+import { TEMPLATES_DATA } from '../../../data/templatesData'; 
+import { PrintLayout } from '../../../components/templates/PrintLayout';
 export default function StaffTemplatesTab({ employee }: { employee: Employee }) {
     const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -124,3 +123,4 @@ export default function StaffTemplatesTab({ employee }: { employee: Employee }) 
         </div>
     );
 }
+
