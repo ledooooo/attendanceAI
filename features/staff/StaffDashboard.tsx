@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Printer, ArrowRight, ArrowLeft, PenTool, FileText } from 'lucide-react';
 import { Employee } from '../../../types';
-import { TEMPLATES_DATA, Template } from '../../../data/templatesData';
+import { TEMPLATES_DATA } from '../../data/templatesData';
 import { PrintLayout } from '../../../components/templates/PrintLayout';
 
 export default function StaffTemplatesTab({ employee }: { employee: Employee }) {
