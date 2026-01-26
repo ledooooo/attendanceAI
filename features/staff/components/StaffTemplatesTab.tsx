@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-// ✅ تم إضافة FileText هنا
 import { Search, Printer, ArrowRight, ArrowLeft, PenTool, FileText } from 'lucide-react';
 import { Employee } from '../../../types';
-import { TEMPLATES_DATA, Template } from '../../../data/templatesData';
-import { PrintLayout } from '../../../components/templates/PrintLayout';
+import { TEMPLATES_DATA, Template } from '../../data/templatesData';
+import { PrintLayout } from '../../components/templates/PrintLayout';
 
 export default function StaffTemplatesTab({ employee }: { employee: Employee }) {
     const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -40,31 +39,20 @@ export default function StaffTemplatesTab({ employee }: { employee: Employee }) 
         }
     };
 
-    // --- 1. وضع الطباعة والمعاينة ---
-// ... (داخل المكون، عند حالة viewMode === 'print')
-
+    // --- 1. وضع الطباعة والمعاينة (تم إضافة إصلاح الطباعة هنا) ---
     if (viewMode === 'print' && selectedTemplate) {
         return (
-            <div className="min-h-screen bg-gray-100/50">
-                {/* 🔥 كود CSS القوي لإصلاح الطباعة */}
+            <div className="animate-in fade-in duration-300 min-h-screen bg-gray-100/50">
+                {/* ✅ كود CSS لإصلاح الطباعة: يخفي كل شيء ويظهر فقط منطقة الطباعة */}
                 <style>
                     {`
                         @media print {
-                            /* إخفاء كل العناصر في الصفحة */
                             body * {
                                 visibility: hidden;
-                                height: 0; 
-                                overflow: hidden;
                             }
-                            
-                            /* إظهار منطقة الطباعة فقط */
                             #printable-content, #printable-content * {
                                 visibility: visible;
-                                height: auto;
-                                overflow: visible;
                             }
-
-                            /* ضبط موضع الورقة لتبدأ من أعلى الصفحة تماماً */
                             #printable-content {
                                 position: absolute;
                                 left: 0;
@@ -72,40 +60,83 @@ export default function StaffTemplatesTab({ employee }: { employee: Employee }) 
                                 width: 100%;
                                 margin: 0;
                                 padding: 0;
-                                background: white;
                             }
-
-                            /* إخفاء الهوامش الافتراضية للمتصفح */
-                            @page {
-                                size: A4;
-                                margin: 0; 
+                            /* إخفاء الأزرار والواجهات */
+                            .no-print {
+                                display: none !important;
                             }
                         }
                     `}
                 </style>
 
-                {/* الشريط العلوي (لا يظهر في الطباعة بسبب no-print) */}
                 <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b p-4 flex justify-between items-center shadow-sm no-print">
                     <button onClick={handleBack} className="flex items-center text-gray-600 font-bold hover:text-emerald-600 gap-2 bg-gray-100 px-4 py-2 rounded-xl transition-all">
                         <ArrowRight className="w-5 h-5"/> رجوع للتعديل
                     </button>
-                    {/* ... باقي الأزرار ... */}
-                    <button onClick={handlePrint} className="...">
+                    <div className="text-center hidden md:block">
+                        <h2 className="font-black text-lg text-gray-800">{selectedTemplate.title}</h2>
+                        <p className="text-xs text-gray-500">معاينة قبل الطباعة</p>
+                    </div>
+                    <button onClick={handlePrint} className="bg-emerald-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:bg-emerald-700 transition-all transform active:scale-95">
                         <Printer className="w-5 h-5"/> طباعة
                     </button>
                 </div>
 
-                {/* منطقة الورقة فقط */}
-                <div className="py-8 overflow-auto flex justify-center no-print-bg">
-                    <div id="printable-content">
-                        <PrintLayout title={selectedTemplate.title} employee={employee}>
-                            {selectedTemplate.content(employee, templateData)}
-                        </PrintLayout>
+                <div className="py-8 overflow-auto" id="printable-content">
+                    <PrintLayout title={selectedTemplate.title} employee={employee}>
+                        {selectedTemplate.content(employee, templateData)}
+                    </PrintLayout>
+                </div>
+            </div>
+        );
+    }
+
+    // --- 2. وضع إدخال البيانات (الفورم) ---
+    if (viewMode === 'form' && selectedTemplate) {
+        return (
+            <div className="max-w-2xl mx-auto py-10 px-4 animate-in slide-in-from-bottom duration-300">
+                <div className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
+                    <div className="bg-emerald-50 p-6 border-b border-emerald-100 flex justify-between items-center">
+                        <div>
+                            <h3 className="text-xl font-black text-gray-800 mb-1">{selectedTemplate.title}</h3>
+                            <p className="text-xs text-emerald-600 font-bold">يرجى ملء البيانات الناقصة لإنشاء النموذج</p>
+                        </div>
+                        <div className="p-3 bg-white rounded-2xl shadow-sm">
+                            {selectedTemplate.icon}
+                        </div>
+                    </div>
+                    
+                    <div className="p-8 space-y-6">
+                        {selectedTemplate.fields.map((field) => (
+                            <div key={field.key} className="space-y-2">
+                                <label className="block text-sm font-bold text-gray-700">{field.label}</label>
+                                <input
+                                    type={field.type}
+                                    placeholder={field.placeholder}
+                                    value={templateData[field.key] || ''}
+                                    onChange={(e) => setTemplateData({ ...templateData, [field.key]: e.target.value })}
+                                    className="w-full p-4 rounded-xl border-2 border-gray-100 focus:border-emerald-500 outline-none transition-all font-bold text-gray-800 bg-gray-50 focus:bg-white"
+                                />
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="p-6 bg-gray-50 border-t flex gap-4">
+                        <button onClick={() => setViewMode('list')} className="flex-1 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition-colors">
+                            إلغاء
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('print')} 
+                            className="flex-[2] py-3 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex justify-center items-center gap-2"
+                        >
+                            <FileText className="w-5 h-5"/> إنشاء النموذج للمعاينة
+                        </button>
                     </div>
                 </div>
             </div>
         );
     }
+
     // --- 3. وضع القائمة الرئيسية (List) ---
     return (
         <div className="space-y-8 animate-in slide-in-from-bottom duration-500 p-2">
@@ -177,4 +208,3 @@ export default function StaffTemplatesTab({ employee }: { employee: Employee }) 
         </div>
     );
 }
-
