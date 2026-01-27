@@ -23,11 +23,13 @@ import StaffMessages from '../../staff/components/StaffMessages';
 
 const DAYS_OPTIONS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
 
-// قائمة الصلاحيات المتاحة
+// في ملف DoctorsTab.tsx
 const AVAILABLE_PERMISSIONS = [
     { id: 'vaccinations', label: 'إدارة التطعيمات' },
     { id: 'attendance', label: 'إدارة البصمة والحضور' },
-    { id: 'reports', label: 'التقارير والبيانات' },
+    { id: 'reports', label: 'التقارير وشئون الموظفين' }, // DoctorsTab
+    { id: 'leaves', label: 'إدارة الإجازات والطلبات' }, // ✅ جديد
+    { id: 'absence', label: 'تقارير الغياب' }, // ✅ جديد
     { id: 'quality', label: 'إدارة الجودة (OVR)' },
 ];
 
