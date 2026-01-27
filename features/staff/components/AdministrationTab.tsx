@@ -1,130 +1,90 @@
 import React, { useState } from 'react';
 import { Employee } from '../../../types';
-import { supabase } from '../../../supabaseClient';
-import { useQuery } from '@tanstack/react-query';
 import { 
     Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, 
-    Loader2, ArrowRight, UserX, FileClock 
+    Users, FileSignature, ArrowRight, ShieldAlert 
 } from 'lucide-react';
 
-// ✅ استيراد مكونات الأدمن الحقيقية (بناءً على المسارات التي ذكرتها)
-import VaccinationsTab from '../../admin/components/VaccinationsTab';
-import DoctorsTab from '../../admin/components/DoctorsTab';
-import AttendanceTab from '../../admin/components/AttendanceTab';
-import LeavesTab from '../../admin/components/LeavesTab';
-import AbsenceReportTab from '../../admin/components/AbsenceReportTab';
+// استيراد المكونات الجديدة المخصصة للموظف
+import StaffEmployeeManager from './admin_tools/StaffEmployeeManager';
+import StaffAttendanceManager from './admin_tools/StaffAttendanceManager';
+import StaffVaccineManager from './admin_tools/StaffVaccineManager';
+import StaffRequestsManager from './admin_tools/StaffRequestsManager';
+import StaffOVRManager from './admin_tools/StaffOVRManager';
 
 export default function AdministrationTab({ employee }: { employee: Employee }) {
     const [activeTool, setActiveTool] = useState<string | null>(null);
 
-    // جلب بيانات جميع الموظفين (لأن هذه الصفحات تحتاجها لتعمل)
-    const { data: allEmployees = [], isLoading, refetch } = useQuery({
-        queryKey: ['admin_access_employees'],
-        queryFn: async () => {
-            const { data, error } = await supabase
-                .from('employees')
-                .select('*')
-                .neq('role', 'admin'); 
-            if (error) throw error;
-            return data as Employee[];
-        },
-        enabled: (employee.permissions && employee.permissions.length > 0)
-    });
-
-    // ✅ تعريف الأدوات وربطها بالمكونات
+    // تعريف الأدوات (يظهر فقط ما لديه صلاحية له)
     const TOOLS_CONFIG: any = {
-        // 1. إدارة التطعيمات
-        'vaccinations': {
-            id: 'vaccinations',
-            label: 'إدارة التطعيمات',
-            icon: <Syringe className="w-8 h-8 text-blue-600"/>,
-            color: 'bg-blue-50 border-blue-100',
-            component: <VaccinationsTab employees={allEmployees} /> 
+        'reports': { // صلاحية شئون العاملين
+            id: 'reports',
+            label: 'إدارة بيانات الموظفين',
+            icon: <Users className="w-8 h-8 text-emerald-600"/>,
+            color: 'bg-emerald-50 border-emerald-100',
+            component: <StaffEmployeeManager currentUser={employee} />
         },
-        
-        // 2. إدارة البصمة (تم الإصلاح)
-        'attendance': {
+        'attendance': { // صلاحية البصمة
             id: 'attendance',
-            label: 'إدارة ملفات البصمة',
+            label: 'إدخال البصمة والتقارير',
             icon: <Fingerprint className="w-8 h-8 text-purple-600"/>,
             color: 'bg-purple-50 border-purple-100',
-            component: <AttendanceTab employees={allEmployees} />
+            component: <StaffAttendanceManager />
         },
-
-        // 3. شئون الموظفين والتقارير
-        'reports': {
-            id: 'reports',
-            label: 'شئون الموظفين والتقارير',
-            icon: <FileText className="w-8 h-8 text-emerald-600"/>,
-            color: 'bg-emerald-50 border-emerald-100',
-            component: <DoctorsTab employees={allEmployees} onRefresh={refetch} centerId={employee.center_id} />
+        'vaccinations': { // صلاحية التطعيمات
+            id: 'vaccinations',
+            label: 'سجل التطعيمات',
+            icon: <Syringe className="w-8 h-8 text-blue-600"/>,
+            color: 'bg-blue-50 border-blue-100',
+            component: <StaffVaccineManager />
         },
-
-        // 4. إدارة الإجازات (جديد)
-        'leaves': {
+        'leaves': { // صلاحية الطلبات
             id: 'leaves',
-            label: 'إدارة الإجازات',
-            icon: <FileClock className="w-8 h-8 text-orange-600"/>,
+            label: 'مراجعة طلبات الموظفين',
+            icon: <FileSignature className="w-8 h-8 text-orange-600"/>,
             color: 'bg-orange-50 border-orange-100',
-            component: <LeavesTab employees={allEmployees} onRefresh={refetch} />
+            component: <StaffRequestsManager />
         },
-
-        // 5. تقارير الغياب (جديد)
-        'absence': {
-            id: 'absence',
-            label: 'تقارير الغياب',
-            icon: <UserX className="w-8 h-8 text-red-600"/>,
+        'quality': { // صلاحية الجودة
+            id: 'quality',
+            label: 'تقارير OVR',
+            icon: <ShieldAlert className="w-8 h-8 text-red-600"/>,
             color: 'bg-red-50 border-red-100',
-            component: <AbsenceReportTab employees={allEmployees} />
+            component: <StaffOVRManager />
         }
     };
 
     const userPermissions = employee.permissions || [];
     const allowedTools = Object.keys(TOOLS_CONFIG).filter(key => userPermissions.includes(key));
 
-    // شاشة تحميل
-    if (isLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center h-96 gap-4">
-                <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-                <p className="text-gray-500 font-bold">جاري تحميل بيانات النظام...</p>
-            </div>
-        );
-    }
-
-    // --- عرض الأداة (Detail View) ---
+    // وضع عرض الأداة
     if (activeTool) {
         const tool = TOOLS_CONFIG[activeTool];
         return (
             <div className="animate-in slide-in-from-left duration-300 min-h-screen pb-20 bg-gray-50">
-                <div className="bg-white p-4 sticky top-0 z-10 border-b flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-2">
-                        <button 
-                            onClick={() => setActiveTool(null)}
-                            className="p-2 rounded-full hover:bg-gray-100 transition-colors bg-gray-50"
-                        >
-                            <ArrowRight className="w-5 h-5 text-gray-700" />
-                        </button>
-                        <h2 className="font-black text-lg text-gray-800">{tool.label}</h2>
-                    </div>
+                <div className="bg-white p-4 sticky top-0 z-10 border-b flex items-center gap-3 shadow-sm no-print">
+                    <button onClick={() => setActiveTool(null)} className="p-2 rounded-full hover:bg-gray-100 bg-gray-50">
+                        <ArrowRight className="w-5 h-5 text-gray-700" />
+                    </button>
+                    <h2 className="font-black text-lg text-gray-800">{tool.label}</h2>
                 </div>
-                <div className="p-2 md:p-6">
+                <div className="p-4">
                     {tool.component}
                 </div>
             </div>
         );
     }
 
-    // --- القائمة الرئيسية (Main Grid) ---
+    // القائمة الرئيسية
     return (
         <div className="p-6 space-y-6 animate-in fade-in pb-24">
             <div className="flex items-center gap-3 mb-8">
-                <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-200">
+                <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg">
                     <LayoutDashboard className="w-6 h-6" />
                 </div>
                 <div>
-                    <h2 className="text-2xl font-black text-gray-800">لوحة الإدارة</h2>
-                    <p className="text-sm text-gray-400 font-bold">لديك {allowedTools.length} صلاحيات نشطة</p>
+                    <h2 className="text-2xl font-black text-gray-800">أدوات الإدارة المفوضة</h2>
+                    <p className="text-sm text-gray-400 font-bold">لديك صلاحية الوصول لـ {allowedTools.length} قسم</p>
                 </div>
             </div>
 
@@ -150,11 +110,7 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
                     })}
                 </div>
             ) : (
-                <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-gray-300">
-                    <LayoutDashboard className="w-12 h-12 text-gray-200 mb-4"/>
-                    <p className="text-gray-400 font-bold">لا توجد صلاحيات إدارية محددة لك.</p>
-                    <p className="text-xs text-gray-300 mt-2">راجع مدير النظام لمنحك الصلاحيات</p>
-                </div>
+                <div className="text-center py-20 text-gray-400">لا توجد صلاحيات لعرضها.</div>
             )}
         </div>
     );
