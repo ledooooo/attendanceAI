@@ -2,66 +2,87 @@ import React, { useState } from 'react';
 import { Employee } from '../../../types';
 import { supabase } from '../../../supabaseClient';
 import { useQuery } from '@tanstack/react-query';
-import { Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, Loader2, ArrowRight } from 'lucide-react';
+import { 
+    Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, 
+    Loader2, ArrowRight, UserX, FileClock 
+} from 'lucide-react';
 
-// ✅ 1. استيراد مكونات الأدمن الموجودة بالفعل
+// ✅ استيراد مكونات الأدمن الحقيقية (بناءً على المسارات التي ذكرتها)
 import VaccinationsTab from '../../admin/components/VaccinationsTab';
 import DoctorsTab from '../../admin/components/DoctorsTab';
-import AttendanceTab from '../../admin/components/AttendanceTab'; 
+import AttendanceTab from '../../admin/components/AttendanceTab';
+import LeavesTab from '../../admin/components/LeavesTab';
+import AbsenceReportTab from '../../admin/components/AbsenceReportTab';
 
 export default function AdministrationTab({ employee }: { employee: Employee }) {
     const [activeTool, setActiveTool] = useState<string | null>(null);
 
-    // ✅ 2. جلب داتا كل الموظفين (لأن صفحات الأدمن تحتاجها)
-    // لن يتم الجلب إلا إذا فتح الموظف هذا التبويب
+    // جلب بيانات جميع الموظفين (لأن هذه الصفحات تحتاجها لتعمل)
     const { data: allEmployees = [], isLoading, refetch } = useQuery({
         queryKey: ['admin_access_employees'],
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('employees')
                 .select('*')
-                .neq('role', 'admin'); // جلب الجميع ما عدا المديرين (اختياري)
+                .neq('role', 'admin'); 
             if (error) throw error;
             return data as Employee[];
         },
-        // تفعيل الجلب فقط إذا كان للموظف صلاحيات
         enabled: (employee.permissions && employee.permissions.length > 0)
     });
 
-    // تعريف الأدوات وربطها بالمكونات الحقيقية
+    // ✅ تعريف الأدوات وربطها بالمكونات
     const TOOLS_CONFIG: any = {
+        // 1. إدارة التطعيمات
         'vaccinations': {
             id: 'vaccinations',
             label: 'إدارة التطعيمات',
             icon: <Syringe className="w-8 h-8 text-blue-600"/>,
             color: 'bg-blue-50 border-blue-100',
-            // ✅ تمرير الداتا للمكون الموجود بالفعل
             component: <VaccinationsTab employees={allEmployees} /> 
         },
+        
+        // 2. إدارة البصمة (تم الإصلاح)
         'attendance': {
             id: 'attendance',
-            label: 'إدارة البصمة',
+            label: 'إدارة ملفات البصمة',
             icon: <Fingerprint className="w-8 h-8 text-purple-600"/>,
             color: 'bg-purple-50 border-purple-100',
-            // ✅ هنا تضع مكون رفع البصمة الخاص بالأدمن
-            // مثال:
-            // component: <AttendanceAdminTab /> 
-            component: <div className="text-center p-10 text-gray-500">يرجى استبدال هذا السطر بمكون رفع البصمة الموجود في لوحة الأدمن (AttendanceTab)</div>
+            component: <AttendanceTab employees={allEmployees} />
         },
+
+        // 3. شئون الموظفين والتقارير
         'reports': {
             id: 'reports',
             label: 'شئون الموظفين والتقارير',
             icon: <FileText className="w-8 h-8 text-emerald-600"/>,
             color: 'bg-emerald-50 border-emerald-100',
-            // ✅ إعادة استخدام DoctorsTab بالكامل (بحث، طباعة، فلترة)
             component: <DoctorsTab employees={allEmployees} onRefresh={refetch} centerId={employee.center_id} />
+        },
+
+        // 4. إدارة الإجازات (جديد)
+        'leaves': {
+            id: 'leaves',
+            label: 'إدارة الإجازات',
+            icon: <FileClock className="w-8 h-8 text-orange-600"/>,
+            color: 'bg-orange-50 border-orange-100',
+            component: <LeavesTab employees={allEmployees} onRefresh={refetch} />
+        },
+
+        // 5. تقارير الغياب (جديد)
+        'absence': {
+            id: 'absence',
+            label: 'تقارير الغياب',
+            icon: <UserX className="w-8 h-8 text-red-600"/>,
+            color: 'bg-red-50 border-red-100',
+            component: <AbsenceReportTab employees={allEmployees} />
         }
     };
 
     const userPermissions = employee.permissions || [];
     const allowedTools = Object.keys(TOOLS_CONFIG).filter(key => userPermissions.includes(key));
 
-    // شاشة تحميل أثناء جلب بيانات الموظفين
+    // شاشة تحميل
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center h-96 gap-4">
@@ -71,12 +92,11 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
         );
     }
 
-    // --- 1. عرض الأداة المختارة (Detail View) ---
+    // --- عرض الأداة (Detail View) ---
     if (activeTool) {
         const tool = TOOLS_CONFIG[activeTool];
         return (
             <div className="animate-in slide-in-from-left duration-300 min-h-screen pb-20 bg-gray-50">
-                {/* Header خاص بالأداة */}
                 <div className="bg-white p-4 sticky top-0 z-10 border-b flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-2">
                         <button 
@@ -88,8 +108,6 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
                         <h2 className="font-black text-lg text-gray-800">{tool.label}</h2>
                     </div>
                 </div>
-                
-                {/* محتوى الأداة (المكون الأصلي للأدمن) */}
                 <div className="p-2 md:p-6">
                     {tool.component}
                 </div>
@@ -97,7 +115,7 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
         );
     }
 
-    // --- 2. عرض القائمة الرئيسية (Grid View) ---
+    // --- القائمة الرئيسية (Main Grid) ---
     return (
         <div className="p-6 space-y-6 animate-in fade-in pb-24">
             <div className="flex items-center gap-3 mb-8">
@@ -106,7 +124,7 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
                 </div>
                 <div>
                     <h2 className="text-2xl font-black text-gray-800">لوحة الإدارة</h2>
-                    <p className="text-sm text-gray-400 font-bold">أهلاً بك، لديك {allowedTools.length} صلاحيات إدارية</p>
+                    <p className="text-sm text-gray-400 font-bold">لديك {allowedTools.length} صلاحيات نشطة</p>
                 </div>
             </div>
 
