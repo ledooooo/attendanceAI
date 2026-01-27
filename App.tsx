@@ -8,20 +8,32 @@ import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications'; 
 import { Toaster } from 'react-hot-toast';
 
-// 1. ✅ استيراد مكتبة React Query
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+// 1. ✅ استيراد مكتبات React Query والـ Persister
+import { QueryClient } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
-// 2. ✅ إعداد عميل التخزين المؤقت (Cache Client)
+// 2. ✅ استيراد بنر الأوفلاين
+import OfflineBanner from './components/ui/OfflineBanner';
+
+// 3. ✅ إعداد عميل التخزين والـ Persister
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // البيانات تبقى "طازجة" لمدة 5 دقائق
-      gcTime: 1000 * 60 * 30,   // الاحتفاظ بالبيانات في الذاكرة لمدة 30 دقيقة
-      refetchOnWindowFocus: false, // منع إعادة التحميل عند التنقل بين التبويبات
-      retry: 1, // المحاولة مرة واحدة فقط عند الفشل
+      staleTime: 1000 * 60 * 5, // 5 دقائق
+      gcTime: 1000 * 60 * 60 * 24, // 24 ساعة (عشان البيانات تفضل محفوظة لليوم التالي)
+      refetchOnWindowFocus: false,
+      retry: 1,
+      // مهم جداً للأوفلاين: لا تحاول الاتصال بالشبكة إذا كنت أوفلاين
+      networkMode: 'offlineFirst' 
     },
   },
+});
+
+// إنشاء Persister باستخدام localStorage
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
 });
 
 const AppContent = () => {
@@ -84,19 +96,26 @@ const AppContent = () => {
     );
   }
 
-  return isAdmin ? <AdminDashboard /> : <StaffDashboard employee={employeeProfile} />;
+  return (
+    <>
+      <OfflineBanner /> {/* ✅ ظهور البنر هنا */}
+      {isAdmin ? <AdminDashboard /> : <StaffDashboard employee={employeeProfile} />}
+    </>
+  );
 };
 
 export default function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        {/* 3. ✅ تغليف التطبيق بـ QueryClientProvider */}
-        <QueryClientProvider client={queryClient}>
+        {/* 4. ✅ استخدام PersistQueryClientProvider بدلاً من QueryClientProvider العادي */}
+        <PersistQueryClientProvider 
+          client={queryClient} 
+          persistOptions={{ persister }}
+        >
           
           <AppContent />
 
-          {/* أداة المطورين (تظهر فقط في Localhost ولن تظهر للمستخدمين) */}
           <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
 
           <Toaster 
@@ -128,7 +147,7 @@ export default function App() {
                 }
             }}
           />
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </NotificationProvider>
     </AuthProvider>
   );
