@@ -4,11 +4,10 @@ import { supabase } from '../../../../supabaseClient';
 import { useReactToPrint } from 'react-to-print';
 import { 
     Search, Printer, Upload, Calendar, Loader2, RefreshCw, 
-    Filter, ArrowUp, ArrowDown, ArrowUpDown
+    ArrowUpDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AttendanceRecord, Employee, LeaveRequest } from '../../../../types';
-import * as XLSX from 'xlsx';
 
 type ReportType = 'daily' | 'force' | 'absence' | 'specialties';
 
@@ -28,17 +27,19 @@ export default function StaffAttendanceManager() {
     const [filterStatus, setFilterStatus] = useState('active_only'); 
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'specialty'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
 
-    // --- 1. Queries ---
+    // --- 1. Queries (جلب البيانات) ---
     
+    // جلب الموظفين
     const { data: employees = [] } = useQuery({
         queryKey: ['staff_manager_employees'],
         queryFn: async () => {
-            const { data } = await supabase.from('employees').select('*'); // جلبنا الكل وسنرتب لاحقاً
+            const { data } = await supabase.from('employees').select('*');
             return data as Employee[] || [];
         },
         staleTime: 1000 * 60 * 10 
     });
 
+    // جلب الحضور
     const { data: attendance = [], refetch: refetchAtt, isRefetching } = useQuery({
         queryKey: ['staff_manager_attendance', date],
         queryFn: async () => {
@@ -47,88 +48,92 @@ export default function StaffAttendanceManager() {
         }
     });
 
-    // إصلاح جلب الإجازات: التأكد من صيغة التاريخ ومطابقة الحالة
+    // جلب الإجازات الموافق عليها (Approved)
     const { data: leaves = [] } = useQuery({
         queryKey: ['staff_manager_leaves', date],
         queryFn: async () => {
-            const { data, error } = await supabase.from('leave_requests')
+            const { data } = await supabase.from('leave_requests')
                 .select('*')
-                .eq('status', 'approved') // تأكد أن الحالة في القاعدة approved (lowercase)
+                .eq('status', 'approved') // شرط أساسي: الموافقة
                 .lte('start_date', date)
                 .gte('end_date', date);
-            
-            if (error) console.error("Error fetching leaves:", error);
             return data as LeaveRequest[] || [];
         }
     });
 
-    // --- 2. Data Processing ---
+    // --- 2. Data Processing (المنطق المعدل بدقة) ---
     const processedData = useMemo(() => {
         let data = employees.map(emp => {
             const attRecord = attendance.find(a => a.employee_id === emp.employee_id);
             const leaveRecord = leaves.find(l => l.employee_id === emp.employee_id);
             
-            let inTime = '-';
-            let outTime = '-';
-            let status = 'غير متواجد'; 
-            let displayText = ''; // النص الذي سيظهر في خانة الحضور إذا كان إجازة
+            // متغيرات العرض النهائية
+            let displayIn = '-';  // ما سيظهر في عمود الحضور
+            let displayOut = '-'; // ما سيظهر في عمود الانصراف
+            let statsStatus = 'غير متواجد'; // للحسابات الإحصائية فقط
 
-            // تحليل البصمة
+            // 1. هل توجد بصمة؟ (الأولوية القصوى)
+            let hasPunch = false;
             if (attRecord && attRecord.times) {
                 const times = attRecord.times.split(/\s+/).filter(t => t.includes(':')).sort();
                 if (times.length > 0) {
-                    inTime = times[0];
-                    status = 'متواجد'; // مجرد وجود بصمة واحدة = متواجد
-                }
-                if (times.length > 1) {
-                    const lastTime = times[times.length - 1];
-                    
-                    // حساب فرق التوقيت (أكبر من ساعة؟)
-                    const [inH, inM] = inTime.split(':').map(Number);
-                    const [outH, outM] = lastTime.split(':').map(Number);
-                    const diffMinutes = (outH * 60 + outM) - (inH * 60 + inM);
+                    hasPunch = true;
+                    displayIn = times[0]; // أول بصمة
+                    statsStatus = 'متواجد';
 
-                    if (diffMinutes >= 60) {
-                        outTime = lastTime;
+                    // حساب الانصراف
+                    if (times.length > 1) {
+                        const lastTime = times[times.length - 1];
+                        // حساب الفرق بالساعات
+                        const [h1, m1] = displayIn.split(':').map(Number);
+                        const [h2, m2] = lastTime.split(':').map(Number);
+                        const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                        
+                        if (diff >= 60) {
+                            displayOut = lastTime;
+                        } else {
+                            displayOut = ''; // تفريغ الخانة إذا أقل من ساعة
+                        }
                     } else {
-                        // تفريغ الانصراف لو الفرق أقل من ساعة
-                        outTime = '-';
+                        displayOut = ''; // بصمة واحدة فقط
                     }
                 }
             }
 
-            // منطق جزء من الوقت
-            const isPartTimePeriod = emp.part_time_start_date && emp.part_time_end_date && 
-                                     date >= emp.part_time_start_date && date <= emp.part_time_end_date;
-            
-            if (isPartTimePeriod) {
-                const dayName = new Date(date).toLocaleDateString('ar-EG', { weekday: 'long' });
-                const empWorkDays = typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [];
+            // إذا لم يكن له بصمة، نبدأ في فحص الحالات الأخرى
+            if (!hasPunch) {
+                // 2. فحص "جزء من الوقت"
+                const isPartTimeContract = emp.part_time_start_date && emp.part_time_end_date && 
+                                           date >= emp.part_time_start_date && date <= emp.part_time_end_date;
                 
-                if (!empWorkDays.includes(dayName)) {
-                    // ليس يوم عمله
-                    if (status === 'غير متواجد') {
-                        status = 'جزء من الوقت';
-                        displayText = 'جزء من الوقت';
+                if (isPartTimeContract) {
+                    const dayName = new Date(date).toLocaleDateString('ar-EG', { weekday: 'long' });
+                    const empWorkDays = typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [];
+                    
+                    if (empWorkDays.includes(dayName)) {
+                        // اليوم يوم عمله ولكنه لم يبصم -> يعامل كموظف عادي (غياب)
+                        statsStatus = 'غير متواجد';
+                        displayIn = '-'; // أو تترك فارغة لتدل على الغياب
+                    } else {
+                        // اليوم ليس يوم عمله
+                        statsStatus = 'جزء من الوقت';
+                        displayIn = 'جزء من الوقت';
+                        displayOut = '';
                     }
-                }
-            }
-
-            // منطق الإجازات (تكتب في التقرير)
-            if (leaveRecord) {
-                // لو الموظف بصم، يظل "متواجد"، لو مابصمش نكتب نوع الإجازة
-                if (status === 'غير متواجد') {
-                    status = 'إجازة'; // للتصنيف الإحصائي
-                    displayText = leaveRecord.request_type; // يظهر في الجدول "عارضة" مثلاً
+                } 
+                // 3. فحص الإجازات (إذا لم يكن جزء وقت في يوم راحة)
+                else if (leaveRecord) {
+                    statsStatus = 'إجازة';
+                    displayIn = leaveRecord.request_type; // كتابة نوع الإجازة (عارضة، اعتيادي...)
+                    displayOut = '';
                 }
             }
 
             return {
                 ...emp,
-                inTime,
-                outTime,
-                finalStatus: status,
-                displayText
+                displayIn,
+                displayOut,
+                statsStatus // نستخدمها فقط للإحصائيات أسفل الجدول
             };
         });
 
@@ -145,7 +150,7 @@ export default function StaffAttendanceManager() {
             return matchesSearch && matchesSpec && matchesStatus;
         });
 
-        // الترتيب (Sorting)
+        // الترتيب
         data.sort((a, b) => {
             const valA = a[sortConfig.key] || '';
             const valB = b[sortConfig.key] || '';
@@ -161,11 +166,12 @@ export default function StaffAttendanceManager() {
     // --- 3. Statistics ---
     const stats = useMemo(() => {
         const total = processedData.length;
-        const present = processedData.filter(d => d.finalStatus === 'متواجد').length;
-        const absent = processedData.filter(d => d.finalStatus === 'غير متواجد').length;
-        const partTime = processedData.filter(d => d.finalStatus === 'جزء من الوقت').length;
-        const leave = processedData.filter(d => d.finalStatus === 'إجازة').length;
+        const present = processedData.filter(d => d.statsStatus === 'متواجد').length;
+        const absent = processedData.filter(d => d.statsStatus === 'غير متواجد').length;
+        const partTime = processedData.filter(d => d.statsStatus === 'جزء من الوقت').length;
+        const leave = processedData.filter(d => d.statsStatus === 'إجازة').length;
         
+        // نسبة الحضور: (المتواجدين / (الكل - الإجازات - جزء الوقت الراحة))
         const effectiveTotal = total - leave - partTime;
         const percent = effectiveTotal > 0 ? Math.round((present / effectiveTotal) * 100) : 0;
 
@@ -173,15 +179,15 @@ export default function StaffAttendanceManager() {
         processedData.forEach(d => {
             if (!bySpecialty[d.specialty]) bySpecialty[d.specialty] = { total: 0, present: 0, absent: 0, leave: 0 };
             bySpecialty[d.specialty].total++;
-            if (d.finalStatus === 'متواجد') bySpecialty[d.specialty].present++;
-            else if (d.finalStatus === 'غير متواجد') bySpecialty[d.specialty].absent++;
+            if (d.statsStatus === 'متواجد') bySpecialty[d.specialty].present++;
+            else if (d.statsStatus === 'غير متواجد') bySpecialty[d.specialty].absent++;
             else bySpecialty[d.specialty].leave++;
         });
 
         return { total, present, absent, leave, partTime, percent, bySpecialty };
     }, [processedData]);
 
-    // --- 4. File Upload (.dat) ---
+    // --- 4. File Upload Logic ---
     const rawMutation = useMutation({
         mutationFn: async (payload: any[]) => {
             const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
@@ -231,12 +237,11 @@ export default function StaffAttendanceManager() {
         documentTitle: `Report_${date}`,
     });
 
-    // تقسيم البيانات للتقرير اليومي
     const halfIndex = Math.ceil(processedData.length / 2);
     const rightColumnData = processedData.slice(0, halfIndex);
     const leftColumnData = processedData.slice(halfIndex);
 
-    // دالة مساعدة لتبديل الترتيب
+    // Sorting Helper
     const toggleSort = (key: 'name' | 'specialty') => {
         setSortConfig(curr => ({
             key,
@@ -286,7 +291,6 @@ export default function StaffAttendanceManager() {
                     {Array.from(new Set(employees.map(e => e.specialty))).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 
-                {/* أزرار الترتيب */}
                 <div className="flex gap-2">
                     <button onClick={() => toggleSort('name')} className={`flex-1 flex items-center justify-center gap-1 rounded-xl border text-xs font-bold ${sortConfig.key === 'name' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50'}`}>
                         الاسم <ArrowUpDown className="w-3 h-3"/>
@@ -300,10 +304,10 @@ export default function StaffAttendanceManager() {
             {/* Printable Report */}
             <div ref={componentRef} className="bg-white p-8 rounded-[30px] shadow-sm min-h-[800px] print:p-2 print:shadow-none" dir="rtl">
                 
-                {/* Header: One Line */}
-                <div className="hidden print:block text-center border-b-2 border-black pb-2 mb-4">
-                    <p className="text-[12px] font-bold font-mono text-black">
-                        مركز غرب المطار - تقرير تواجد العاملين بالمركز - التاريخ: {new Date(date).toLocaleDateString('ar-EG')} - التوقيت: {new Date().toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}
+                {/* Header: One Line with smaller font */}
+                <div className="hidden print:block text-center border-b-2 border-black pb-1 mb-2">
+                    <p className="text-[12px] font-bold font-mono text-black leading-tight">
+                        مركز غرب المطار - {activeReport === 'daily' ? 'تقرير التواجد اليومي' : activeReport === 'force' ? 'بيان القوة الفعلية' : activeReport === 'absence' ? 'بيان الغياب' : 'إحصاء التخصصات'} - التاريخ: {new Date(date).toLocaleDateString('ar-EG')} - التوقيت: {new Date().toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}
                     </p>
                 </div>
 
@@ -377,7 +381,7 @@ export default function StaffAttendanceManager() {
                             </tr>
                         </thead>
                         <tbody>
-                            {processedData.filter(d => d.finalStatus === 'غير متواجد').map((emp) => (
+                            {processedData.filter(d => d.statsStatus === 'غير متواجد').map((emp) => (
                                 <tr key={emp.id} className="border-b border-gray-300">
                                     <td className="p-2 border border-gray-300 text-center font-mono">{emp.employee_id}</td>
                                     <td className="p-2 border border-gray-300 font-bold">{emp.name}</td>
@@ -423,7 +427,7 @@ export default function StaffAttendanceManager() {
     );
 }
 
-// Table Component (Columns Updated: No Status Column)
+// --- Table Component (Strict Column Set) ---
 const DailyTable = ({ data, startIndex = 0 }: { data: any[], startIndex?: number }) => {
     return (
         <table className="w-full text-[10px] print:text-[9px] text-right border-collapse">
@@ -445,13 +449,14 @@ const DailyTable = ({ data, startIndex = 0 }: { data: any[], startIndex?: number
                         <td className="p-1 border border-gray-300 font-bold truncate max-w-[110px]">{row.name}</td>
                         <td className="p-1 border border-gray-300 truncate max-w-[70px]">{row.specialty}</td>
                         
-                        {/* خانة الحضور: تظهر الوقت، أو نوع الإجازة، أو جزء من الوقت */}
+                        {/* خانة الحضور: تعرض الوقت أو نص الإجازة/الحالة */}
                         <td className="p-1 border border-gray-300 text-center font-bold">
-                            {row.inTime !== '-' ? row.inTime : 
-                             row.displayText ? <span className="text-[8px]">{row.displayText}</span> : '-'}
+                            {row.displayIn}
                         </td>
                         
-                        <td className="p-1 border border-gray-300 text-center font-mono">{row.outTime}</td>
+                        <td className="p-1 border border-gray-300 text-center font-mono">
+                            {row.displayOut}
+                        </td>
                     </tr>
                 ))}
                 {data.length === 0 && <tr><td colSpan={6} className="p-2 text-center">-</td></tr>}
