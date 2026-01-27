@@ -18,20 +18,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [employeeProfile, setEmployeeProfile] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // دالة جلب البيانات باستخدام RPC (لضمان السرعة وتخطي المشاكل)
+  // دالة جلب البيانات باستخدام RPC
   const fetchProfile = async (email: string) => {
     try {
-      // نستخدم الدالة الآمنة التي أنشأناها في SQL
-      // إذا لم تكن قد أنشأت الدالة، سيعود بـ null
       const { data, error } = await supabase.rpc('get_my_profile');
       
       if (error || !data || data.length === 0) {
-         // محاولة احتياطية في حال لم تعمل RPC
          const { data: fallbackData } = await supabase
-            .from('employees')
-            .select('*')
-            .eq('email', email)
-            .maybeSingle();
+           .from('employees')
+           .select('*')
+           .eq('email', email)
+           .maybeSingle();
          return fallbackData;
       }
       return data[0] as Employee;
@@ -48,8 +45,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } finally {
       setUser(null);
       setEmployeeProfile(null);
-      localStorage.clear(); // تنظيف كامل
-      window.location.replace('/'); // إعادة تحميل لإجبار المتصفح على البدء من جديد
+      localStorage.clear(); 
+      window.location.replace('/'); 
     }
   };
 
@@ -58,17 +55,52 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (error) throw error;
   };
 
+  // 🔥 1. مراقبة التغييرات الحية لطرد الموظف فوراً
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const channel = supabase
+      .channel('force_logout_channel')
+      .on(
+        'postgres_changes',
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'employees', 
+          filter: `email=eq.${user.email}` 
+        },
+        async (payload) => {
+          // إذا تغيرت الحالة إلى موقوف، اطرد المستخدم
+          if (payload.new.status === 'موقوف') {
+            alert('عذراً، تم إيقاف حسابك من قبل الإدارة.');
+            await signOut();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]); // يعتمد على user، سيعمل بمجرد تسجيل الدخول
+
+  // 2. إدارة الجلسة والتحقق المبدئي
   useEffect(() => {
     let mounted = true;
 
-    // دالة التعامل مع الجلسة وتحديث الحالة
     const handleSession = async (session: any) => {
       if (session?.user) {
         if (mounted) setUser(session.user);
         
-        // جلب البروفايل فقط إذا لم يكن موجوداً
         if (session.user.email) {
             const profile = await fetchProfile(session.user.email);
+            
+            // 🔥 التحقق من الحالة عند فتح التطبيق
+            if (profile && profile.status === 'موقوف') {
+                await signOut();
+                return; // إيقاف التنفيذ
+            }
+
             if (mounted) setEmployeeProfile(profile);
         }
       } else {
@@ -80,10 +112,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (mounted) setLoading(false);
     };
 
-    // 1. الاستماع المباشر للتغييرات (هذا هو الأهم للتبويبات المتعددة)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth Event:", event); // للمراقبة
-
       if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         handleSession(session);
       } else if (event === 'SIGNED_OUT') {
@@ -93,12 +122,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    // 2. التحقق المبدئي (للحالات التي لا يطلق فيها المستمع حدثاً فورياً)
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         handleSession(session);
       } else {
-        // إذا لم نجد جلسة ولم يطلق المستمع حدثاً بعد، ننهي التحميل
         if (mounted && loading) setLoading(false);
       }
     });
