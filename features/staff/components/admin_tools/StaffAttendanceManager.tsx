@@ -4,14 +4,13 @@ import { supabase } from '../../../../supabaseClient';
 import { useReactToPrint } from 'react-to-print';
 import { 
     Search, Printer, Upload, Calendar, Loader2, RefreshCw, 
-    Filter, FileSpreadsheet, CheckCircle2, XCircle, AlertCircle 
+    Filter, ArrowUp, ArrowDown, ArrowUpDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AttendanceRecord, Employee, LeaveRequest } from '../../../../types';
 import * as XLSX from 'xlsx';
 
-// أنواع التقارير
-type ReportType = 'force' | 'daily' | 'absence' | 'specialties';
+type ReportType = 'daily' | 'force' | 'absence' | 'specialties';
 
 export default function StaffAttendanceManager() {
     const queryClient = useQueryClient();
@@ -23,17 +22,18 @@ export default function StaffAttendanceManager() {
     const [activeReport, setActiveReport] = useState<ReportType>('daily');
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // Filters
+    // Filters & Sorting
     const [searchTerm, setSearchTerm] = useState(''); 
     const [filterSpecialty, setFilterSpecialty] = useState('all');
     const [filterStatus, setFilterStatus] = useState('active_only'); 
+    const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'specialty'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
 
-    // --- 1. Queries (جلب البيانات) ---
+    // --- 1. Queries ---
     
     const { data: employees = [] } = useQuery({
         queryKey: ['staff_manager_employees'],
         queryFn: async () => {
-            const { data } = await supabase.from('employees').select('*').order('name');
+            const { data } = await supabase.from('employees').select('*'); // جلبنا الكل وسنرتب لاحقاً
             return data as Employee[] || [];
         },
         staleTime: 1000 * 60 * 10 
@@ -47,44 +47,57 @@ export default function StaffAttendanceManager() {
         }
     });
 
-    // جلب الإجازات المقبولة لهذا اليوم
+    // إصلاح جلب الإجازات: التأكد من صيغة التاريخ ومطابقة الحالة
     const { data: leaves = [] } = useQuery({
         queryKey: ['staff_manager_leaves', date],
         queryFn: async () => {
-            const { data } = await supabase.from('leave_requests')
+            const { data, error } = await supabase.from('leave_requests')
                 .select('*')
-                .eq('status', 'approved') // الموافق عليها فقط
+                .eq('status', 'approved') // تأكد أن الحالة في القاعدة approved (lowercase)
                 .lte('start_date', date)
                 .gte('end_date', date);
+            
+            if (error) console.error("Error fetching leaves:", error);
             return data as LeaveRequest[] || [];
         }
     });
 
-    // --- 2. Data Processing (المنطق المعدل) ---
+    // --- 2. Data Processing ---
     const processedData = useMemo(() => {
-        return employees.map(emp => {
-            // 1. البيانات الأساسية
+        let data = employees.map(emp => {
             const attRecord = attendance.find(a => a.employee_id === emp.employee_id);
             const leaveRecord = leaves.find(l => l.employee_id === emp.employee_id);
             
             let inTime = '-';
             let outTime = '-';
-            let status = 'غياب'; 
+            let status = 'غير متواجد'; 
+            let displayText = ''; // النص الذي سيظهر في خانة الحضور إذا كان إجازة
 
-            // 2. تحليل البصمة
+            // تحليل البصمة
             if (attRecord && attRecord.times) {
                 const times = attRecord.times.split(/\s+/).filter(t => t.includes(':')).sort();
                 if (times.length > 0) {
                     inTime = times[0];
-                    // أي شخص له بصمة حضور يعتبر متواجد
-                    status = 'متواجد'; 
+                    status = 'متواجد'; // مجرد وجود بصمة واحدة = متواجد
                 }
                 if (times.length > 1) {
-                    outTime = times[times.length - 1];
+                    const lastTime = times[times.length - 1];
+                    
+                    // حساب فرق التوقيت (أكبر من ساعة؟)
+                    const [inH, inM] = inTime.split(':').map(Number);
+                    const [outH, outM] = lastTime.split(':').map(Number);
+                    const diffMinutes = (outH * 60 + outM) - (inH * 60 + inM);
+
+                    if (diffMinutes >= 60) {
+                        outTime = lastTime;
+                    } else {
+                        // تفريغ الانصراف لو الفرق أقل من ساعة
+                        outTime = '-';
+                    }
                 }
             }
 
-            // 3. منطق "جزء من الوقت"
+            // منطق جزء من الوقت
             const isPartTimePeriod = emp.part_time_start_date && emp.part_time_end_date && 
                                      date >= emp.part_time_start_date && date <= emp.part_time_end_date;
             
@@ -92,177 +105,162 @@ export default function StaffAttendanceManager() {
                 const dayName = new Date(date).toLocaleDateString('ar-EG', { weekday: 'long' });
                 const empWorkDays = typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [];
                 
-                // هل هو مطالب بالحضور اليوم؟
-                if (empWorkDays.includes(dayName)) {
-                    // مطالب بالحضور: يطبق عليه ما يطبق على العادي (تم تحديده أعلاه بناء على البصمة)
-                    // إذا لم يكن له بصمة سيظل "غياب" كما هو الافتراضي
-                } else {
-                    // غير مطالب بالحضور اليوم
-                    status = 'جزء من الوقت';
-                    // تصفير البصمات حتى لو وجدت بالخطأ لعدم التشويش (اختياري)
-                    inTime = '-';
-                    outTime = '-';
+                if (!empWorkDays.includes(dayName)) {
+                    // ليس يوم عمله
+                    if (status === 'غير متواجد') {
+                        status = 'جزء من الوقت';
+                        displayText = 'جزء من الوقت';
+                    }
                 }
             }
 
-            // 4. الإجازات (تغلب الغياب، ولكن البصمة تغلب الإجازة في حال الحضور الطارئ)
+            // منطق الإجازات (تكتب في التقرير)
             if (leaveRecord) {
-                // لو بصم يعتبر متواجد حتى لو عنده إجازة، وإلا يكتب نوع الإجازة
-                if (status === 'غياب') {
-                    status = leaveRecord.request_type; // يكتب نوع الإجازة (اعتيادي، عارضة...)
+                // لو الموظف بصم، يظل "متواجد"، لو مابصمش نكتب نوع الإجازة
+                if (status === 'غير متواجد') {
+                    status = 'إجازة'; // للتصنيف الإحصائي
+                    displayText = leaveRecord.request_type; // يظهر في الجدول "عارضة" مثلاً
                 }
             }
 
             return {
                 ...emp,
-                attRecord,
                 inTime,
                 outTime,
-                finalStatus: status
+                finalStatus: status,
+                displayText
             };
-        }).filter(item => {
+        });
+
+        // الفلترة
+        data = data.filter(item => {
             const search = searchTerm.toLowerCase();
             const matchesSearch = item.name.toLowerCase().includes(search) || item.employee_id.includes(search);
             const matchesSpec = filterSpecialty === 'all' || item.specialty === filterSpecialty;
+            
             let matchesStatus = true;
             if (filterStatus === 'active_only') matchesStatus = item.status === 'نشط';
             else if (filterStatus !== 'all') matchesStatus = item.status === filterStatus;
 
             return matchesSearch && matchesSpec && matchesStatus;
         });
-    }, [employees, attendance, leaves, searchTerm, filterSpecialty, filterStatus, date]);
 
-    // --- 3. Statistics Calculation ---
+        // الترتيب (Sorting)
+        data.sort((a, b) => {
+            const valA = a[sortConfig.key] || '';
+            const valB = b[sortConfig.key] || '';
+            
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return data;
+    }, [employees, attendance, leaves, searchTerm, filterSpecialty, filterStatus, date, sortConfig]);
+
+    // --- 3. Statistics ---
     const stats = useMemo(() => {
         const total = processedData.length;
         const present = processedData.filter(d => d.finalStatus === 'متواجد').length;
-        const absent = processedData.filter(d => d.finalStatus === 'غياب').length;
+        const absent = processedData.filter(d => d.finalStatus === 'غير متواجد').length;
         const partTime = processedData.filter(d => d.finalStatus === 'جزء من الوقت').length;
-        // أي حالة ليست حضور ولا غياب ولا جزء وقت تعتبر إجازة (بأنواعها)
-        const leave = total - present - absent - partTime;
+        const leave = processedData.filter(d => d.finalStatus === 'إجازة').length;
         
-        // نسبة الحضور: (الحضور / (الإجمالي - الإجازات - جزء من الوقت الراحة))
         const effectiveTotal = total - leave - partTime;
         const percent = effectiveTotal > 0 ? Math.round((present / effectiveTotal) * 100) : 0;
 
-        // إحصائيات التخصصات
         const bySpecialty: any = {};
         processedData.forEach(d => {
-            if (!bySpecialty[d.specialty]) {
-                bySpecialty[d.specialty] = { total: 0, present: 0, absent: 0, leave: 0, partTime: 0 };
-            }
+            if (!bySpecialty[d.specialty]) bySpecialty[d.specialty] = { total: 0, present: 0, absent: 0, leave: 0 };
             bySpecialty[d.specialty].total++;
             if (d.finalStatus === 'متواجد') bySpecialty[d.specialty].present++;
-            else if (d.finalStatus === 'غياب') bySpecialty[d.specialty].absent++;
-            else if (d.finalStatus === 'جزء من الوقت') bySpecialty[d.specialty].partTime++;
+            else if (d.finalStatus === 'غير متواجد') bySpecialty[d.specialty].absent++;
             else bySpecialty[d.specialty].leave++;
         });
 
         return { total, present, absent, leave, partTime, percent, bySpecialty };
     }, [processedData]);
 
-    // --- 4. File Upload Logic ---
+    // --- 4. File Upload (.dat) ---
     const rawMutation = useMutation({
         mutationFn: async (payload: any[]) => {
             const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
             if (error) throw error;
         },
         onSuccess: () => {
-            toast.success('تم رفع البيانات بنجاح');
+            toast.success('تم التحديث');
             queryClient.invalidateQueries({ queryKey: ['staff_manager_attendance'] });
         },
-        onError: (err: any) => toast.error(err.message)
+        onError: () => toast.error('خطأ في الرفع')
     });
 
     const handleRawFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         setIsProcessing(true);
-
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                const text = event.target?.result as string;
-                const lines = text.split('\n');
-                const groupedData: { [key: string]: { id: string, date: string, times: string[] } } = {};
-
+                const lines = (event.target?.result as string).split('\n');
+                const groupedData: any = {};
                 lines.forEach(line => {
                     const parts = line.trim().split(/\s+/);
                     if (parts.length < 3) return;
-                    const empId = parts[0];
-                    const rawDate = parts[1]; 
-                    const rawTime = parts[2];
-
+                    const [empId, rawDate, rawTime] = parts;
                     let formattedDate = rawDate;
                     if (rawDate.includes('/')) {
                         const [d, m, y] = rawDate.split('/');
                         formattedDate = `${y}-${m}-${d}`;
                     }
-
                     const key = `${empId}_${formattedDate}`;
                     if (!groupedData[key]) groupedData[key] = { id: empId, date: formattedDate, times: [] };
                     groupedData[key].times.push(rawTime);
                 });
-
-                const payload = Object.values(groupedData).map(g => ({
-                    employee_id: g.id,
-                    date: g.date,
-                    times: g.times.sort().join(' '),
-                    status: 'حضور' 
+                const payload = Object.values(groupedData).map((g:any) => ({
+                    employee_id: g.id, date: g.date, times: g.times.sort().join(' '), status: 'حضور'
                 }));
-
                 if (payload.length > 0) rawMutation.mutate(payload);
-                else toast.error("الملف فارغ أو التنسيق غير صحيح");
-
-            } catch (err) {
-                toast.error("فشل قراءة الملف");
-            } finally {
-                setIsProcessing(false);
-                if (fileInputRef.current) fileInputRef.current.value = '';
-            }
+            } catch (err) { toast.error("خطأ في الملف"); } 
+            finally { setIsProcessing(false); if (fileInputRef.current) fileInputRef.current.value = ''; }
         };
         reader.readAsText(file);
     };
 
-    // --- 5. Print ---
     const handlePrint = useReactToPrint({
         content: () => componentRef.current,
-        documentTitle: `Report_${activeReport}_${date}`,
+        documentTitle: `Report_${date}`,
     });
 
+    // تقسيم البيانات للتقرير اليومي
     const halfIndex = Math.ceil(processedData.length / 2);
     const rightColumnData = processedData.slice(0, halfIndex);
     const leftColumnData = processedData.slice(halfIndex);
 
+    // دالة مساعدة لتبديل الترتيب
+    const toggleSort = (key: 'name' | 'specialty') => {
+        setSortConfig(curr => ({
+            key,
+            direction: curr.key === key && curr.direction === 'asc' ? 'desc' : 'asc'
+        }));
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in pb-20">
-            
-            {/* --- شريط التحكم (لا يطبع) --- */}
-            <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col xl:flex-row gap-4 justify-between items-center no-print">
-                <div className="flex items-center gap-3 w-full xl:w-auto">
+            {/* Controls (No Print) */}
+            <div className="bg-white p-4 rounded-3xl shadow-sm border flex flex-col xl:flex-row gap-4 justify-between items-center no-print">
+                <div className="flex items-center gap-3">
                     <div className="relative bg-gray-50 rounded-xl border flex items-center px-3 py-2">
                         <Calendar className="w-5 h-5 text-gray-500 ml-2"/>
                         <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-transparent outline-none font-bold text-gray-700"/>
                     </div>
-                    <button onClick={() => refetchAtt()} disabled={isRefetching} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors">
+                    <button onClick={() => { refetchAtt(); toast.success('تم التحديث'); }} disabled={isRefetching} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100">
                         <RefreshCw className={`w-5 h-5 ${isRefetching ? 'animate-spin' : ''}`}/>
                     </button>
                 </div>
 
-                <div className="flex bg-gray-100 p-1.5 rounded-xl shadow-inner overflow-x-auto max-w-full gap-1">
-                    {[
-                        {id: 'daily', label: 'التمام اليومي'},
-                        {id: 'force', label: 'القوة الفعلية'},
-                        {id: 'absence', label: 'الغياب'},
-                        {id: 'specialties', label: 'إحصاء التخصصات'}
-                    ].map(r => (
-                        <button 
-                            key={r.id} 
-                            onClick={() => setActiveReport(r.id as ReportType)}
-                            className={`px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${activeReport === r.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}
-                        >
-                            {r.label}
-                        </button>
+                <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
+                    {[{id: 'daily', label: 'التمام اليومي'}, {id: 'force', label: 'القوة الفعلية'}, {id: 'absence', label: 'الغياب'}, {id: 'specialties', label: 'إحصاء التخصصات'}].map(r => (
+                        <button key={r.id} onClick={() => setActiveReport(r.id as ReportType)} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeReport === r.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}>{r.label}</button>
                     ))}
                 </div>
 
@@ -277,76 +275,53 @@ export default function StaffAttendanceManager() {
                 </div>
             </div>
 
-            {/* --- شريط الفلترة (لا يطبع) --- */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm no-print">
-                <div className="relative">
+            {/* Filters & Sorting (No Print) */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl border shadow-sm no-print">
+                <div className="relative md:col-span-2">
                     <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
-                    <input 
-                        placeholder="بحث بالاسم أو الكود..." 
-                        value={searchTerm} 
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="w-full pr-9 pl-4 py-2 rounded-xl border bg-gray-50 outline-none focus:bg-white transition-colors text-sm"
-                    />
+                    <input placeholder="بحث..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pr-9 pl-4 py-2 rounded-xl border bg-gray-50 outline-none text-sm"/>
                 </div>
-                <select 
-                    value={filterSpecialty} 
-                    onChange={e => setFilterSpecialty(e.target.value)}
-                    className="p-2 rounded-xl border bg-gray-50 outline-none text-sm font-bold"
-                >
+                <select value={filterSpecialty} onChange={e => setFilterSpecialty(e.target.value)} className="p-2 rounded-xl border bg-gray-50 outline-none text-sm font-bold">
                     <option value="all">كل التخصصات</option>
                     {Array.from(new Set(employees.map(e => e.specialty))).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <select 
-                    value={filterStatus} 
-                    onChange={e => setFilterStatus(e.target.value)}
-                    className="p-2 rounded-xl border bg-gray-50 outline-none text-sm font-bold"
-                >
-                    <option value="active_only">القوة الفعلية (نشط)</option>
-                    <option value="all">الكل</option>
-                    <option value="موقوف">موقوف</option>
-                    <option value="إجازة">إجازة طويلة</option>
-                    <option value="خارج المركز">خارج المركز</option>
-                </select>
+                
+                {/* أزرار الترتيب */}
+                <div className="flex gap-2">
+                    <button onClick={() => toggleSort('name')} className={`flex-1 flex items-center justify-center gap-1 rounded-xl border text-xs font-bold ${sortConfig.key === 'name' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50'}`}>
+                        الاسم <ArrowUpDown className="w-3 h-3"/>
+                    </button>
+                    <button onClick={() => toggleSort('specialty')} className={`flex-1 flex items-center justify-center gap-1 rounded-xl border text-xs font-bold ${sortConfig.key === 'specialty' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50'}`}>
+                        التخصص <ArrowUpDown className="w-3 h-3"/>
+                    </button>
+                </div>
             </div>
 
-            {/* --- منطقة التقرير (للطباعة) --- */}
+            {/* Printable Report */}
             <div ref={componentRef} className="bg-white p-8 rounded-[30px] shadow-sm min-h-[800px] print:p-2 print:shadow-none" dir="rtl">
                 
-                {/* 1. ترويسة الطباعة المعدلة (سطر واحد) */}
-                <div className="hidden print:flex justify-between items-center mb-4 border-b-2 border-black pb-2 text-[12px] font-bold font-mono">
-                    <div className="flex gap-4">
-                        <span>مركز غرب المطار</span>
-                        <span>-</span>
-                        <span>تقرير تواجد العاملين بالمركز</span>
-                    </div>
-                    <div className="flex gap-4">
-                        <span>التاريخ: {new Date(date).toLocaleDateString('ar-EG')}</span>
-                        <span>التوقيت: {new Date().toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'})}</span>
-                    </div>
+                {/* Header: One Line */}
+                <div className="hidden print:block text-center border-b-2 border-black pb-2 mb-4">
+                    <p className="text-[12px] font-bold font-mono text-black">
+                        مركز غرب المطار - تقرير تواجد العاملين بالمركز - التاريخ: {new Date(date).toLocaleDateString('ar-EG')} - التوقيت: {new Date().toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}
+                    </p>
                 </div>
 
-                {/* --- تقرير التمام اليومي (Daily Presence) --- */}
+                {/* 1. Daily Report */}
                 {activeReport === 'daily' && (
                     <div className="w-full">
                         <div className="flex flex-row gap-4 print:gap-1">
-                            {/* العمود الأيمن */}
-                            <div className="w-1/2">
-                                <DailyTable data={rightColumnData} />
-                            </div>
-                            {/* الخط الفاصل */}
+                            <div className="w-1/2"><DailyTable data={rightColumnData} /></div>
                             <div className="w-px bg-black hidden print:block mx-1"></div>
-                            {/* العمود الأيسر */}
-                            <div className="w-1/2">
-                                <DailyTable data={leftColumnData} startIndex={halfIndex} />
-                            </div>
+                            <div className="w-1/2"><DailyTable data={leftColumnData} startIndex={halfIndex} /></div>
                         </div>
 
-                        {/* الفوتر الإحصائي */}
+                        {/* Footer Stats */}
                         <div className="mt-4 pt-2 border-t-2 border-black text-[10px] print:text-[9px] font-bold">
                             <div className="flex justify-between mb-1 bg-gray-100 print:bg-transparent p-1 rounded">
                                 <span>إجمالي القوة: {stats.total}</span>
-                                <span>حضور: {stats.present}</span>
-                                <span>غياب: {stats.absent}</span>
+                                <span>متواجد: {stats.present}</span>
+                                <span>غير متواجد: {stats.absent}</span>
                                 <span>إجازات: {stats.leave}</span>
                                 <span>جزء وقت: {stats.partTime}</span>
                                 <span>نسبة الحضور: {stats.percent}%</span>
@@ -362,18 +337,17 @@ export default function StaffAttendanceManager() {
                     </div>
                 )}
 
-                {/* --- تقرير القوة الفعلية --- */}
+                {/* 2. Force Report */}
                 {activeReport === 'force' && (
                     <table className="w-full text-sm text-right border-collapse">
                         <thead className="bg-gray-100 font-bold border-b-2 border-black">
                             <tr>
-                                <th className="p-2 border border-gray-300">م</th>
-                                <th className="p-2 border border-gray-300">الكود</th>
-                                <th className="p-2 border border-gray-300">الاسم</th>
-                                <th className="p-2 border border-gray-300">التخصص</th>
-                                <th className="p-2 border border-gray-300">الرقم القومي</th>
-                                <th className="p-2 border border-gray-300">الهاتف</th>
-                                <th className="p-2 border border-gray-300">مهام إدارية</th>
+                                <th className="p-2 border border-gray-400">م</th>
+                                <th className="p-2 border border-gray-400">الكود</th>
+                                <th className="p-2 border border-gray-400">الاسم</th>
+                                <th className="p-2 border border-gray-400">التخصص</th>
+                                <th className="p-2 border border-gray-400">الرقم القومي</th>
+                                <th className="p-2 border border-gray-400">الهاتف</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -385,123 +359,101 @@ export default function StaffAttendanceManager() {
                                     <td className="p-2 border border-gray-300">{emp.specialty}</td>
                                     <td className="p-2 border border-gray-300 text-center font-mono">{emp.national_id}</td>
                                     <td className="p-2 border border-gray-300 text-center">{emp.phone}</td>
-                                    <td className="p-2 border border-gray-300 text-xs">{emp.admin_tasks}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 )}
 
-                {/* --- تقرير الغياب --- */}
+                {/* 3. Absence Report */}
                 {activeReport === 'absence' && (
-                    <div className="w-full">
-                        <table className="w-full text-sm text-right border-collapse">
-                            <thead className="bg-red-50 font-bold border-b-2 border-red-800 text-red-900">
-                                <tr>
-                                    <th className="p-3 border border-red-200">الكود</th>
-                                    <th className="p-3 border border-red-200">الاسم</th>
-                                    <th className="p-3 border border-red-200">التخصص</th>
-                                    <th className="p-3 border border-red-200">الحالة</th>
-                                    <th className="p-3 border border-red-200">التوقيع</th>
+                    <table className="w-full text-sm text-right border-collapse">
+                        <thead className="bg-red-50 font-bold border-b-2 border-black text-red-900">
+                            <tr>
+                                <th className="p-2 border border-gray-400">الكود</th>
+                                <th className="p-2 border border-gray-400">الاسم</th>
+                                <th className="p-2 border border-gray-400">التخصص</th>
+                                <th className="p-2 border border-gray-400 text-center">الحالة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {processedData.filter(d => d.finalStatus === 'غير متواجد').map((emp) => (
+                                <tr key={emp.id} className="border-b border-gray-300">
+                                    <td className="p-2 border border-gray-300 text-center font-mono">{emp.employee_id}</td>
+                                    <td className="p-2 border border-gray-300 font-bold">{emp.name}</td>
+                                    <td className="p-2 border border-gray-300">{emp.specialty}</td>
+                                    <td className="p-2 border border-gray-300 text-center font-bold text-red-600">غير متواجد</td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {processedData.filter(d => d.finalStatus === 'غياب').map((emp, idx) => (
-                                    <tr key={emp.id} className="border-b border-red-100">
-                                        <td className="p-3 border border-red-100 text-center font-mono">{emp.employee_id}</td>
-                                        <td className="p-3 border border-red-100 font-bold">{emp.name}</td>
-                                        <td className="p-3 border border-red-100">{emp.specialty}</td>
-                                        <td className="p-3 border border-red-100 text-red-600 font-bold text-center">غياب</td>
-                                        <td className="p-3 border border-red-100"></td>
-                                    </tr>
-                                ))}
-                                {processedData.filter(d => d.finalStatus === 'غياب').length === 0 && (
-                                    <tr><td colSpan={5} className="p-10 text-center font-bold text-green-600">لا يوجد غياب اليوم!</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                            ))}
+                        </tbody>
+                    </table>
                 )}
 
-                {/* --- تقرير إحصاء التخصصات --- */}
+                {/* 4. Specialties Report */}
                 {activeReport === 'specialties' && (
-                    <div className="w-full max-w-2xl mx-auto">
-                        <table className="w-full text-sm text-right border-collapse">
-                            <thead className="bg-gray-800 text-white font-bold">
-                                <tr>
-                                    <th className="p-3 border border-gray-600">التخصص</th>
-                                    <th className="p-3 border border-gray-600 text-center">القوة</th>
-                                    <th className="p-3 border border-gray-600 text-center">متواجد</th>
-                                    <th className="p-3 border border-gray-600 text-center">غياب</th>
-                                    <th className="p-3 border border-gray-600 text-center">جزء وقت</th>
-                                    <th className="p-3 border border-gray-600 text-center">إجازات</th>
-                                    <th className="p-3 border border-gray-600 text-center">النسبة</th>
+                    <table className="w-full text-sm text-right border-collapse max-w-2xl mx-auto">
+                        <thead className="bg-gray-800 text-white font-bold">
+                            <tr>
+                                <th className="p-2 border border-gray-600">التخصص</th>
+                                <th className="p-2 border border-gray-600 text-center">القوة</th>
+                                <th className="p-2 border border-gray-600 text-center">متواجد</th>
+                                <th className="p-2 border border-gray-600 text-center">غير متواجد</th>
+                                <th className="p-2 border border-gray-600 text-center">إجازات</th>
+                                <th className="p-2 border border-gray-600 text-center">النسبة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {Object.entries(stats.bySpecialty).map(([spec, s]: any) => (
+                                <tr key={spec} className="border-b border-gray-300">
+                                    <td className="p-2 border border-gray-300 font-bold bg-gray-50">{spec}</td>
+                                    <td className="p-2 border border-gray-300 text-center font-bold">{s.total}</td>
+                                    <td className="p-2 border border-gray-300 text-center text-green-700 font-bold">{s.present}</td>
+                                    <td className="p-2 border border-gray-300 text-center text-red-600 font-bold">{s.absent}</td>
+                                    <td className="p-2 border border-gray-300 text-center text-orange-600">{s.leave}</td>
+                                    <td className="p-2 border border-gray-300 text-center font-mono">
+                                        {s.total > 0 ? Math.round((s.present / (s.total - s.leave - s.partTime)) * 100) : 0}%
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                {Object.entries(stats.bySpecialty).map(([spec, s]: any) => (
-                                    <tr key={spec} className="border-b border-gray-300">
-                                        <td className="p-3 border border-gray-300 font-bold bg-gray-50">{spec}</td>
-                                        <td className="p-3 border border-gray-300 text-center font-bold">{s.total}</td>
-                                        <td className="p-3 border border-gray-300 text-center text-green-700 font-bold">{s.present}</td>
-                                        <td className="p-3 border border-gray-300 text-center text-red-600 font-bold">{s.absent}</td>
-                                        <td className="p-3 border border-gray-300 text-center text-purple-600">{s.partTime}</td>
-                                        <td className="p-3 border border-gray-300 text-center text-orange-600">{s.leave}</td>
-                                        <td className="p-3 border border-gray-300 text-center font-mono">
-                                            {s.total > 0 ? Math.round((s.present / (s.total - s.leave - s.partTime)) * 100) : 0}%
-                                        </td>
-                                    </tr>
-                                ))}
-                                <tr className="bg-gray-200 font-black border-t-2 border-black">
-                                    <td className="p-3 border border-gray-400">الإجمالي</td>
-                                    <td className="p-3 border border-gray-400 text-center">{stats.total}</td>
-                                    <td className="p-3 border border-gray-400 text-center">{stats.present}</td>
-                                    <td className="p-3 border border-gray-400 text-center">{stats.absent}</td>
-                                    <td className="p-3 border border-gray-400 text-center">{stats.partTime}</td>
-                                    <td className="p-3 border border-gray-400 text-center">{stats.leave}</td>
-                                    <td className="p-3 border border-gray-400 text-center">{stats.percent}%</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                            ))}
+                        </tbody>
+                    </table>
                 )}
             </div>
         </div>
     );
 }
 
-// --- الجدول المصغر للتقرير اليومي ---
+// Table Component (Columns Updated: No Status Column)
 const DailyTable = ({ data, startIndex = 0 }: { data: any[], startIndex?: number }) => {
     return (
         <table className="w-full text-[10px] print:text-[9px] text-right border-collapse">
             <thead className="bg-gray-100 border-b border-black font-bold">
                 <tr>
-                    <th className="p-1 border border-gray-400 w-6">م</th>
+                    <th className="p-1 border border-gray-400 w-6 text-center">م</th>
+                    <th className="p-1 border border-gray-400 w-10 text-center">كود</th>
                     <th className="p-1 border border-gray-400">الاسم</th>
-                    <th className="p-1 border border-gray-400 w-16">الوظيفة</th>
-                    <th className="p-1 border border-gray-400 w-10 text-center">حضور</th>
-                    <th className="p-1 border border-gray-400 w-10 text-center">انصراف</th>
-                    <th className="p-1 border border-gray-400 w-12 text-center">الحالة</th>
+                    <th className="p-1 border border-gray-400 w-16">التخصص</th>
+                    <th className="p-1 border border-gray-400 w-12 text-center">حضور</th>
+                    <th className="p-1 border border-gray-400 w-12 text-center">انصراف</th>
                 </tr>
             </thead>
             <tbody>
                 {data.map((row, idx) => (
                     <tr key={row.id} className="border-b border-gray-300">
                         <td className="p-1 border border-gray-300 text-center">{startIndex + idx + 1}</td>
-                        <td className="p-1 border border-gray-300 font-bold truncate max-w-[100px]">{row.name}</td>
-                        <td className="p-1 border border-gray-300 truncate max-w-[60px]">{row.specialty}</td>
+                        <td className="p-1 border border-gray-300 text-center font-mono">{row.employee_id}</td>
+                        <td className="p-1 border border-gray-300 font-bold truncate max-w-[110px]">{row.name}</td>
+                        <td className="p-1 border border-gray-300 truncate max-w-[70px]">{row.specialty}</td>
                         
-                        <td className="p-1 border border-gray-300 text-center font-mono">
-                            {row.inTime !== '-' ? row.inTime : '-'}
+                        {/* خانة الحضور: تظهر الوقت، أو نوع الإجازة، أو جزء من الوقت */}
+                        <td className="p-1 border border-gray-300 text-center font-bold">
+                            {row.inTime !== '-' ? row.inTime : 
+                             row.displayText ? <span className="text-[8px]">{row.displayText}</span> : '-'}
                         </td>
+                        
                         <td className="p-1 border border-gray-300 text-center font-mono">{row.outTime}</td>
-                        
-                        <td className="p-1 border border-gray-300 text-center truncate max-w-[60px] font-bold">
-                            {row.finalStatus === 'متواجد' ? 'متواجد' : row.finalStatus}
-                        </td>
                     </tr>
                 ))}
-                {/* تعبئة صفوف فارغة للحفاظ على التنسيق */}
                 {data.length === 0 && <tr><td colSpan={6} className="p-2 text-center">-</td></tr>}
             </tbody>
         </table>
