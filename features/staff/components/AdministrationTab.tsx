@@ -7,7 +7,7 @@ import { Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, Loader2,
 // ✅ 1. استيراد مكونات الأدمن الموجودة بالفعل
 import VaccinationsTab from '../../admin/components/VaccinationsTab';
 import DoctorsTab from '../../admin/components/DoctorsTab';
-import AttendanceAdminTab from '../../admin/components/AttendanceTab'; 
+import AttendanceTab from '../../admin/components/AttendanceTab'; 
 
 export default function AdministrationTab({ employee }: { employee: Employee }) {
     const [activeTool, setActiveTool] = useState<string | null>(null);
