@@ -3,7 +3,6 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
-// ✅ استيراد React Query و Notification Permission
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { requestNotificationPermission } from '../../utils/pushNotifications'; 
 
@@ -12,7 +11,7 @@ import {
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Sparkles, Calendar 
+  Sparkles, Calendar, Settings // ✅ تمت إضافة Settings للأيقونة
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -34,6 +33,8 @@ import ShiftRequestsTab from './components/ShiftRequestsTab';
 import QualityDashboard from '../admin/components/QualityDashboard'; 
 import StaffLibrary from './components/StaffLibrary';
 import StaffTasks from './components/StaffTasks';
+// ✅ استيراد مكون لوحة الإدارة الجديد
+import AdministrationTab from './components/AdministrationTab';
 
 interface Props {
   employee: Employee;
@@ -47,7 +48,11 @@ export default function StaffDashboard({ employee }: Props) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
 
-  // --- 1. حالات تخزين البيانات (للمكونات القديمة) ---
+  // --- التحقق من صلاحيات الإدارة ---
+  // هل الموظف لديه أي صلاحيات في مصفوفة permissions؟
+  const hasAdminAccess = employee.permissions && Array.isArray(employee.permissions) && employee.permissions.length > 0;
+
+  // --- 1. حالات تخزين البيانات ---
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
@@ -68,7 +73,6 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.employee_id]);
 
-  // جلب الإشعارات
   const fetchNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
@@ -86,43 +90,25 @@ export default function StaffDashboard({ employee }: Props) {
         .update({ is_read: true })
         .eq('user_id', employee.employee_id);
       
-      // تحديث البيانات بعد القراءة
       fetchNotifications();
       queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
     }
     setShowNotifMenu(!showNotifMenu);
   };
 
-  // 🔥 3. استعلام قوي لجلب العدادات (Badges) للأزرار
+  // 🔥 3. استعلام قوي لجلب العدادات (Badges)
   const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0 } } = useQuery({
       queryKey: ['staff_badges', employee.employee_id],
       queryFn: async () => {
           const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - 1); // آخر 24 ساعة للأخبار
+          yesterday.setDate(yesterday.getDate() - 1);
 
           const [msg, tasks, swaps, news, ovrReplies] = await Promise.all([
-              // 1. رسائل غير مقروءة
-              supabase.from('messages').select('*', { count: 'exact', head: true })
-                  .eq('to_user', employee.employee_id).eq('is_read', false),
-              
-              // 2. تكليفات معلقة
-              supabase.from('tasks').select('*', { count: 'exact', head: true })
-                  .eq('employee_id', employee.employee_id).eq('status', 'pending'),
-
-              // 3. طلبات تبديل واردة (تستهدفني)
-              supabase.from('shift_swap_requests').select('*', { count: 'exact', head: true })
-                  .eq('target_employee_id', employee.employee_id).eq('status', 'pending_target'),
-
-              // 4. أخبار جديدة
-              supabase.from('news').select('*', { count: 'exact', head: true })
-                  .gte('created_at', yesterday.toISOString()),
-
-              // 5. ردود OVR (عن طريق الإشعارات غير المقروءة)
-              // نبحث في جدول الإشعارات عن نوع 'ovr_reply' غير المقروء
-              supabase.from('notifications').select('*', { count: 'exact', head: true })
-                  .eq('user_id', employee.employee_id)
-                  .eq('type', 'ovr_reply') // تأكد من استخدام هذا النوع عند الرد
-                  .eq('is_read', false)
+              supabase.from('messages').select('*', { count: 'exact', head: true }).eq('to_user', employee.employee_id).eq('is_read', false),
+              supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('employee_id', employee.employee_id).eq('status', 'pending'),
+              supabase.from('shift_swap_requests').select('*', { count: 'exact', head: true }).eq('target_employee_id', employee.employee_id).eq('status', 'pending_target'),
+              supabase.from('news').select('*', { count: 'exact', head: true }).gte('created_at', yesterday.toISOString()),
+              supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('user_id', employee.employee_id).eq('type', 'ovr_reply').eq('is_read', false)
           ]);
 
           return {
@@ -133,7 +119,7 @@ export default function StaffDashboard({ employee }: Props) {
               ovr_replies: ovrReplies.count || 0
           };
       },
-      refetchInterval: 5000, // تحديث كل 5 ثواني
+      refetchInterval: 5000,
   });
 
   // --- 4. جلب البيانات الأساسية + Realtime ---
@@ -160,7 +146,6 @@ export default function StaffDashboard({ employee }: Props) {
         event: '*', schema: 'public', table: 'notifications', 
         filter: `user_id=eq.${employee.employee_id}` 
       }, (payload) => {
-          // تحديث الإشعارات والعدادات عند وصول شيء جديد
           fetchNotifications();
           queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
           
@@ -174,7 +159,6 @@ export default function StaffDashboard({ employee }: Props) {
     return () => { supabase.removeChannel(channel); };
   }, [employee.employee_id]);
 
-  // عداد الجودة (لمدير الجودة فقط)
   useEffect(() => {
     if (employee.role === 'quality_manager') {
         const checkNewReports = async () => {
@@ -185,14 +169,12 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.role]);
 
-  // إعدادات القائمة
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
     onSwipedRight: () => setIsSidebarOpen(false),
     trackMouse: true, delta: 50,
   });
 
-  // PWA Logic
   useEffect(() => {
     const checkStandalone = () => {
       const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
@@ -209,15 +191,18 @@ export default function StaffDashboard({ employee }: Props) {
   };
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  // ✅ تعريف عناصر القائمة مع البادجات المربوطة بالـ Query
+  // ✅ تعريف عناصر القائمة
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     
+    // ✅ إضافة تبويب الإدارة هنا شرطياً
+    ...(hasAdminAccess ? [{ id: 'admin', label: 'لوحة الإدارة', icon: Settings }] : []),
+
     { id: 'tasks', label: 'التكليفات', icon: ListTodo, badge: staffBadges.tasks },
     { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight, badge: staffBadges.swaps },
     { id: 'messages', label: 'الرسائل', icon: Inbox, badge: staffBadges.messages },
-    { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle, badge: staffBadges.ovr_replies }, // بادج الردود
+    { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle, badge: staffBadges.ovr_replies },
     
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
@@ -266,7 +251,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-4.5 h-4.5 ${isActive ? 'text-white' : 'text-gray-400'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* 🔥 عرض البادج */}
                 {item.badge && item.badge > 0 && (
                     <span className="absolute left-4 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm">
                         {item.badge}
@@ -284,7 +268,7 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50">
+      <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
         <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
             <div className="flex items-center gap-3">
                 <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl"><Menu className="w-6 h-6"/></button>
@@ -342,7 +326,7 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-3 md:p-6 custom-scrollbar">
+        <main className="flex-1 overflow-y-auto p-3 md:p-6 custom-scrollbar pb-24">
             <div className="max-w-6xl mx-auto space-y-4">
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-4 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
@@ -367,6 +351,10 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                     
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
+                    
+                    {/* ✅ عرض تبويب الإدارة الجديد */}
+                    {activeTab === 'admin' && hasAdminAccess && <AdministrationTab employee={employee} />}
+
                     {activeTab === 'library' && <StaffLibrary />}
                     {activeTab === 'attendance' && <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} />}
                     {activeTab === 'evening-schedule' && <EmployeeEveningSchedule employeeId={employee.id} employeeCode={employee.employee_id} employeeName={employee.name} specialty={employee.specialty} />}
@@ -385,6 +373,75 @@ export default function StaffDashboard({ employee }: Props) {
                 </div>
             </div>
         </main>
+
+        {/* --- الشريط السفلي --- */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-3 flex justify-between items-center z-50 pb-safe md:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+            <button 
+                onClick={() => setActiveTab('news')}
+                className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'news' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+                <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'news' ? 'bg-emerald-50' : ''}`}>
+                    <LayoutDashboard className={`w-6 h-6 ${activeTab === 'news' ? 'fill-current' : ''}`} />
+                </div>
+                <span className="text-[10px] font-bold">الرئيسية</span>
+            </button>
+
+            <button 
+                onClick={() => setActiveTab('new-request')}
+                className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'new-request' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+                <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'new-request' ? 'bg-emerald-50' : ''}`}>
+                    <FilePlus className="w-6 h-6" />
+                </div>
+                <span className="text-[10px] font-bold">طلب جديد</span>
+            </button>
+
+            {/* زر عائم مميز للبروفايل */}
+            <button 
+                onClick={() => setActiveTab('profile')}
+                className="relative -top-6 bg-emerald-600 text-white p-4 rounded-full shadow-xl shadow-emerald-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform"
+            >
+                <User className="w-6 h-6" />
+            </button>
+
+            {/* ✅ زر الإدارة (يظهر فقط للمصرح لهم) */}
+            {hasAdminAccess && (
+                <button 
+                    onClick={() => setActiveTab('admin')}
+                    className={`flex flex-col items-center gap-1 transition-colors ${
+                        activeTab === 'admin' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                >
+                    <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'admin' ? 'bg-indigo-50' : ''}`}>
+                        <Settings className={`w-6 h-6 ${activeTab === 'admin' ? 'fill-current' : ''}`} />
+                    </div>
+                    <span className="text-[10px] font-bold">الإدارة</span>
+                </button>
+            )}
+
+            {!hasAdminAccess && (
+                 <button 
+                 onClick={() => setActiveTab('attendance')}
+                 className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'attendance' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}
+             >
+                 <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'attendance' ? 'bg-emerald-50' : ''}`}>
+                     <Clock className="w-6 h-6" />
+                 </div>
+                 <span className="text-[10px] font-bold">حضوري</span>
+             </button>
+            )}
+
+            <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600"
+            >
+                <div className="p-1.5">
+                    <Menu className="w-6 h-6" />
+                </div>
+                <span className="text-[10px] font-bold">المزيد</span>
+            </button>
+        </div>
+
       </div>
 
       {showAboutModal && (
