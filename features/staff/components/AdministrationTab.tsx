@@ -8,7 +8,7 @@ import { Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, Loader2,
 import VaccinationsTab from '../../admin/components/VaccinationsTab';
 import DoctorsTab from '../../admin/components/DoctorsTab';
 // افترضت أن لديك مكون لرفع البصمة في الأدمن، إذا كان مدمجاً في صفحة أخرى، استورد الصفحة تلك
-// import AttendanceAdminTab from '../../admin/components/AttendanceAdminTab'; 
+// import AttendanceAdminTab from '../../admin/components/AttendanceTab'; 
 
 export default function AdministrationTab({ employee }: { employee: Employee }) {
     const [activeTool, setActiveTool] = useState<string | null>(null);
