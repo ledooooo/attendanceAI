@@ -23,13 +23,13 @@ import StaffMessages from '../../staff/components/StaffMessages';
 
 const DAYS_OPTIONS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
 
-// في ملف DoctorsTab.tsx
+// ✅ قائمة الصلاحيات المتاحة في النظام
 const AVAILABLE_PERMISSIONS = [
     { id: 'vaccinations', label: 'إدارة التطعيمات' },
     { id: 'attendance', label: 'إدارة البصمة والحضور' },
-    { id: 'reports', label: 'التقارير وشئون الموظفين' }, // DoctorsTab
-    { id: 'leaves', label: 'إدارة الإجازات والطلبات' }, // ✅ جديد
-    { id: 'absence', label: 'تقارير الغياب' }, // ✅ جديد
+    { id: 'reports', label: 'التقارير وشئون الموظفين' },
+    { id: 'leaves', label: 'إدارة الإجازات والطلبات' },
+    { id: 'absence', label: 'تقارير الغياب' },
     { id: 'quality', label: 'إدارة الجودة (OVR)' },
 ];
 
@@ -51,7 +51,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     const [editMode, setEditMode] = useState(false);
     const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false);
     
-    // ✅ الحالة الابتدائية محدثة بجميع الحقول الجديدة
+    // ✅ تحديث الحالة الابتدائية بجميع الحقول الجديدة
     const initialFormState: any = {
         employee_id: '', name: '', national_id: '', specialty: '', phone: '', email: '',
         gender: 'ذكر', grade: '', photo_url: '', id_front_url: '', id_back_url: '',
@@ -63,14 +63,14 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         training_courses: '', notes: '', maternity: 'false', role: 'user',
         nursing_start_date: '', nursing_end_date: '', nursing_time: '',
         part_time_start_date: '', part_time_end_date: '',
-        // الحقول الجديدة
+        // الحقول الجديدة التي طلبتها
         address: '', qualification: '', marital_status: '', penalties: '',
         permissions: [], // مصفوفة الصلاحيات
         hep_b_dose1: '', hep_b_dose2: '', hep_b_dose3: '', hep_b_notes: '', hep_b_location: ''
     };
     const [formData, setFormData] = useState(initialFormState);
 
-    // 1. Fetch Data
+    // 1. Fetch Data (للتفاصيل عند الضغط على موظف)
     const { data: empData = { attendance: [], requests: [], evals: [], messages: [] }, isLoading: loadingDetails } = useQuery({
         queryKey: ['employee_full_details', selectedEmp?.employee_id],
         queryFn: async () => {
@@ -93,7 +93,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         staleTime: 1000 * 60 * 2,
     });
 
-    // 2. Mutations
+    // 2. Mutations (الحفظ والتعديل)
     const saveMutation = useMutation({
         mutationFn: async (data: any) => {
             const payload = {
@@ -104,13 +104,14 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 remaining_annual: Number(data.remaining_annual),
                 remaining_casual: Number(data.remaining_casual),
                 total_absence: Number(data.total_absence),
+                // التعامل مع التواريخ الفارغة
                 part_time_start_date: isPartTimeEnabled ? data.part_time_start_date : null,
                 part_time_end_date: isPartTimeEnabled ? data.part_time_end_date : null,
-                // التأكد من أن التواريخ الفارغة ترسل كـ null
                 hep_b_dose1: data.hep_b_dose1 || null,
                 hep_b_dose2: data.hep_b_dose2 || null,
                 hep_b_dose3: data.hep_b_dose3 || null,
-                permissions: data.permissions || [] // حفظ مصفوفة الصلاحيات
+                // حفظ الصلاحيات
+                permissions: data.permissions || [] 
             };
 
             if (editMode && data.id) {
@@ -194,7 +195,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
     const handleOpenEdit = (emp: Employee) => {
         setFormData({
-            ...initialFormState, // دمج مع القيم الافتراضية لضمان وجود الحقول الجديدة
+            ...initialFormState, // دمج القيم لضمان وجود الحقول الجديدة حتى لو لم تكن في قاعدة البيانات القديمة
             ...emp,
             work_days: typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [],
             maternity: String(emp.maternity),
