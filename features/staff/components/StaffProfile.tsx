@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Save, Camera, Calendar, Briefcase, FileText, Phone, Mail, Loader2, Baby, Clock, Timer } from 'lucide-react';
+import { User, Save, Camera, Calendar, Briefcase, FileText, Phone, Loader2, Baby, Clock, Timer, Syringe } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 
@@ -15,8 +15,6 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     const [formData, setFormData] = useState<any>({ ...employee });
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
-    
-    // حالة لتفعيل واجهة العمل الجزئي
     const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false);
 
     useEffect(() => {
@@ -26,7 +24,6 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
 
         setFormData({ ...employee, work_days: wd });
         
-        // تفعيل الزر إذا كانت التواريخ موجودة مسبقاً
         if (employee.part_time_start_date || employee.part_time_end_date) {
             setIsPartTimeEnabled(true);
         }
@@ -46,11 +43,9 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
         }
     };
 
-    // تبديل حالة العمل الجزئي
     const togglePartTime = (enabled: boolean) => {
         setIsPartTimeEnabled(enabled);
         if (!enabled) {
-            // تصفير التواريخ إذا تم إلغاء التفعيل
             setFormData({ ...formData, part_time_start_date: null, part_time_end_date: null });
         }
     };
@@ -95,6 +90,7 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                 remaining_annual: Number(formData.remaining_annual),
                 remaining_casual: Number(formData.remaining_casual),
                 total_absence: Number(formData.total_absence),
+                // يتم إرسال الحقول الجديدة تلقائياً لأنها في formData
             };
 
             const { error } = await supabase
@@ -187,14 +183,13 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                     <Field label="المهام الإدارية" name="admin_tasks" value={formData.admin_tasks} onChange={handleChange} disabled={!isEditable} />
                 </Section>
 
-                {/* 4. Schedule & Part Time Settings (Updated) */}
+                {/* 4. Schedule */}
                 <Section title="المواعيد ونظام العمل" icon={Calendar}>
                     <div className="grid grid-cols-2 gap-4 mb-4">
                         <Field label="وقت الحضور" type="time" name="start_time" value={formData.start_time} onChange={handleChange} disabled={!isEditable} />
                         <Field label="وقت الانصراف" type="time" name="end_time" value={formData.end_time} onChange={handleChange} disabled={!isEditable} />
                     </div>
 
-                    {/* ✅ إعدادات العمل الجزئي */}
                     <div className={`p-4 rounded-2xl border transition-all ${isPartTimeEnabled ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-100'}`}>
                         <div className="flex items-center justify-between mb-4">
                             <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -259,12 +254,11 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                     </div>
                 </Section>
 
-                {/* 5. Leaves Balance & Maternity Settings */}
+                {/* 5. Leaves & Maternity */}
                 <div className="xl:col-span-2">
                     <Section title="الإجازات وإعدادات الأمومة" icon={Baby}>
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             
-                            {/* أرصدة الإجازات */}
                             <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <BalanceCard label="رصيد اعتيادي" value={formData.leave_annual_balance} name="leave_annual_balance" onChange={handleChange} editable={isEditable} color="blue" />
                                 <BalanceCard label="متبقي اعتيادي" value={formData.remaining_annual} name="remaining_annual" onChange={handleChange} editable={isEditable} color="blue" />
@@ -272,7 +266,6 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                                 <BalanceCard label="متبقي عارضة" value={formData.remaining_casual} name="remaining_casual" onChange={handleChange} editable={isEditable} color="orange" />
                             </div>
 
-                            {/* إعدادات الأمومة والرضاعة */}
                             <div className="bg-pink-50/50 p-4 rounded-2xl border border-pink-100 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -327,7 +320,22 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                     </Section>
                 </div>
 
-                {/* 6. Contact & Files */}
+                {/* ✅ 6. Vaccination Info (New Section) */}
+                <div className="xl:col-span-2">
+                    <Section title="التطعيمات الصحية (التهاب كبدي B)" icon={Syringe}>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <Field label="تاريخ الجرعة الأولى" type="date" name="hep_b_dose1" value={formData.hep_b_dose1} onChange={handleChange} disabled={!isEditable} />
+                            <Field label="تاريخ الجرعة الثانية" type="date" name="hep_b_dose2" value={formData.hep_b_dose2} onChange={handleChange} disabled={!isEditable} />
+                            <Field label="تاريخ الجرعة الثالثة" type="date" name="hep_b_dose3" value={formData.hep_b_dose3} onChange={handleChange} disabled={!isEditable} />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                            <Field label="مكان التطعيم" name="hep_b_location" value={formData.hep_b_location} onChange={handleChange} disabled={!isEditable} placeholder="اسم المستشفى أو المركز..." />
+                            <Field label="ملاحظات التطعيم" name="hep_b_notes" value={formData.hep_b_notes} onChange={handleChange} disabled={!isEditable} placeholder="أي أعراض أو ملاحظات إضافية..." />
+                        </div>
+                    </Section>
+                </div>
+
+                {/* 7. Contact & Files */}
                 <div className="xl:col-span-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <Section title="بيانات الاتصال" icon={Phone}>
@@ -349,7 +357,7 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     );
 }
 
-// Sub-components
+// Sub-components (Reused)
 const Section = ({ title, icon: Icon, children }: any) => (
     <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition-shadow h-full">
         <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2 pb-3 border-b border-gray-50">
