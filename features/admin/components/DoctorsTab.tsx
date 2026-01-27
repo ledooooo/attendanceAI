@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { 
     Download, Users, ArrowRight, User, Clock, FileText, 
     Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, 
-    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby, Timer, Info
+    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby, Timer, Info, Syringe, ShieldCheck
 } from 'lucide-react';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -22,6 +22,14 @@ import StaffStats from '../../staff/components/StaffStats';
 import StaffMessages from '../../staff/components/StaffMessages';
 
 const DAYS_OPTIONS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
+
+// قائمة الصلاحيات المتاحة
+const AVAILABLE_PERMISSIONS = [
+    { id: 'vaccinations', label: 'إدارة التطعيمات' },
+    { id: 'attendance', label: 'إدارة البصمة والحضور' },
+    { id: 'reports', label: 'التقارير والبيانات' },
+    { id: 'quality', label: 'إدارة الجودة (OVR)' },
+];
 
 export default function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
     const queryClient = useQueryClient();
@@ -39,9 +47,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     // Form State
     const [showModal, setShowModal] = useState(false);
     const [editMode, setEditMode] = useState(false);
-    const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false); // ✅ حالة العمل الجزئي
+    const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false);
     
-    // ✅ تحديث الحالة الابتدائية بالحقول الجديدة
+    // ✅ الحالة الابتدائية محدثة بجميع الحقول الجديدة
     const initialFormState: any = {
         employee_id: '', name: '', national_id: '', specialty: '', phone: '', email: '',
         gender: 'ذكر', grade: '', photo_url: '', id_front_url: '', id_back_url: '',
@@ -52,7 +60,11 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         resignation_date: '', 
         training_courses: '', notes: '', maternity: 'false', role: 'user',
         nursing_start_date: '', nursing_end_date: '', nursing_time: '',
-        part_time_start_date: '', part_time_end_date: '' // ✅ حقول العمل الجزئي
+        part_time_start_date: '', part_time_end_date: '',
+        // الحقول الجديدة
+        address: '', qualification: '', marital_status: '', penalties: '',
+        permissions: [], // مصفوفة الصلاحيات
+        hep_b_dose1: '', hep_b_dose2: '', hep_b_dose3: '', hep_b_notes: '', hep_b_location: ''
     };
     const [formData, setFormData] = useState(initialFormState);
 
@@ -90,9 +102,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 remaining_annual: Number(data.remaining_annual),
                 remaining_casual: Number(data.remaining_casual),
                 total_absence: Number(data.total_absence),
-                // التعامل مع حقول العمل الجزئي
                 part_time_start_date: isPartTimeEnabled ? data.part_time_start_date : null,
                 part_time_end_date: isPartTimeEnabled ? data.part_time_end_date : null,
+                // التأكد من أن التواريخ الفارغة ترسل كـ null
+                hep_b_dose1: data.hep_b_dose1 || null,
+                hep_b_dose2: data.hep_b_dose2 || null,
+                hep_b_dose3: data.hep_b_dose3 || null,
+                permissions: data.permissions || [] // حفظ مصفوفة الصلاحيات
             };
 
             if (editMode && data.id) {
@@ -176,12 +192,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
     const handleOpenEdit = (emp: Employee) => {
         setFormData({
+            ...initialFormState, // دمج مع القيم الافتراضية لضمان وجود الحقول الجديدة
             ...emp,
             work_days: typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [],
-            maternity: String(emp.maternity)
+            maternity: String(emp.maternity),
+            permissions: emp.permissions || [] // التأكد من وجود المصفوفة
         });
         setEditMode(true);
-        // تفعيل الزر إذا كانت التواريخ موجودة
         setIsPartTimeEnabled(!!emp.part_time_start_date || !!emp.part_time_end_date);
         setShowModal(true);
     };
@@ -192,6 +209,15 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             setFormData({ ...formData, work_days: currentDays.filter((d:string) => d !== day) });
         } else {
             setFormData({ ...formData, work_days: [...currentDays, day] });
+        }
+    };
+
+    const handlePermissionToggle = (permId: string) => {
+        const currentPerms = Array.isArray(formData.permissions) ? formData.permissions : [];
+        if (currentPerms.includes(permId)) {
+            setFormData({ ...formData, permissions: currentPerms.filter((p: string) => p !== permId) });
+        } else {
+            setFormData({ ...formData, permissions: [...currentPerms, permId] });
         }
     };
 
@@ -261,7 +287,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                             {detailTab === 'stats' && <StaffStats attendance={empData.attendance} evals={empData.evals} requests={empData.requests} month={selectedMonth} employee={selectedEmp} />}
                             {detailTab === 'requests' && <StaffRequestsHistory requests={empData.requests} employee={selectedEmp} />}
                             {detailTab === 'evals' && <StaffEvaluations employee={selectedEmp} isAdmin={true} onUpdate={() => queryClient.invalidateQueries({ queryKey: ['employee_full_details'] })} />}
-                            {detailTab === 'messages' && <StaffMessages messages={empData.messages} employee={selectedEmp} currentUserId="admin" />}                
+                            {detailTab === 'messages' && <StaffMessages messages={empData.messages} employee={selectedEmp} currentUserId="admin" />}                                
                         </>
                     )}
                 </div>
@@ -402,12 +428,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     <Input label="الرقم القومي" value={formData.national_id} onChange={v => setFormData({...formData, national_id: v})} />
                                     
                                     <Input label="رقم الهاتف" value={formData.phone} onChange={v => setFormData({...formData, phone: v})} />
-                                    <Input label="البريد الإلكتروني" value={formData.email} onChange={v => setFormData({...formData, email: v})} />
+                                    <Input label="العنوان (جديد)" value={formData.address} onChange={v => setFormData({...formData, address: v})} />
                                     <Select label="النوع" options={['ذكر', 'أنثى']} value={formData.gender} onChange={v => setFormData({...formData, gender: v})} />
                                     
-                                    <Select label="الديانة" options={['مسلم', 'مسيحي']} value={formData.religion} onChange={v => setFormData({...formData, religion: v})} />
+                                    <Select label="الحالة الاجتماعية (جديد)" options={['أعزب', 'متزوج', 'مطلق', 'أرمل']} value={formData.marital_status} onChange={v => setFormData({...formData, marital_status: v})} />
                                     <Input label="التخصص" value={formData.specialty} onChange={v => setFormData({...formData, specialty: v})} required />
                                     <Input label="الدرجة الوظيفية" value={formData.grade} onChange={v => setFormData({...formData, grade: v})} />
+                                    <Input label="المؤهل الدراسي (جديد)" value={formData.qualification} onChange={v => setFormData({...formData, qualification: v})} />
                                     
                                     <Input type="date" label="تاريخ التعيين" value={formData.join_date} onChange={v => setFormData({...formData, join_date: v})} />
                                     <Input type="date" label="تاريخ الإخلاء" value={formData.resignation_date} onChange={v => setFormData({...formData, resignation_date: v})} />
@@ -429,7 +456,44 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                 </div>
                             </div>
 
-                            {/* 2. Schedule & Part Time (Updated) */}
+                            {/* ✅ قسم صلاحيات لوحة الإدارة (Permissions) */}
+                            <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                                <h4 className="text-sm font-black text-indigo-700 mb-3 flex items-center gap-2">
+                                    <ShieldCheck className="w-4 h-4"/> صلاحيات لوحة الإدارة (Permissions)
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {AVAILABLE_PERMISSIONS.map(perm => (
+                                        <label key={perm.id} className="flex items-center gap-2 bg-white p-2 rounded-xl border cursor-pointer hover:border-indigo-300">
+                                            <input 
+                                                type="checkbox" 
+                                                className="w-5 h-5 accent-indigo-600"
+                                                checked={(formData.permissions || []).includes(perm.id)}
+                                                onChange={() => handlePermissionToggle(perm.id)}
+                                            />
+                                            <span className="text-sm font-bold text-gray-700">{perm.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">تنبيه: منح صلاحية سيمكن الموظف من دخول لوحة الإدارة لرؤية القسم المحدد فقط.</p>
+                            </div>
+
+                            {/* ✅ قسم التطعيمات (Hepatitis B) */}
+                            <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                                <h4 className="text-sm font-black text-blue-700 mb-3 flex items-center gap-2">
+                                    <Syringe className="w-4 h-4"/> سجل التطعيمات (فيروس B)
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <Input type="date" label="الجرعة الأولى" value={formData.hep_b_dose1} onChange={v => setFormData({...formData, hep_b_dose1: v})} />
+                                    <Input type="date" label="الجرعة الثانية" value={formData.hep_b_dose2} onChange={v => setFormData({...formData, hep_b_dose2: v})} />
+                                    <Input type="date" label="الجرعة الثالثة" value={formData.hep_b_dose3} onChange={v => setFormData({...formData, hep_b_dose3: v})} />
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                                    <Input label="مكان التطعيم" value={formData.hep_b_location} onChange={v => setFormData({...formData, hep_b_location: v})} placeholder="المستشفى/المركز" />
+                                    <Input label="ملاحظات التطعيم" value={formData.hep_b_notes} onChange={v => setFormData({...formData, hep_b_notes: v})} />
+                                </div>
+                            </div>
+
+                            {/* 2. Schedule & Part Time */}
                             <div className="space-y-4">
                                 <h4 className="text-sm font-bold text-gray-500 border-b pb-2">مواعيد ونظام العمل</h4>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -437,7 +501,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     <Input type="time" label="وقت الانصراف" value={formData.end_time} onChange={v => setFormData({...formData, end_time: v})} />
                                 </div>
 
-                                {/* ✅ إعدادات العمل الجزئي */}
                                 <div className={`p-4 rounded-2xl border transition-all ${isPartTimeEnabled ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-100'}`}>
                                     <div className="flex items-center justify-between mb-4">
                                         <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
@@ -498,7 +561,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     <Input type="number" label="إجمالي الغياب" value={formData.total_absence} onChange={v => setFormData({...formData, total_absence: v})} />
                                 </div>
 
-                                {/* إعدادات الوضع والرضاعة */}
                                 <div className="bg-pink-50 p-4 rounded-xl border border-pink-100">
                                     <div className="flex items-center gap-2 mb-3">
                                         <input 
@@ -531,13 +593,14 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                 </div>
                             </div>
 
-                            {/* 4. Extra Info */}
+                            {/* 4. Extra Info & Penalties */}
                             <div className="space-y-4">
                                 <h4 className="text-sm font-bold text-gray-500 border-b pb-2">بيانات إضافية</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <Input label="الدورات التدريبية" value={formData.training_courses} onChange={v => setFormData({...formData, training_courses: v})} />
                                     <Input label="مهام إدارية" value={formData.admin_tasks} onChange={v => setFormData({...formData, admin_tasks: v})} />
                                     <Input label="رابط الصورة الشخصية" value={formData.photo_url} onChange={v => setFormData({...formData, photo_url: v})} />
+                                    <Input label="الجزاءات (جديد)" value={formData.penalties} onChange={v => setFormData({...formData, penalties: v})} />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات</label>
