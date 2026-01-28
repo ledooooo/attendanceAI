@@ -4,7 +4,7 @@ import { supabase } from '../../../../supabaseClient';
 import { useReactToPrint } from 'react-to-print';
 import { 
     Search, Printer, Upload, Calendar, Loader2, RefreshCw, 
-    ArrowUpDown, PlusCircle, Save, X, UserCheck, MoreVertical, FilePlus, Clock, Moon, Sun
+    ArrowUpDown, PlusCircle, Save, X, UserCheck, MoreVertical, FilePlus, Clock, Moon, Sun, XCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AttendanceRecord, Employee, LeaveRequest } from '../../../../types';
@@ -75,12 +75,11 @@ export default function StaffAttendanceManager() {
     const { data: leaves = [] } = useQuery({
         queryKey: ['staff_manager_leaves', date],
         queryFn: async () => {
-            // ✅ تم التعديل: البحث عن الحالة 'مقبول' بدلاً من 'approved'
             const { data, error } = await supabase.from('leave_requests')
                 .select('*')
-                .eq('status', 'مقبول') // ⚠️ هذا هو التعديل الجوهري
-                .lte('start_date', date)  
-                .gte('end_date', date);   
+                .eq('status', 'مقبول') 
+                .lte('start_date', date) 
+                .gte('end_date', date);
             
             if (error) {
                 console.error("Error fetching leaves:", error);
@@ -94,7 +93,6 @@ export default function StaffAttendanceManager() {
     const processedData = useMemo(() => {
         let data = employees.map(emp => {
             const attRecord = attendance.find(a => a.employee_id === emp.employee_id);
-            // البحث عن الإجازة (التأكد من أن كود الموظف نصي للمقارنة الآمنة)
             const leaveRecord = leaves.find(l => String(l.employee_id) === String(emp.employee_id));
             
             let displayIn = '-';  
@@ -105,7 +103,10 @@ export default function StaffAttendanceManager() {
             if (printOverrides[emp.employee_id]) {
                 displayIn = printOverrides[emp.employee_id];
                 displayOut = '';
-                statsStatus = 'متواجد'; 
+                // تصنيف الحالة بناءً على النص المدخل
+                if (displayIn === 'غياب') statsStatus = 'غياب';
+                else if (displayIn === 'مسائي' || displayIn === 'مبيت') statsStatus = displayIn;
+                else statsStatus = 'متواجد'; 
             } else {
                 // المنطق العادي
                 let hasPunch = false;
@@ -129,10 +130,9 @@ export default function StaffAttendanceManager() {
                 }
 
                 if (!hasPunch) {
-                    // ✅ تم التعديل: قراءة النوع من حقل type مباشرة
                     if (leaveRecord) {
                         statsStatus = 'إجازة';
-                        let typeText = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes : 'إجازة');
+                        let typeText = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة');
                         displayIn = typeText.replace('اجازة ', '').replace('إجازة ', ''); 
                         displayOut = '';
                     } 
@@ -182,24 +182,37 @@ export default function StaffAttendanceManager() {
         return data;
     }, [employees, attendance, leaves, searchTerm, filterSpecialty, filterStatus, date, sortConfig, printOverrides]);
 
-    // --- 3. Statistics ---
+    // --- 3. Statistics (Updated for new columns) ---
     const stats = useMemo(() => {
+        const bySpecialty: any = {};
+        
+        processedData.forEach(d => {
+            if (!bySpecialty[d.specialty]) {
+                bySpecialty[d.specialty] = { 
+                    total: 0, present: 0, absent: 0, leave: 0, 
+                    evening: 0, markedAbsence: 0, partTimeOff: 0 
+                };
+            }
+            
+            const s = bySpecialty[d.specialty];
+            s.total++;
+
+            if (d.statsStatus === 'متواجد') s.present++;
+            else if (d.statsStatus === 'مسائي' || d.statsStatus === 'مبيت') s.evening++;
+            else if (d.statsStatus === 'غياب') s.markedAbsence++; // الغياب المحدد يدوياً
+            else if (d.statsStatus === 'غير متواجد') s.absent++; // الغياب التلقائي
+            else if (d.statsStatus === 'إجازة') s.leave++;
+            else if (d.statsStatus === 'جزء وقت') s.partTimeOff++;
+        });
+
+        // Totals for top bar
         const total = processedData.length;
-        const present = processedData.filter(d => d.statsStatus === 'متواجد').length;
-        const absent = processedData.filter(d => d.statsStatus === 'غير متواجد').length;
-        const partTime = processedData.filter(d => d.statsStatus === 'جزء وقت').length;
+        const present = processedData.filter(d => d.statsStatus === 'متواجد' || d.statsStatus === 'مسائي' || d.statsStatus === 'مبيت').length;
+        const absent = processedData.filter(d => d.statsStatus === 'غير متواجد' || d.statsStatus === 'غياب').length;
         const leave = processedData.filter(d => d.statsStatus === 'إجازة').length;
+        const partTime = processedData.filter(d => d.statsStatus === 'جزء وقت').length;
         const effectiveTotal = total - leave - partTime;
         const percent = effectiveTotal > 0 ? Math.round((present / effectiveTotal) * 100) : 0;
-
-        const bySpecialty: any = {};
-        processedData.forEach(d => {
-            if (!bySpecialty[d.specialty]) bySpecialty[d.specialty] = { total: 0, present: 0, absent: 0, leave: 0 };
-            bySpecialty[d.specialty].total++;
-            if (d.statsStatus === 'متواجد') bySpecialty[d.specialty].present++;
-            else if (d.statsStatus === 'غير متواجد') bySpecialty[d.specialty].absent++;
-            else bySpecialty[d.specialty].leave++;
-        });
 
         return { total, present, absent, leave, partTime, percent, bySpecialty };
     }, [processedData]);
@@ -220,16 +233,10 @@ export default function StaffAttendanceManager() {
     const manualEntryMutation = useMutation({
         mutationFn: async (data: typeof manualData) => {
             if (!data.employee_id || !data.date || !data.timeIn) throw new Error("يرجى ملء البيانات");
-            const timesArray = [data.timeIn];
-            if (data.timeOut) timesArray.push(data.timeOut);
-            const timesString = timesArray.join(' ');
+            const timesString = [data.timeIn, data.timeOut].filter(Boolean).join(' ');
             const payload = {
-                employee_id: data.employee_id,
-                date: data.date,
-                times: timesString,
-                status: 'حضور',
-                responsible: data.responsible,
-                is_manual: true
+                employee_id: data.employee_id, date: data.date, times: timesString,
+                status: 'حضور', responsible: data.responsible, is_manual: true
             };
             const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
             if (error) throw error;
@@ -246,13 +253,8 @@ export default function StaffAttendanceManager() {
     const requestMutation = useMutation({
         mutationFn: async (data: typeof requestData) => {
             const payload = { 
-                employee_id: data.employee_id,
-                start_date: data.start_date,
-                end_date: data.end_date,
-                // ✅ تم التعديل: إرسال الحالة 'مقبول' لتتوافق مع القاعدة
-                status: 'مقبول', 
-                type: data.request_type, 
-                notes: data.reason || '' 
+                employee_id: data.employee_id, start_date: data.start_date, end_date: data.end_date,
+                status: 'مقبول', type: data.request_type, notes: data.reason || '' 
             };
             const { error } = await supabase.from('leave_requests').insert([payload]);
             if (error) throw error;
@@ -266,7 +268,7 @@ export default function StaffAttendanceManager() {
     });
 
     // --- Actions ---
-    const handleQuickAction = (action: 'attendance' | 'request' | 'evening' | 'overnight', empId: string) => {
+    const handleQuickAction = (action: 'attendance' | 'request' | 'evening' | 'overnight' | 'absence', empId: string) => {
         if (action === 'attendance') {
             setManualData(prev => ({ ...prev, employee_id: empId, date: date }));
             setShowManualModal(true);
@@ -275,10 +277,14 @@ export default function StaffAttendanceManager() {
             setShowRequestModal(true);
         } else if (action === 'evening') {
             setPrintOverrides(prev => ({ ...prev, [empId]: 'مسائي' }));
-            toast('تم تعيين الحالة: مسائي (للطباعة فقط)', { icon: '🌙' });
+            toast('تم التعيين: مسائي', { icon: '🌙' });
         } else if (action === 'overnight') {
             setPrintOverrides(prev => ({ ...prev, [empId]: 'مبيت' }));
-            toast('تم تعيين الحالة: مبيت (للطباعة فقط)', { icon: '🛌' });
+            toast('تم التعيين: مبيت', { icon: '🛌' });
+        } else if (action === 'absence') {
+            // ✅ إضافة خيار غياب للطباعة
+            setPrintOverrides(prev => ({ ...prev, [empId]: 'غياب' }));
+            toast('تم التعيين: غياب (للطباعة)', { icon: '❌' });
         }
     };
 
@@ -394,9 +400,15 @@ export default function StaffAttendanceManager() {
 
             {/* Printable Report */}
             <div ref={componentRef} className="bg-white p-4 rounded-[30px] shadow-sm min-h-[800px] print:p-2 print:shadow-none print:w-full" dir="rtl">
+                
+                {/* Header for Force Report and Others */}
                 <div className="hidden print:block text-center border-b border-black pb-1 mb-2">
                     <p className="text-[12px] font-bold font-mono text-black leading-tight">
-                        مركز غرب المطار - {activeReport === 'daily' ? 'تقرير التواجد اليومي' : activeReport === 'force' ? 'بيان القوة الفعلية' : activeReport === 'absence' ? 'بيان الغياب' : 'إحصاء التخصصات'} - التاريخ: {new Date(date).toLocaleDateString('ar-EG')} - التوقيت: {new Date().toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}
+                        إدارة شمال الجيزة - مركز غرب المطار - {
+                            activeReport === 'daily' ? 'تقرير التواجد اليومي' : 
+                            activeReport === 'force' ? 'بيان القوة الفعلية' : 
+                            activeReport === 'absence' ? 'بيان الغياب' : 'إحصاء التخصصات'
+                        } - تحريراً في ({new Date(date).toLocaleDateString('ar-EG')})
                     </p>
                 </div>
 
@@ -431,7 +443,6 @@ export default function StaffAttendanceManager() {
                     </div>
                 )}
 
-                {/* باقي الجداول */}
                 {activeReport === 'force' && ( <ForceTable data={processedData} /> )}
                 {activeReport === 'absence' && ( <AbsenceTable data={processedData} /> )}
                 {activeReport === 'specialties' && ( <SpecialtiesTable stats={stats} /> )}
@@ -446,7 +457,6 @@ export default function StaffAttendanceManager() {
                             <button onClick={() => setShowManualModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-red-100"><X className="w-5 h-5"/></button>
                         </div>
                         <div className="space-y-4">
-                            {/* ... inputs ... */}
                             <div>
                                 <label className="text-xs font-bold text-gray-500 mb-1 block">الموظف</label>
                                 <select value={manualData.employee_id} onChange={e => setManualData({...manualData, employee_id: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-800 outline-none">
@@ -490,7 +500,6 @@ export default function StaffAttendanceManager() {
                             <button onClick={() => setShowRequestModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-red-100"><X className="w-5 h-5"/></button>
                         </div>
                         <div className="space-y-4">
-                            {/* ... inputs ... */}
                             <div>
                                 <label className="text-xs font-bold text-gray-500 mb-1 block">الموظف</label>
                                 <select value={requestData.employee_id} disabled className="w-full p-3 border rounded-xl bg-gray-100 font-bold text-gray-500 outline-none">
@@ -533,7 +542,7 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                     <th className="p-0.5 border border-gray-400 w-12 text-center">حضور</th>
                     <th className="p-0.5 border border-gray-400 w-12 text-center">انصراف</th>
                     {/* ✅ إخفاء العمود بالكامل في الطباعة */}
-                    <th className="w-6 no-print"></th>
+                    <th className="w-6 print:hidden"></th>
                 </tr>
             </thead>
             <tbody>
@@ -545,19 +554,18 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                         <td className="p-0.5 border border-gray-300 truncate max-w-[70px]">{row.specialty}</td>
                         <td className="p-0.5 border border-gray-300 text-center font-bold">{row.displayIn}</td>
                         <td className="p-0.5 border border-gray-300 text-center font-mono">{row.displayOut}</td>
-                        
-                        <td className="p-0 text-center no-print relative">
+                        <td className="p-0 text-center print:hidden relative">
                             {row.statsStatus === 'غير متواجد' && (
                                 <>
-                                    <button onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)} className="p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-indigo-600">
-                                        <PlusCircle className="w-4 h-4"/>
-                                    </button>
+                                    <button onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)} className="p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-indigo-600"><PlusCircle className="w-4 h-4"/></button>
                                     {openMenuId === row.id && (
                                         <div className="absolute left-0 top-6 w-40 bg-white shadow-xl rounded-xl border z-50 overflow-hidden animate-in zoom-in-95">
                                             <button onClick={() => { onQuickAction('attendance', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-indigo-700"><Clock className="w-3 h-3"/> بصمة يدوية</button>
                                             <button onClick={() => { onQuickAction('request', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-orange-700 border-t"><FilePlus className="w-3 h-3"/> إضافة طلب</button>
                                             <button onClick={() => { onQuickAction('evening', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-purple-700 border-t"><Moon className="w-3 h-3"/> مسائي</button>
                                             <button onClick={() => { onQuickAction('overnight', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-blue-700 border-t"><Sun className="w-3 h-3"/> مبيت</button>
+                                            {/* ✅ الخيار الجديد: غياب للطباعة */}
+                                            <button onClick={() => { onQuickAction('absence', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-red-700 border-t"><XCircle className="w-3 h-3"/> غياب (طباعة)</button>
                                             <div className="bg-gray-50 p-1 text-center border-t"><button onClick={() => setOpenMenuId(null)} className="text-[9px] text-gray-400">إغلاق</button></div>
                                         </div>
                                     )}
@@ -572,42 +580,99 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
     );
 };
 
-// --- Helper Components ---
+// --- Force Table (Updated Columns) ---
 const ForceTable = ({data}: {data:any[]}) => (
     <table className="w-full text-sm text-right border-collapse">
         <thead className="bg-gray-100 font-bold border-b border-black">
-            <tr><th className="p-1 border border-gray-400">م</th><th className="p-1 border border-gray-400">الكود</th><th className="p-1 border border-gray-400">الاسم</th><th className="p-1 border border-gray-400">التخصص</th><th className="p-1 border border-gray-400">الهاتف</th></tr>
+            <tr>
+                <th className="p-1 border border-gray-400 w-8 text-center">م</th>
+                <th className="p-1 border border-gray-400 w-16 text-center">الكود</th>
+                <th className="p-1 border border-gray-400">الاسم</th>
+                <th className="p-1 border border-gray-400 w-24">الوظيفة</th>
+                <th className="p-1 border border-gray-400 w-28 text-center">الرقم القومي</th>
+                <th className="p-1 border border-gray-400 w-24 text-center">التليفون</th>
+                <th className="p-1 border border-gray-400 w-32">المهام الادارية</th>
+            </tr>
         </thead>
         <tbody>
             {data.map((emp, idx) => (
-                <tr key={emp.id} className="border-b border-gray-300"><td className="p-1 border border-gray-300 text-center">{idx+1}</td><td className="p-1 border border-gray-300 text-center">{emp.employee_id}</td><td className="p-1 border border-gray-300 font-bold">{emp.name}</td><td className="p-1 border border-gray-300">{emp.specialty}</td><td className="p-1 border border-gray-300 text-center">{emp.phone}</td></tr>
+                <tr key={emp.id} className="border-b border-gray-300">
+                    <td className="p-1 border border-gray-300 text-center">{idx+1}</td>
+                    <td className="p-1 border border-gray-300 text-center font-mono">{emp.employee_id}</td>
+                    <td className="p-1 border border-gray-300 font-bold">{emp.name}</td>
+                    <td className="p-1 border border-gray-300 text-xs">{emp.specialty}</td>
+                    <td className="p-1 border border-gray-300 text-center font-mono text-xs">{emp.national_id}</td>
+                    <td className="p-1 border border-gray-300 text-center font-mono text-xs">{emp.phone}</td>
+                    <td className="p-1 border border-gray-300 text-xs">{emp.admin_tasks || ''}</td>
+                </tr>
             ))}
         </tbody>
     </table>
 );
 
+// --- Absence Table (Updated Header) ---
 const AbsenceTable = ({data}: {data:any[]}) => (
     <table className="w-full text-sm text-right border-collapse">
         <thead className="bg-red-50 font-bold border-b border-black text-red-900">
-            <tr><th className="p-1 border border-gray-400">الكود</th><th className="p-1 border border-gray-400">الاسم</th><th className="p-1 border border-gray-400">التخصص</th><th className="p-1 border border-gray-400 text-center">الحالة</th></tr>
+            <tr>
+                <th className="p-1 border border-gray-400">الكود</th>
+                <th className="p-1 border border-gray-400">الاسم</th>
+                <th className="p-1 border border-gray-400">التخصص</th>
+                <th className="p-1 border border-gray-400 text-center">الحالة</th>
+            </tr>
         </thead>
         <tbody>
             {data.filter(d => d.statsStatus === 'غير متواجد').map(emp => (
-                <tr key={emp.id} className="border-b border-gray-300"><td className="p-1 border border-gray-300 text-center">{emp.employee_id}</td><td className="p-1 border border-gray-300 font-bold">{emp.name}</td><td className="p-1 border border-gray-300">{emp.specialty}</td><td className="p-1 border border-gray-300 text-center text-red-600 font-bold">غياب</td></tr>
+                <tr key={emp.id} className="border-b border-gray-300">
+                    <td className="p-1 border border-gray-300 text-center">{emp.employee_id}</td>
+                    <td className="p-1 border border-gray-300 font-bold">{emp.name}</td>
+                    <td className="p-1 border border-gray-300">{emp.specialty}</td>
+                    <td className="p-1 border border-gray-300 text-center text-red-600 font-bold">غياب</td>
+                </tr>
             ))}
         </tbody>
     </table>
 );
 
+// --- Specialties Table (Updated Columns) ---
 const SpecialtiesTable = ({stats}: {stats:any}) => (
-    <table className="w-full text-sm text-right border-collapse max-w-2xl mx-auto">
+    <table className="w-full text-sm text-right border-collapse max-w-3xl mx-auto">
         <thead className="bg-gray-800 text-white font-bold">
-            <tr><th className="p-1 border border-gray-600">التخصص</th><th className="p-1 border border-gray-600 text-center">القوة</th><th className="p-1 border border-gray-600 text-center">متواجد</th><th className="p-1 border border-gray-600 text-center">غياب</th><th className="p-1 border border-gray-600 text-center">إجازات</th><th className="p-1 border border-gray-600 text-center">النسبة</th></tr>
+            <tr>
+                <th className="p-1 border border-gray-600">التخصص</th>
+                <th className="p-1 border border-gray-600 text-center">اجمالى</th>
+                <th className="p-1 border border-gray-600 text-center">متواجد</th>
+                <th className="p-1 border border-gray-600 text-center">غير متواجد</th>
+                <th className="p-1 border border-gray-600 text-center">اجازات</th>
+                <th className="p-1 border border-gray-600 text-center">مسائي</th>
+                <th className="p-1 border border-gray-600 text-center">غياب</th>
+                <th className="p-1 border border-gray-600 text-center">جزء وقت</th>
+                <th className="p-1 border border-gray-600 text-center">نسبة الحضور</th>
+                <th className="p-1 border border-gray-600 text-center">نسبة الاجازات</th>
+            </tr>
         </thead>
         <tbody>
-            {Object.entries(stats.bySpecialty).map(([spec, s]: any) => (
-                <tr key={spec} className="border-b border-gray-300"><td className="p-1 border border-gray-300 font-bold bg-gray-50">{spec}</td><td className="p-1 border border-gray-300 text-center font-bold">{s.total}</td><td className="p-1 border border-gray-300 text-center text-green-700 font-bold">{s.present}</td><td className="p-1 border border-gray-300 text-center text-red-600 font-bold">{s.absent}</td><td className="p-1 border border-gray-300 text-center text-orange-600">{s.leave}</td><td className="p-1 border border-gray-300 text-center font-mono">{s.total > 0 ? Math.round((s.present / (s.total - s.leave - s.partTime)) * 100) : 0}%</td></tr>
-            ))}
+            {Object.entries(stats.bySpecialty).map(([spec, s]: any) => {
+                const total = s.total || 1;
+                // حساب النسب
+                const attendanceRate = Math.round(((s.present + s.evening) / total) * 100);
+                const leaveRate = Math.round((s.leave / total) * 100);
+                
+                return (
+                    <tr key={spec} className="border-b border-gray-300">
+                        <td className="p-1 border border-gray-300 font-bold bg-gray-50">{spec}</td>
+                        <td className="p-1 border border-gray-300 text-center font-bold">{s.total}</td>
+                        <td className="p-1 border border-gray-300 text-center text-green-700 font-bold">{s.present}</td>
+                        <td className="p-1 border border-gray-300 text-center text-red-600 font-bold">{s.absent + s.partTimeOff}</td>
+                        <td className="p-1 border border-gray-300 text-center text-orange-600">{s.leave}</td>
+                        <td className="p-1 border border-gray-300 text-center text-purple-600">{s.evening}</td>
+                        <td className="p-1 border border-gray-300 text-center text-red-800">{s.markedAbsence || 0}</td>
+                        <td className="p-1 border border-gray-300 text-center text-gray-500">{s.partTimeOff}</td>
+                        <td className="p-1 border border-gray-300 text-center font-mono">{attendanceRate}%</td>
+                        <td className="p-1 border border-gray-300 text-center font-mono">{leaveRate}%</td>
+                    </tr>
+                );
+            })}
         </tbody>
     </table>
 );
