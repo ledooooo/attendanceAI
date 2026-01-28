@@ -1,454 +1,673 @@
 import React, { useState, useMemo, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../supabaseClient';
-import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
-import { Input, Select } from '../../../components/ui/FormElements';
-import { Printer, Filter, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
-// 1. ✅ استيراد React Query
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { 
+    Search, Printer, Upload, Calendar, Loader2, RefreshCw, 
+    ArrowUpDown, PlusCircle, Save, X, UserCheck, FilePlus, Clock, Moon, Sun, FileSpreadsheet
+} from 'lucide-react';
+import toast from 'react-hot-toast';
+import { AttendanceRecord, Employee, LeaveRequest } from '../../../types';
 
-type ReportType = 'daily' | 'monthly' | 'absence';
+type ReportType = 'daily' | 'force' | 'absence' | 'specialties' | 'monthly';
+
+const REQUEST_TYPES = [
+    "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورة تدريبية", 
+    "خط سير", "مأمورية", "بدل راحة", "اذن صباحى", "اذن مسائي", "تأمين صحي"
+];
 
 export default function ReportsTab() {
-  const queryClient = useQueryClient();
-  const [activeReport, setActiveReport] = useState<ReportType>('daily');
+    const queryClient = useQueryClient();
+    const componentRef = useRef(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // فلاتر البحث
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [filterName, setFilterName] = useState('');
-  const [filterSpecialty, setFilterSpecialty] = useState('all');
-  const [filterAttendanceStatus, setFilterAttendanceStatus] = useState('all');
-  const [filterJobStatus, setFilterJobStatus] = useState('all');
+    // --- State ---
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [month, setMonth] = useState(new Date().toISOString().slice(0, 7)); // للتقرير الشهري
+    const [activeReport, setActiveReport] = useState<ReportType>('daily');
+    const [isProcessing, setIsProcessing] = useState(false);
 
-  const componentRef = useRef(null);
+    // حالة لتخزين التعديلات المؤقتة للطباعة
+    const [printOverrides, setPrintOverrides] = useState<Record<string, string>>({});
 
-  // -----------------------------------------------------------
-  // 1. 📥 جلب البيانات باستخدام React Query
-  // -----------------------------------------------------------
+    // Filters & Sorting
+    const [searchTerm, setSearchTerm] = useState(''); 
+    const [filterSpecialty, setFilterSpecialty] = useState('all');
+    const [filterStatus, setFilterStatus] = useState('active_only'); 
+    const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'specialty'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
 
-  // أ) جلب قائمة الموظفين (Cache لمدة طويلة)
-  const { data: employees = [] } = useQuery({
-    queryKey: ['employees_list'],
-    queryFn: async () => {
-      const { data } = await supabase.from('employees').select('*').order('name');
-      return data as Employee[] || [];
-    },
-    staleTime: 1000 * 60 * 30, // 30 دقيقة (البيانات لا تتغير كثيراً)
-  });
+    // --- Modal States ---
+    const [showManualModal, setShowManualModal] = useState(false);
+    const [manualData, setManualData] = useState({
+        employee_id: '',
+        date: new Date().toISOString().split('T')[0],
+        timeIn: '',
+        timeOut: '',
+        responsible: ''
+    });
 
-  // ب) جلب بيانات الحضور (يعتمد على نوع التقرير والتاريخ)
-  const { data: attendance = [], isLoading: loadingAtt, refetch: refetchAtt } = useQuery({
-    queryKey: ['report_attendance', activeReport, date, month],
-    queryFn: async () => {
-      let query = supabase.from('attendance').select('*');
+    const [showRequestModal, setShowRequestModal] = useState(false);
+    const [requestData, setRequestData] = useState({
+        employee_id: '',
+        request_type: REQUEST_TYPES[0],
+        start_date: date,
+        end_date: date,
+        reason: ''
+    });
 
-      if (activeReport === 'daily' || activeReport === 'absence') {
-        query = query.eq('date', date);
-      } else {
-        // Monthly Logic
-        const startOfMonth = `${month}-01`;
-        // حساب آخر يوم في الشهر المختار
-        const d = new Date(month);
-        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-        const endOfMonth = `${month}-${lastDay}`;
+    // --- 1. Queries ---
+    const { data: employees = [] } = useQuery({
+        queryKey: ['report_employees'],
+        queryFn: async () => {
+            const { data } = await supabase.from('employees').select('*');
+            return data as Employee[] || [];
+        },
+        staleTime: 1000 * 60 * 30 
+    });
+
+    // جلب الحضور (يومي أو شهري حسب التقرير)
+    const { data: attendance = [], refetch: refetchAtt, isRefetching } = useQuery({
+        queryKey: ['report_attendance', activeReport, date, month],
+        queryFn: async () => {
+            let query = supabase.from('attendance').select('*');
+            
+            if (activeReport === 'monthly') {
+                const startOfMonth = `${month}-01`;
+                const d = new Date(month);
+                const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                const endOfMonth = `${month}-${lastDay}`;
+                query = query.gte('date', startOfMonth).lte('date', endOfMonth);
+            } else {
+                query = query.eq('date', date);
+            }
+            
+            const { data } = await query;
+            return data as AttendanceRecord[] || [];
+        }
+    });
+
+    // جلب الإجازات
+    const { data: leaves = [] } = useQuery({
+        queryKey: ['report_leaves', activeReport, date, month],
+        queryFn: async () => {
+            let query = supabase.from('leave_requests').select('*').eq('status', 'مقبول'); // أو 'approved' حسب قاعدتك
+
+            if (activeReport === 'monthly') {
+                const startOfMonth = `${month}-01`;
+                const d = new Date(month);
+                const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                const endOfMonth = `${month}-${lastDay}`;
+                query = query.or(`start_date.gte.${startOfMonth},end_date.lte.${endOfMonth}`);
+            } else {
+                query = query.lte('start_date', date).gte('end_date', date);
+            }
+
+            const { data, error } = await query;
+            if (error) { console.error(error); return []; }
+            return data as LeaveRequest[] || [];
+        }
+    });
+
+    // --- 2. Data Processing ---
+    const processedData = useMemo(() => {
+        // إذا كان التقرير شهري، المعالجة مختلفة
+        if (activeReport === 'monthly') {
+            return employees.map(emp => {
+                const empAtts = attendance.filter(a => a.employee_id === emp.employee_id).length;
+                const empLeaves = leaves.filter(l => l.employee_id === emp.employee_id).length;
+                return { ...emp, daysPresent: empAtts, daysLeaves: empLeaves };
+            }).filter(item => {
+                // نفس الفلاتر
+                const term = searchTerm.toLowerCase();
+                const matchesSearch = item.name.toLowerCase().includes(term) || item.employee_id.includes(term);
+                const matchesSpec = filterSpecialty === 'all' || item.specialty === filterSpecialty;
+                let matchesStatus = true;
+                if (filterStatus === 'active_only') matchesStatus = item.status === 'نشط';
+                else if (filterStatus !== 'all') matchesStatus = item.status === filterStatus;
+                return matchesSearch && matchesSpec && matchesStatus;
+            });
+        }
+
+        // المعالجة اليومية
+        let data = employees.map(emp => {
+            const attRecord = attendance.find(a => a.employee_id === emp.employee_id);
+            const leaveRecord = leaves.find(l => String(l.employee_id) === String(emp.employee_id));
+            
+            let displayIn = '-';  
+            let displayOut = '-'; 
+            let statsStatus = 'غير متواجد'; 
+
+            if (printOverrides[emp.employee_id]) {
+                displayIn = printOverrides[emp.employee_id];
+                displayOut = '';
+                statsStatus = 'متواجد'; 
+            } else {
+                let hasPunch = false;
+                if (attRecord && attRecord.times) {
+                    const times = attRecord.times.split(/\s+/).filter(t => t.includes(':')).sort();
+                    if (times.length > 0) {
+                        hasPunch = true;
+                        displayIn = times[0]; 
+                        statsStatus = 'متواجد';
+                        if (times.length > 1) {
+                            const lastTime = times[times.length - 1];
+                            const [h1, m1] = displayIn.split(':').map(Number);
+                            const [h2, m2] = lastTime.split(':').map(Number);
+                            const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                            if (diff >= 60) displayOut = lastTime;
+                            else displayOut = ''; 
+                        } else { displayOut = ''; }
+                    }
+                }
+
+                if (!hasPunch) {
+                    if (leaveRecord) {
+                        statsStatus = 'إجازة';
+                        let typeText = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة');
+                        displayIn = typeText.replace('اجازة ', '').replace('إجازة ', ''); 
+                        displayOut = '';
+                    } else {
+                        const isPartTimeContract = emp.part_time_start_date && emp.part_time_end_date && 
+                                                   date >= emp.part_time_start_date && date <= emp.part_time_end_date;
+                        if (isPartTimeContract) {
+                            const dayName = new Date(date).toLocaleDateString('ar-EG', { weekday: 'long' });
+                            const empWorkDays = typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [];
+                            if (empWorkDays.includes(dayName)) {
+                                statsStatus = 'غير متواجد';
+                                displayIn = '-'; 
+                            } else {
+                                statsStatus = 'جزء وقت';
+                                displayIn = 'جزء وقت';
+                                displayOut = '';
+                            }
+                        }
+                    }
+                }
+            }
+            return { ...emp, displayIn, displayOut, statsStatus };
+        });
+
+        // Filter & Sort
+        data = data.filter(item => {
+            const term = searchTerm.toLowerCase();
+            const matchesSearch = item.name.toLowerCase().includes(term) || item.employee_id.includes(term);
+            const matchesSpec = filterSpecialty === 'all' || item.specialty === filterSpecialty;
+            let matchesStatus = true;
+            if (filterStatus === 'active_only') matchesStatus = item.status === 'نشط';
+            else if (filterStatus !== 'all') matchesStatus = item.status === filterStatus;
+            return matchesSearch && matchesSpec && matchesStatus;
+        });
+
+        data.sort((a, b) => {
+            const valA = a[sortConfig.key] || '';
+            const valB = b[sortConfig.key] || '';
+            if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+
+        return data;
+    }, [employees, attendance, leaves, searchTerm, filterSpecialty, filterStatus, date, month, activeReport, sortConfig, printOverrides]);
+
+    // --- 3. Statistics ---
+    const stats = useMemo(() => {
+        if (activeReport === 'monthly') return { total: 0, present: 0, absent: 0, leave: 0, partTime: 0, percent: 0, bySpecialty: {} };
+
+        const total = processedData.length;
+        const present = processedData.filter(d => d.statsStatus === 'متواجد').length;
+        const absent = processedData.filter(d => d.statsStatus === 'غير متواجد').length;
+        const partTime = processedData.filter(d => d.statsStatus === 'جزء وقت').length;
+        const leave = processedData.filter(d => d.statsStatus === 'إجازة').length;
         
-        query = query.gte('date', startOfMonth).lte('date', endOfMonth);
-      }
+        const effectiveTotal = total - leave - partTime;
+        const percent = effectiveTotal > 0 ? Math.round((present / effectiveTotal) * 100) : 0;
 
-      const { data } = await query;
-      return data as AttendanceRecord[] || [];
-    }
-  });
+        const bySpecialty: any = {};
+        processedData.forEach((d: any) => {
+            if (!bySpecialty[d.specialty]) bySpecialty[d.specialty] = { total: 0, present: 0, absent: 0, leave: 0 };
+            bySpecialty[d.specialty].total++;
+            if (d.statsStatus === 'متواجد') bySpecialty[d.specialty].present++;
+            else if (d.statsStatus === 'غير متواجد') bySpecialty[d.specialty].absent++;
+            else bySpecialty[d.specialty].leave++;
+        });
 
-  // ج) جلب بيانات الإجازات والطلبات
-  const { data: leaves = [], isLoading: loadingLeaves, refetch: refetchLeaves } = useQuery({
-    queryKey: ['report_leaves', activeReport, date, month],
-    queryFn: async () => {
-      let query = supabase.from('leave_requests').select('*');
+        return { total, present, absent, leave, partTime, percent, bySpecialty };
+    }, [processedData, activeReport]);
 
-      if (activeReport === 'daily' || activeReport === 'absence') {
-        // الإجازة السارية في هذا اليوم
-        query = query.lte('start_date', date).gte('end_date', date);
-      } else {
-        // الإجازات خلال الشهر
-        const startOfMonth = `${month}-01`;
-        const d = new Date(month);
-        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-        const endOfMonth = `${month}-${lastDay}`;
-        
-        query = query.or(`start_date.gte.${startOfMonth},end_date.lte.${endOfMonth}`);
-      }
+    // --- Mutations ---
+    const rawMutation = useMutation({
+        mutationFn: async (payload: any[]) => {
+            const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            toast.success('تم التحديث');
+            queryClient.invalidateQueries({ queryKey: ['report_attendance'] });
+        },
+        onError: () => toast.error('خطأ في الرفع')
+    });
 
-      const { data } = await query;
-      return data as LeaveRequest[] || [];
-    }
-  });
+    const manualEntryMutation = useMutation({
+        mutationFn: async (data: typeof manualData) => {
+            if (!data.employee_id || !data.date || !data.timeIn) throw new Error("يرجى ملء البيانات");
+            const timesArray = [data.timeIn];
+            if (data.timeOut) timesArray.push(data.timeOut);
+            const timesString = timesArray.join(' ');
+            const payload = {
+                employee_id: data.employee_id,
+                date: data.date,
+                times: timesString,
+                status: 'حضور',
+                responsible: data.responsible,
+                is_manual: true
+            };
+            const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            toast.success('تم إضافة البصمة');
+            setShowManualModal(false);
+            setManualData({ ...manualData, employee_id: '', timeIn: '', timeOut: '', responsible: '' });
+            queryClient.invalidateQueries({ queryKey: ['report_attendance'] });
+        },
+        onError: (err: any) => toast.error(err.message)
+    });
 
-  const loading = loadingAtt || loadingLeaves;
+    const requestMutation = useMutation({
+        mutationFn: async (data: typeof requestData) => {
+            const payload = { 
+                employee_id: data.employee_id,
+                start_date: data.start_date,
+                end_date: data.end_date,
+                status: 'مقبول', // إضافة مباشرة كـ مقبول
+                type: data.request_type, 
+                notes: data.reason || '' 
+            };
+            const { error } = await supabase.from('leave_requests').insert([payload]);
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            toast.success('تم إضافة الطلب');
+            setShowRequestModal(false);
+            queryClient.invalidateQueries({ queryKey: ['report_leaves'] });
+        },
+        onError: (err: any) => toast.error(err.message)
+    });
 
-  // زر التحديث اليدوي
-  const handleManualRefresh = () => {
-    refetchAtt();
-    refetchLeaves();
-    // employees لا يحتاج تحديث متكرر، لكن يمكن إضافته إذا أردت
-    queryClient.invalidateQueries({ queryKey: ['employees_list'] });
-  };
+    // --- Handlers ---
+    const handleQuickAction = (action: 'attendance' | 'request' | 'evening' | 'overnight', empId: string) => {
+        if (action === 'attendance') {
+            setManualData(prev => ({ ...prev, employee_id: empId, date: date }));
+            setShowManualModal(true);
+        } else if (action === 'request') {
+            setRequestData(prev => ({ ...prev, employee_id: empId, start_date: date, end_date: date, reason: '' }));
+            setShowRequestModal(true);
+        } else if (action === 'evening') {
+            setPrintOverrides(prev => ({ ...prev, [empId]: 'مسائي' }));
+            toast('تم التعيين: مسائي', { icon: '🌙' });
+        } else if (action === 'overnight') {
+            setPrintOverrides(prev => ({ ...prev, [empId]: 'مبيت' }));
+            toast('تم التعيين: مبيت', { icon: '🛌' });
+        }
+    };
 
-  // -----------------------------------------------------------
-  // 2. 🧮 معالجة البيانات (Logic) - بقيت كما هي لأنها ممتازة
-  // -----------------------------------------------------------
+    const handleRawFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsProcessing(true);
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const text = event.target?.result as string;
+                if (!text) throw new Error("الملف فارغ");
+                const lines = text.split(/\r\n|\n/);
+                const groupedData: any = {};
+                lines.forEach(line => {
+                    const cleanLine = line.trim();
+                    if (!cleanLine) return;
+                    const parts = cleanLine.split(/\s+/);
+                    if (parts.length < 3) return;
+                    const empId = parts[0];
+                    const rawDate = parts[1]; 
+                    const rawTime = parts[2];
+                    let formattedDate = rawDate;
+                    if (rawDate.includes('/')) {
+                        const [d, m, y] = rawDate.split('/');
+                        const fullYear = y.length === 2 ? `20${y}` : y;
+                        formattedDate = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                    }
+                    const key = `${empId}_${formattedDate}`;
+                    if (!groupedData[key]) groupedData[key] = { id: empId, date: formattedDate, times: [] };
+                    if (!groupedData[key].times.includes(rawTime)) groupedData[key].times.push(rawTime);
+                });
+                const payload = Object.values(groupedData).map((g:any) => ({
+                    employee_id: g.id, date: g.date, times: g.times.sort().join(' '), status: 'حضور'
+                }));
+                if (payload.length > 0) rawMutation.mutate(payload);
+                else toast.error("لا توجد بيانات");
+            } catch (err: any) {
+                toast.error("خطأ: " + err.message);
+            } finally {
+                setIsProcessing(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        };
+        reader.readAsText(file);
+    };
 
-  // --- معالجة البيانات: التقرير اليومي ---
-  const dailyData = useMemo(() => {
-      return employees.map(emp => {
-          const empAtt = attendance.find(a => a.employee_id === emp.employee_id);
-          const empLeave = leaves.find(l => l.employee_id === emp.employee_id);
-          
-          let reportStatus = 'غياب';
-          let inTime = '-';
-          let outTime = '-';
-          let leaveInfo = '';
+    const handlePrint = useReactToPrint({
+        content: () => componentRef.current,
+        documentTitle: `Report_${activeReport}_${date}`,
+    });
 
-          if (empAtt) {
-              const times = empAtt.times ? empAtt.times.split(/\s+/).filter(t => t.includes(':')) : [];
-              if (times.length > 0) inTime = times[0];
-              if (times.length > 1) outTime = times[times.length - 1];
+    const handleExportExcel = () => {
+        let dataToExport: any[] = [];
+        let fileName = '';
+        if (activeReport === 'daily') {
+            dataToExport = processedData.map((row: any) => ({
+                'الكود': row.employee_id, 'الاسم': row.name, 'التخصص': row.specialty,
+                'حضور': row.displayIn, 'انصراف': row.displayOut
+            }));
+            fileName = `Daily_Report_${date}`;
+        } else if (activeReport === 'monthly') {
+            dataToExport = processedData.map((row: any) => ({
+                'الكود': row.employee_id, 'الاسم': row.name, 'التخصص': row.specialty,
+                'أيام الحضور': row.daysPresent, 'الطلبات': row.daysLeaves
+            }));
+            fileName = `Monthly_Report_${month}`;
+        } else if (activeReport === 'absence') {
+            dataToExport = processedData.filter((d:any) => d.statsStatus === 'غير متواجد').map((row: any) => ({
+                'الكود': row.employee_id, 'الاسم': row.name, 'التخصص': row.specialty, 'الحالة': 'غياب'
+            }));
+            fileName = `Absence_Report_${date}`;
+        }
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Report");
+        XLSX.writeFile(wb, `${fileName}.xlsx`);
+    };
 
-              // تحديد الحالة بناءً على وجود البصمتين
-              if (inTime !== '-' && outTime !== '-') {
-                  reportStatus = 'حضور';
-              } else if (inTime !== '-' && outTime === '-') {
-                  reportStatus = 'ترك عمل';
-              }
-          } else if (empLeave) {
-              reportStatus = 'إجازة';
-              leaveInfo = `${empLeave.type} (${empLeave.status})`;
-          }
-
-          return { 
-              ...emp, 
-              jobStatus: emp.status,
-              reportStatus,
-              inTime, 
-              outTime, 
-              leaveInfo 
-          };
-      }).filter((item: any) => {
-          if (filterName && !item.name.includes(filterName)) return false;
-          if (filterSpecialty !== 'all' && item.specialty !== filterSpecialty) return false;
-          if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
-          
-          if (filterAttendanceStatus !== 'all') {
-              if (item.reportStatus !== filterAttendanceStatus) return false;
-          }
-          return true;
-      });
-  }, [employees, attendance, leaves, filterName, filterSpecialty, filterAttendanceStatus, filterJobStatus]);
-
-  // --- معالجة البيانات: تقرير الغياب ---
-  const absenceData = useMemo(() => {
-      return dailyData.filter(d => d.reportStatus === 'غياب');
-  }, [dailyData]);
-
-  // --- معالجة البيانات: التقرير الشهري ---
-  const monthlyData = useMemo(() => {
-      return employees.map(emp => {
-          const empAtts = attendance.filter(a => a.employee_id === emp.employee_id).length;
-          const empLeaves = leaves.filter(l => l.employee_id === emp.employee_id).length; 
-
-          return {
-              ...emp,
-              jobStatus: emp.status,
-              daysPresent: empAtts,
-              daysLeaves: empLeaves,
-          };
-      }).filter((item: any) => {
-           if (filterName && !item.name.includes(filterName)) return false;
-           if (filterSpecialty !== 'all' && item.specialty !== filterSpecialty) return false;
-           if (filterJobStatus !== 'all' && item.jobStatus !== filterJobStatus) return false;
-           return true;
-      });
-  }, [employees, attendance, leaves, filterName, filterSpecialty, filterJobStatus]);
-
-  // --- الإحصائيات ---
-  const stats = useMemo(() => {
-      const allData = employees.map(emp => {
-          const empAtt = attendance.find(a => a.employee_id === emp.employee_id);
-          const empLeave = leaves.find(l => l.employee_id === emp.employee_id);
-          if (empAtt) {
-              const times = empAtt.times ? empAtt.times.split(/\s+/).filter(t => t.includes(':')) : [];
-              return (times.length > 1) ? 'حضور' : 'ترك عمل';
-          }
-          if (empLeave) return 'إجازة';
-          return 'غياب';
-      });
-
-      return {
-          total: employees.length,
-          present: allData.filter(s => s === 'حضور').length,
-          absent: allData.filter(s => s === 'غياب').length,
-          leave: allData.filter(s => s === 'إجازة').length,
-          leftWork: allData.filter(s => s === 'ترك عمل').length
-      };
-  }, [employees, attendance, leaves]);
-
-  // دالة الطباعة
-  const handlePrint = useReactToPrint({
-    content: () => componentRef.current,
-    documentTitle: `تقرير_${activeReport}_${activeReport === 'monthly' ? month : date}`,
-  });
-
-  // دالة التصدير للإكسيل
-  const handleExportExcel = () => {
-    let dataToExport: any[] = [];
-    let fileName = '';
-
-    if (activeReport === 'daily') {
-        dataToExport = dailyData.map(row => ({
-            'الكود': row.employee_id,
-            'الاسم': row.name,
-            'التخصص': row.specialty,
-            'حالة القيد': row.jobStatus,
-            'حضور': row.inTime,
-            'انصراف': row.outTime,
-            'الحالة': row.reportStatus,
-            'ملاحظة الطلب': row.leaveInfo || ''
+    const toggleSort = (key: 'name' | 'specialty') => {
+        setSortConfig(curr => ({
+            key,
+            direction: curr.key === key && curr.direction === 'asc' ? 'desc' : 'asc'
         }));
-        fileName = `Daily_Report_${date}`;
-    } else if (activeReport === 'monthly') {
-        dataToExport = monthlyData.map(row => ({
-            'الكود': row.employee_id,
-            'الاسم': row.name,
-            'التخصص': row.specialty,
-            'أيام الحضور': row.daysPresent,
-            'عدد الإجازات/الطلبات': row.daysLeaves
-        }));
-        fileName = `Monthly_Report_${month}`;
-    } else {
-        dataToExport = absenceData.map(row => ({
-            'الكود': row.employee_id,
-            'الاسم': row.name,
-            'التخصص': row.specialty,
-            'حالة القيد': row.jobStatus,
-            'الحالة': 'غياب'
-        }));
-        fileName = `Absence_Report_${date}`;
-    }
+    };
 
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Report");
-    XLSX.writeFile(wb, `${fileName}.xlsx`);
-  };
+    // تقسيم البيانات للجدول اليومي (عمودين في الطباعة)
+    const halfIndex = Math.ceil(processedData.length / 2);
+    const rightColumnData = processedData.slice(0, halfIndex);
+    const leftColumnData = processedData.slice(halfIndex);
 
-  return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-        
-        {/* Controls Bar */}
-        <div className="flex flex-col xl:flex-row justify-between items-center border-b pb-4 gap-4 no-print">
-            <div className="flex bg-gray-100 p-1.5 rounded-xl shadow-inner overflow-x-auto max-w-full">
-                <button onClick={() => setActiveReport('daily')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${activeReport === 'daily' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}>تقرير يومي</button>
-                <button onClick={() => setActiveReport('monthly')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${activeReport === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}>تقرير شهري</button>
-                <button onClick={() => setActiveReport('absence')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${activeReport === 'absence' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}>تقرير الغياب</button>
-            </div>
-            
-            <div className="flex gap-2 w-full xl:w-auto">
-                <button onClick={handleManualRefresh} disabled={loading} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50">
-                    <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`}/>
-                </button>
-                <button onClick={handleExportExcel} className="flex-1 xl:flex-none justify-center bg-green-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-lg shadow-green-200 transition-all">
-                    <FileSpreadsheet className="w-5 h-5"/> تصدير Excel
-                </button>
-                <button onClick={handlePrint} className="flex-1 xl:flex-none justify-center bg-gray-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-900 shadow-lg shadow-gray-300 transition-all">
-                    <Printer className="w-5 h-5"/> طباعة
-                </button>
-            </div>
-        </div>
+    return (
+        <div className="space-y-6 animate-in fade-in pb-20">
+            {/* --- Controls Bar (No Print) --- */}
+            <div className="bg-white p-4 rounded-3xl shadow-sm border flex flex-col xl:flex-row gap-4 justify-between items-center no-print">
+                <div className="flex bg-gray-100 p-1.5 rounded-xl shadow-inner overflow-x-auto max-w-full gap-1">
+                    {[{id: 'daily', label: 'يومي'}, {id: 'monthly', label: 'شهري'}, {id: 'force', label: 'قوة'}, {id: 'absence', label: 'غياب'}, {id: 'specialties', label: 'إحصاء'}].map(r => (
+                        <button key={r.id} onClick={() => setActiveReport(r.id as ReportType)} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeReport === r.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}>{r.label}</button>
+                    ))}
+                </div>
 
-        {/* Filters Bar */}
-        <div className="bg-white p-5 rounded-2xl border shadow-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 no-print">
-            <div className="flex items-center gap-2 col-span-1 md:col-span-2 lg:col-span-5 text-gray-500 font-bold border-b pb-2 mb-2 text-right">
-                <Filter className="w-4 h-4 mr-2"/> أدوات الفلترة والبحث
-            </div>
-            
-            {activeReport !== 'monthly' ? (
-                <Input type="date" label="التاريخ" value={date} onChange={setDate} />
-            ) : (
-                <Input type="month" label="الشهر" value={month} onChange={setMonth} />
-            )}
-            
-            <Input label="بحث بالاسم" placeholder="اسم الموظف..." value={filterName} onChange={setFilterName} />
-            
-            <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e => e.specialty)))]} value={filterSpecialty} onChange={setFilterSpecialty} />
-            
-            <Select label="حالة القيد" options={['all', 'نشط', 'موقوف', 'اجازة', 'خارج المركز']} value={filterJobStatus} onChange={setFilterJobStatus} />
+                <div className="flex gap-2 items-center">
+                    {activeReport === 'monthly' ? (
+                        <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="bg-gray-50 border px-3 py-2 rounded-xl text-sm font-bold outline-none"/>
+                    ) : (
+                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-gray-50 border px-3 py-2 rounded-xl text-sm font-bold outline-none"/>
+                    )}
+                    <button onClick={() => { refetchAtt(); queryClient.invalidateQueries({queryKey: ['report_leaves']}); toast.success('تم التحديث'); }} disabled={isRefetching} className="p-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100"><RefreshCw className={`w-5 h-5 ${isRefetching ? 'animate-spin' : ''}`}/></button>
+                </div>
 
-            {activeReport === 'daily' && (
-                <Select label="حالة الحضور" options={['all', 'حضور', 'غياب', 'إجازة', 'ترك عمل']} value={filterAttendanceStatus} onChange={setFilterAttendanceStatus} />
-            )}
-        </div>
-
-        {/* --- Report Content (Printable Area) --- */}
-        <div ref={componentRef} className="bg-white p-8 rounded-[30px] border shadow-sm min-h-[600px] print:p-4 print:border-0 print:shadow-none print:w-full text-right" dir="rtl">
-            
-            {/* Print Header */}
-            <div className="hidden print:flex flex-col items-center mb-8 border-b-2 border-gray-800 pb-4">
-                <h1 className="text-3xl font-black text-gray-900">إدارة المركز الطبي</h1>
-                <h2 className="text-xl font-bold mt-2 text-gray-700">
-                    {activeReport === 'daily' ? `تقرير الحضور والانصراف اليومي (${new Date(date).toLocaleDateString('ar-EG')})` : 
-                     activeReport === 'monthly' ? `تقرير الحضور الشهري (${month})` : 
-                     `تقرير المتغيبين (${new Date(date).toLocaleDateString('ar-EG')})`}
-                </h2>
-                <div className="flex justify-between w-full mt-4 text-xs text-gray-500 font-mono">
-                    <span>تاريخ الطباعة: {new Date().toLocaleString('ar-EG')}</span>
-                    <span>المستخدم: الإدارة</span>
+                <div className="flex gap-2">
+                    <button onClick={() => setShowManualModal(true)} className="bg-indigo-600 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-indigo-700"><PlusCircle className="w-4 h-4"/> يدوي</button>
+                    <input type="file" ref={fileInputRef} onChange={handleRawFileChange} className="hidden" accept=".dat,.txt" />
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isProcessing} className="bg-orange-600 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-orange-700">{isProcessing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4"/>} ملف</button>
+                    <button onClick={handleExportExcel} className="bg-green-600 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-green-700"><FileSpreadsheet className="w-4 h-4"/> إكسيل</button>
+                    <button onClick={handlePrint} className="bg-gray-800 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1 hover:bg-gray-900"><Printer className="w-4 h-4"/> طباعة</button>
                 </div>
             </div>
 
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-                <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-center print:border-gray-300">
-                    <span className="block text-2xl font-black text-blue-600">{stats.total}</span>
-                    <span className="text-[10px] font-bold text-gray-500">إجمالي الموظفين</span>
+            {/* --- Filters (No Print) --- */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl border shadow-sm no-print">
+                <div className="relative md:col-span-2">
+                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
+                    <input placeholder="بحث..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pr-9 pl-4 py-2 rounded-xl border bg-gray-50 outline-none text-sm"/>
                 </div>
-                <div className="bg-green-50 p-4 rounded-2xl border border-green-100 text-center print:border-gray-300">
-                    <span className="block text-2xl font-black text-green-600">{stats.present}</span>
-                    <span className="text-[10px] font-bold text-green-700">حضور</span>
-                </div>
-                <div className="bg-red-50 p-4 rounded-2xl border border-red-100 text-center print:border-gray-300">
-                    <span className="block text-2xl font-black text-red-600">{stats.absent}</span>
-                    <span className="text-[10px] font-bold text-red-700">غياب</span>
-                </div>
-                <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 text-center print:border-gray-300">
-                    <span className="block text-2xl font-black text-orange-600">{stats.leave}</span>
-                    <span className="text-[10px] font-bold text-orange-700">طلبات/إجازات</span>
-                </div>
-                <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 text-center print:border-gray-300">
-                    <span className="block text-2xl font-black text-purple-600">{stats.leftWork}</span>
-                    <span className="text-[10px] font-bold text-purple-700">ترك عمل</span>
+                <select value={filterSpecialty} onChange={e => setFilterSpecialty(e.target.value)} className="p-2 rounded-xl border bg-gray-50 outline-none text-sm font-bold">
+                    <option value="all">كل التخصصات</option>
+                    {Array.from(new Set(employees.map(e => e.specialty))).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <div className="flex gap-2">
+                    <button onClick={() => toggleSort('name')} className={`flex-1 flex items-center justify-center gap-1 rounded-xl border text-xs font-bold ${sortConfig.key === 'name' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50'}`}>الاسم <ArrowUpDown className="w-3 h-3"/></button>
+                    <button onClick={() => toggleSort('specialty')} className={`flex-1 flex items-center justify-center gap-1 rounded-xl border text-xs font-bold ${sortConfig.key === 'specialty' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-gray-50'}`}>التخصص <ArrowUpDown className="w-3 h-3"/></button>
                 </div>
             </div>
 
-            {/* --- Tables Section --- */}
-            
-            {/* 1. Daily Table */}
-            {activeReport === 'daily' && (
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                    <table className="w-full text-sm text-right border-collapse min-w-[800px]">
-                        <thead>
-                            <tr className="bg-gray-100 text-gray-700 print:bg-gray-200 border-b-2 border-gray-200">
-                                <th className="p-4 border-l">الكود</th>
-                                <th className="p-4 border-l">الاسم</th>
-                                <th className="p-4 border-l">التخصص</th>
-                                <th className="p-4 border-l">حالة القيد</th>
-                                <th className="p-4 border-l text-center">وقت الحضور</th>
-                                <th className="p-4 border-l text-center">وقت الانصراف</th>
-                                <th className="p-4 text-center">الحالة</th>
+            {/* --- Printable Report Area --- */}
+            <div ref={componentRef} className="bg-white p-4 rounded-[30px] shadow-sm min-h-[800px] print:p-2 print:shadow-none print:w-full" dir="rtl">
+                
+                {/* Print Header */}
+                <div className="hidden print:block text-center border-b border-black pb-1 mb-2">
+                    <p className="text-[12px] font-bold font-mono text-black leading-tight">
+                        مركز غرب المطار - {
+                            activeReport === 'daily' ? 'تقرير التواجد اليومي' : 
+                            activeReport === 'monthly' ? `تقرير الحضور الشهري (${month})` :
+                            activeReport === 'force' ? 'بيان القوة الفعلية' : 
+                            activeReport === 'absence' ? 'بيان الغياب' : 'إحصاء التخصصات'
+                        } 
+                        {activeReport !== 'monthly' && ` - التاريخ: ${new Date(date).toLocaleDateString('ar-EG')}`}
+                    </p>
+                </div>
+
+                {/* 1. Daily Report */}
+                {activeReport === 'daily' && (
+                    <div className="w-full">
+                        <div className="block print:flex print:flex-row print:gap-1">
+                            <div className="w-full print:w-1/2">
+                                <DailyTable data={rightColumnData} onQuickAction={handleQuickAction} />
+                            </div>
+                            <div className="w-px bg-black hidden print:block mx-1"></div>
+                            <div className="w-full print:w-1/2 mt-4 print:mt-0">
+                                <DailyTable data={leftColumnData} startIndex={halfIndex} onQuickAction={handleQuickAction} />
+                            </div>
+                        </div>
+                        <div className="mt-4 pt-2 border-t border-black text-[10px] print:text-[9px] font-bold">
+                            <div className="flex justify-between mb-1 bg-gray-100 print:bg-transparent p-1 rounded">
+                                <span>إجمالي القوة: {stats.total}</span>
+                                <span>متواجد: {stats.present}</span>
+                                <span>غير متواجد: {stats.absent}</span>
+                                <span>إجازات: {stats.leave}</span>
+                                <span>جزء وقت: {stats.partTime}</span>
+                                <span>نسبة الحضور: {stats.percent}%</span>
+                            </div>
+                            <div className="flex flex-wrap gap-x-2 gap-y-1">
+                                {Object.entries(stats.bySpecialty).map(([spec, s]: any) => (
+                                    <span key={spec} className="print:border-l pl-2 ml-1 border-gray-400">
+                                        {spec}: {s.present}/{s.total}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 2. Monthly Report */}
+                {activeReport === 'monthly' && (
+                    <table className="w-full text-sm text-right border-collapse">
+                        <thead className="bg-gray-100 font-bold border-b border-black">
+                            <tr>
+                                <th className="p-1 border border-gray-400">م</th>
+                                <th className="p-1 border border-gray-400">الاسم</th>
+                                <th className="p-1 border border-gray-400">التخصص</th>
+                                <th className="p-1 border border-gray-400 text-center">أيام الحضور</th>
+                                <th className="p-1 border border-gray-400 text-center">الإجازات</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {dailyData.map((row: any, index: number) => (
-                                <tr key={row.id || index} className={`hover:bg-gray-50 border-b last:border-0 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                                    <td className="p-3 border-l font-mono text-gray-500">{row.employee_id}</td>
-                                    <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
-                                    <td className="p-3 border-l text-gray-600">{row.specialty}</td>
-                                    <td className="p-3 border-l">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                            row.jobStatus === 'نشط' ? 'bg-green-100 text-green-700' : 
-                                            row.jobStatus === 'موقوف' ? 'bg-red-100 text-red-700' : 
-                                            'bg-gray-100 text-gray-600'
-                                        }`}>
-                                            {row.jobStatus}
-                                        </span>
-                                    </td>
-                                    <td className="p-3 border-l text-center font-mono text-blue-600 font-bold" dir="ltr">{row.inTime}</td>
-                                    <td className="p-3 border-l text-center font-mono text-red-600 font-bold" dir="ltr">{row.outTime}</td>
-                                    <td className="p-3 text-center">
-                                        <span className={`px-3 py-1 rounded-full text-xs font-black inline-flex items-center gap-1 ${
-                                            row.reportStatus === 'حضور' ? 'bg-green-100 text-green-700 print:border print:border-green-600' :
-                                            row.reportStatus === 'غياب' ? 'bg-red-100 text-red-700 print:border print:border-red-600' :
-                                            row.reportStatus === 'ترك عمل' ? 'bg-purple-100 text-purple-700 print:border print:border-purple-600' :
-                                            'bg-orange-100 text-orange-700 print:border print:border-orange-600'
-                                        }`}>
-                                            {row.reportStatus === 'إجازة' ? row.leaveInfo : row.reportStatus}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
-                            {dailyData.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-gray-400">لا توجد بيانات للعرض</td></tr>}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-
-            {/* 2. Monthly Table */}
-            {activeReport === 'monthly' && (
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                    <table className="w-full text-sm text-right border-collapse min-w-[800px]">
-                        <thead>
-                            <tr className="bg-gray-100 text-gray-700 print:bg-gray-200 border-b-2 border-gray-200">
-                                <th className="p-4 border-l">الكود</th>
-                                <th className="p-4 border-l">الاسم</th>
-                                <th className="p-4 border-l">التخصص</th>
-                                <th className="p-4 border-l">حالة القيد</th>
-                                <th className="p-4 border-l text-center">أيام الحضور</th>
-                                <th className="p-4 text-center">الطلبات</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {monthlyData.map((row: any, index: number) => (
-                                <tr key={row.id || index} className={`hover:bg-gray-50 border-b last:border-0 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                                    <td className="p-3 border-l font-mono text-gray-500">{row.employee_id}</td>
-                                    <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
-                                    <td className="p-3 border-l text-gray-600">{row.specialty}</td>
-                                    <td className="p-3 border-l text-xs font-bold">{row.jobStatus}</td>
-                                    <td className="p-3 border-l text-center">
-                                        <span className="inline-block w-8 h-8 rounded-full bg-green-100 text-green-700 leading-8 font-black">{row.daysPresent}</span>
-                                    </td>
-                                    <td className="p-3 text-center">
-                                        <span className={`inline-block w-8 h-8 rounded-full leading-8 font-black ${row.daysLeaves > 0 ? 'bg-orange-100 text-orange-700' : 'text-gray-300'}`}>
-                                            {row.daysLeaves}
-                                        </span>
-                                    </td>
+                            {processedData.map((row: any, idx: number) => (
+                                <tr key={row.id} className="border-b border-gray-300">
+                                    <td className="p-1 border border-gray-300 text-center">{idx + 1}</td>
+                                    <td className="p-1 border border-gray-300 font-bold">{row.name}</td>
+                                    <td className="p-1 border border-gray-300">{row.specialty}</td>
+                                    <td className="p-1 border border-gray-300 text-center">{row.daysPresent}</td>
+                                    <td className="p-1 border border-gray-300 text-center">{row.daysLeaves}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
+                )}
+
+                {/* Other Reports */}
+                {activeReport === 'force' && ( <ForceTable data={processedData} /> )}
+                {activeReport === 'absence' && ( <AbsenceTable data={processedData} /> )}
+                {activeReport === 'specialties' && ( <SpecialtiesTable stats={stats} /> )}
+            </div>
+
+            {/* --- Modals --- */}
+            {showManualModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95">
+                        <div className="flex justify-between items-center border-b pb-4 mb-4">
+                            <h3 className="text-lg font-black text-gray-800 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-indigo-600"/> إضافة بصمة</h3>
+                            <button onClick={() => setShowManualModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-red-100"><X className="w-5 h-5"/></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">الموظف</label>
+                                <select value={manualData.employee_id} onChange={e => setManualData({...manualData, employee_id: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-800 outline-none">
+                                    <option value="">اختر الموظف...</option>
+                                    {employees.map(emp => <option key={emp.id} value={emp.employee_id}>{emp.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">التاريخ</label>
+                                <input type="date" value={manualData.date} onChange={e => setManualData({...manualData, date: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"/>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 mb-1 block">وقت الحضور</label>
+                                    <input type="time" value={manualData.timeIn} onChange={e => setManualData({...manualData, timeIn: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"/>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 mb-1 block">وقت الانصراف</label>
+                                    <input type="time" value={manualData.timeOut} onChange={e => setManualData({...manualData, timeOut: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"/>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">المسؤول</label>
+                                <input type="text" placeholder="اسم المدخل..." value={manualData.responsible} onChange={e => setManualData({...manualData, responsible: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none"/>
+                            </div>
+                            <button onClick={() => manualEntryMutation.mutate(manualData)} disabled={manualEntryMutation.isPending} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg flex items-center justify-center gap-2 mt-4">
+                                {manualEntryMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>} حفظ البصمة
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
-            {/* 3. Absence Table */}
-            {activeReport === 'absence' && (
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                    <table className="w-full text-sm text-right border-collapse min-w-[800px]">
-                        <thead>
-                            <tr className="bg-red-50 text-red-900 print:bg-gray-200 border-b-2 border-red-100">
-                                <th className="p-4 border-l border-red-100">الكود</th>
-                                <th className="p-4 border-l border-red-100">الاسم</th>
-                                <th className="p-4 border-l border-red-100">التخصص</th>
-                                <th className="p-4 border-l border-red-100">حالة القيد</th>
-                                <th className="p-4 text-center">الحالة</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {absenceData.map((row: any, index: number) => (
-                                <tr key={row.id || index} className={`hover:bg-red-50/30 border-b last:border-0 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                                    <td className="p-3 border-l font-mono text-gray-500">{row.employee_id}</td>
-                                    <td className="p-3 border-l font-bold text-gray-800">{row.name}</td>
-                                    <td className="p-3 border-l text-gray-600">{row.specialty}</td>
-                                    <td className="p-3 border-l text-xs font-bold">{row.jobStatus}</td>
-                                    <td className="p-3 text-center font-black text-red-600 bg-red-50">غياب</td>
-                                </tr>
-                            ))}
-                            {absenceData.length === 0 && <tr><td colSpan={5} className="p-12 text-center text-green-600 font-bold text-lg bg-green-50">✨ لا يوجد غياب اليوم! ✨</td></tr>}
-                        </tbody>
-                    </table>
+            {showRequestModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95">
+                        <div className="flex justify-between items-center border-b pb-4 mb-4">
+                            <h3 className="text-lg font-black text-gray-800 flex items-center gap-2"><FilePlus className="w-5 h-5 text-orange-600"/> إضافة طلب</h3>
+                            <button onClick={() => setShowRequestModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-red-100"><X className="w-5 h-5"/></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">الموظف</label>
+                                <select value={requestData.employee_id} disabled className="w-full p-3 border rounded-xl bg-gray-100 font-bold text-gray-500 outline-none">
+                                    <option value={requestData.employee_id}>{employees.find(e => e.employee_id === requestData.employee_id)?.name}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">نوع الطلب</label>
+                                <select value={requestData.request_type} onChange={e => setRequestData({...requestData, request_type: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-800 outline-none">
+                                    {REQUEST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">ملاحظات إضافية</label>
+                                <input value={requestData.reason} onChange={e => setRequestData({...requestData, reason: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none" placeholder="اختياري..."/>
+                            </div>
+                            <button onClick={() => requestMutation.mutate(requestData)} disabled={requestMutation.isPending} className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 shadow-lg flex items-center justify-center gap-2 mt-4">
+                                {requestMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>} حفظ الطلب
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
-
         </div>
-    </div>
-  );
+    );
 }
+
+// --- Helper Components ---
+const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], startIndex?: number, onQuickAction: any }) => {
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+    return (
+        <table className="w-full text-[10px] print:text-[9px] text-right border-collapse relative">
+            <thead className="bg-gray-100 border-b border-black font-bold">
+                <tr>
+                    <th className="p-0.5 border border-gray-400 w-6 text-center">م</th>
+                    <th className="p-0.5 border border-gray-400 w-10 text-center">كود</th>
+                    <th className="p-0.5 border border-gray-400">الاسم</th>
+                    <th className="p-0.5 border border-gray-400 w-16">التخصص</th>
+                    <th className="p-0.5 border border-gray-400 w-12 text-center">حضور</th>
+                    <th className="p-0.5 border border-gray-400 w-12 text-center">انصراف</th>
+                    <th className="w-6 no-print"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {data.map((row, idx) => (
+                    <tr key={row.id} className="border-b border-gray-300 relative">
+                        <td className="p-0.5 border border-gray-300 text-center">{startIndex + idx + 1}</td>
+                        <td className="p-0.5 border border-gray-300 text-center font-mono">{row.employee_id}</td>
+                        <td className="p-0.5 border border-gray-300 font-bold truncate max-w-[110px]">{row.name}</td>
+                        <td className="p-0.5 border border-gray-300 truncate max-w-[70px]">{row.specialty}</td>
+                        <td className="p-0.5 border border-gray-300 text-center font-bold">{row.displayIn}</td>
+                        <td className="p-0.5 border border-gray-300 text-center font-mono">{row.displayOut}</td>
+                        <td className="p-0 text-center no-print relative">
+                            {row.statsStatus === 'غير متواجد' && (
+                                <>
+                                    <button onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)} className="p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-indigo-600"><PlusCircle className="w-4 h-4"/></button>
+                                    {openMenuId === row.id && (
+                                        <div className="absolute left-0 top-6 w-40 bg-white shadow-xl rounded-xl border z-50 overflow-hidden animate-in zoom-in-95">
+                                            <button onClick={() => { onQuickAction('attendance', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-indigo-700"><Clock className="w-3 h-3"/> بصمة يدوية</button>
+                                            <button onClick={() => { onQuickAction('request', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-orange-700 border-t"><FilePlus className="w-3 h-3"/> إضافة طلب</button>
+                                            <button onClick={() => { onQuickAction('evening', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-purple-700 border-t"><Moon className="w-3 h-3"/> مسائي</button>
+                                            <button onClick={() => { onQuickAction('overnight', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-blue-700 border-t"><Sun className="w-3 h-3"/> مبيت</button>
+                                            <div className="bg-gray-50 p-1 text-center border-t"><button onClick={() => setOpenMenuId(null)} className="text-[9px] text-gray-400">إغلاق</button></div>
+                                        </div>
+                                    )}
+                                    {openMenuId === row.id && <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>}
+                                </>
+                            )}
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    );
+};
+
+const ForceTable = ({data}: {data:any[]}) => (
+    <table className="w-full text-sm text-right border-collapse">
+        <thead className="bg-gray-100 font-bold border-b border-black"><tr><th className="p-1 border border-gray-400">م</th><th className="p-1 border border-gray-400">الكود</th><th className="p-1 border border-gray-400">الاسم</th><th className="p-1 border border-gray-400">التخصص</th><th className="p-1 border border-gray-400">الهاتف</th></tr></thead>
+        <tbody>{data.map((emp, idx) => (<tr key={emp.id} className="border-b border-gray-300"><td className="p-1 border border-gray-300 text-center">{idx+1}</td><td className="p-1 border border-gray-300 text-center">{emp.employee_id}</td><td className="p-1 border border-gray-300 font-bold">{emp.name}</td><td className="p-1 border border-gray-300">{emp.specialty}</td><td className="p-1 border border-gray-300 text-center">{emp.phone}</td></tr>))}</tbody>
+    </table>
+);
+
+const AbsenceTable = ({data}: {data:any[]}) => (
+    <table className="w-full text-sm text-right border-collapse">
+        <thead className="bg-red-50 font-bold border-b border-black text-red-900"><tr><th className="p-1 border border-gray-400">الكود</th><th className="p-1 border border-gray-400">الاسم</th><th className="p-1 border border-gray-400">التخصص</th><th className="p-1 border border-gray-400 text-center">الحالة</th></tr></thead>
+        <tbody>{data.filter(d => d.statsStatus === 'غير متواجد').map(emp => (<tr key={emp.id} className="border-b border-gray-300"><td className="p-1 border border-gray-300 text-center">{emp.employee_id}</td><td className="p-1 border border-gray-300 font-bold">{emp.name}</td><td className="p-1 border border-gray-300">{emp.specialty}</td><td className="p-1 border border-gray-300 text-center text-red-600 font-bold">غياب</td></tr>))}</tbody>
+    </table>
+);
+
+const SpecialtiesTable = ({stats}: {stats:any}) => (
+    <table className="w-full text-sm text-right border-collapse max-w-2xl mx-auto">
+        <thead className="bg-gray-800 text-white font-bold"><tr><th className="p-1 border border-gray-600">التخصص</th><th className="p-1 border border-gray-600 text-center">القوة</th><th className="p-1 border border-gray-600 text-center">متواجد</th><th className="p-1 border border-gray-600 text-center">غياب</th><th className="p-1 border border-gray-600 text-center">إجازات</th><th className="p-1 border border-gray-600 text-center">النسبة</th></tr></thead>
+        <tbody>{Object.entries(stats.bySpecialty).map(([spec, s]: any) => (<tr key={spec} className="border-b border-gray-300"><td className="p-1 border border-gray-300 font-bold bg-gray-50">{spec}</td><td className="p-1 border border-gray-300 text-center font-bold">{s.total}</td><td className="p-1 border border-gray-300 text-center text-green-700 font-bold">{s.present}</td><td className="p-1 border border-gray-300 text-center text-red-600 font-bold">{s.absent}</td><td className="p-1 border border-gray-300 text-center text-orange-600">{s.leave}</td><td className="p-1 border border-gray-300 text-center font-mono">{s.total > 0 ? Math.round((s.present / (s.total - s.leave - s.partTime)) * 100) : 0}%</td></tr>))}</tbody>
+    </table>
+);
