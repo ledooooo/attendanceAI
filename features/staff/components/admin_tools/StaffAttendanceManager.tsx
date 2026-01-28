@@ -26,8 +26,7 @@ export default function StaffAttendanceManager() {
     const [activeReport, setActiveReport] = useState<ReportType>('daily');
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // ✅ حالة جديدة لتخزين التعديلات المؤقتة (للطباعة فقط)
-    // مفتاح: كود الموظف، قيمة: النص (مسائي، مبيت)
+    // حالة لتخزين التعديلات المؤقتة للطباعة
     const [printOverrides, setPrintOverrides] = useState<Record<string, string>>({});
 
     // Filters & Sorting
@@ -52,7 +51,7 @@ export default function StaffAttendanceManager() {
         request_type: REQUEST_TYPES[0],
         start_date: date,
         end_date: date,
-        reason: '' // سيتم دمجها في notes
+        reason: ''
     });
 
     // --- 1. Queries ---
@@ -76,11 +75,14 @@ export default function StaffAttendanceManager() {
     const { data: leaves = [] } = useQuery({
         queryKey: ['staff_manager_leaves', date],
         queryFn: async () => {
-            const { data } = await supabase.from('leave_requests')
+            // ✅ التأكد من جلب الطلبات التي تغطي تاريخ اليوم
+            const { data, error } = await supabase.from('leave_requests')
                 .select('*')
                 .eq('status', 'approved') 
-                .lte('start_date', date)
-                .gte('end_date', date);
+                .lte('start_date', date) // تاريخ البداية <= اليوم
+                .gte('end_date', date);  // تاريخ النهاية >= اليوم
+            
+            if (error) console.error("Error fetching leaves:", error);
             return data as LeaveRequest[] || [];
         }
     });
@@ -95,11 +97,11 @@ export default function StaffAttendanceManager() {
             let displayOut = '-'; 
             let statsStatus = 'غير متواجد'; 
 
-            // ✅ 1. التحقق أولاً من التعديلات اليدوية المؤقتة (للطباعة)
+            // 1. التحقق من التعديلات اليدوية المؤقتة (للطباعة)
             if (printOverrides[emp.employee_id]) {
-                displayIn = printOverrides[emp.employee_id]; // "مسائي" أو "مبيت"
+                displayIn = printOverrides[emp.employee_id];
                 displayOut = '';
-                statsStatus = 'متواجد'; // نعتبره متواجد في الإحصائيات لأنه في العمل
+                statsStatus = 'متواجد'; 
             } else {
                 // المنطق العادي
                 let hasPunch = false;
@@ -140,9 +142,8 @@ export default function StaffAttendanceManager() {
                     } 
                     else if (leaveRecord) {
                         statsStatus = 'إجازة';
-                        // بما أن نوع الطلب غير موجود كعمود، نحاول استخراجه من الملاحظات أو نكتب "إجازة"
-                        // هنا سنعتمد على الملاحظات إذا كانت تحتوي على النص، أو كلمة ثابتة
-                        displayIn = leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة'; 
+                        // ✅ التعديل هنا: قراءة النوع من الحقل الصحيح
+                        displayIn = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة'); 
                         displayOut = '';
                     }
                 }
@@ -235,16 +236,14 @@ export default function StaffAttendanceManager() {
         onError: (err: any) => toast.error(err.message)
     });
 
-const requestMutation = useMutation({
+    const requestMutation = useMutation({
         mutationFn: async (data: typeof requestData) => {
             const payload = { 
                 employee_id: data.employee_id,
                 start_date: data.start_date,
                 end_date: data.end_date,
                 status: 'approved',
-                // ✅ التصحيح: إرسال نوع الطلب إلى العمود type
                 type: data.request_type, 
-                // تخزين الملاحظات في notes
                 notes: data.reason || '' 
             };
             const { error } = await supabase.from('leave_requests').insert([payload]);
@@ -257,6 +256,7 @@ const requestMutation = useMutation({
         },
         onError: (err: any) => toast.error(err.message)
     });
+
     // --- Actions ---
     const handleQuickAction = (action: 'attendance' | 'request' | 'evening' | 'overnight', empId: string) => {
         if (action === 'attendance') {
@@ -266,18 +266,15 @@ const requestMutation = useMutation({
             setRequestData(prev => ({ ...prev, employee_id: empId, start_date: date, end_date: date, reason: '' }));
             setShowRequestModal(true);
         } else if (action === 'evening') {
-            // ✅ تحديث الحالة محلياً فقط للطباعة
             setPrintOverrides(prev => ({ ...prev, [empId]: 'نوبتجية مسائية' }));
             toast('تم تعيين الحالة: مسائي (للطباعة فقط)', { icon: '🌙' });
         } else if (action === 'overnight') {
-            // ✅ تحديث الحالة محلياً فقط للطباعة
             setPrintOverrides(prev => ({ ...prev, [empId]: 'مبيت' }));
             toast('تم تعيين الحالة: مبيت (للطباعة فقط)', { icon: '🛌' });
         }
     };
 
     const handleRawFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        // ... (نفس كود الرفع السابق)
         const file = e.target.files?.[0];
         if (!file) return;
         setIsProcessing(true);
@@ -426,7 +423,7 @@ const requestMutation = useMutation({
                     </div>
                 )}
 
-                {/* باقي الجداول... */}
+                {/* باقي الجداول */}
                 {activeReport === 'force' && ( <ForceTable data={processedData} /> )}
                 {activeReport === 'absence' && ( <AbsenceTable data={processedData} /> )}
                 {activeReport === 'specialties' && ( <SpecialtiesTable stats={stats} /> )}
@@ -436,7 +433,6 @@ const requestMutation = useMutation({
             {showManualModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
                     <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95">
-                        {/* ... (نفس محتوى المودال السابق) ... */}
                         <div className="flex justify-between items-center border-b pb-4 mb-4">
                             <h3 className="text-lg font-black text-gray-800 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-indigo-600"/> إضافة بصمة</h3>
                             <button onClick={() => setShowManualModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-red-100"><X className="w-5 h-5"/></button>
@@ -475,7 +471,7 @@ const requestMutation = useMutation({
                 </div>
             )}
 
-            {/* --- Modal 2: Add Request (Fix: save type in notes) --- */}
+            {/* --- Modal 2: Add Request --- */}
             {showRequestModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
                     <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95">
