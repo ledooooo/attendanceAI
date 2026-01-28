@@ -75,12 +75,12 @@ export default function StaffAttendanceManager() {
     const { data: leaves = [] } = useQuery({
         queryKey: ['staff_manager_leaves', date],
         queryFn: async () => {
-            // ✅ استعلام دقيق للطلبات التي تغطي تاريخ التقرير
+            // ✅ تم التعديل: البحث عن الحالة 'مقبول' بدلاً من 'approved'
             const { data, error } = await supabase.from('leave_requests')
                 .select('*')
-                .eq('status', 'approved') 
-                .lte('start_date', date)  // البداية قبل أو تساوي اليوم
-                .gte('end_date', date);   // النهاية بعد أو تساوي اليوم
+                .eq('status', 'مقبول') // ⚠️ هذا هو التعديل الجوهري
+                .lte('start_date', date)  
+                .gte('end_date', date);   
             
             if (error) {
                 console.error("Error fetching leaves:", error);
@@ -94,13 +94,14 @@ export default function StaffAttendanceManager() {
     const processedData = useMemo(() => {
         let data = employees.map(emp => {
             const attRecord = attendance.find(a => a.employee_id === emp.employee_id);
-            const leaveRecord = leaves.find(l => l.employee_id === emp.employee_id);
+            // البحث عن الإجازة (التأكد من أن كود الموظف نصي للمقارنة الآمنة)
+            const leaveRecord = leaves.find(l => String(l.employee_id) === String(emp.employee_id));
             
             let displayIn = '-';  
             let displayOut = '-'; 
             let statsStatus = 'غير متواجد'; 
 
-            // 1. التحقق من التعديلات اليدوية المؤقتة (للطباعة)
+            // 1. التحقق من التعديلات اليدوية المؤقتة
             if (printOverrides[emp.employee_id]) {
                 displayIn = printOverrides[emp.employee_id];
                 displayOut = '';
@@ -128,17 +129,14 @@ export default function StaffAttendanceManager() {
                 }
 
                 if (!hasPunch) {
-                    // هل لديه إجازة/طلب ساري؟
+                    // ✅ تم التعديل: قراءة النوع من حقل type مباشرة
                     if (leaveRecord) {
                         statsStatus = 'إجازة';
-                        // ✅ عرض نوع الإجازة بدقة (من type أولاً، ثم notes)
-                        // إزالة كلمة "إجازة " لتقصير النص في الجدول إذا لزم الأمر
-                        let typeText = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة');
+                        let typeText = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes : 'إجازة');
                         displayIn = typeText.replace('اجازة ', '').replace('إجازة ', ''); 
                         displayOut = '';
                     } 
                     else {
-                        // التحقق من جزء الوقت
                         const isPartTimeContract = emp.part_time_start_date && emp.part_time_end_date && 
                                                    date >= emp.part_time_start_date && date <= emp.part_time_end_date;
                         
@@ -251,7 +249,8 @@ export default function StaffAttendanceManager() {
                 employee_id: data.employee_id,
                 start_date: data.start_date,
                 end_date: data.end_date,
-                status: 'approved',
+                // ✅ تم التعديل: إرسال الحالة 'مقبول' لتتوافق مع القاعدة
+                status: 'مقبول', 
                 type: data.request_type, 
                 notes: data.reason || '' 
             };
@@ -275,7 +274,6 @@ export default function StaffAttendanceManager() {
             setRequestData(prev => ({ ...prev, employee_id: empId, start_date: date, end_date: date, reason: '' }));
             setShowRequestModal(true);
         } else if (action === 'evening') {
-            // ✅ تم تغيير الاسم إلى "مسائي" حسب طلبك
             setPrintOverrides(prev => ({ ...prev, [empId]: 'مسائي' }));
             toast('تم تعيين الحالة: مسائي (للطباعة فقط)', { icon: '🌙' });
         } else if (action === 'overnight') {
@@ -440,8 +438,6 @@ export default function StaffAttendanceManager() {
             </div>
 
             {/* --- Modals (Manual & Request) --- */}
-            {/* ... Modal Code (same as before) ... */}
-            {/* تم اختصار المودالز هنا، لكنها موجودة كما في النسخة السابقة */}
             {showManualModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
                     <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95">
@@ -537,7 +533,7 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                     <th className="p-0.5 border border-gray-400 w-12 text-center">حضور</th>
                     <th className="p-0.5 border border-gray-400 w-12 text-center">انصراف</th>
                     {/* ✅ إخفاء العمود بالكامل في الطباعة */}
-                    <th className="w-6 print:hidden"></th>
+                    <th className="w-6 no-print"></th>
                 </tr>
             </thead>
             <tbody>
@@ -550,7 +546,7 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                         <td className="p-0.5 border border-gray-300 text-center font-bold">{row.displayIn}</td>
                         <td className="p-0.5 border border-gray-300 text-center font-mono">{row.displayOut}</td>
                         
-                        <td className="p-0 text-center print:hidden relative">
+                        <td className="p-0 text-center no-print relative">
                             {row.statsStatus === 'غير متواجد' && (
                                 <>
                                     <button onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)} className="p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-indigo-600">
