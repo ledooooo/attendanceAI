@@ -238,14 +238,14 @@ export default function StaffAttendanceManager() {
         reader.readAsText(file);
     };
 
-    // --- 5. Manual Entry Mutation ---
+// --- 5. Manual Entry Mutation ---
     const manualEntryMutation = useMutation({
         mutationFn: async (data: typeof manualData) => {
             if (!data.employee_id || !data.date || !data.timeIn) {
                 throw new Error("يرجى ملء البيانات الأساسية (الموظف، التاريخ، وقت الحضور)");
             }
 
-            // دمج الأوقات في نص واحد (text) ليناسب قاعدة البيانات
+            // دمج الأوقات
             const timesArray = [data.timeIn];
             if (data.timeOut) timesArray.push(data.timeOut);
             const timesString = timesArray.join(' ');
@@ -254,7 +254,10 @@ export default function StaffAttendanceManager() {
                 employee_id: data.employee_id,
                 date: data.date,
                 times: timesString,
-                status: 'حضور'
+                status: 'حضور',
+                // ✅ الإضافات الجديدة
+                responsible: data.responsible, // حفظ اسم المسؤول
+                is_manual: true // تعليمها كبصمة يدوية
             };
 
             const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
@@ -263,7 +266,7 @@ export default function StaffAttendanceManager() {
         onSuccess: () => {
             toast.success('تم إضافة البصمة بنجاح');
             setShowManualModal(false);
-            setManualData({ ...manualData, employee_id: '', timeIn: '', timeOut: '' });
+            setManualData({ ...manualData, employee_id: '', timeIn: '', timeOut: '', responsible: '' }); // تفريغ الحقول
             queryClient.invalidateQueries({ queryKey: ['staff_manager_attendance'] });
         },
         onError: (err: any) => toast.error(err.message)
