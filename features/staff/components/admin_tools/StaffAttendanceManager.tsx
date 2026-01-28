@@ -712,4 +712,3 @@ const SpecialtiesTable = ({ stats }: { stats: any }) => {
         </table>
     );
 };
-);
