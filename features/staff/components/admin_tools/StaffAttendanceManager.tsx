@@ -235,15 +235,17 @@ export default function StaffAttendanceManager() {
         onError: (err: any) => toast.error(err.message)
     });
 
-    const requestMutation = useMutation({
+const requestMutation = useMutation({
         mutationFn: async (data: typeof requestData) => {
-            // ✅ إصلاح: تخزين النوع والسبب داخل حقل notes لأن الحقول الأخرى غير موجودة
             const payload = { 
                 employee_id: data.employee_id,
                 start_date: data.start_date,
                 end_date: data.end_date,
                 status: 'approved',
-                notes: `${data.request_type} - ${data.reason || ''}` // دمج النوع والسبب
+                // ✅ التصحيح: إرسال نوع الطلب إلى العمود type
+                type: data.request_type, 
+                // تخزين الملاحظات في notes
+                notes: data.reason || '' 
             };
             const { error } = await supabase.from('leave_requests').insert([payload]);
             if (error) throw error;
@@ -255,7 +257,6 @@ export default function StaffAttendanceManager() {
         },
         onError: (err: any) => toast.error(err.message)
     });
-
     // --- Actions ---
     const handleQuickAction = (action: 'attendance' | 'request' | 'evening' | 'overnight', empId: string) => {
         if (action === 'attendance') {
