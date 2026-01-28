@@ -50,7 +50,6 @@ export default function StaffAttendanceManager() {
         request_type: REQUEST_TYPES[0],
         start_date: date,
         end_date: date,
-        reason: ''
     });
 
     // --- 1. Queries ---
