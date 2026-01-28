@@ -43,16 +43,18 @@ export default function AdminDashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [testResult, setTestResult] = useState('');
 
-    // --- Queries ---
-    const { data: employees = [], refetch: refetchEmployees } = useQuery({
+    // --- 1. جلب الموظفين (مع حماية التحميل) ---
+    const { data: employees = [], isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
         queryKey: ['admin_employees'],
         queryFn: async () => {
-            const { data } = await supabase.from('employees').select('*').order('name');
+            const { data, error } = await supabase.from('employees').select('*').order('name');
+            if (error) throw error;
             return data as Employee[] || [];
         },
         staleTime: 1000 * 60 * 15, 
     });
 
+    // --- 2. جلب الإعدادات ---
     const { data: settings } = useQuery({
         queryKey: ['general_settings'],
         queryFn: async () => {
@@ -62,23 +64,29 @@ export default function AdminDashboard() {
         staleTime: Infinity,
     });
 
+    // --- 3. جلب العدادات (مع معالجة الأخطاء) ---
     const { data: badges = { messages: 0, leaves: 0, ovr: 0, tasks: 0 } } = useQuery({
         queryKey: ['admin_badges'],
         queryFn: async () => {
-            const [msg, leaves, ovr, taskUpdates] = await Promise.all([
-                supabase.from('messages').select('*', { count: 'exact', head: true }).eq('to_user', 'admin').eq('is_read', false),
-                supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'قيد الانتظار'),
-                supabase.from('ovr_reports').select('*', { count: 'exact', head: true }).eq('status', 'new'),
-                supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('type', 'task_update').eq('is_read', false)
-            ]);
-            return {
-                messages: msg.count || 0,
-                leaves: leaves.count || 0,
-                ovr: ovr.count || 0,
-                tasks: taskUpdates.count || 0
-            };
+            try {
+                const [msg, leaves, ovr, taskUpdates] = await Promise.all([
+                    supabase.from('messages').select('*', { count: 'exact', head: true }).eq('to_user', 'admin').eq('is_read', false),
+                    supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'قيد الانتظار'),
+                    supabase.from('ovr_reports').select('*', { count: 'exact', head: true }).eq('status', 'new'),
+                    supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('type', 'task_update').eq('is_read', false)
+                ]);
+                return {
+                    messages: msg.count || 0,
+                    leaves: leaves.count || 0,
+                    ovr: ovr.count || 0,
+                    tasks: taskUpdates.count || 0
+                };
+            } catch (err) {
+                console.error("Error fetching badges:", err);
+                return { messages: 0, leaves: 0, ovr: 0, tasks: 0 };
+            }
         },
-        refetchInterval: 5000, 
+        refetchInterval: 10000, // زيادة الوقت قليلاً لتقليل الضغط
     });
 
     useEffect(() => {
@@ -117,10 +125,10 @@ export default function AdminDashboard() {
         { id: 'doctors', label: 'شئون الموظفين', icon: Users },
         { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
         { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
-        { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges.messages },
-        { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: badges.leaves },
-        { id: 'quality', label: 'إدارة الجودة (OVR)', icon: AlertTriangle, badge: badges.ovr },
-        { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare, badge: badges.tasks }, 
+        { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges?.messages || 0 },
+        { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: badges?.leaves || 0 },
+        { id: 'quality', label: 'إدارة الجودة (OVR)', icon: AlertTriangle, badge: badges?.ovr || 0 },
+        { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare, badge: badges?.tasks || 0 }, 
         { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
         { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
         { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
@@ -133,6 +141,16 @@ export default function AdminDashboard() {
         { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing },
         { id: 'settings', label: 'إعدادات النظام', icon: Settings },
     ];
+
+    // ✅ شاشة تحميل مبدئية لمنع الكراش عند فتح الصفحة
+    if (isLoadingEmployees) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
+                <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+                <p className="text-gray-500 font-bold">جاري تحميل لوحة التحكم...</p>
+            </div>
+        );
+    }
 
     return (
         <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
@@ -240,29 +258,31 @@ export default function AdminDashboard() {
                 {/* منطقة المحتوى */}
                 <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24">
                     <div className="max-w-7xl mx-auto space-y-6">
-                        {activeTab === 'home' && <HomeTab />}
-                        {activeTab === 'doctors' && <DoctorsTab employees={employees} onRefresh={refetchEmployees} centerId={settings?.id} />}
+                        {/* ✅ تمرير Employees مع قيمة افتراضية [] لمنع الـ undefined */}
+                        {activeTab === 'home' && <HomeTab employees={employees || []} setActiveTab={setActiveTab} />}
+                        {activeTab === 'doctors' && <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />}
                         {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
-                        {activeTab === 'schedules' && <EveningSchedulesTab employees={employees} />}
+                        {activeTab === 'schedules' && <EveningSchedulesTab employees={employees || []} />}
                         {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
-                        {activeTab === 'evaluations' && <EvaluationsTab employees={employees} />}
+                        {activeTab === 'evaluations' && <EvaluationsTab employees={employees || []} />}
                         {activeTab === 'settings' && <SettingsTab onUpdateName={() => queryClient.invalidateQueries({ queryKey: ['general_settings'] })} />}
                         {activeTab === 'reports' && <ReportsTab />}
                         {activeTab === 'send_reports' && <SendReportsTab />}
                         {activeTab === 'news' && <NewsManagementTab />}
                         {activeTab === 'motivation' && (
                             <div className="space-y-6">
-                                <BirthdayWidget employees={employees} />
+                                <BirthdayWidget employees={employees || []} />
                                 <EOMManager />
                             </div>
                         )}
-                        {activeTab === 'all_messages' && <AdminMessagesTab employees={employees} />}
+                        {activeTab === 'all_messages' && <AdminMessagesTab employees={employees || []} />}
                         {activeTab === 'quality' && <QualityDashboard />}
                         {activeTab === 'library-manager' && <AdminLibraryManager />} 
-                        {activeTab === 'data-reports' && <AdminDataReports employees={employees} />}
+                        {/* ✅ تمرير employees بأمان تام */}
+                        {activeTab === 'data-reports' && <AdminDataReports employees={employees || []} />}
                         {activeTab === 'absence-report' && <AbsenceReportTab />}      
-                        {activeTab === 'tasks' && <TasksManager employees={employees} />}
-                        {activeTab === 'vaccinations' && <VaccinationsTab employees={employees} />}
+                        {activeTab === 'tasks' && <TasksManager employees={employees || []} />}
+                        {activeTab === 'vaccinations' && <VaccinationsTab employees={employees || []} />}
                         
                         {/* واجهة اختبار التنبيهات */}
                         {activeTab === 'test_push' && (
@@ -329,7 +349,7 @@ export default function AdminDashboard() {
                     >
                         <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'leaves' ? 'bg-blue-50' : ''} relative`}>
                             <ClipboardList className="w-6 h-6" />
-                            {badges.leaves > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
+                            {badges?.leaves > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
                         </div>
                         <span className="text-[10px] font-bold">الطلبات</span>
                     </button>
