@@ -3,7 +3,7 @@ import { supabase } from '../../../supabaseClient';
 import { ExcelUploadButton, downloadSample } from '../../../components/ui/ExcelUploadButton';
 import { 
     Clock, Download, CheckCircle, AlertTriangle, RefreshCcw, 
-    CalendarCheck, FileCode, UserPlus, List, X, Save, Search, User 
+    CalendarCheck, FileCode, UserPlus, List, X, Save, Search, User, Trash2, Filter, ChevronLeft, ChevronRight 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -24,23 +24,33 @@ const formatDateForDB = (val: any): string | null => {
   } catch { return null; }
 };
 
+const ITEMS_PER_PAGE = 20;
+
 export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void }) {
   // --- States ---
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
   const [lastUpdate, setLastUpdate] = useState<string>('غير متوفر');
   
-  // Manual Entry States
-  const [viewMode, setViewMode] = useState<'upload' | 'manual_logs'>('upload');
+  // View Modes: 'upload' (رفع ملفات) | 'logs' (سجل البصمات)
+  const [viewMode, setViewMode] = useState<'upload' | 'logs'>('upload');
+  
+  // Logs & Pagination State
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsPage, setLogsPage] = useState(0);
+  const [logsTotal, setLogsTotal] = useState(0);
+  const [logsFilterEmp, setLogsFilterEmp] = useState<string>('all');
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+
+  // Manual Modal State
   const [showManualModal, setShowManualModal] = useState(false);
   const [employeesList, setEmployeesList] = useState<any[]>([]);
-  const [manualLogs, setManualLogs] = useState<any[]>([]);
   const [manualForm, setManualForm] = useState({
       employee_id: '',
       date: new Date().toISOString().split('T')[0],
       timeIn: '',
       timeOut: '',
-      responsible: 'المدير' // قيمة افتراضية
+      responsible: 'المدير'
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,11 +61,12 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
     fetchEmployees();
   }, []);
 
+  // جلب السجلات عند تغيير الفلتر أو الصفحة
   useEffect(() => {
-      if (viewMode === 'manual_logs') {
-          fetchManualLogs();
+      if (viewMode === 'logs') {
+          fetchLogs();
       }
-  }, [viewMode]);
+  }, [viewMode, logsPage, logsFilterEmp]);
 
   // --- Data Fetching ---
   const fetchLastUpdate = async () => {
@@ -71,16 +82,37 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
       if (data) setEmployeesList(data);
   };
 
-  const fetchManualLogs = async () => {
-      const { data, error } = await supabase
-          .from('attendance')
-          .select('*, employees(name)')
-          .eq('is_manual', true)
-          .order('created_at', { ascending: false })
-          .limit(50);
-      
-      if (!error && data) {
-          setManualLogs(data);
+  // ✅ دالة جلب السجلات مع الفلترة والتقسيم (Pagination)
+  const fetchLogs = async () => {
+      setIsLoadingLogs(true);
+      try {
+          let query = supabase
+              .from('attendance')
+              .select('*, employees(name, employee_id)', { count: 'exact' });
+
+          // الفلترة بالموظف
+          if (logsFilterEmp !== 'all') {
+              query = query.eq('employee_id', logsFilterEmp);
+          }
+
+          // الترتيب والتقسيم
+          const from = logsPage * ITEMS_PER_PAGE;
+          const to = from + ITEMS_PER_PAGE - 1;
+          
+          const { data, count, error } = await query
+              .order('date', { ascending: false }) // الأحدث تاريخاً أولاً
+              .range(from, to);
+          
+          if (error) throw error;
+
+          if (data) setLogs(data);
+          if (count !== null) setLogsTotal(count);
+
+      } catch (err: any) {
+          toast.error("خطأ في جلب السجلات");
+          console.error(err);
+      } finally {
+          setIsLoadingLogs(false);
       }
   };
 
@@ -184,13 +216,12 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
   // --- Handlers: Manual Entry ---
   const handleManualSubmit = async () => {
       if (!manualForm.employee_id || !manualForm.date || !manualForm.timeIn) {
-          toast.error("يرجى ملء البيانات الأساسية (الموظف، التاريخ، وقت الحضور)");
+          toast.error("يرجى ملء البيانات الأساسية");
           return;
       }
 
       setIsProcessing(true);
       try {
-          // دمج الأوقات
           const timesArr = [manualForm.timeIn];
           if (manualForm.timeOut) timesArr.push(manualForm.timeOut);
           const timesStr = timesArr.join(' ');
@@ -207,12 +238,11 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
           const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
           if (error) throw error;
 
-          toast.success("تم إضافة البصمة يدوياً بنجاح");
+          toast.success("تم الحفظ بنجاح");
           setShowManualModal(false);
-          // Reset form basics only
           setManualForm(prev => ({...prev, timeIn: '', timeOut: ''}));
           
-          if (viewMode === 'manual_logs') fetchManualLogs();
+          if (viewMode === 'logs') fetchLogs();
           if (onRefresh) onRefresh();
 
       } catch (err: any) {
@@ -222,21 +252,36 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
       }
   };
 
+  // ✅ دالة الحذف
+  const handleDeleteLog = async (id: number) => {
+      if (!window.confirm("هل أنت متأكد من حذف هذا السجل؟")) return;
+
+      try {
+          const { error } = await supabase.from('attendance').delete().eq('id', id);
+          if (error) throw error;
+          
+          toast.success("تم الحذف بنجاح");
+          fetchLogs(); // تحديث الجدول
+          if (onRefresh) onRefresh();
+      } catch (err: any) {
+          toast.error("فشل الحذف");
+      }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
       {/* --- Top Bar --- */}
       <div className="flex flex-col xl:flex-row justify-between items-center border-b pb-4 gap-4">
         <div>
-          <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Clock className="text-blue-600"/> سجل البصمات (Smart Sync)</h2>
+          <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Clock className="text-blue-600"/> إدارة البصمة</h2>
           <div className="mt-2 inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-3 py-1 rounded-lg text-xs font-bold border border-blue-100">
             <CalendarCheck className="w-4 h-4"/>
-            آخر تحديث للبيانات: {lastUpdate}
+            آخر تحديث: {lastUpdate}
           </div>
         </div>
         
         <div className="flex flex-wrap gap-2 justify-center xl:justify-end">
-            {/* أزرار التبديل */}
             <div className="bg-gray-100 p-1 rounded-xl flex">
                 <button 
                     onClick={() => setViewMode('upload')} 
@@ -245,14 +290,13 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
                     رفع ملفات
                 </button>
                 <button 
-                    onClick={() => setViewMode('manual_logs')} 
-                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'manual_logs' ? 'bg-white text-blue-600 shadow' : 'text-gray-500'}`}
+                    onClick={() => setViewMode('logs')} 
+                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${viewMode === 'logs' ? 'bg-white text-blue-600 shadow' : 'text-gray-500'}`}
                 >
-                    <List className="w-4 h-4 inline-block ml-1"/> سجل اليدوي
+                    <List className="w-4 h-4 inline-block ml-1"/> سجل البصمات
                 </button>
             </div>
 
-            {/* زر الإضافة اليدوية */}
             <button 
                 onClick={() => setShowManualModal(true)} 
                 className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
@@ -317,44 +361,94 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
           </div>
       )}
 
-      {/* 2. Manual Logs View */}
-      {viewMode === 'manual_logs' && (
+      {/* 2. All Logs View with Pagination & Filter */}
+      {viewMode === 'logs' && (
           <div className="bg-white rounded-3xl border shadow-sm overflow-hidden animate-in fade-in">
-              <div className="p-6 border-b bg-gray-50 flex justify-between items-center">
-                  <h3 className="font-bold text-gray-800">سجل الإدخالات اليدوية (آخر 50)</h3>
-                  <button onClick={fetchManualLogs} className="text-blue-600 hover:bg-blue-100 p-2 rounded-full"><RefreshCcw className="w-4 h-4"/></button>
+              <div className="p-4 border-b bg-gray-50 flex flex-col md:flex-row justify-between items-center gap-4">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                      <List className="w-5 h-5 text-indigo-600"/> سجل البصمات الكامل
+                  </h3>
+                  
+                  {/* Filter */}
+                  <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border">
+                      <Filter className="w-4 h-4 text-gray-400"/>
+                      <select 
+                          value={logsFilterEmp} 
+                          onChange={(e) => { setLogsFilterEmp(e.target.value); setLogsPage(0); }}
+                          className="bg-transparent text-sm font-bold text-gray-700 outline-none w-48"
+                      >
+                          <option value="all">كل الموظفين</option>
+                          {employeesList.map(e => <option key={e.id} value={e.employee_id}>{e.name}</option>)}
+                      </select>
+                  </div>
               </div>
-              <div className="overflow-x-auto">
+
+              <div className="overflow-x-auto min-h-[400px]">
                   <table className="w-full text-sm text-right">
                       <thead className="bg-gray-100 text-gray-600 font-bold">
                           <tr>
                               <th className="p-4">الموظف</th>
                               <th className="p-4">التاريخ</th>
-                              <th className="p-4">التوقيتات</th>
-                              <th className="p-4">المسؤول</th>
-                              <th className="p-4">توقيت الإدخال</th>
+                              <th className="p-4">التوقيتات المسجلة</th>
+                              <th className="p-4">نوع الإدخال</th>
+                              <th className="p-4">المسؤول/الوقت</th>
+                              <th className="p-4 text-center">حذف</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y">
-                          {manualLogs.length === 0 ? (
-                              <tr><td colSpan={5} className="p-8 text-center text-gray-400">لا توجد سجلات يدوية</td></tr>
+                          {logs.length === 0 ? (
+                              <tr><td colSpan={6} className="p-8 text-center text-gray-400">لا توجد سجلات مطابقة</td></tr>
                           ) : (
-                              manualLogs.map((log: any) => (
+                              logs.map((log: any) => (
                                   <tr key={log.id} className="hover:bg-gray-50">
-                                      <td className="p-4 font-bold">{log.employees?.name} <span className="text-xs text-gray-400">({log.employee_id})</span></td>
-                                      <td className="p-4 font-mono">{log.date}</td>
-                                      <td className="p-4 font-mono text-blue-600 dir-ltr">{log.times}</td>
+                                      <td className="p-4 font-bold">{log.employees?.name} <span className="text-xs text-gray-400 block font-mono">{log.employee_id}</span></td>
+                                      <td className="p-4 font-mono font-bold">{log.date}</td>
+                                      <td className="p-4 font-mono text-blue-600 dir-ltr font-bold tracking-wide">{log.times}</td>
                                       <td className="p-4">
-                                          <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-bold">{log.responsible || 'غير محدد'}</span>
+                                          {log.is_manual ? 
+                                              <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-bold">يدوي</span> : 
+                                              <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">ملف</span>
+                                          }
                                       </td>
-                                      <td className="p-4 text-gray-500 text-xs">
+                                      <td className="p-4 text-xs text-gray-500">
+                                          {log.responsible && <div className="font-bold text-gray-700 mb-1">{log.responsible}</div>}
                                           {log.created_at ? new Date(log.created_at).toLocaleString('ar-EG') : '-'}
+                                      </td>
+                                      <td className="p-4 text-center">
+                                          <button 
+                                              onClick={() => handleDeleteLog(log.id)}
+                                              className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                              title="حذف السجل"
+                                          >
+                                              <Trash2 className="w-4 h-4"/>
+                                          </button>
                                       </td>
                                   </tr>
                               ))
                           )}
                       </tbody>
                   </table>
+              </div>
+
+              {/* Pagination */}
+              <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+                  <button 
+                      onClick={() => setLogsPage(p => Math.max(0, p - 1))}
+                      disabled={logsPage === 0}
+                      className="px-4 py-2 bg-white border rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-gray-100 flex items-center gap-2"
+                  >
+                      <ChevronRight className="w-4 h-4"/> السابق
+                  </button>
+                  <span className="text-xs font-bold text-gray-500">
+                      صفحة {logsPage + 1} (إجمالي {logsTotal} سجل)
+                  </span>
+                  <button 
+                      onClick={() => setLogsPage(p => p + 1)}
+                      disabled={(logsPage + 1) * ITEMS_PER_PAGE >= logsTotal}
+                      className="px-4 py-2 bg-white border rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-gray-100 flex items-center gap-2"
+                  >
+                      التالي <ChevronLeft className="w-4 h-4"/>
+                  </button>
               </div>
           </div>
       )}
