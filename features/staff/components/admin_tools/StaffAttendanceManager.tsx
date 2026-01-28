@@ -710,5 +710,6 @@ const SpecialtiesTable = ({ stats }: { stats: any }) => {
                 </tr>
             </tfoot>
         </table>
-
+    );
+};
 );
