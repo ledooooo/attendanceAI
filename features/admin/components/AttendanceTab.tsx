@@ -3,7 +3,7 @@ import { supabase } from '../../../supabaseClient';
 import { ExcelUploadButton, downloadSample } from '../../../components/ui/ExcelUploadButton';
 import { 
     Clock, Download, CheckCircle, AlertTriangle, RefreshCcw, 
-    CalendarCheck, FileCode, UserPlus, List, X, Save, Search, User, Trash2, Filter, ChevronLeft, ChevronRight 
+    CalendarCheck, FileCode, UserPlus, List, X, Save, Search, User, Trash2, Filter, ChevronLeft, ChevronRight, FileText, MousePointerClick 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -39,8 +39,12 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
   const [logs, setLogs] = useState<any[]>([]);
   const [logsPage, setLogsPage] = useState(0);
   const [logsTotal, setLogsTotal] = useState(0);
-  const [logsFilterEmp, setLogsFilterEmp] = useState<string>('all');
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+
+  // ✅ فلاتر البحث الجديدة
+  const [logsFilterEmp, setLogsFilterEmp] = useState<string>('all'); // فلتر القائمة المنسدلة
+  const [searchCode, setSearchCode] = useState<string>(''); // بحث بالكود
+  const [filterType, setFilterType] = useState<'all' | 'manual' | 'file'>('all'); // نوع الإدخال
 
   // Manual Modal State
   const [showManualModal, setShowManualModal] = useState(false);
@@ -61,12 +65,12 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
     fetchEmployees();
   }, []);
 
-  // جلب السجلات عند تغيير الفلتر أو الصفحة
+  // جلب السجلات عند تغيير أي فلتر أو صفحة
   useEffect(() => {
       if (viewMode === 'logs') {
           fetchLogs();
       }
-  }, [viewMode, logsPage, logsFilterEmp]);
+  }, [viewMode, logsPage, logsFilterEmp, searchCode, filterType]);
 
   // --- Data Fetching ---
   const fetchLastUpdate = async () => {
@@ -82,7 +86,7 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
       if (data) setEmployeesList(data);
   };
 
-  // ✅ دالة جلب السجلات مع الفلترة والتقسيم (Pagination)
+  // ✅ دالة جلب السجلات مع الفلترة المتقدمة
   const fetchLogs = async () => {
       setIsLoadingLogs(true);
       try {
@@ -90,9 +94,22 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
               .from('attendance')
               .select('*, employees(name, employee_id)', { count: 'exact' });
 
-          // الفلترة بالموظف
+          // 1. الفلترة باسم الموظف (Dropdown)
           if (logsFilterEmp !== 'all') {
               query = query.eq('employee_id', logsFilterEmp);
+          }
+
+          // 2. ✅ البحث بالكود (Input)
+          if (searchCode) {
+              query = query.ilike('employee_id', `%${searchCode}%`);
+          }
+
+          // 3. ✅ الفلترة بنوع الإدخال (يدوي / ملف)
+          if (filterType === 'manual') {
+              query = query.eq('is_manual', true);
+          } else if (filterType === 'file') {
+              // نفترض أن false أو null هو ملف
+              query = query.or('is_manual.eq.false,is_manual.is.null');
           }
 
           // الترتيب والتقسيم
@@ -252,7 +269,7 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
       }
   };
 
-  // ✅ دالة الحذف
+  // دالة الحذف
   const handleDeleteLog = async (id: number) => {
       if (!window.confirm("هل أنت متأكد من حذف هذا السجل؟")) return;
 
@@ -261,7 +278,7 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
           if (error) throw error;
           
           toast.success("تم الحذف بنجاح");
-          fetchLogs(); // تحديث الجدول
+          fetchLogs(); 
           if (onRefresh) onRefresh();
       } catch (err: any) {
           toast.error("فشل الحذف");
@@ -364,22 +381,56 @@ export default function AttendanceTab({ onRefresh }: { onRefresh?: () => void })
       {/* 2. All Logs View with Pagination & Filter */}
       {viewMode === 'logs' && (
           <div className="bg-white rounded-3xl border shadow-sm overflow-hidden animate-in fade-in">
-              <div className="p-4 border-b bg-gray-50 flex flex-col md:flex-row justify-between items-center gap-4">
-                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
+              {/* شريط الفلاتر العلوي */}
+              <div className="p-4 border-b bg-gray-50 flex flex-col lg:flex-row justify-between items-center gap-4">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2 shrink-0">
                       <List className="w-5 h-5 text-indigo-600"/> سجل البصمات الكامل
                   </h3>
                   
-                  {/* Filter */}
-                  <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border">
-                      <Filter className="w-4 h-4 text-gray-400"/>
-                      <select 
-                          value={logsFilterEmp} 
-                          onChange={(e) => { setLogsFilterEmp(e.target.value); setLogsPage(0); }}
-                          className="bg-transparent text-sm font-bold text-gray-700 outline-none w-48"
-                      >
-                          <option value="all">كل الموظفين</option>
-                          {employeesList.map(e => <option key={e.id} value={e.employee_id}>{e.name}</option>)}
-                      </select>
+                  <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
+                      {/* فلتر نوع الإدخال */}
+                      <div className="flex bg-white rounded-xl border p-1">
+                          <button 
+                            onClick={() => { setFilterType('all'); setLogsPage(0); }} 
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold ${filterType === 'all' ? 'bg-gray-100 text-black' : 'text-gray-500'}`}
+                          >الكل</button>
+                          <button 
+                            onClick={() => { setFilterType('manual'); setLogsPage(0); }} 
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${filterType === 'manual' ? 'bg-purple-100 text-purple-700' : 'text-gray-500'}`}
+                          >
+                             <MousePointerClick className="w-3 h-3"/> يدوي
+                          </button>
+                          <button 
+                            onClick={() => { setFilterType('file'); setLogsPage(0); }} 
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 ${filterType === 'file' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}
+                          >
+                             <FileText className="w-3 h-3"/> ملف
+                          </button>
+                      </div>
+
+                      {/* بحث بالكود */}
+                      <div className="relative">
+                          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
+                          <input 
+                            placeholder="بحث بالكود..." 
+                            value={searchCode}
+                            onChange={(e) => { setSearchCode(e.target.value); setLogsPage(0); }}
+                            className="pl-4 pr-9 py-2 rounded-xl border outline-none text-sm w-32 focus:w-48 transition-all"
+                          />
+                      </div>
+
+                      {/* فلتر الموظف */}
+                      <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border">
+                          <Filter className="w-4 h-4 text-gray-400"/>
+                          <select 
+                              value={logsFilterEmp} 
+                              onChange={(e) => { setLogsFilterEmp(e.target.value); setLogsPage(0); }}
+                              className="bg-transparent text-sm font-bold text-gray-700 outline-none w-40"
+                          >
+                              <option value="all">كل الموظفين</option>
+                              {employeesList.map(e => <option key={e.id} value={e.employee_id}>{e.name}</option>)}
+                          </select>
+                      </div>
                   </div>
               </div>
 
