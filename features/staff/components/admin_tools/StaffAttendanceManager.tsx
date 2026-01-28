@@ -184,11 +184,17 @@ export default function StaffAttendanceManager() {
 
     // --- 3. Statistics ---
     const stats = useMemo(() => {
+        // ✅ حماية ضد الـ undefined
+        if (!processedData || !Array.isArray(processedData)) {
+            return { total: 0, present: 0, absent: 0, leave: 0, partTime: 0, percent: 0, bySpecialty: {} };
+        }
+
         const total = processedData.length;
         const present = processedData.filter(d => d.statsStatus === 'متواجد').length;
         const absent = processedData.filter(d => d.statsStatus === 'غير متواجد').length;
         const partTime = processedData.filter(d => d.statsStatus === 'جزء وقت').length;
         const leave = processedData.filter(d => d.statsStatus === 'إجازة').length;
+        
         const effectiveTotal = total - leave - partTime;
         const percent = effectiveTotal > 0 ? Math.round((present / effectiveTotal) * 100) : 0;
 
