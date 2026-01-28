@@ -104,7 +104,7 @@ export default function StaffAttendanceManager() {
             if (printOverrides[emp.employee_id]) {
                 displayIn = printOverrides[emp.employee_id];
                 displayOut = '';
-                statsStatus = 'متواجد'; // نعتبره متواجد احصائياً (لأنه في العمل أو مبيت)
+                statsStatus = 'متواجد'; 
             } else {
                 // المنطق العادي
                 let hasPunch = false;
@@ -134,7 +134,7 @@ export default function StaffAttendanceManager() {
                         // ✅ عرض نوع الإجازة بدقة (من type أولاً، ثم notes)
                         // إزالة كلمة "إجازة " لتقصير النص في الجدول إذا لزم الأمر
                         let typeText = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة');
-                        displayIn = typeText.replace('اجازة ', ''); 
+                        displayIn = typeText.replace('اجازة ', '').replace('إجازة ', ''); 
                         displayOut = '';
                     } 
                     else {
@@ -275,7 +275,8 @@ export default function StaffAttendanceManager() {
             setRequestData(prev => ({ ...prev, employee_id: empId, start_date: date, end_date: date, reason: '' }));
             setShowRequestModal(true);
         } else if (action === 'evening') {
-            setPrintOverrides(prev => ({ ...prev, [empId]: 'نوبتجية مسائية' }));
+            // ✅ تم تغيير الاسم إلى "مسائي" حسب طلبك
+            setPrintOverrides(prev => ({ ...prev, [empId]: 'مسائي' }));
             toast('تم تعيين الحالة: مسائي (للطباعة فقط)', { icon: '🌙' });
         } else if (action === 'overnight') {
             setPrintOverrides(prev => ({ ...prev, [empId]: 'مبيت' }));
@@ -450,6 +451,31 @@ export default function StaffAttendanceManager() {
                         </div>
                         <div className="space-y-4">
                             {/* ... inputs ... */}
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">الموظف</label>
+                                <select value={manualData.employee_id} onChange={e => setManualData({...manualData, employee_id: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-800 outline-none">
+                                    <option value="">اختر الموظف...</option>
+                                    {employees.map(emp => <option key={emp.id} value={emp.employee_id}>{emp.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">التاريخ</label>
+                                <input type="date" value={manualData.date} onChange={e => setManualData({...manualData, date: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"/>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 mb-1 block">وقت الحضور</label>
+                                    <input type="time" value={manualData.timeIn} onChange={e => setManualData({...manualData, timeIn: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"/>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 mb-1 block">وقت الانصراف</label>
+                                    <input type="time" value={manualData.timeOut} onChange={e => setManualData({...manualData, timeOut: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"/>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">المسؤول</label>
+                                <input type="text" placeholder="اسم المدخل..." value={manualData.responsible} onChange={e => setManualData({...manualData, responsible: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none"/>
+                            </div>
                             <button onClick={() => manualEntryMutation.mutate(manualData)} disabled={manualEntryMutation.isPending} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg flex items-center justify-center gap-2 mt-4">
                                 {manualEntryMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>} حفظ البصمة
                             </button>
@@ -469,6 +495,22 @@ export default function StaffAttendanceManager() {
                         </div>
                         <div className="space-y-4">
                             {/* ... inputs ... */}
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">الموظف</label>
+                                <select value={requestData.employee_id} disabled className="w-full p-3 border rounded-xl bg-gray-100 font-bold text-gray-500 outline-none">
+                                    <option value={requestData.employee_id}>{employees.find(e => e.employee_id === requestData.employee_id)?.name}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">نوع الطلب</label>
+                                <select value={requestData.request_type} onChange={e => setRequestData({...requestData, request_type: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-800 outline-none">
+                                    {REQUEST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">ملاحظات إضافية</label>
+                                <input value={requestData.reason} onChange={e => setRequestData({...requestData, reason: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none" placeholder="اختياري..."/>
+                            </div>
                             <button onClick={() => requestMutation.mutate(requestData)} disabled={requestMutation.isPending} className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 shadow-lg flex items-center justify-center gap-2 mt-4">
                                 {requestMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>} حفظ الطلب
                             </button>
@@ -495,7 +537,7 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                     <th className="p-0.5 border border-gray-400 w-12 text-center">حضور</th>
                     <th className="p-0.5 border border-gray-400 w-12 text-center">انصراف</th>
                     {/* ✅ إخفاء العمود بالكامل في الطباعة */}
-                    <th className="w-6 no-print"></th>
+                    <th className="w-6 print:hidden"></th>
                 </tr>
             </thead>
             <tbody>
@@ -508,7 +550,7 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                         <td className="p-0.5 border border-gray-300 text-center font-bold">{row.displayIn}</td>
                         <td className="p-0.5 border border-gray-300 text-center font-mono">{row.displayOut}</td>
                         
-                        <td className="p-0 text-center no-print relative">
+                        <td className="p-0 text-center print:hidden relative">
                             {row.statsStatus === 'غير متواجد' && (
                                 <>
                                     <button onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)} className="p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-indigo-600">
@@ -518,7 +560,7 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                                         <div className="absolute left-0 top-6 w-40 bg-white shadow-xl rounded-xl border z-50 overflow-hidden animate-in zoom-in-95">
                                             <button onClick={() => { onQuickAction('attendance', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-indigo-700"><Clock className="w-3 h-3"/> بصمة يدوية</button>
                                             <button onClick={() => { onQuickAction('request', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-orange-700 border-t"><FilePlus className="w-3 h-3"/> إضافة طلب</button>
-                                            <button onClick={() => { onQuickAction('evening', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-purple-700 border-t"><Moon className="w-3 h-3"/> نوبتجية مسائية</button>
+                                            <button onClick={() => { onQuickAction('evening', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-purple-700 border-t"><Moon className="w-3 h-3"/> مسائي</button>
                                             <button onClick={() => { onQuickAction('overnight', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-blue-700 border-t"><Sun className="w-3 h-3"/> مبيت</button>
                                             <div className="bg-gray-50 p-1 text-center border-t"><button onClick={() => setOpenMenuId(null)} className="text-[9px] text-gray-400">إغلاق</button></div>
                                         </div>
