@@ -11,7 +11,7 @@ import {
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Sparkles, Calendar, Settings // ✅ تمت إضافة Settings للأيقونة
+  Sparkles, Calendar, Settings
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -33,7 +33,6 @@ import ShiftRequestsTab from './components/ShiftRequestsTab';
 import QualityDashboard from '../admin/components/QualityDashboard'; 
 import StaffLibrary from './components/StaffLibrary';
 import StaffTasks from './components/StaffTasks';
-// ✅ استيراد مكون لوحة الإدارة الجديد
 import AdministrationTab from './components/AdministrationTab';
 
 interface Props {
@@ -48,11 +47,9 @@ export default function StaffDashboard({ employee }: Props) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
 
-  // --- التحقق من صلاحيات الإدارة ---
-  // هل الموظف لديه أي صلاحيات في مصفوفة permissions؟
   const hasAdminAccess = employee.permissions && Array.isArray(employee.permissions) && employee.permissions.length > 0;
 
-  // --- 1. حالات تخزين البيانات ---
+  // --- States ---
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
@@ -60,13 +57,13 @@ export default function StaffDashboard({ employee }: Props) {
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   
-  // حالات PWA
+  // PWA States
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // --- 2. إعداد الإشعارات ---
+  // --- Effects ---
   useEffect(() => {
     if (employee?.employee_id) {
         requestNotificationPermission(employee.employee_id);
@@ -96,7 +93,6 @@ export default function StaffDashboard({ employee }: Props) {
     setShowNotifMenu(!showNotifMenu);
   };
 
-  // 🔥 3. استعلام قوي لجلب العدادات (Badges)
   const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0 } } = useQuery({
       queryKey: ['staff_badges', employee.employee_id],
       queryFn: async () => {
@@ -122,7 +118,6 @@ export default function StaffDashboard({ employee }: Props) {
       refetchInterval: 5000,
   });
 
-  // --- 4. جلب البيانات الأساسية + Realtime ---
   const fetchAllData = async () => {
     try {
       const { data: att } = await supabase.from('attendance').select('*').eq('employee_id', employee.employee_id);
@@ -148,7 +143,6 @@ export default function StaffDashboard({ employee }: Props) {
       }, (payload) => {
           fetchNotifications();
           queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
-          
           if (payload.eventType === 'INSERT') {
               const audio = new Audio('/notification.mp3'); 
               audio.play().catch(() => {}); 
@@ -191,19 +185,15 @@ export default function StaffDashboard({ employee }: Props) {
   };
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  // ✅ تعريف عناصر القائمة
+  // تعريف القائمة
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
-    
-    // ✅ إضافة تبويب الإدارة هنا شرطياً
     ...(hasAdminAccess ? [{ id: 'admin', label: 'لوحة الإدارة', icon: Settings }] : []),
-
     { id: 'tasks', label: 'التكليفات', icon: ListTodo, badge: staffBadges.tasks },
     { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight, badge: staffBadges.swaps },
     { id: 'messages', label: 'الرسائل', icon: Inbox, badge: staffBadges.messages },
     { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle, badge: staffBadges.ovr_replies },
-    
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
@@ -222,23 +212,39 @@ export default function StaffDashboard({ employee }: Props) {
   return (
     <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
-      {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
+      {/* --- تظليل الخلفية عند فتح القائمة --- */}
+      {isSidebarOpen && (
+        <div 
+            className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" 
+            onClick={() => setIsSidebarOpen(false)} 
+        />
+      )}
 
-      <aside className={`fixed inset-y-0 right-0 z-50 w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0 md:static md:shadow-none`}>
-        <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-emerald-50/50">
+      {/* --- القائمة الجانبية (Sidebar) --- */}
+      <aside className={`
+          fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl 
+          transform transition-transform duration-300 ease-in-out flex flex-col 
+          ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
+          md:translate-x-0 md:static md:w-72 md:shadow-none h-[100dvh]
+      `}>
+        {/* Header القائمة */}
+        <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-gradient-to-r from-emerald-50 to-white">
             <div className="flex items-center gap-3">
                 <div className="bg-white p-1.5 rounded-xl shadow-sm border border-emerald-100">
-                    <img src="/pwa-192x192.png" className="w-7 h-7 rounded-lg" alt="Logo" />
+                    <img src="/pwa-192x192.png" className="w-8 h-8 rounded-lg" alt="Logo" />
                 </div>
                 <div>
-                    <h1 className="font-black text-gray-800 text-sm">غرب المطار</h1>
+                    <h1 className="font-black text-gray-800 text-base">غرب المطار</h1>
                     <p className="text-[10px] text-gray-500 font-bold">بوابة الموظفين</p>
                 </div>
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400"><X className="w-5 h-5"/></button>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                <X className="w-6 h-6"/>
+            </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
+        {/* عناصر القائمة (Scrollable) */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -246,32 +252,53 @@ export default function StaffDashboard({ employee }: Props) {
               <button
                 key={item.id}
                 onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${isActive ? 'bg-emerald-600 text-white shadow-md font-bold' : 'text-gray-500 hover:bg-emerald-50 hover:text-emerald-700 font-medium'}`}
+                className={`
+                    w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group relative
+                    ${isActive 
+                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 font-bold translate-x-[-5px]' 
+                        : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 font-medium'
+                    }
+                `}
               >
-                <Icon className={`w-4.5 h-4.5 ${isActive ? 'text-white' : 'text-gray-400'}`} />
+                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
                 {item.badge && item.badge > 0 && (
-                    <span className="absolute left-4 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm">
+                    <span className="absolute left-4 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm border border-white">
                         {item.badge}
                     </span>
                 )}
               </button>
             );
           })}
+          {/* مسافة إضافية في الأسفل لضمان عدم اختفاء آخر عنصر */}
+          <div className="h-4 md:h-0"></div>
         </nav>
 
-        <div className="p-3 border-t bg-gray-50 flex items-center justify-around shrink-0">
-            <button onClick={handleShareApp} className="p-2.5 rounded-xl text-gray-500 hover:bg-purple-100"><Share2 className="w-5 h-5" /></button>
-            <button onClick={() => setShowAboutModal(true)} className="p-2.5 rounded-xl text-gray-500 hover:bg-orange-100"><Info className="w-5 h-5" /></button>
-            <button onClick={signOut} className="p-2.5 rounded-xl text-red-400 hover:bg-red-100"><LogOut className="w-5 h-5" /></button>
+        {/* Footer القائمة */}
+        <div className="p-4 border-t bg-gray-50 flex items-center justify-around shrink-0 pb-safe">
+            <button onClick={handleShareApp} className="p-3 rounded-2xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
+                <Share2 className="w-5 h-5" />
+                <span className="text-[9px] font-bold">مشاركة</span>
+            </button>
+            <button onClick={() => setShowAboutModal(true)} className="p-3 rounded-2xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors flex flex-col items-center gap-1">
+                <Info className="w-5 h-5" />
+                <span className="text-[9px] font-bold">حول</span>
+            </button>
+            <button onClick={signOut} className="p-3 rounded-2xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
+                <LogOut className="w-5 h-5" />
+                <span className="text-[9px] font-bold">خروج</span>
+            </button>
         </div>
       </aside>
 
+      {/* --- المحتوى الرئيسي --- */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
         <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
             <div className="flex items-center gap-3">
-                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl"><Menu className="w-6 h-6"/></button>
+                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors active:scale-95">
+                    <Menu className="w-6 h-6 text-gray-700"/>
+                </button>
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
