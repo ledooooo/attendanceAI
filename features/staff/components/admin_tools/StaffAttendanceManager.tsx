@@ -4,7 +4,7 @@ import { supabase } from '../../../../supabaseClient';
 import { useReactToPrint } from 'react-to-print';
 import { 
     Search, Printer, Upload, Calendar, Loader2, RefreshCw, 
-    ArrowUpDown
+    ArrowUpDown, PlusCircle, Save, X, UserCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AttendanceRecord, Employee, LeaveRequest } from '../../../../types';
@@ -26,6 +26,16 @@ export default function StaffAttendanceManager() {
     const [filterSpecialty, setFilterSpecialty] = useState('all');
     const [filterStatus, setFilterStatus] = useState('active_only'); 
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'specialty'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
+
+    // --- Manual Entry State ---
+    const [showManualModal, setShowManualModal] = useState(false);
+    const [manualData, setManualData] = useState({
+        employee_id: '',
+        date: new Date().toISOString().split('T')[0],
+        timeIn: '',
+        timeOut: '',
+        responsible: '' // اسم المسؤول (للعرض أو التسجيل إذا وجد حقل له مستقبلاً)
+    });
 
     // --- 1. Queries (جلب البيانات) ---
     const { data: employees = [] } = useQuery({
@@ -167,7 +177,7 @@ export default function StaffAttendanceManager() {
         return { total, present, absent, leave, partTime, percent, bySpecialty };
     }, [processedData]);
 
-    // --- 4. File Upload (Fixed) ---
+    // --- 4. File Upload (Raw) ---
     const rawMutation = useMutation({
         mutationFn: async (payload: any[]) => {
             const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
@@ -183,72 +193,81 @@ export default function StaffAttendanceManager() {
     const handleRawFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        
         setIsProcessing(true);
         const reader = new FileReader();
-        
         reader.onload = async (event) => {
             try {
                 const text = event.target?.result as string;
                 if (!text) throw new Error("الملف فارغ");
-
-                const lines = text.split(/\r\n|\n/); // دعم جميع أنظمة التشغيل
+                const lines = text.split(/\r\n|\n/);
                 const groupedData: any = {};
-
                 lines.forEach(line => {
                     const cleanLine = line.trim();
                     if (!cleanLine) return;
-
-                    const parts = cleanLine.split(/\s+/); // تقسيم بالمساحات
+                    const parts = cleanLine.split(/\s+/);
                     if (parts.length < 3) return;
-
                     const empId = parts[0];
                     const rawDate = parts[1]; 
                     const rawTime = parts[2];
-
-                    // توحيد التاريخ YYYY-MM-DD
                     let formattedDate = rawDate;
                     if (rawDate.includes('/')) {
                         const [d, m, y] = rawDate.split('/');
-                        // تأكد من أن السنة 4 أرقام
                         const fullYear = y.length === 2 ? `20${y}` : y;
                         formattedDate = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
                     }
-
                     const key = `${empId}_${formattedDate}`;
                     if (!groupedData[key]) {
                         groupedData[key] = { id: empId, date: formattedDate, times: [] };
                     }
-                    // إضافة الوقت فقط إذا لم يكن مكرراً
                     if (!groupedData[key].times.includes(rawTime)) {
                         groupedData[key].times.push(rawTime);
                     }
                 });
-
                 const payload = Object.values(groupedData).map((g:any) => ({
-                    employee_id: g.id,
-                    date: g.date,
-                    times: g.times.sort().join(' '),
-                    status: 'حضور'
+                    employee_id: g.id, date: g.date, times: g.times.sort().join(' '), status: 'حضور'
                 }));
-
-                if (payload.length > 0) {
-                    rawMutation.mutate(payload);
-                } else {
-                    toast.error("لم يتم العثور على بيانات صالحة");
-                }
-
+                if (payload.length > 0) rawMutation.mutate(payload);
+                else toast.error("لم يتم العثور على بيانات صالحة");
             } catch (err: any) {
-                console.error(err);
                 toast.error("خطأ في قراءة الملف: " + err.message);
             } finally {
                 setIsProcessing(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
             }
         };
-        
-        reader.readAsText(file); // قراءة كملف نصي
+        reader.readAsText(file);
     };
+
+    // --- 5. Manual Entry Mutation ---
+    const manualEntryMutation = useMutation({
+        mutationFn: async (data: typeof manualData) => {
+            if (!data.employee_id || !data.date || !data.timeIn) {
+                throw new Error("يرجى ملء البيانات الأساسية (الموظف، التاريخ، وقت الحضور)");
+            }
+
+            // دمج الأوقات في نص واحد (text) ليناسب قاعدة البيانات
+            const timesArray = [data.timeIn];
+            if (data.timeOut) timesArray.push(data.timeOut);
+            const timesString = timesArray.join(' ');
+
+            const payload = {
+                employee_id: data.employee_id,
+                date: data.date,
+                times: timesString,
+                status: 'حضور'
+            };
+
+            const { error } = await supabase.from('attendance').upsert(payload, { onConflict: 'employee_id,date' });
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            toast.success('تم إضافة البصمة بنجاح');
+            setShowManualModal(false);
+            setManualData({ ...manualData, employee_id: '', timeIn: '', timeOut: '' });
+            queryClient.invalidateQueries({ queryKey: ['staff_manager_attendance'] });
+        },
+        onError: (err: any) => toast.error(err.message)
+    });
 
     const handlePrint = useReactToPrint({
         content: () => componentRef.current,
@@ -259,7 +278,6 @@ export default function StaffAttendanceManager() {
     const rightColumnData = processedData.slice(0, halfIndex);
     const leftColumnData = processedData.slice(halfIndex);
 
-    // Sorting Helper
     const toggleSort = (key: 'name' | 'specialty') => {
         setSortConfig(curr => ({
             key,
@@ -281,18 +299,23 @@ export default function StaffAttendanceManager() {
                     </button>
                 </div>
 
-                <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
+                <div className="flex bg-gray-100 p-1 rounded-xl gap-1 overflow-x-auto">
                     {[{id: 'daily', label: 'التمام اليومي'}, {id: 'force', label: 'القوة الفعلية'}, {id: 'absence', label: 'الغياب'}, {id: 'specialties', label: 'إحصاء التخصصات'}].map(r => (
-                        <button key={r.id} onClick={() => setActiveReport(r.id as ReportType)} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeReport === r.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}>{r.label}</button>
+                        <button key={r.id} onClick={() => setActiveReport(r.id as ReportType)} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeReport === r.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500'}`}>{r.label}</button>
                     ))}
                 </div>
 
                 <div className="flex gap-2">
-                    <input type="file" ref={fileInputRef} onChange={handleRawFileChange} className="hidden" accept=".dat,.txt" />
-                    <button onClick={() => fileInputRef.current?.click()} disabled={isProcessing} className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-orange-700">
-                        {isProcessing ? <Loader2 className="animate-spin w-4 h-4"/> : <Upload className="w-4 h-4"/>} رفع البصمة
+                    {/* ✅ زر إضافة يدوية */}
+                    <button onClick={() => setShowManualModal(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-200">
+                        <PlusCircle className="w-4 h-4"/> إضافة يدوية
                     </button>
-                    <button onClick={handlePrint} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-gray-900">
+
+                    <input type="file" ref={fileInputRef} onChange={handleRawFileChange} className="hidden" accept=".dat,.txt" />
+                    <button onClick={() => fileInputRef.current?.click()} disabled={isProcessing} className="bg-orange-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-orange-700 shadow-lg shadow-orange-200">
+                        {isProcessing ? <Loader2 className="animate-spin w-4 h-4"/> : <Upload className="w-4 h-4"/>} رفع ملف
+                    </button>
+                    <button onClick={handlePrint} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-gray-900 shadow-lg shadow-gray-400">
                         <Printer className="w-4 h-4"/> طباعة
                     </button>
                 </div>
@@ -321,38 +344,23 @@ export default function StaffAttendanceManager() {
 
             {/* Printable Report */}
             <div ref={componentRef} className="bg-white p-4 rounded-[30px] shadow-sm min-h-[800px] print:p-2 print:shadow-none print:w-full" dir="rtl">
-                
-                {/* Header: One Line */}
                 <div className="hidden print:block text-center border-b border-black pb-1 mb-2">
                     <p className="text-[12px] font-bold font-mono text-black leading-tight">
                         مركز غرب المطار - {activeReport === 'daily' ? 'تقرير التواجد اليومي' : activeReport === 'force' ? 'بيان القوة الفعلية' : activeReport === 'absence' ? 'بيان الغياب' : 'إحصاء التخصصات'} - التاريخ: {new Date(date).toLocaleDateString('ar-EG')} - التوقيت: {new Date().toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}
                     </p>
                 </div>
 
-                {/* 1. Daily Report (Responsive Grid) */}
                 {activeReport === 'daily' && (
                     <div className="w-full">
-                        {/* في الشاشة العادية: عمود واحد (block) 
-                            في الطباعة: عمودين (flex)
-                        */}
                         <div className="block print:flex print:flex-row print:gap-1">
-                            {/* العمود الأيمن (في الطباعة) / الجدول الكامل (في الشاشة) */}
                             <div className="w-full print:w-1/2">
                                 <DailyTable data={rightColumnData} />
                             </div>
-                            
-                            {/* الخط الفاصل (طباعة فقط) */}
                             <div className="w-px bg-black hidden print:block mx-1"></div>
-                            
-                            {/* العمود الأيسر (طباعة فقط) - في الشاشة سيتم عرض الباقي أسفل الأول إذا أردت أو إخفاؤه حسب رغبتك. 
-                                هنا سأجعله يظهر بالأسفل في الشاشة، وعلى اليسار في الطباعة. 
-                            */}
                             <div className="w-full print:w-1/2 mt-4 print:mt-0">
                                 <DailyTable data={leftColumnData} startIndex={halfIndex} />
                             </div>
                         </div>
-
-                        {/* Footer Stats */}
                         <div className="mt-4 pt-2 border-t border-black text-[10px] print:text-[9px] font-bold">
                             <div className="flex justify-between mb-1 bg-gray-100 print:bg-transparent p-1 rounded">
                                 <span>إجمالي القوة: {stats.total}</span>
@@ -373,7 +381,6 @@ export default function StaffAttendanceManager() {
                     </div>
                 )}
 
-                {/* 2. Force Report */}
                 {activeReport === 'force' && (
                     <table className="w-full text-sm text-right border-collapse">
                         <thead className="bg-gray-100 font-bold border-b border-black">
@@ -401,7 +408,6 @@ export default function StaffAttendanceManager() {
                     </table>
                 )}
 
-                {/* 3. Absence Report */}
                 {activeReport === 'absence' && (
                     <table className="w-full text-sm text-right border-collapse">
                         <thead className="bg-red-50 font-bold border-b border-black text-red-900">
@@ -425,7 +431,6 @@ export default function StaffAttendanceManager() {
                     </table>
                 )}
 
-                {/* 4. Specialties Report */}
                 {activeReport === 'specialties' && (
                     <table className="w-full text-sm text-right border-collapse max-w-2xl mx-auto">
                         <thead className="bg-gray-800 text-white font-bold">
@@ -455,6 +460,89 @@ export default function StaffAttendanceManager() {
                     </table>
                 )}
             </div>
+
+            {/* --- Modal إضافة بصمة يدوية --- */}
+            {showManualModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95">
+                        <div className="flex justify-between items-center border-b pb-4 mb-4">
+                            <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                                <PlusCircle className="w-5 h-5 text-indigo-600"/> إضافة بصمة يدوية
+                            </h3>
+                            <button onClick={() => setShowManualModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-red-100"><X className="w-5 h-5"/></button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">الموظف</label>
+                                <select 
+                                    value={manualData.employee_id} 
+                                    onChange={e => setManualData({...manualData, employee_id: e.target.value})}
+                                    className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-800 outline-none"
+                                >
+                                    <option value="">اختر الموظف...</option>
+                                    {employees.map(emp => (
+                                        <option key={emp.id} value={emp.employee_id}>{emp.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">التاريخ</label>
+                                <input 
+                                    type="date" 
+                                    value={manualData.date} 
+                                    onChange={e => setManualData({...manualData, date: e.target.value})}
+                                    className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 mb-1 block">وقت الحضور</label>
+                                    <input 
+                                        type="time" 
+                                        value={manualData.timeIn} 
+                                        onChange={e => setManualData({...manualData, timeIn: e.target.value})}
+                                        className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 mb-1 block">وقت الانصراف (اختياري)</label>
+                                    <input 
+                                        type="time" 
+                                        value={manualData.timeOut} 
+                                        onChange={e => setManualData({...manualData, timeOut: e.target.value})}
+                                        className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">المسؤول عن الإدخال</label>
+                                <div className="relative">
+                                    <UserCheck className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
+                                    <input 
+                                        type="text" 
+                                        placeholder="اسم المدخل..." 
+                                        value={manualData.responsible} 
+                                        onChange={e => setManualData({...manualData, responsible: e.target.value})}
+                                        className="w-full pr-10 pl-4 py-3 border rounded-xl bg-gray-50 outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={() => manualEntryMutation.mutate(manualData)} 
+                                disabled={manualEntryMutation.isPending}
+                                className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 shadow-lg flex items-center justify-center gap-2 mt-4"
+                            >
+                                {manualEntryMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>} حفظ البصمة
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -480,14 +568,8 @@ const DailyTable = ({ data, startIndex = 0 }: { data: any[], startIndex?: number
                         <td className="p-0.5 border border-gray-300 text-center font-mono">{row.employee_id}</td>
                         <td className="p-0.5 border border-gray-300 font-bold truncate max-w-[110px]">{row.name}</td>
                         <td className="p-0.5 border border-gray-300 truncate max-w-[70px]">{row.specialty}</td>
-                        
-                        <td className="p-0.5 border border-gray-300 text-center font-bold">
-                            {row.displayIn}
-                        </td>
-                        
-                        <td className="p-0.5 border border-gray-300 text-center font-mono">
-                            {row.displayOut}
-                        </td>
+                        <td className="p-0.5 border border-gray-300 text-center font-bold">{row.displayIn}</td>
+                        <td className="p-0.5 border border-gray-300 text-center font-mono">{row.displayOut}</td>
                     </tr>
                 ))}
                 {data.length === 0 && <tr><td colSpan={6} className="p-2 text-center">-</td></tr>}
