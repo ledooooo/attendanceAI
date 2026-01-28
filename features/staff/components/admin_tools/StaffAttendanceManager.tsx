@@ -4,14 +4,13 @@ import { supabase } from '../../../../supabaseClient';
 import { useReactToPrint } from 'react-to-print';
 import { 
     Search, Printer, Upload, Calendar, Loader2, RefreshCw, 
-    ArrowUpDown, PlusCircle, Save, X, UserCheck, MoreVertical, FilePlus, Clock
+    ArrowUpDown, PlusCircle, Save, X, UserCheck, MoreVertical, FilePlus, Clock, Moon, Sun
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AttendanceRecord, Employee, LeaveRequest } from '../../../../types';
 
 type ReportType = 'daily' | 'force' | 'absence' | 'specialties';
 
-// أنواع الطلبات المتاحة
 const REQUEST_TYPES = [
     "اجازة عارضة", "اجازة اعتيادية", "اجازة مرضى", "دورة تدريبية", 
     "خط سير", "مأمورية", "بدل راحة", "اذن صباحى", "اذن مسائي", "تأمين صحي"
@@ -27,13 +26,17 @@ export default function StaffAttendanceManager() {
     const [activeReport, setActiveReport] = useState<ReportType>('daily');
     const [isProcessing, setIsProcessing] = useState(false);
 
+    // ✅ حالة جديدة لتخزين التعديلات المؤقتة (للطباعة فقط)
+    // مفتاح: كود الموظف، قيمة: النص (مسائي، مبيت)
+    const [printOverrides, setPrintOverrides] = useState<Record<string, string>>({});
+
     // Filters & Sorting
     const [searchTerm, setSearchTerm] = useState(''); 
     const [filterSpecialty, setFilterSpecialty] = useState('all');
     const [filterStatus, setFilterStatus] = useState('active_only'); 
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'specialty'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
 
-    // --- Manual Entry State ---
+    // --- Modal States ---
     const [showManualModal, setShowManualModal] = useState(false);
     const [manualData, setManualData] = useState({
         employee_id: '',
@@ -43,13 +46,13 @@ export default function StaffAttendanceManager() {
         responsible: ''
     });
 
-    // --- Quick Request State ---
     const [showRequestModal, setShowRequestModal] = useState(false);
     const [requestData, setRequestData] = useState({
         employee_id: '',
         request_type: REQUEST_TYPES[0],
         start_date: date,
         end_date: date,
+        reason: '' // سيتم دمجها في notes
     });
 
     // --- 1. Queries ---
@@ -92,52 +95,63 @@ export default function StaffAttendanceManager() {
             let displayOut = '-'; 
             let statsStatus = 'غير متواجد'; 
 
-            let hasPunch = false;
-            if (attRecord && attRecord.times) {
-                const times = attRecord.times.split(/\s+/).filter(t => t.includes(':')).sort();
-                if (times.length > 0) {
-                    hasPunch = true;
-                    displayIn = times[0]; 
-                    statsStatus = 'متواجد';
-                    if (times.length > 1) {
-                        const lastTime = times[times.length - 1];
-                        const [h1, m1] = displayIn.split(':').map(Number);
-                        const [h2, m2] = lastTime.split(':').map(Number);
-                        const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
-                        if (diff >= 60) displayOut = lastTime;
-                        else displayOut = ''; 
-                    } else {
-                        displayOut = ''; 
+            // ✅ 1. التحقق أولاً من التعديلات اليدوية المؤقتة (للطباعة)
+            if (printOverrides[emp.employee_id]) {
+                displayIn = printOverrides[emp.employee_id]; // "مسائي" أو "مبيت"
+                displayOut = '';
+                statsStatus = 'متواجد'; // نعتبره متواجد في الإحصائيات لأنه في العمل
+            } else {
+                // المنطق العادي
+                let hasPunch = false;
+                if (attRecord && attRecord.times) {
+                    const times = attRecord.times.split(/\s+/).filter(t => t.includes(':')).sort();
+                    if (times.length > 0) {
+                        hasPunch = true;
+                        displayIn = times[0]; 
+                        statsStatus = 'متواجد';
+                        if (times.length > 1) {
+                            const lastTime = times[times.length - 1];
+                            const [h1, m1] = displayIn.split(':').map(Number);
+                            const [h2, m2] = lastTime.split(':').map(Number);
+                            const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                            if (diff >= 60) displayOut = lastTime;
+                            else displayOut = ''; 
+                        } else {
+                            displayOut = ''; 
+                        }
                     }
                 }
-            }
 
-            if (!hasPunch) {
-                const isPartTimeContract = emp.part_time_start_date && emp.part_time_end_date && 
-                                           date >= emp.part_time_start_date && date <= emp.part_time_end_date;
-                
-                if (isPartTimeContract) {
-                    const dayName = new Date(date).toLocaleDateString('ar-EG', { weekday: 'long' });
-                    const empWorkDays = typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [];
-                    if (empWorkDays.includes(dayName)) {
-                        statsStatus = 'غير متواجد';
-                        displayIn = '-'; 
-                    } else {
-                        statsStatus = 'جزء وقت';
-                        displayIn = 'جزء وقت';
+                if (!hasPunch) {
+                    const isPartTimeContract = emp.part_time_start_date && emp.part_time_end_date && 
+                                               date >= emp.part_time_start_date && date <= emp.part_time_end_date;
+                    
+                    if (isPartTimeContract) {
+                        const dayName = new Date(date).toLocaleDateString('ar-EG', { weekday: 'long' });
+                        const empWorkDays = typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [];
+                        if (empWorkDays.includes(dayName)) {
+                            statsStatus = 'غير متواجد';
+                            displayIn = '-'; 
+                        } else {
+                            statsStatus = 'جزء وقت';
+                            displayIn = 'جزء وقت';
+                            displayOut = '';
+                        }
+                    } 
+                    else if (leaveRecord) {
+                        statsStatus = 'إجازة';
+                        // بما أن نوع الطلب غير موجود كعمود، نحاول استخراجه من الملاحظات أو نكتب "إجازة"
+                        // هنا سنعتمد على الملاحظات إذا كانت تحتوي على النص، أو كلمة ثابتة
+                        displayIn = leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة'; 
                         displayOut = '';
                     }
-                } 
-                else if (leaveRecord) {
-                    statsStatus = 'إجازة';
-                    displayIn = leaveRecord.request_type; 
-                    displayOut = '';
                 }
             }
 
             return { ...emp, displayIn, displayOut, statsStatus };
         });
 
+        // Filter
         data = data.filter(item => {
             const search = searchTerm.toLowerCase();
             const matchesSearch = item.name.toLowerCase().includes(search) || item.employee_id.includes(search);
@@ -148,6 +162,7 @@ export default function StaffAttendanceManager() {
             return matchesSearch && matchesSpec && matchesStatus;
         });
 
+        // Sort
         data.sort((a, b) => {
             const valA = a[sortConfig.key] || '';
             const valB = b[sortConfig.key] || '';
@@ -157,7 +172,7 @@ export default function StaffAttendanceManager() {
         });
 
         return data;
-    }, [employees, attendance, leaves, searchTerm, filterSpecialty, filterStatus, date, sortConfig]);
+    }, [employees, attendance, leaves, searchTerm, filterSpecialty, filterStatus, date, sortConfig, printOverrides]);
 
     // --- 3. Statistics ---
     const stats = useMemo(() => {
@@ -222,7 +237,14 @@ export default function StaffAttendanceManager() {
 
     const requestMutation = useMutation({
         mutationFn: async (data: typeof requestData) => {
-            const payload = { ...data, status: 'approved' }; // يضاف كمقبول مباشرة لأنه من الإدارة
+            // ✅ إصلاح: تخزين النوع والسبب داخل حقل notes لأن الحقول الأخرى غير موجودة
+            const payload = { 
+                employee_id: data.employee_id,
+                start_date: data.start_date,
+                end_date: data.end_date,
+                status: 'approved',
+                notes: `${data.request_type} - ${data.reason || ''}` // دمج النوع والسبب
+            };
             const { error } = await supabase.from('leave_requests').insert([payload]);
             if (error) throw error;
         },
@@ -235,13 +257,21 @@ export default function StaffAttendanceManager() {
     });
 
     // --- Actions ---
-    const handleQuickAction = (action: 'attendance' | 'request', empId: string) => {
+    const handleQuickAction = (action: 'attendance' | 'request' | 'evening' | 'overnight', empId: string) => {
         if (action === 'attendance') {
             setManualData(prev => ({ ...prev, employee_id: empId, date: date }));
             setShowManualModal(true);
-        } else {
-            setRequestData(prev => ({ ...prev, employee_id: empId, start_date: date, end_date: date }));
+        } else if (action === 'request') {
+            setRequestData(prev => ({ ...prev, employee_id: empId, start_date: date, end_date: date, reason: '' }));
             setShowRequestModal(true);
+        } else if (action === 'evening') {
+            // ✅ تحديث الحالة محلياً فقط للطباعة
+            setPrintOverrides(prev => ({ ...prev, [empId]: 'نوبتجية مسائية' }));
+            toast('تم تعيين الحالة: مسائي (للطباعة فقط)', { icon: '🌙' });
+        } else if (action === 'overnight') {
+            // ✅ تحديث الحالة محلياً فقط للطباعة
+            setPrintOverrides(prev => ({ ...prev, [empId]: 'مبيت' }));
+            toast('تم تعيين الحالة: مبيت (للطباعة فقط)', { icon: '🛌' });
         }
     };
 
@@ -395,7 +425,7 @@ export default function StaffAttendanceManager() {
                     </div>
                 )}
 
-                {/* باقي الجداول كما هي... */}
+                {/* باقي الجداول... */}
                 {activeReport === 'force' && ( <ForceTable data={processedData} /> )}
                 {activeReport === 'absence' && ( <AbsenceTable data={processedData} /> )}
                 {activeReport === 'specialties' && ( <SpecialtiesTable stats={stats} /> )}
@@ -405,10 +435,9 @@ export default function StaffAttendanceManager() {
             {showManualModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
                     <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95">
+                        {/* ... (نفس محتوى المودال السابق) ... */}
                         <div className="flex justify-between items-center border-b pb-4 mb-4">
-                            <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
-                                <PlusCircle className="w-5 h-5 text-indigo-600"/> إضافة بصمة يدوية
-                            </h3>
+                            <h3 className="text-lg font-black text-gray-800 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-indigo-600"/> إضافة بصمة</h3>
                             <button onClick={() => setShowManualModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-red-100"><X className="w-5 h-5"/></button>
                         </div>
                         <div className="space-y-4">
@@ -445,7 +474,7 @@ export default function StaffAttendanceManager() {
                 </div>
             )}
 
-            {/* --- Modal 2: Add Request (Leave/Permission) --- */}
+            {/* --- Modal 2: Add Request (Fix: save type in notes) --- */}
             {showRequestModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 no-print">
                     <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 relative animate-in zoom-in-95">
@@ -468,15 +497,9 @@ export default function StaffAttendanceManager() {
                                     {REQUEST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 mb-1 block">من تاريخ</label>
-                                    <input type="date" value={requestData.start_date} onChange={e => setRequestData({...requestData, start_date: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"/>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 mb-1 block">إلى تاريخ</label>
-                                    <input type="date" value={requestData.end_date} onChange={e => setRequestData({...requestData, end_date: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none font-mono"/>
-                                </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 mb-1 block">ملاحظات إضافية</label>
+                                <input value={requestData.reason} onChange={e => setRequestData({...requestData, reason: e.target.value})} className="w-full p-3 border rounded-xl bg-gray-50 outline-none" placeholder="اختياري..."/>
                             </div>
                             <button onClick={() => requestMutation.mutate(requestData)} disabled={requestMutation.isPending} className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 shadow-lg flex items-center justify-center gap-2 mt-4">
                                 {requestMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>} حفظ الطلب
@@ -489,9 +512,8 @@ export default function StaffAttendanceManager() {
     );
 }
 
-// --- Daily Table Component (With Quick Action) ---
+// --- Daily Table (Updated) ---
 const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], startIndex?: number, onQuickAction: any }) => {
-    // حالة للتحكم في ظهور القائمة المنسدلة لكل صف
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
     return (
@@ -504,12 +526,12 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                     <th className="p-0.5 border border-gray-400 w-16">التخصص</th>
                     <th className="p-0.5 border border-gray-400 w-12 text-center">حضور</th>
                     <th className="p-0.5 border border-gray-400 w-12 text-center">انصراف</th>
-                    <th className="w-6 no-print"></th> {/* عمود الإجراء */}
+                    <th className="w-6 no-print"></th>
                 </tr>
             </thead>
             <tbody>
                 {data.map((row, idx) => (
-                    <tr key={row.id} className="border-b border-gray-300 relative group">
+                    <tr key={row.id} className="border-b border-gray-300 relative">
                         <td className="p-0.5 border border-gray-300 text-center">{startIndex + idx + 1}</td>
                         <td className="p-0.5 border border-gray-300 text-center font-mono">{row.employee_id}</td>
                         <td className="p-0.5 border border-gray-300 font-bold truncate max-w-[110px]">{row.name}</td>
@@ -520,38 +542,27 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
                         <td className="p-0 text-center no-print relative">
                             {row.statsStatus === 'غير متواجد' && (
                                 <>
-                                    <button 
-                                        onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)}
-                                        className="p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-indigo-600 transition-colors"
-                                    >
+                                    <button onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)} className="p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-indigo-600">
                                         <PlusCircle className="w-4 h-4"/>
                                     </button>
-                                    
-                                    {/* Dropdown Menu */}
                                     {openMenuId === row.id && (
                                         <div className="absolute left-0 top-6 w-40 bg-white shadow-xl rounded-xl border z-50 overflow-hidden animate-in zoom-in-95">
-                                            <button 
-                                                onClick={() => { onQuickAction('attendance', row.employee_id); setOpenMenuId(null); }}
-                                                className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-indigo-700"
-                                            >
+                                            <button onClick={() => { onQuickAction('attendance', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-indigo-700">
                                                 <Clock className="w-3 h-3"/> بصمة يدوية
                                             </button>
-                                            <button 
-                                                onClick={() => { onQuickAction('request', row.employee_id); setOpenMenuId(null); }}
-                                                className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-orange-700 border-t"
-                                            >
+                                            <button onClick={() => { onQuickAction('request', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-orange-700 border-t">
                                                 <FilePlus className="w-3 h-3"/> إضافة طلب
                                             </button>
-                                            <div className="bg-gray-50 p-1 text-center border-t">
-                                                <button onClick={() => setOpenMenuId(null)} className="text-[9px] text-gray-400">إغلاق</button>
-                                            </div>
+                                            <button onClick={() => { onQuickAction('evening', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-purple-700 border-t">
+                                                <Moon className="w-3 h-3"/> نوبتجية مسائية
+                                            </button>
+                                            <button onClick={() => { onQuickAction('overnight', row.employee_id); setOpenMenuId(null); }} className="w-full text-right px-4 py-2 hover:bg-gray-50 text-xs font-bold flex items-center gap-2 text-blue-700 border-t">
+                                                <Sun className="w-3 h-3"/> مبيت
+                                            </button>
+                                            <div className="bg-gray-50 p-1 text-center border-t"><button onClick={() => setOpenMenuId(null)} className="text-[9px] text-gray-400">إغلاق</button></div>
                                         </div>
                                     )}
-                                    
-                                    {/* غطاء لإغلاق القائمة عند النقر خارجها */}
-                                    {openMenuId === row.id && (
-                                        <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>
-                                    )}
+                                    {openMenuId === row.id && <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)}></div>}
                                 </>
                             )}
                         </td>
@@ -562,7 +573,7 @@ const DailyTable = ({ data, startIndex = 0, onQuickAction }: { data: any[], star
     );
 };
 
-// --- Helper Components for other tables (kept simple) ---
+// --- Helper Components ---
 const ForceTable = ({data}: {data:any[]}) => (
     <table className="w-full text-sm text-right border-collapse">
         <thead className="bg-gray-100 font-bold border-b border-black">
