@@ -634,45 +634,81 @@ const AbsenceTable = ({data}: {data:any[]}) => (
     </table>
 );
 
-// --- Specialties Table (Updated Columns) ---
-const SpecialtiesTable = ({stats}: {stats:any}) => (
-    <table className="w-full text-sm text-right border-collapse max-w-3xl mx-auto">
-        <thead className="bg-gray-800 text-white font-bold">
-            <tr>
-                <th className="p-1 border border-gray-600">التخصص</th>
-                <th className="p-1 border border-gray-600 text-center">اجمالى</th>
-                <th className="p-1 border border-gray-600 text-center">متواجد</th>
-                <th className="p-1 border border-gray-600 text-center">غير متواجد</th>
-                <th className="p-1 border border-gray-600 text-center">اجازات</th>
-                <th className="p-1 border border-gray-600 text-center">مسائي</th>
-                <th className="p-1 border border-gray-600 text-center">غياب</th>
-                <th className="p-1 border border-gray-600 text-center">جزء وقت</th>
-                <th className="p-1 border border-gray-600 text-center">نسبة الحضور</th>
-                <th className="p-1 border border-gray-600 text-center">نسبة الاجازات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {Object.entries(stats.bySpecialty).map(([spec, s]: any) => {
-                const total = s.total || 1;
-                // حساب النسب
-                const attendanceRate = Math.round(((s.present + s.evening) / total) * 100);
-                const leaveRate = Math.round((s.leave / total) * 100);
-                
-                return (
-                    <tr key={spec} className="border-b border-gray-300">
-                        <td className="p-1 border border-gray-300 font-bold bg-gray-50">{spec}</td>
-                        <td className="p-1 border border-gray-300 text-center font-bold">{s.total}</td>
-                        <td className="p-1 border border-gray-300 text-center text-green-700 font-bold">{s.present}</td>
-                        <td className="p-1 border border-gray-300 text-center text-red-600 font-bold">{s.absent + s.partTimeOff}</td>
-                        <td className="p-1 border border-gray-300 text-center text-orange-600">{s.leave}</td>
-                        <td className="p-1 border border-gray-300 text-center text-purple-600">{s.evening}</td>
-                        <td className="p-1 border border-gray-300 text-center text-red-800">{s.markedAbsence || 0}</td>
-                        <td className="p-1 border border-gray-300 text-center text-gray-500">{s.partTimeOff}</td>
-                        <td className="p-1 border border-gray-300 text-center font-mono">{attendanceRate}%</td>
-                        <td className="p-1 border border-gray-300 text-center font-mono">{leaveRate}%</td>
-                    </tr>
-                );
-            })}
-        </tbody>
-    </table>
+// --- Specialties Table (Updated with Grand Total) ---
+const SpecialtiesTable = ({ stats }: { stats: any }) => {
+    
+    // 1. حساب الإجماليات لكل الأعمدة
+    const totals = Object.values(stats.bySpecialty || {}).reduce((acc: any, curr: any) => ({
+        total: (acc.total || 0) + (curr.total || 0),
+        present: (acc.present || 0) + (curr.present || 0),
+        absent: (acc.absent || 0) + (curr.absent || 0), // الغياب التلقائي (غير متواجد)
+        partTimeOff: (acc.partTimeOff || 0) + (curr.partTimeOff || 0),
+        leave: (acc.leave || 0) + (curr.leave || 0),
+        evening: (acc.evening || 0) + (curr.evening || 0),
+        markedAbsence: (acc.markedAbsence || 0) + (curr.markedAbsence || 0)
+    }), { total: 0, present: 0, absent: 0, partTimeOff: 0, leave: 0, evening: 0, markedAbsence: 0 });
+
+    // 2. حساب النسب المئوية الكلية
+    const grandTotal = totals.total || 1; // لتجنب القسمة على صفر
+    const totalAttRate = Math.round(((totals.present + totals.evening) / grandTotal) * 100);
+    const totalLeaveRate = Math.round((totals.leave / grandTotal) * 100);
+
+    return (
+        <table className="w-full text-sm text-right border-collapse max-w-3xl mx-auto">
+            <thead className="bg-gray-800 text-white font-bold">
+                <tr>
+                    <th className="p-1 border border-gray-600">التخصص</th>
+                    <th className="p-1 border border-gray-600 text-center">اجمالى</th>
+                    <th className="p-1 border border-gray-600 text-center">متواجد</th>
+                    <th className="p-1 border border-gray-600 text-center">غير متواجد</th>
+                    <th className="p-1 border border-gray-600 text-center">اجازات</th>
+                    <th className="p-1 border border-gray-600 text-center">مسائي</th>
+                    <th className="p-1 border border-gray-600 text-center">غياب</th>
+                    <th className="p-1 border border-gray-600 text-center">جزء وقت</th>
+                    <th className="p-1 border border-gray-600 text-center">نسبة الحضور</th>
+                    <th className="p-1 border border-gray-600 text-center">نسبة الاجازات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {Object.entries(stats.bySpecialty).map(([spec, s]: any) => {
+                    const total = s.total || 1;
+                    // حساب النسب
+                    const attendanceRate = Math.round(((s.present + s.evening) / total) * 100);
+                    const leaveRate = Math.round((s.leave / total) * 100);
+                    
+                    return (
+                        <tr key={spec} className="border-b border-gray-300">
+                            <td className="p-1 border border-gray-300 font-bold bg-gray-50">{spec}</td>
+                            <td className="p-1 border border-gray-300 text-center font-bold">{s.total}</td>
+                            <td className="p-1 border border-gray-300 text-center text-green-700 font-bold">{s.present}</td>
+                            {/* غير متواجد (يشمل الغياب التلقائي + جزء الوقت) حسب المعادلة السابقة */}
+                            <td className="p-1 border border-gray-300 text-center text-red-600 font-bold">{s.absent + s.partTimeOff}</td>
+                            <td className="p-1 border border-gray-300 text-center text-orange-600">{s.leave}</td>
+                            <td className="p-1 border border-gray-300 text-center text-purple-600">{s.evening}</td>
+                            <td className="p-1 border border-gray-300 text-center text-red-800">{s.markedAbsence || 0}</td>
+                            <td className="p-1 border border-gray-300 text-center text-gray-500">{s.partTimeOff}</td>
+                            <td className="p-1 border border-gray-300 text-center font-mono">{attendanceRate}%</td>
+                            <td className="p-1 border border-gray-300 text-center font-mono">{leaveRate}%</td>
+                        </tr>
+                    );
+                })}
+            </tbody>
+            
+            {/* ✅ صف الإجمالي */}
+            <tfoot>
+                <tr className="bg-gray-700 text-white font-bold border-t-2 border-gray-900">
+                    <td className="p-2 border border-gray-600">الإجمالي الكلي</td>
+                    <td className="p-2 border border-gray-600 text-center">{totals.total}</td>
+                    <td className="p-2 border border-gray-600 text-center text-green-300">{totals.present}</td>
+                    <td className="p-2 border border-gray-600 text-center text-red-300">{totals.absent + totals.partTimeOff}</td>
+                    <td className="p-2 border border-gray-600 text-center text-orange-300">{totals.leave}</td>
+                    <td className="p-2 border border-gray-600 text-center text-purple-300">{totals.evening}</td>
+                    <td className="p-2 border border-gray-600 text-center text-red-400">{totals.markedAbsence}</td>
+                    <td className="p-2 border border-gray-600 text-center text-gray-300">{totals.partTimeOff}</td>
+                    <td className="p-2 border border-gray-600 text-center font-mono" dir="ltr">{totalAttRate}%</td>
+                    <td className="p-2 border border-gray-600 text-center font-mono" dir="ltr">{totalLeaveRate}%</td>
+                </tr>
+            </tfoot>
+        </table>
+
 );
