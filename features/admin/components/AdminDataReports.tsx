@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../../../../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 import { useReactToPrint } from 'react-to-print';
 import * as XLSX from 'xlsx';
 import { 
@@ -8,8 +8,8 @@ import {
     ArrowUpDown, PlusCircle, Save, X, UserCheck, FilePlus, Clock, Moon, Sun, FileSpreadsheet, XCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { AttendanceRecord, Employee, LeaveRequest } from '../../../../types';
-
+import { AttendanceRecord, Employee, LeaveRequest } from '../../../types';
+import { ExcelUploadButton, downloadSample } from '../../../components/ui/ExcelUploadButton';
 type ReportType = 'daily' | 'force' | 'absence' | 'specialties' | 'monthly';
 
 const REQUEST_TYPES = [
