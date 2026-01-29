@@ -9,39 +9,46 @@ export default function OnlineTracker() {
     if (!user) return;
 
     const trackPresence = async () => {
-        // 1. جلب اسم الموظف من قاعدة البيانات
-        const { data: emp } = await supabase
-            .from('employees')
-            .select('name, role') // جلب الاسم والدور
-            .eq('employee_id', user.email?.split('@')[0]) // افتراضاً أن employee_id هو الجزء الأول من الايميل، أو استخدم user.id إذا كنت تربطهم به
-            .maybeSingle();
+      // 1. محاولة جلب بيانات الموظف بناءً على الإيميل أو الـ ID
+      // سنفترض أن الربط يتم عن طريق الإيميل أو employee_id الموجود في الميتاداتا
+      // أو سنبحث في جدول employees عن هذا المستخدم
+      
+      // سنبحث في جدول الموظفين عن الموظف المرتبط بهذا الحساب
+      // (تأكد أن لديك عمود يربط المستخدم بالموظف، مثلاً email أو user_uuid)
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('name, role, employee_id')
+        .eq('email', user.email) // أو استخدم الطريقة التي تربط بها الموظفين
+        .maybeSingle();
 
-        const userName = emp?.name || user.email?.split('@')[0] || 'مستخدم';
-        const userRole = emp?.role || 'موظف';
+      // تجهيز البيانات التي سيتم إرسالها (بدون حفظها في قاعدة البيانات)
+      const userStatus = {
+        user_id: user.id,
+        name: emp?.name || user.email?.split('@')[0] || 'مستخدم', // الاسم الحقيقي أو جزء من الايميل
+        role: emp?.role || 'غير محدد',
+        online_at: new Date().toISOString(),
+      };
 
-        const userStatus = {
-            user_id: user.id,
-            name: userName,
-            role: userRole,
-            online_at: new Date().toISOString(),
-        };
+      // 2. الاتصال بقناة التواجد
+      const channel = supabase.channel('online_users_room', {
+        config: {
+          presence: {
+            key: user.id, // مفتاح فريد لمنع التكرار
+          },
+        },
+      });
 
-        const channel = supabase.channel('online_users_room', {
-            config: { presence: { key: user.id } },
-        });
-
-        channel.subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-                await channel.track(userStatus);
-            }
-        });
+      channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track(userStatus);
+        }
+      });
     };
 
     trackPresence();
 
-    // ملاحظة: Unsubscribe هنا قد يكون معقداً قليلاً داخل useEffect async
-    // لكن Supabase يقوم بتنظيف الاتصالات الميتة تلقائياً
+    // Supabase يقوم بتنظيف القناة تلقائياً عند إغلاق المتصفح
   }, [user]);
 
-  return null;
+  return null; // لا يعرض شيئاً، يعمل في الخلفية
 }
