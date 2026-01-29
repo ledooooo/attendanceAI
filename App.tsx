@@ -5,7 +5,7 @@ import LoginPage from './features/auth/LoginPage';
 import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
 import { supabase } from './supabaseClient';
-import { requestNotificationPermission } from './utils/pushNotifications'; 
+import { requestNotificationPermission } from './utils/pushNotifications';
 import { Toaster } from 'react-hot-toast';
 
 // 1. ✅ استيراد مكتبات React Query والـ Persister
@@ -14,8 +14,9 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
-// 2. ✅ استيراد بنر الأوفلاين
+// 2. ✅ استيراد المكونات الإضافية
 import OfflineBanner from './components/ui/OfflineBanner';
+import OnlineTracker from './components/OnlineTracker'; // ✅ تمت إضافة مستشعر التواجد
 
 // 3. ✅ إعداد عميل التخزين والـ Persister
 const queryClient = new QueryClient({
@@ -98,6 +99,7 @@ const AppContent = () => {
 
   return (
     <>
+      <OnlineTracker /> {/* ✅ يعمل في الخلفية لتتبع التواجد */}
       <OfflineBanner /> {/* ✅ ظهور البنر هنا */}
       {isAdmin ? <AdminDashboard /> : <StaffDashboard employee={employeeProfile} />}
     </>
