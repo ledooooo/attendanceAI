@@ -43,15 +43,16 @@ export default function AdminDashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [testResult, setTestResult] = useState('');
 
-    // --- 1. جلب الموظفين (مع حماية التحميل) ---
+    // --- 1. جلب الموظفين (شامل last_seen بفضل select *) ---
     const { data: employees = [], isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
         queryKey: ['admin_employees'],
         queryFn: async () => {
+            // ✅ select('*') يضمن جلب last_seen وأي أعمدة جديدة
             const { data, error } = await supabase.from('employees').select('*').order('name');
             if (error) throw error;
             return data as Employee[] || [];
         },
-        staleTime: 1000 * 60 * 15, 
+        staleTime: 1000 * 60 * 5, // تحديث كل 5 دقائق لضمان دقة "آخر ظهور"
     });
 
     // --- 2. جلب الإعدادات ---
@@ -64,7 +65,7 @@ export default function AdminDashboard() {
         staleTime: Infinity,
     });
 
-    // --- 3. جلب العدادات (مع معالجة الأخطاء) ---
+    // --- 3. جلب العدادات (مع حماية ضد الأخطاء) ---
     const { data: badges = { messages: 0, leaves: 0, ovr: 0, tasks: 0 } } = useQuery({
         queryKey: ['admin_badges'],
         queryFn: async () => {
@@ -86,9 +87,10 @@ export default function AdminDashboard() {
                 return { messages: 0, leaves: 0, ovr: 0, tasks: 0 };
             }
         },
-        refetchInterval: 10000, // زيادة الوقت قليلاً لتقليل الضغط
+        refetchInterval: 10000, 
     });
 
+    // تصفير إشعارات المهام عند فتح التبويب
     useEffect(() => {
         if (activeTab === 'tasks' && badges.tasks > 0) {
             const markTasksAsRead = async () => {
@@ -142,7 +144,7 @@ export default function AdminDashboard() {
         { id: 'settings', label: 'إعدادات النظام', icon: Settings },
     ];
 
-    // ✅ شاشة تحميل مبدئية لمنع الكراش عند فتح الصفحة
+    // ✅ شاشة تحميل
     if (isLoadingEmployees) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
@@ -258,7 +260,7 @@ export default function AdminDashboard() {
                 {/* منطقة المحتوى */}
                 <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24">
                     <div className="max-w-7xl mx-auto space-y-6">
-                        {/* ✅ تمرير Employees مع قيمة افتراضية [] لمنع الـ undefined */}
+                        {/* تمرير employees بأمان تام */}
                         {activeTab === 'home' && <HomeTab employees={employees || []} setActiveTab={setActiveTab} />}
                         {activeTab === 'doctors' && <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />}
                         {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
@@ -278,7 +280,6 @@ export default function AdminDashboard() {
                         {activeTab === 'all_messages' && <AdminMessagesTab employees={employees || []} />}
                         {activeTab === 'quality' && <QualityDashboard />}
                         {activeTab === 'library-manager' && <AdminLibraryManager />} 
-                        {/* ✅ تمرير employees بأمان تام */}
                         {activeTab === 'data-reports' && <AdminDataReports employees={employees || []} />}
                         {activeTab === 'absence-report' && <AbsenceReportTab />}      
                         {activeTab === 'tasks' && <TasksManager employees={employees || []} />}
