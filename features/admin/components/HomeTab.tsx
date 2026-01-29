@@ -6,6 +6,9 @@ import {
   Activity, UserPlus, Search 
 } from 'lucide-react';
 
+// ✅ 1. استيراد ويدجت المتواجدين
+import OnlineUsersWidget from './OnlineUsersWidget';
+
 export default function HomeTab({ employees, setActiveTab }: { employees: Employee[], setActiveTab: (tab: string) => void }) {
   const [stats, setStats] = useState({
     presentToday: 0,
@@ -19,7 +22,7 @@ export default function HomeTab({ employees, setActiveTab }: { employees: Employ
       
       // 1. عدد الحضور اليوم
       const { count: attendanceCount } = await supabase
-        .from('attendance') // تأكد من اسم الجدول الصحيح لديك (سواء attendance أو attendance_records)
+        .from('attendance')
         .select('*', { count: 'exact', head: true })
         .eq('date', today);
 
@@ -33,7 +36,7 @@ export default function HomeTab({ employees, setActiveTab }: { employees: Employ
       const { count: leavesCount } = await supabase
         .from('leave_requests')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'معلق');
+        .eq('status', 'قيد الانتظار'); // تأكد أن الحالة مطابقة لقاعدة البيانات (معلق أو قيد الانتظار)
 
       setStats({
         presentToday: attendanceCount || 0,
@@ -54,6 +57,7 @@ export default function HomeTab({ employees, setActiveTab }: { employees: Employ
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-10">
+      
       {/* ترويسة الترحيب المصغرة */}
       <div className="bg-gradient-to-r from-emerald-800 to-emerald-600 rounded-[2rem] p-6 text-white shadow-lg relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
@@ -66,49 +70,59 @@ export default function HomeTab({ employees, setActiveTab }: { employees: Employ
         </div>
       </div>
 
-      {/* بطاقات الإحصائيات الأفقية (بيانات الكارت في صف واحد) */}
+      {/* بطاقات الإحصائيات الأفقية */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card, idx) => (
           <div 
             key={idx} 
             onClick={() => setActiveTab(card.tab)}
-            className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-100 transition-all cursor-pointer group flex items-center justify-between h-20"
+            className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-emerald-100 transition-all cursor-pointer group flex items-center justify-between h-24"
           >
             <div className="flex items-center gap-3">
               <div className={`p-2.5 rounded-xl ${card.bgColor} ${card.color} transition-transform group-hover:scale-105`}>
-                <card.icon className="w-5 h-5"/>
+                <card.icon className="w-6 h-6"/>
               </div>
-              <h3 className="text-gray-600 font-bold text-xs md:text-sm whitespace-nowrap">{card.title}</h3>
+              <h3 className="text-gray-600 font-bold text-sm whitespace-nowrap">{card.title}</h3>
             </div>
             <div className="flex items-center">
-               <span className="text-2xl font-black text-gray-800">{card.value}</span>
+               <span className="text-3xl font-black text-gray-800">{card.value}</span>
             </div>
           </div>
         ))}
       </div>
 
-      {/* الوصول السريع المصغر */}
-      <div className="bg-white p-5 rounded-[2rem] border border-gray-100 shadow-sm">
-        <h3 className="font-black text-lg text-gray-800 mb-4 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-emerald-600"/> اختصارات الإدارة
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: 'إضافة موظف', icon: UserPlus, tab: 'doctors', color: 'hover:bg-emerald-50 hover:text-emerald-700' },
-              { label: 'سجل الحضور', icon: Clock, tab: 'attendance', color: 'hover:bg-blue-50 hover:text-blue-700' },
-              { label: 'إدارة الجودة', icon: AlertTriangle, tab: 'quality', color: 'hover:bg-red-50 hover:text-red-700' },
-              { label: 'بحث تقارير', icon: Search, tab: 'reports', color: 'hover:bg-purple-50 hover:text-purple-700' },
-            ].map((btn, i) => (
-              <button 
-                key={i} 
-                onClick={() => setActiveTab(btn.tab)} 
-                className={`p-3 bg-gray-50 rounded-xl transition-all flex items-center justify-center gap-3 border border-gray-50 font-bold text-xs md:text-sm ${btn.color}`}
-              >
-                <btn.icon className="w-4 h-4"/>
-                {btn.label}
-              </button>
-            ))}
-        </div>
+      {/* ✅ تقسيم الشاشة: اختصارات + المتواجدون الآن */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* العمود الأكبر: اختصارات الإدارة */}
+          <div className="lg:col-span-2 bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+            <h3 className="font-black text-lg text-gray-800 mb-4 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-emerald-600"/> اختصارات الإدارة
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: 'إضافة موظف', icon: UserPlus, tab: 'doctors', color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
+                  { label: 'سجل الحضور', icon: Clock, tab: 'attendance', color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
+                  { label: 'إدارة الجودة', icon: AlertTriangle, tab: 'quality', color: 'bg-red-50 text-red-700 hover:bg-red-100' },
+                  { label: 'بحث تقارير', icon: Search, tab: 'reports', color: 'bg-purple-50 text-purple-700 hover:bg-purple-100' },
+                ].map((btn, i) => (
+                  <button 
+                    key={i} 
+                    onClick={() => setActiveTab(btn.tab)} 
+                    className={`p-4 rounded-2xl transition-all flex flex-col items-center justify-center gap-2 border border-transparent font-bold text-sm ${btn.color}`}
+                  >
+                    <btn.icon className="w-6 h-6"/>
+                    {btn.label}
+                  </button>
+                ))}
+            </div>
+          </div>
+
+          {/* العمود الأصغر: المتواجدون الآن */}
+          <div className="lg:col-span-1">
+             <OnlineUsersWidget />
+          </div>
+
       </div>
     </div>
   );
