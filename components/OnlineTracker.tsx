@@ -8,33 +8,35 @@ export default function OnlineTracker() {
   useEffect(() => {
     if (!user) return;
 
+    // 1. تعريف دالة تحديث قاعدة البيانات (Heartbeat)
+    const updateLastSeenInDB = async () => {
+      // نستخدم الإيميل كمعرف للربط (أو يمكن استخدام user_id لو تم ربطه)
+      if (user.email) {
+        await supabase
+          .from('employees')
+          .update({ last_seen: new Date().toISOString() })
+          .eq('email', user.email); 
+      }
+    };
+
+    // 2. إعداد الـ Presence (المتواجدون الآن) - الكود القديم كما هو
     const trackPresence = async () => {
-      // 1. محاولة جلب بيانات الموظف بناءً على الإيميل أو الـ ID
-      // سنفترض أن الربط يتم عن طريق الإيميل أو employee_id الموجود في الميتاداتا
-      // أو سنبحث في جدول employees عن هذا المستخدم
-      
-      // سنبحث في جدول الموظفين عن الموظف المرتبط بهذا الحساب
-      // (تأكد أن لديك عمود يربط المستخدم بالموظف، مثلاً email أو user_uuid)
       const { data: emp } = await supabase
         .from('employees')
         .select('name, role, employee_id')
-        .eq('email', user.email) // أو استخدم الطريقة التي تربط بها الموظفين
+        .eq('email', user.email)
         .maybeSingle();
 
-      // تجهيز البيانات التي سيتم إرسالها (بدون حفظها في قاعدة البيانات)
       const userStatus = {
         user_id: user.id,
-        name: emp?.name || user.email?.split('@')[0] || 'مستخدم', // الاسم الحقيقي أو جزء من الايميل
+        name: emp?.name || user.email?.split('@')[0] || 'مستخدم',
         role: emp?.role || 'غير محدد',
         online_at: new Date().toISOString(),
       };
 
-      // 2. الاتصال بقناة التواجد
       const channel = supabase.channel('online_users_room', {
         config: {
-          presence: {
-            key: user.id, // مفتاح فريد لمنع التكرار
-          },
+          presence: { key: user.id },
         },
       });
 
@@ -45,10 +47,26 @@ export default function OnlineTracker() {
       });
     };
 
+    // --- التنفيذ ---
+    
+    // أ) تشغيل Presence
     trackPresence();
 
-    // Supabase يقوم بتنظيف القناة تلقائياً عند إغلاق المتصفح
+    // ب) تحديث قاعدة البيانات فوراً عند الدخول
+    updateLastSeenInDB();
+
+    // ج) تحديث قاعدة البيانات كل 5 دقائق (Heartbeat) للحفاظ على التوقيت حديثاً
+    // هذا يمنع الضغط على القاعدة (يكتب مرة كل 5 دقائق بدلاً من كل ثانية)
+    const intervalId = setInterval(() => {
+      updateLastSeenInDB();
+    }, 5 * 60 * 1000); // 5 دقائق
+
+    // تنظيف عند الخروج
+    return () => {
+      clearInterval(intervalId);
+      // يمكن هنا محاولة إرسال تحديث أخير، لكنه غير مضمون دائماً عند غلق المتصفح
+    };
   }, [user]);
 
-  return null; // لا يعرض شيئاً، يعمل في الخلفية
+  return null;
 }
