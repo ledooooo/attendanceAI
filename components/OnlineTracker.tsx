@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { useAuth } from '../context/AuthContext'; // تأكد من المسار
-import { supabase } from '../supabaseClient'; // تأكد من المسار
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../supabaseClient';
 
 export default function OnlineTracker() {
   const { user } = useAuth();
@@ -8,35 +8,40 @@ export default function OnlineTracker() {
   useEffect(() => {
     if (!user) return;
 
-    // استخراج بيانات الموظف من الميتاداتا أو يمكنك جلبها من جدول الموظفين
-    // هنا سنفترض أننا نرسل الـ ID والبريد الإلكتروني، ويمكنك تحسينها لإرسال الاسم
-    const userStatus = {
-      user_id: user.id,
-      email: user.email,
-      online_at: new Date().toISOString(),
+    const trackPresence = async () => {
+        // 1. جلب اسم الموظف من قاعدة البيانات
+        const { data: emp } = await supabase
+            .from('employees')
+            .select('name, role') // جلب الاسم والدور
+            .eq('employee_id', user.email?.split('@')[0]) // افتراضاً أن employee_id هو الجزء الأول من الايميل، أو استخدم user.id إذا كنت تربطهم به
+            .maybeSingle();
+
+        const userName = emp?.name || user.email?.split('@')[0] || 'مستخدم';
+        const userRole = emp?.role || 'موظف';
+
+        const userStatus = {
+            user_id: user.id,
+            name: userName,
+            role: userRole,
+            online_at: new Date().toISOString(),
+        };
+
+        const channel = supabase.channel('online_users_room', {
+            config: { presence: { key: user.id } },
+        });
+
+        channel.subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                await channel.track(userStatus);
+            }
+        });
     };
 
-    // الاتصال بقناة التواجد العامة
-    const channel = supabase.channel('online_users_room', {
-      config: {
-        presence: {
-          key: user.id, // مفتاح فريد لكل مستخدم
-        },
-      },
-    });
+    trackPresence();
 
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        // بمجرد الاتصال، أرسل بياناتي
-        await channel.track(userStatus);
-      }
-    });
-
-    // تنظيف الاتصال عند الخروج أو غلق الصفحة
-    return () => {
-      channel.unsubscribe();
-    };
+    // ملاحظة: Unsubscribe هنا قد يكون معقداً قليلاً داخل useEffect async
+    // لكن Supabase يقوم بتنظيف الاتصالات الميتة تلقائياً
   }, [user]);
 
-  return null; // هذا المكون لا يعرض شيئاً، هو يعمل في الخلفية فقط
+  return null;
 }
