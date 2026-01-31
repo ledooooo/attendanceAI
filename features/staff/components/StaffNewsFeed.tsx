@@ -6,8 +6,11 @@ import {
     Pin, MessageCircle, Send, Clock, Heart, 
     Reply, X, Calendar, Sparkles, Loader2
 } from 'lucide-react';
-// 1. ✅ استيراد React Query
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// ✅ استيراد مكونات التحفيز الجديدة
+import LeaderboardWidget from '../../../components/gamification/LeaderboardWidget';
+import LevelProgressBar from '../../../components/gamification/LevelProgressBar';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
@@ -190,7 +193,16 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 </div>
             </div>
 
-            <div className="space-y-6">
+            {/* ✅ إضافة قسم التحفيز (النقاط والمتصدرين) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-4">
+                {/* شريط المستوى يظهر دائماً */}
+                <LevelProgressBar employee={employee} />
+                
+                {/* لوحة المتصدرين */}
+                <LeaderboardWidget />
+            </div>
+
+            <div className="space-y-6 mt-6">
                 {posts.map((post: any) => {
                     const postTime = formatDateTime(post.created_at);
                     return (
