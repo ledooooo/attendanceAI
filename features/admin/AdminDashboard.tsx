@@ -31,6 +31,7 @@ import AdminDataReports from './components/AdminDataReports';
 import AbsenceReportTab from './components/AbsenceReportTab';
 import TasksManager from './components/TasksManager';
 import VaccinationsTab from './components/VaccinationsTab';
+import GamificationManager from './components/GamificationManager';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -138,10 +139,12 @@ export default function AdminDashboard() {
         { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
         { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
         { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
+        { id: 'gamification', label: 'النقاط والجوائز', icon: Trophy },
         { id: 'vaccinations', label: 'التطعيمات (Virus B)', icon: Syringe },
         { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
         { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing },
         { id: 'settings', label: 'إعدادات النظام', icon: Settings },
+        
     ];
 
     // ✅ شاشة تحميل
@@ -284,7 +287,16 @@ export default function AdminDashboard() {
                         {activeTab === 'absence-report' && <AbsenceReportTab />}      
                         {activeTab === 'tasks' && <TasksManager employees={employees || []} />}
                         {activeTab === 'vaccinations' && <VaccinationsTab employees={employees || []} />}
-                        
+                        {activeTab === 'gamification' && (
+    <div className="space-y-6">
+         <GamificationManager />
+         {/* يمكنك وضع EOMManager و BirthdayWidget هنا أيضاً لو أردت دمجهم */}
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+             <BirthdayWidget employees={employees || []} />
+             <EOMManager />
+         </div>
+    </div>
+)}
                         {/* واجهة اختبار التنبيهات */}
                         {activeTab === 'test_push' && (
                             <div className="max-w-md mx-auto bg-white p-8 rounded-[30px] shadow-sm border border-gray-100 text-center space-y-6 mt-10">
