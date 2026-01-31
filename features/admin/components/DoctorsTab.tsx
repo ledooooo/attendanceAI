@@ -8,7 +8,8 @@ import toast from 'react-hot-toast';
 import { 
     Download, Users, ArrowRight, User, Clock, FileText, 
     Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, 
-    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby, Timer, Info, Syringe, ShieldCheck, Mail
+    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby, Timer, Info, Syringe, ShieldCheck, Mail,
+    Gift // ✅ 1. استيراد أيقونة الهدية
 } from 'lucide-react';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -32,7 +33,6 @@ const AVAILABLE_PERMISSIONS = [
     { id: 'quality', label: 'إدارة الجودة (OVR)' },
 ];
 
-// ✅ دالة تنسيق Last Seen
 const formatLastSeen = (dateString: string | null) => {
     if (!dateString) return <span className="text-gray-400 text-[10px]">غير معروف</span>;
     const date = new Date(dateString);
@@ -62,6 +62,10 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     const [showModal, setShowModal] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false);
+
+    // ✅ 2. حالة نافذة المكافآت
+    const [showRewardModal, setShowRewardModal] = useState(false);
+    const [rewardData, setRewardData] = useState({ empId: '', empName: '', amount: 10, reason: '' });
     
     const initialFormState: any = {
         employee_id: '', name: '', national_id: '', specialty: '', phone: '', email: '',
@@ -104,6 +108,45 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     });
 
     // 2. Mutations
+    
+    // ✅ 3. دالة منح النقاط
+    const givePointsMutation = useMutation({
+        mutationFn: async () => {
+            if (!rewardData.reason) throw new Error("يجب كتابة سبب المكافأة");
+            
+            // أ) زيادة النقاط
+            const { error: rpcError } = await supabase.rpc('increment_points', { 
+                emp_id: rewardData.empId, 
+                amount: rewardData.amount 
+            });
+            if (rpcError) throw rpcError;
+
+            // ب) تسجيل في السجل
+            await supabase.from('points_ledger').insert({
+                employee_id: rewardData.empId,
+                points: rewardData.amount,
+                reason: `مكافأة إدارية: ${rewardData.reason}`
+            });
+
+            // ج) إرسال إشعار للموظف
+            await supabase.from('notifications').insert({
+                user_id: rewardData.empId,
+                title: '🎉 مكافأة جديدة!',
+                message: `تم منحك ${rewardData.amount} نقطة من الإدارة. السبب: ${rewardData.reason}`,
+                type: 'reward',
+                sender_name: 'الإدارة',
+                is_read: false
+            });
+        },
+        onSuccess: () => {
+            toast.success(`تم منح ${rewardData.amount} نقطة للموظف ${rewardData.empName}`);
+            setShowRewardModal(false);
+            setRewardData({ empId: '', empName: '', amount: 10, reason: '' });
+            queryClient.invalidateQueries({ queryKey: ['admin_employees'] }); // تحديث القائمة
+        },
+        onError: (err: any) => toast.error(err.message)
+    });
+
     const saveMutation = useMutation({
         mutationFn: async (data: any) => {
             const payload = {
@@ -212,6 +255,12 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         setEditMode(true);
         setIsPartTimeEnabled(!!emp.part_time_start_date || !!emp.part_time_end_date);
         setShowModal(true);
+    };
+
+    // ✅ دالة فتح نافذة المكافآت
+    const handleOpenReward = (emp: Employee) => {
+        setRewardData({ empId: emp.employee_id, empName: emp.name, amount: 10, reason: '' });
+        setShowRewardModal(true);
     };
 
     const handleDayToggle = (day: string) => {
@@ -358,7 +407,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                 </div>
                             </th>
                             <th className="p-4 text-center">التخصص</th>
-                            <th className="p-4 text-center">آخر ظهور</th> {/* ✅ عمود جديد */}
+                            <th className="p-4 text-center">آخر ظهور</th> 
                             <th className="p-4 text-center">الصلاحية</th>
                             <th className="p-4 text-center">إجراءات</th>
                         </tr>
@@ -377,7 +426,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                 </td>
                                 <td onClick={() => setSelectedEmp(emp)} className="p-4 text-xs font-bold text-gray-500 text-center cursor-pointer">{emp.specialty}</td>
                                 
-                                {/* ✅ عرض Last Seen */}
                                 <td className="p-4 text-center">
                                     {formatLastSeen(emp.last_seen || null)}
                                 </td>
@@ -393,6 +441,11 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     </span>
                                 </td>
                                 <td className="p-4 text-center flex justify-center gap-2 items-center">
+                                    {/* ✅ زر منح المكافأة */}
+                                    <button onClick={(e) => { e.stopPropagation(); handleOpenReward(emp); }} className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors" title="منح مكافأة">
+                                        <Gift className="w-4 h-4"/>
+                                    </button>
+
                                     <button onClick={(e) => { e.stopPropagation(); setDetailTab('stats'); setSelectedEmp(emp); }} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors" title="إحصائيات">
                                         <PieChart className="w-4 h-4"/>
                                     </button>
@@ -422,6 +475,49 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                     </tbody>
                 </table>
             </div>
+
+            {/* ✅ Modal for Rewards */}
+            {showRewardModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm overflow-hidden zoom-in-95">
+                        <div className="bg-indigo-600 p-6 text-center text-white">
+                            <Gift className="w-12 h-12 mx-auto mb-2 text-yellow-300"/>
+                            <h3 className="text-xl font-black">مكافأة الموظف</h3>
+                            <p className="text-indigo-100 font-bold">{rewardData.empName}</p>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">عدد النقاط</label>
+                                <input 
+                                    type="number"
+                                    className="w-full p-3 rounded-xl border bg-gray-50 font-bold text-center text-lg focus:border-indigo-500 outline-none"
+                                    value={rewardData.amount}
+                                    onChange={(e) => setRewardData({...rewardData, amount: Number(e.target.value)})}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1">سبب المكافأة (سيظهر في الإشعار)</label>
+                                <textarea 
+                                    className="w-full p-3 rounded-xl border bg-gray-50 focus:border-indigo-500 outline-none text-sm resize-none h-20"
+                                    value={rewardData.reason}
+                                    onChange={(e) => setRewardData({...rewardData, reason: e.target.value})}
+                                    placeholder="مثال: التميز في العمل، تغطية غياب زميل..."
+                                />
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <button onClick={() => setShowRewardModal(false)} className="flex-1 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100">إلغاء</button>
+                                <button 
+                                    onClick={() => givePointsMutation.mutate()}
+                                    disabled={givePointsMutation.isPending || !rewardData.reason}
+                                    className="flex-1 py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex justify-center gap-2 disabled:opacity-50"
+                                >
+                                    {givePointsMutation.isPending ? <Loader2 className="animate-spin w-5 h-5"/> : 'منح النقاط'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal for Add/Edit Employee */}
             {showModal && (
@@ -478,7 +574,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                             </div>
 
                             {/* ... باقي الأقسام كما هي (الصلاحيات، التطعيمات، المواعيد، الأرصدة) ... */}
-                            {/* تم اختصارها هنا ولكنها موجودة بالكامل في الملف الفعلي كما طلبت */}
                             <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
                                 <h4 className="text-sm font-black text-indigo-700 mb-3 flex items-center gap-2">
                                     <ShieldCheck className="w-4 h-4"/> صلاحيات لوحة الإدارة (Permissions)
