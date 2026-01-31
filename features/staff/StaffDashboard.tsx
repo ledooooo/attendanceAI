@@ -35,6 +35,9 @@ import StaffLibrary from './components/StaffLibrary';
 import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
 
+// ✅ استيراد مكون الألعاب والنقاط
+import DailyQuizModal from '../../components/gamification/DailyQuizModal';
+
 interface Props {
   employee: Employee;
 }
@@ -212,6 +215,9 @@ export default function StaffDashboard({ employee }: Props) {
   return (
     <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
+      {/* ✅ مكون تحدي اليوم (يظهر تلقائياً إذا لم يلعب الموظف اليوم) */}
+      <DailyQuizModal employee={employee} />
+
       {/* --- تظليل الخلفية عند فتح القائمة --- */}
       {isSidebarOpen && (
         <div 
