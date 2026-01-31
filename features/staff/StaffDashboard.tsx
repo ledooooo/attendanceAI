@@ -34,6 +34,8 @@ import QualityDashboard from '../admin/components/QualityDashboard';
 import StaffLibrary from './components/StaffLibrary';
 import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
+import RewardsStore from './components/RewardsStore';
+import { ShoppingBag } from 'lucide-react'; // أيقونة المتجر
 
 // ✅ استيراد مكون الألعاب والنقاط
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
@@ -201,6 +203,7 @@ export default function StaffDashboard({ employee }: Props) {
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
+    { id: 'store', label: 'متجر الجوائز', icon: ShoppingBag }, // ✅ جديد
     ...(employee.role === 'head_of_dept' ? [{ id: 'dept-requests', label: 'إدارة القسم', icon: FileText }] : []),
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
@@ -208,6 +211,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
+    
   ];
 
   const unreadNotifsCount = notifications.filter(n => !n.is_read).length;
@@ -398,6 +402,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={fetchAllData} />}
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
+                  {activeTab === 'store' && <RewardsStore employee={employee} />}
                     {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
