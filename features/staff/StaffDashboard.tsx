@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { requestNotificationPermission } from '../../utils/pushNotifications'; 
+import toast from 'react-hot-toast'; // ✅ لاستخدام التنبيهات
 
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Sparkles, Calendar, Settings
+  Sparkles, Calendar, Settings, ShoppingBag, Trophy, Star // ✅ إضافة Trophy و Star
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -35,10 +36,11 @@ import StaffLibrary from './components/StaffLibrary';
 import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
 import RewardsStore from './components/RewardsStore';
-import { ShoppingBag } from 'lucide-react'; // أيقونة المتجر
 
-// ✅ استيراد مكون الألعاب والنقاط
+// ✅ استيراد مكونات التحفيز
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
+import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
+import LevelProgressBar from '../../components/gamification/LevelProgressBar';
 
 interface Props {
   employee: Employee;
@@ -51,6 +53,10 @@ export default function StaffDashboard({ employee }: Props) {
   const [activeTab, setActiveTab] = useState('news');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
+
+  // ✅ حالات القوائم المنسدلة الجديدة في الهيدر
+  const [showLevelMenu, setShowLevelMenu] = useState(false);
+  const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
 
   const hasAdminAccess = employee.permissions && Array.isArray(employee.permissions) && employee.permissions.length > 0;
 
@@ -75,6 +81,53 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.employee_id]);
 
+  // ✅ 1. منطق احتساب نقطة الزيارة اليومية
+  useEffect(() => {
+    const checkDailyVisitReward = async () => {
+        const today = new Date().toISOString().split('T')[0];
+        
+        // التحقق هل تم تسجيل زيارة "daily_login" لهذا اليوم؟
+        const { data: existing } = await supabase
+            .from('daily_activities')
+            .select('id')
+            .eq('employee_id', employee.employee_id)
+            .eq('activity_type', 'daily_login')
+            .eq('activity_date', today)
+            .maybeSingle();
+
+        if (!existing) {
+            // تسجيل الزيارة
+            await supabase.from('daily_activities').insert({
+                employee_id: employee.employee_id,
+                activity_type: 'daily_login',
+                activity_date: today,
+                is_completed: true
+            });
+
+            // إضافة نقطة واحدة
+            await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: 1 });
+            
+            // تسجيل في السجل
+            await supabase.from('points_ledger').insert({
+                employee_id: employee.employee_id,
+                points: 1,
+                reason: 'زيارة يومية للموقع 🚀'
+            });
+
+            toast.success('حصلت على نقطة لزيارتك اليومية! ⭐', {
+                icon: '👏',
+                style: { borderRadius: '10px', background: '#333', color: '#fff' },
+            });
+            
+            // تحديث البيانات لعرض النقاط الجديدة
+            queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
+        }
+    };
+
+    checkDailyVisitReward();
+  }, [employee.employee_id, queryClient]);
+
+
   const fetchNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
@@ -96,6 +149,8 @@ export default function StaffDashboard({ employee }: Props) {
       queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
     }
     setShowNotifMenu(!showNotifMenu);
+    setShowLevelMenu(false); // إغلاق القوائم الأخرى
+    setShowLeaderboardMenu(false);
   };
 
   const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0 } } = useQuery({
@@ -203,7 +258,7 @@ export default function StaffDashboard({ employee }: Props) {
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
-    { id: 'store', label: 'متجر الجوائز', icon: ShoppingBag }, // ✅ جديد
+    { id: 'store', label: 'متجر الجوائز', icon: ShoppingBag },
     ...(employee.role === 'head_of_dept' ? [{ id: 'dept-requests', label: 'إدارة القسم', icon: FileText }] : []),
     { id: 'stats', label: 'الإحصائيات', icon: BarChart },
     { id: 'new-request', label: 'تقديم طلب', icon: FilePlus },
@@ -219,7 +274,7 @@ export default function StaffDashboard({ employee }: Props) {
   return (
     <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
-      {/* ✅ مكون تحدي اليوم (يظهر تلقائياً إذا لم يلعب الموظف اليوم) */}
+      {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
 
       {/* --- تظليل الخلفية عند فتح القائمة --- */}
@@ -281,7 +336,6 @@ export default function StaffDashboard({ employee }: Props) {
               </button>
             );
           })}
-          {/* مسافة إضافية في الأسفل لضمان عدم اختفاء آخر عنصر */}
           <div className="h-4 md:h-0"></div>
         </nav>
 
@@ -304,24 +358,57 @@ export default function StaffDashboard({ employee }: Props) {
 
       {/* --- المحتوى الرئيسي --- */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
-        <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
-            <div className="flex items-center gap-3">
+        <header className="h-16 bg-white border-b flex items-center justify-between px-3 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
+            <div className="flex items-center gap-2 md:gap-3">
                 <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors active:scale-95">
                     <Menu className="w-6 h-6 text-gray-700"/>
                 </button>
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            <div className="flex items-center gap-4">
+            {/* ✅ أيقونات الهيدر: مستوى - لوحة شرف - إشعارات */}
+            <div className="flex items-center gap-2 md:gap-3">
+                
+                {/* 1. أيقونة المستوى (النجمة) */}
+                <div className="relative">
+                    <button 
+                        onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
+                        className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 transition-colors"
+                    >
+                        <Star className="w-5 h-5" />
+                    </button>
+                    {showLevelMenu && (
+                        <div className="absolute left-0 md:right-0 md:left-auto top-full mt-2 w-80 z-50 animate-in zoom-in-95">
+                            <LevelProgressBar employee={employee} />
+                        </div>
+                    )}
+                </div>
+
+                {/* 2. أيقونة لوحة الشرف (الكأس) */}
+                <div className="relative">
+                    <button 
+                        onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
+                        className="p-2 bg-yellow-50 text-yellow-600 rounded-full hover:bg-yellow-100 transition-colors"
+                    >
+                        <Trophy className="w-5 h-5" />
+                    </button>
+                    {showLeaderboardMenu && (
+                        <div className="absolute left-0 md:right-0 md:left-auto top-full mt-2 w-80 z-50 animate-in zoom-in-95">
+                            <LeaderboardWidget />
+                        </div>
+                    )}
+                </div>
+
+                {/* 3. أيقونة الإشعارات */}
                 <div className="relative">
                     <button onClick={markNotifsAsRead} className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors relative">
-                        <Bell className={`w-6 h-6 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
+                        <Bell className={`w-5 h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
                         {unreadNotifsCount > 0 && (
                             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white animate-bounce">{unreadNotifsCount}</span>
                         )}
                     </button>
                     {showNotifMenu && (
-                        <div className="absolute left-0 mt-3 w-80 bg-white rounded-3xl shadow-xl border border-gray-100 z-[100] overflow-hidden animate-in fade-in zoom-in-95">
+                        <div className="absolute left-0 mt-2 w-80 bg-white rounded-3xl shadow-xl border border-gray-100 z-[100] overflow-hidden animate-in fade-in zoom-in-95">
                             <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
                                 <span>آخر التنبيهات</span>
                                 <button onClick={() => setShowNotifMenu(false)} className="text-gray-400"><X size={16}/></button>
@@ -363,9 +450,10 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-3 md:p-6 custom-scrollbar pb-24">
+        {/* ✅ تقليل الهامش هنا من p-3 إلى p-2 */}
+        <main className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24">
             <div className="max-w-6xl mx-auto space-y-4">
-                <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-4 md:p-6 min-h-[500px]">
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-3 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
                         <div className="space-y-4">
                             <div className="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-4 text-white shadow-md flex items-center justify-between relative overflow-hidden">
@@ -383,15 +471,15 @@ export default function StaffDashboard({ employee }: Props) {
                                 <Sparkles className="absolute -bottom-4 -left-4 w-24 h-24 text-white opacity-10 rotate-12" />
                             </div>
                             <EOMVotingCard employee={employee} />
+                            
+                            {/* ✅ تمت إزالة قسم التحفيز من هنا لأنه أصبح في الهيدر */}
+                            
                             <StaffNewsFeed employee={employee} />
                         </div>
                     )}
                     
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
-                    
-                    {/* ✅ عرض تبويب الإدارة الجديد */}
                     {activeTab === 'admin' && hasAdminAccess && <AdministrationTab employee={employee} />}
-
                     {activeTab === 'library' && <StaffLibrary />}
                     {activeTab === 'attendance' && <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} />}
                     {activeTab === 'evening-schedule' && <EmployeeEveningSchedule employeeId={employee.id} employeeCode={employee.employee_id} employeeName={employee.name} specialty={employee.specialty} />}
@@ -402,7 +490,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={fetchAllData} />}
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
-                  {activeTab === 'store' && <RewardsStore employee={employee} />}
+                    {activeTab === 'store' && <RewardsStore employee={employee} />}
                     {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
@@ -442,7 +530,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <User className="w-6 h-6" />
             </button>
 
-            {/* ✅ زر الإدارة (يظهر فقط للمصرح لهم) */}
             {hasAdminAccess && (
                 <button 
                     onClick={() => setActiveTab('admin')}
