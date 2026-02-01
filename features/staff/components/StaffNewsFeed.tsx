@@ -4,18 +4,14 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, 
-    Reply, X, Calendar, Sparkles, Loader2
+    Reply, X, Calendar, Sparkles, Loader2, Star, Trophy // ✅ تم إضافة Star و Trophy
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-
-// ✅ استيراد مكونات التحفيز الجديدة
-import LeaderboardWidget from '../../../components/gamification/LeaderboardWidget';
-import LevelProgressBar from '../../../components/gamification/LevelProgressBar';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
     
-    // UI State (حالات الواجهة فقط)
+    // UI State
     const [commentText, setCommentText] = useState<{ [key: string]: string }>({});
     const [replyTo, setReplyTo] = useState<{postId: string, commentId: string, name: string, userId: string} | null>(null);
     const [expandedPost, setExpandedPost] = useState<string | null>(null);
@@ -30,13 +26,23 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         { e: '👍', l: 'تمام' }
     ];
 
+    // ✅ حساب المستوى الحالي محلياً للعرض المصغر
+    const points = employee.total_points || 0;
+    const levels = [
+        { name: 'مبتدئ', min: 0, max: 100, color: 'text-gray-500' },
+        { name: 'برونزي', min: 100, max: 500, color: 'text-orange-700' },
+        { name: 'فضي', min: 500, max: 1500, color: 'text-gray-400' },
+        { name: 'ذهبي', min: 1500, max: 3000, color: 'text-yellow-500' },
+        { name: 'ماسي', min: 3000, max: 10000, color: 'text-blue-500' },
+    ];
+    const currentLevel = levels.find(l => points >= l.min && points < l.max) || levels[levels.length - 1];
+
     // ------------------------------------------------------------------
     // 1. 📥 جلب البيانات (Query)
     // ------------------------------------------------------------------
     const { data: posts = [], isLoading } = useQuery({
         queryKey: ['news_feed'],
         queryFn: async () => {
-            // جلب كل البيانات بالتوازي لسرعة أكبر
             const [postsRes, commentsRes, pReactRes, cReactRes] = await Promise.all([
                 supabase.from('news_posts').select('*').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
                 supabase.from('news_comments').select('*').order('created_at', { ascending: true }),
@@ -51,7 +57,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             const pReactions = pReactRes.data || [];
             const cReactions = cReactRes.data || [];
 
-            // معالجة ودمج البيانات
             return postsData.map(p => {
                 const postComments = commentsData.filter(c => c.post_id === p.id);
                 return {
@@ -68,14 +73,13 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 };
             });
         },
-        staleTime: 1000 * 60 * 1, // تحديث كل دقيقة تلقائياً
+        staleTime: 1000 * 60 * 1,
     });
 
     // ------------------------------------------------------------------
     // 2. 🛠️ العمليات (Mutations)
     // ------------------------------------------------------------------
 
-    // أ) إرسال إشعار (دالة مساعدة)
     const sendNotification = async (recipientId: string, type: string, postId: string, message: string) => {
         if (recipientId === employee.employee_id) return;
         await supabase.from('notifications').insert({
@@ -84,43 +88,32 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         });
     };
 
-    // ب) إضافة/حذف تفاعل
     const reactionMutation = useMutation({
         mutationFn: async ({ id, emoji, type, targetUserId }: { id: string, emoji: string, type: 'post' | 'comment', targetUserId: string }) => {
             const table = type === 'post' ? 'post_reactions' : 'comment_reactions';
             const field = type === 'post' ? 'post_id' : 'comment_id';
             
-            // التحقق هل التفاعل موجود
-            const { data: existing } = await supabase.from(table)
-                .select('id')
-                .eq(field, id)
-                .eq('user_id', employee.employee_id)
-                .eq('emoji', emoji)
-                .maybeSingle();
+            const { data: existing } = await supabase.from(table).select('id').eq(field, id).eq('user_id', employee.employee_id).eq('emoji', emoji).maybeSingle();
 
             if (existing) {
                 await supabase.from(table).delete().eq('id', existing.id);
                 return { action: 'removed', emoji };
             } else {
                 await supabase.from(table).insert({ [field]: id, user_id: employee.employee_id, user_name: employee.name, emoji });
-                // إرسال إشعار فقط عند الإضافة
                 sendNotification(targetUserId, 'reaction', id, `تفاعل ${employee.name} بـ ${emoji} على ${type === 'post' ? 'منشورك' : 'تعليقك'}`);
                 return { action: 'added', emoji };
             }
         },
         onSuccess: (data) => {
-            // تحديث البيانات فوراً
             queryClient.invalidateQueries({ queryKey: ['news_feed'] });
             if (data.action === 'added') toast.success(`تم التفاعل ${data.emoji}`, { duration: 1000 });
             else toast('تم إزالة التفاعل', { icon: '↩️', duration: 1000 });
-            
             setShowPostReactions(null);
             setShowCommentReactions(null);
         },
         onError: () => toast.error('حدث خطأ في التفاعل')
     });
 
-    // ج) إضافة تعليق
     const commentMutation = useMutation({
         mutationFn: async ({ postId, text }: { postId: string, text: string }) => {
             const payload: any = { 
@@ -138,8 +131,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         onSuccess: (data) => {
             toast.success('تم النشر بنجاح!');
             if (replyTo) sendNotification(replyTo.userId, 'reply', data.postId, `ردَّ ${employee.name} على تعليقك`);
-            
-            // تنظيف الحقول وتحديث البيانات
             setCommentText(prev => ({ ...prev, [data.postId]: '' }));
             setReplyTo(null);
             queryClient.invalidateQueries({ queryKey: ['news_feed'] });
@@ -173,10 +164,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     if (isLoading) return <div className="p-10 text-center text-gray-400 font-black animate-pulse px-4 flex flex-col items-center gap-2"><Loader2 className="animate-spin w-8 h-8 text-emerald-500"/> جاري تحميل الأخبار...</div>;
 
     return (
-        <div className="max-w-4xl mx-auto pb-20 text-right space-y-6 px-2" dir="rtl">
+        <div className="max-w-4xl mx-auto pb-20 text-right space-y-4 px-1" dir="rtl">
             
             {/* قسم الترحيب */}
-            <div className="sticky top-4 z-40 bg-white/90 backdrop-blur-xl border border-emerald-100 rounded-3xl p-4 shadow-sm flex items-center justify-between overflow-hidden">
+            <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-xl border border-emerald-100 rounded-2xl p-3 shadow-sm flex items-center justify-between overflow-hidden">
                 <div className="absolute -left-4 -top-4 w-20 h-20 bg-emerald-50 rounded-full blur-2xl opacity-60"></div>
                 <div className="relative flex items-center gap-3">
                     <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-sm shadow-emerald-200">
@@ -193,22 +184,41 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 </div>
             </div>
 
-            {/* ✅ إضافة قسم التحفيز (النقاط والمتصدرين) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-4">
-                {/* شريط المستوى يظهر دائماً */}
-                <LevelProgressBar employee={employee} />
+            {/* ✅ 2. الكروت المصغرة (Level & Leaderboard) - بجانب بعض وحجم صغير */}
+            <div className="grid grid-cols-2 gap-3">
                 
-                {/* لوحة المتصدرين */}
-                <LeaderboardWidget />
+                {/* كارت المستوى المصغر */}
+                <div className="bg-white border border-indigo-100 rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative">
+                    <div className="absolute right-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
+                    <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                        <Star size={16} fill="currentColor" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[9px] text-gray-400 font-bold">المستوى الحالي</div>
+                        <div className={`text-xs font-black truncate ${currentLevel.color}`}>{currentLevel.name} <span className="text-[9px] text-gray-400">({points})</span></div>
+                    </div>
+                </div>
+
+                {/* كارت لوحة الشرف المصغر */}
+                <div className="bg-white border border-yellow-100 rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative">
+                    <div className="absolute right-0 top-0 bottom-0 w-1 bg-yellow-400"></div>
+                    <div className="w-8 h-8 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600 shrink-0">
+                        <Trophy size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[9px] text-gray-400 font-bold">لوحة الشرف</div>
+                        <div className="text-xs font-black text-gray-800 truncate">أفضل 5 نجوم</div>
+                    </div>
+                </div>
             </div>
 
-            <div className="space-y-6 mt-6">
+            <div className="space-y-4">
                 {posts.map((post: any) => {
                     const postTime = formatDateTime(post.created_at);
                     return (
                         <div key={post.id} className={`bg-white rounded-3xl border transition-all duration-300 ${post.is_pinned ? 'border-emerald-200 ring-2 ring-emerald-50' : 'border-gray-100 shadow-sm'}`}>
                             {post.image_url && (
-                                <div className="w-full h-56 overflow-hidden bg-gray-100 relative rounded-t-3xl">
+                                <div className="w-full h-48 overflow-hidden bg-gray-100 relative rounded-t-3xl">
                                     <img src={post.image_url} alt="" className="w-full h-full object-cover" />
                                 </div>
                             )}
@@ -224,10 +234,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                     </div>
                                     {post.is_pinned && <Pin size={16} className="text-emerald-500 fill-emerald-500" />}
                                 </div>
-                                <h3 className="text-lg font-black text-gray-800 mb-2">{post.title}</h3>
-                                <p className="text-xs text-gray-600 leading-relaxed mb-6 whitespace-pre-wrap">{post.content}</p>
+                                <h3 className="text-base font-black text-gray-800 mb-1">{post.title}</h3>
+                                <p className="text-xs text-gray-600 leading-relaxed mb-4 whitespace-pre-wrap">{post.content}</p>
                                 
-                                <div className="flex items-center gap-3 border-t border-gray-50 pt-4 relative">
+                                <div className="flex items-center gap-3 border-t border-gray-50 pt-3 relative">
                                     <div className="relative">
                                         <button 
                                             onClick={() => setShowPostReactions(showPostReactions === post.id ? null : post.id)}
