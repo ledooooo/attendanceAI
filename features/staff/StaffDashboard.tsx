@@ -1,18 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { requestNotificationPermission } from '../../utils/pushNotifications'; 
-import toast from 'react-hot-toast'; // ✅ لاستخدام التنبيهات
+import toast from 'react-hot-toast'; 
 
 import { 
   LogOut, User, Clock, Printer, FilePlus, 
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Sparkles, Calendar, Settings, ShoppingBag, Trophy, Star // ✅ إضافة Trophy و Star
+  Calendar, Settings, ShoppingBag, Trophy, Star
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -37,7 +37,7 @@ import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
 import RewardsStore from './components/RewardsStore';
 
-// ✅ استيراد مكونات التحفيز
+// استيراد مكونات التحفيز
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
@@ -54,7 +54,7 @@ export default function StaffDashboard({ employee }: Props) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
 
-  // ✅ حالات القوائم المنسدلة الجديدة في الهيدر
+  // حالات القوائم المنسدلة
   const [showLevelMenu, setShowLevelMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
 
@@ -81,12 +81,11 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.employee_id]);
 
-  // ✅ 1. منطق احتساب نقطة الزيارة اليومية
+  // منطق احتساب نقطة الزيارة اليومية
   useEffect(() => {
     const checkDailyVisitReward = async () => {
         const today = new Date().toISOString().split('T')[0];
         
-        // التحقق هل تم تسجيل زيارة "daily_login" لهذا اليوم؟
         const { data: existing } = await supabase
             .from('daily_activities')
             .select('id')
@@ -96,7 +95,6 @@ export default function StaffDashboard({ employee }: Props) {
             .maybeSingle();
 
         if (!existing) {
-            // تسجيل الزيارة
             await supabase.from('daily_activities').insert({
                 employee_id: employee.employee_id,
                 activity_type: 'daily_login',
@@ -104,10 +102,8 @@ export default function StaffDashboard({ employee }: Props) {
                 is_completed: true
             });
 
-            // إضافة عشر نقاط
             await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: 10 });
             
-            // تسجيل في السجل
             await supabase.from('points_ledger').insert({
                 employee_id: employee.employee_id,
                 points: 10,
@@ -119,7 +115,6 @@ export default function StaffDashboard({ employee }: Props) {
                 style: { borderRadius: '10px', background: '#333', color: '#fff' },
             });
             
-            // تحديث البيانات لعرض النقاط الجديدة
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
         }
     };
@@ -149,7 +144,7 @@ export default function StaffDashboard({ employee }: Props) {
       queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
     }
     setShowNotifMenu(!showNotifMenu);
-    setShowLevelMenu(false); // إغلاق القوائم الأخرى
+    setShowLevelMenu(false);
     setShowLeaderboardMenu(false);
   };
 
@@ -223,8 +218,14 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.role]);
 
+  // ✅ تعديل السحب: يفتح فقط عند السحب من الربع الأيمن للشاشة (لأن التطبيق RTL)
   const swipeHandlers = useSwipeable({
-    onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
+    onSwipedLeft: (eventData) => { 
+        // نتأكد أن السحب بدأ من الربع الأيمن للشاشة (أكبر من 75% من العرض)
+        if (eventData.initial[0] > window.innerWidth * 0.75) {
+            setIsSidebarOpen(true); 
+        }
+    },
     onSwipedRight: () => setIsSidebarOpen(false),
     trackMouse: true, delta: 50,
   });
@@ -373,14 +374,24 @@ export default function StaffDashboard({ employee }: Props) {
                 <div className="relative">
                     <button 
                         onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
-                        className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 transition-colors"
+                        className={`p-2 rounded-full transition-colors ${showLevelMenu ? 'bg-indigo-100 text-indigo-700' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                     >
                         <Star className="w-5 h-5" />
                     </button>
                     {showLevelMenu && (
-                        <div className="absolute left-0 md:right-0 md:left-auto top-full mt-2 w-80 z-50 animate-in zoom-in-95">
-                            <LevelProgressBar employee={employee} />
-                        </div>
+                        <>
+                            {/* Mobile Overlay: Fixed & Centered */}
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowLevelMenu(false)}>
+                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-1 overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                                    <LevelProgressBar employee={employee} />
+                                </div>
+                            </div>
+
+                            {/* Desktop Dropdown: Absolute */}
+                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
+                                <LevelProgressBar employee={employee} />
+                            </div>
+                        </>
                     )}
                 </div>
 
@@ -388,59 +399,109 @@ export default function StaffDashboard({ employee }: Props) {
                 <div className="relative">
                     <button 
                         onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
-                        className="p-2 bg-yellow-50 text-yellow-600 rounded-full hover:bg-yellow-100 transition-colors"
+                        className={`p-2 rounded-full transition-colors ${showLeaderboardMenu ? 'bg-yellow-100 text-yellow-700' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
                     >
                         <Trophy className="w-5 h-5" />
                     </button>
                     {showLeaderboardMenu && (
-                        <div className="absolute left-0 md:right-0 md:left-auto top-full mt-2 w-80 z-50 animate-in zoom-in-95">
-                            <LeaderboardWidget />
-                        </div>
+                        <>
+                            {/* Mobile Overlay: Fixed & Centered */}
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
+                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                                    <LeaderboardWidget />
+                                </div>
+                            </div>
+
+                            {/* Desktop Dropdown: Absolute */}
+                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
+                                <LeaderboardWidget />
+                            </div>
+                        </>
                     )}
                 </div>
 
                 {/* 3. أيقونة الإشعارات */}
                 <div className="relative">
-                    <button onClick={markNotifsAsRead} className="p-2 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors relative">
+                    <button onClick={markNotifsAsRead} className={`p-2 rounded-full transition-colors relative ${showNotifMenu ? 'bg-gray-200 text-gray-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
                         <Bell className={`w-5 h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
                         {unreadNotifsCount > 0 && (
                             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white animate-bounce">{unreadNotifsCount}</span>
                         )}
                     </button>
                     {showNotifMenu && (
-                        <div className="absolute left-0 mt-2 w-80 bg-white rounded-3xl shadow-xl border border-gray-100 z-[100] overflow-hidden animate-in fade-in zoom-in-95">
-                            <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
-                                <span>آخر التنبيهات</span>
-                                <button onClick={() => setShowNotifMenu(false)} className="text-gray-400"><X size={16}/></button>
+                        <>
+                            {/* Mobile Overlay: Fixed & Centered */}
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowNotifMenu(false)}>
+                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                                    <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
+                                        <span>آخر التنبيهات</span>
+                                        <button onClick={() => setShowNotifMenu(false)} className="text-gray-400"><X size={16}/></button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                        {notifications.length === 0 ? (
+                                            <p className="p-8 text-center text-gray-400 text-xs">لا توجد إشعارات حالياً</p>
+                                        ) : (
+                                            notifications.map(n => (
+                                                <div 
+                                                    key={n.id} 
+                                                    onClick={() => {
+                                                        if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
+                                                        else if(n.type === 'message') { setActiveTab('messages'); }
+                                                        else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
+                                                        setShowNotifMenu(false);
+                                                    }}
+                                                    className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
+                                                >
+                                                    <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
+                                                        {n.type === 'task' ? <ListTodo size={16}/> : <Bell size={16}/>}
+                                                    </div>
+                                                    <div className="space-y-0.5">
+                                                        <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
+                                                        <p className="text-xs text-gray-500 leading-relaxed truncate max-w-[200px]">{n.message}</p>
+                                                        <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="max-h-80 overflow-y-auto custom-scrollbar">
-                                {notifications.length === 0 ? (
-                                    <p className="p-8 text-center text-gray-400 text-xs">لا توجد إشعارات حالياً</p>
-                                ) : (
-                                    notifications.map(n => (
-                                        <div 
-                                            key={n.id} 
-                                            onClick={() => {
-                                                if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
-                                                else if(n.type === 'message') { setActiveTab('messages'); }
-                                                else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
-                                                setShowNotifMenu(false);
-                                            }}
-                                            className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
-                                        >
-                                            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
-                                                {n.type === 'task' ? <ListTodo size={16}/> : <Bell size={16}/>}
+
+                            {/* Desktop Dropdown: Absolute */}
+                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
+                                <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
+                                    <span>آخر التنبيهات</span>
+                                    <button onClick={() => setShowNotifMenu(false)} className="text-gray-400"><X size={16}/></button>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                    {notifications.length === 0 ? (
+                                        <p className="p-8 text-center text-gray-400 text-xs">لا توجد إشعارات حالياً</p>
+                                    ) : (
+                                        notifications.map(n => (
+                                            <div 
+                                                key={n.id} 
+                                                onClick={() => {
+                                                    if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
+                                                    else if(n.type === 'message') { setActiveTab('messages'); }
+                                                    else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
+                                                    setShowNotifMenu(false);
+                                                }}
+                                                className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
+                                            >
+                                                <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
+                                                    {n.type === 'task' ? <ListTodo size={16}/> : <Bell size={16}/>}
+                                                </div>
+                                                <div className="space-y-0.5">
+                                                    <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
+                                                    <p className="text-xs text-gray-500 leading-relaxed truncate max-w-[200px]">{n.message}</p>
+                                                    <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
+                                                </div>
                                             </div>
-                                            <div className="space-y-0.5">
-                                                <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
-                                                <p className="text-xs text-gray-500 leading-relaxed">{n.message}</p>
-                                                <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
+                                        ))
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        </>
                     )}
                 </div>
 
@@ -450,29 +511,15 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
         </header>
 
-        {/* ✅ تقليل الهامش هنا من p-3 إلى p-2 */}
         <main className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24">
             <div className="max-w-6xl mx-auto space-y-4">
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-3 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
                         <div className="space-y-4">
-                            <div className="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-4 text-white shadow-md flex items-center justify-between relative overflow-hidden">
-                                <div className="relative z-10">
-                                    <h2 className="font-bold text-lg flex items-center gap-2">مرحباً، {employee.name.split(' ')[0]} 👋</h2>
-                                    <p className="text-xs text-emerald-100 mt-1 opacity-90">نتمنى لك يوماً سعيداً ومليئاً بالإنجازات</p>
-                                </div>
-                                <div className="hidden sm:block text-right relative z-10">
-                                    <div className="text-xs font-medium opacity-80 mb-0.5">التاريخ اليوم</div>
-                                    <div className="text-sm font-bold flex items-center gap-1 justify-end">
-                                        <Calendar className="w-4 h-4"/>
-                                        {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
-                                    </div>
-                                </div>
-                                <Sparkles className="absolute -bottom-4 -left-4 w-24 h-24 text-white opacity-10 rotate-12" />
-                            </div>
-                            <EOMVotingCard employee={employee} />
                             
-                            {/* ✅ تمت إزالة قسم التحفيز من هنا لأنه أصبح في الهيدر */}
+                            {/* ❌ تم حذف كارت الترحيب المكرر من هنا */}
+                            
+                            <EOMVotingCard employee={employee} />
                             
                             <StaffNewsFeed employee={employee} />
                         </div>
@@ -500,8 +547,8 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
         </main>
 
-        {/* --- الشريط السفلي --- */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-3 flex justify-between items-center z-50 pb-safe md:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        {/* --- الشريط السفلي: تم تقليل الارتفاع (py-2) --- */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-2 flex justify-between items-center z-50 pb-safe md:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
                 onClick={() => setActiveTab('news')}
                 className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'news' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}
