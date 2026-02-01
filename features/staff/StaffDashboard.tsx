@@ -104,17 +104,17 @@ export default function StaffDashboard({ employee }: Props) {
                 is_completed: true
             });
 
-            // إضافة نقطة واحدة
-            await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: 1 });
+            // إضافة عشر نقاط
+            await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: 10 });
             
             // تسجيل في السجل
             await supabase.from('points_ledger').insert({
                 employee_id: employee.employee_id,
-                points: 1,
+                points: 10,
                 reason: 'زيارة يومية للموقع 🚀'
             });
 
-            toast.success('حصلت على نقطة لزيارتك اليومية! ⭐', {
+            toast.success('حصلت على 10 نقاط لزيارتك اليومية! ⭐', {
                 icon: '👏',
                 style: { borderRadius: '10px', background: '#333', color: '#fff' },
             });
