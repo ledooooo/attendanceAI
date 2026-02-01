@@ -36,24 +36,30 @@ export default function DailyQuizModal({ employee }: { employee: Employee }) {
             .maybeSingle();
 
         if (existingActivity) {
-            setIsOpen(false); // حل السؤال بالفعل
+            setIsOpen(false);
             return;
         }
 
-        // 2. جلب سؤال مناسب (عام أو خاص بالتخصص)
-        // ملاحظة: نستخدم random لجلب سؤال عشوائي (هنا نجلب أول سؤال يطابق الشرط للتبسيط)
+        // ✅ التعديل هنا: توحيد مسميات المعمل
+        let targetSpecialty = employee.specialty;
+
+        // إذا كان الموظف أياً من هؤلاء، نعرض له أسئلة "فنى معمل"
+        const labTitles = ['فنى معمل', 'كيميائى', 'اخصائى مختبرات', 'أخصائي مختبر', 'فني مختبر']; 
+        
+        if (labTitles.includes(employee.specialty)) {
+            targetSpecialty = 'فنى معمل'; // نوجههم جميعاً لأسئلة المعمل المخزنة بهذا الاسم
+        }
+
+        // 2. جلب السؤال
         const { data: questions } = await supabase
             .from('quiz_questions')
             .select('*')
-            .or(`specialty.eq.all,specialty.eq.${employee.specialty}`);
+            .or(`specialty.eq.all,specialty.eq.${targetSpecialty}`);
 
         if (questions && questions.length > 0) {
-            // اختيار سؤال عشوائي
             const randomQ = questions[Math.floor(Math.random() * questions.length)];
             setQuestion(randomQ);
             setLoading(false);
-            
-            // تأخير ظهور النافذة قليلاً لعدم إزعاج المستخدم فور الدخول
             setTimeout(() => setIsOpen(true), 2000);
         }
     };
