@@ -21,34 +21,97 @@ interface DateSuggestion {
     type: 'absence' | 'incomplete';
 }
 
+// واجهة لبيانات الزميل
+interface Colleague {
+    id: string; // UUID للتنبيهات
+    name: string;
+    employee_id: string;
+}
+
 export default function StaffNewRequest({ employee, refresh, initialDate }: Props) {
     const { sendNotification } = useNotifications();
     const [submitting, setSubmitting] = useState(false);
     const [suggestions, setSuggestions] = useState<DateSuggestion[]>([]);
     const [loadingSuggestions, setLoadingSuggestions] = useState(true);
 
+    // حالة لقائمة الزملاء
+    const [colleagues, setColleagues] = useState<Colleague[]>([]);
+    const [loadingColleagues, setLoadingColleagues] = useState(false);
+    
+    // تخزين معرف الموظف البديل لإرسال الإشعار له
+    const [selectedBackupId, setSelectedBackupId] = useState<string>('');
+
     const [formData, setFormData] = useState({
         type: LEAVE_TYPES[0], 
         start: initialDate || '', 
-        end: initialDate || '',   
+        end: initialDate || '',    
         returnDate: '', 
         backup: '', 
         notes: ''
     });
 
-    // توحيد التاريخ (للمقارنة مع قاعدة البيانات)
+    // 1. منطق تحديد التخصصات المتشابهة
+    const getTargetSpecialties = (currentSpec: string) => {
+        const spec = currentSpec.trim();
+        
+        // مجموعة المعمل
+        const labGroup = ['فنى معمل', 'اخصائى مختبرات', 'كيميائى', 'كيميائية', 'فني معمل', 'أخصائي مختبرات', 'اخصائي مختبرات'];
+        if (labGroup.includes(spec)) return labGroup;
+
+        // مجموعة الأسنان
+        const dentistGroup = ['طبيب اسنان', 'طيبب أسنان', 'طبيب أسنان'];
+        if (dentistGroup.includes(spec)) return dentistGroup;
+
+        // مجموعة الإداريين
+        const adminGroup = ['ادارى', 'إدارى', 'أدارى', 'فنى احصاء', 'فنى إحصاء', 'مسئول ملفات', 'كاتب'];
+        if (adminGroup.includes(spec)) return adminGroup;
+
+        // الافتراضي: نفس التخصص بالضبط
+        return [spec];
+    };
+
+    // 2. جلب قائمة الزملاء بناءً على التخصص
+    useEffect(() => {
+        const fetchColleagues = async () => {
+            setLoadingColleagues(true);
+            try {
+                const targetSpecs = getTargetSpecialties(employee.specialty);
+                
+                const { data } = await supabase
+                    .from('employees')
+                    .select('id, name, employee_id')
+                    .in('specialty', targetSpecs) // البحث في المصفوفة المحددة
+                    .neq('employee_id', employee.employee_id) // استبعاد الموظف الحالي
+                    .eq('status', 'نشط'); // فقط الموظفين النشطين
+
+                if (data) {
+                    setColleagues(data);
+                }
+            } catch (error) {
+                console.error("Error fetching colleagues", error);
+            } finally {
+                setLoadingColleagues(false);
+            }
+        };
+
+        if (employee.specialty) {
+            fetchColleagues();
+        }
+    }, [employee.specialty, employee.employee_id]);
+
+    // دوال التاريخ (كما هي)
     const normalizeDate = (dateStr: string) => {
         const d = new Date(dateStr);
         const offset = d.getTimezoneOffset() * 60000;
         return new Date(d.getTime() - offset).toISOString().split('T')[0];
     };
 
-    // توليد التاريخ القياسي للحلقة
     const toStandardDate = (d: Date) => {
         const offset = d.getTimezoneOffset() * 60000;
         return new Date(d.getTime() - offset).toISOString().split('T')[0];
     };
 
+    // جلب الاقتراحات (كما هي)
     useEffect(() => {
         const fetchIrregularities = async () => {
             setLoadingSuggestions(true);
@@ -57,41 +120,16 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                 const sixtyDaysAgo = new Date();
                 sixtyDaysAgo.setDate(today.getDate() - 60);
 
-                // 1. جلب بيانات الموظف للتأكد من أيام العمل (work_days)
-                const { data: empData } = await supabase
-                    .from('employees')
-                    .select('work_days')
-                    .eq('employee_id', employee.employee_id)
-                    .single();
+                const { data: empData } = await supabase.from('employees').select('work_days').eq('employee_id', employee.employee_id).single();
+                const workDays = empData?.work_days || []; 
 
-                const workDays = empData?.work_days || []; // مصفوفة أيام العمل
+                const { data: records } = await supabase.from('attendance').select('date, times').eq('employee_id', employee.employee_id).order('date', { ascending: false }).limit(100);
+                const { data: leaves } = await supabase.from('leave_requests').select('start_date, end_date').eq('employee_id', employee.employee_id).neq('status', 'مرفوض');
+                const { data: settings } = await supabase.from('settings').select('holidays_date').single();
 
-                // 2. جلب سجلات الحضور
-                const { data: records } = await supabase
-                    .from('attendance')
-                    .select('date, times')
-                    .eq('employee_id', employee.employee_id)
-                    .order('date', { ascending: false })
-                    .limit(100);
-
-                // 3. جلب الإجازات
-                const { data: leaves } = await supabase
-                    .from('leave_requests')
-                    .select('start_date, end_date')
-                    .eq('employee_id', employee.employee_id)
-                    .neq('status', 'مرفوض');
-
-                // 4. جلب العطلات الرسمية
-                const { data: settings } = await supabase
-                    .from('settings') // أو general_settings حسب قاعدتك
-                    .select('holidays_date') // أو holidays حسب قاعدتك
-                    .single();
-
-                // التعامل مع اختلاف أسماء الأعمدة المحتمل
-                const holidays = settings?.holidays_date || settings?.holidays || [];
+                const holidays = settings?.holidays_date || [];
                 const validLeaves = leaves || [];
 
-                // خريطة الحضور
                 const statusMap = new Map<string, string>();
                 if (records) {
                     records.forEach((r: any) => {
@@ -107,84 +145,41 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                 }
 
                 const foundSuggestions: DateSuggestion[] = [];
-
-                // 🔄 الحلقة التكرارية
                 for (let d = new Date(sixtyDaysAgo); d < today; d.setDate(d.getDate() + 1)) {
                     const dateStr = toStandardDate(d);
                     const dayNameEn = d.toLocaleDateString('en-US', { weekday: 'long' });
-
-                    // 🔥 تعديل هام: التحقق من أيام العمل الخاصة بالموظف
                     let isWorkDay = false;
-
-                    // خريطة للتحويل من الإنجليزي للجذر العربي للمطابقة المرنة
-                    const dayMap: { [key: string]: string } = {
-                        'Saturday': 'سبت',
-                        'Sunday': 'حد',
-                        'Monday': 'ثنين',
-                        'Tuesday': 'ثلاثاء',
-                        'Wednesday': 'ربعاء',
-                        'Thursday': 'خميس',
-                        'Friday': 'جمعة'
-                    };
-
+                    const dayMap: { [key: string]: string } = { 'Saturday': 'سبت', 'Sunday': 'حد', 'Monday': 'ثنين', 'Tuesday': 'ثلاثاء', 'Wednesday': 'ربعاء', 'Thursday': 'خميس', 'Friday': 'جمعة' };
                     const arabicKey = dayMap[dayNameEn];
 
                     if (!workDays || workDays.length === 0) {
-                        // لو المصفوفة فارغة، نفترض الافتراضي (كل الأيام ما عدا الجمعة)
                         if (dayNameEn !== 'Friday') isWorkDay = true;
                     } else {
-                        // البحث الجزئي في مصفوفة الموظف
-                        // مثال: هل "الأحد" يحتوي على "حد"؟ نعم
                         isWorkDay = workDays.some((wd: string) => wd.includes(arabicKey));
                     }
 
-                    // 1. إذا لم يكن يوم عمل لهذا الموظف، تخطاه
                     if (!isWorkDay) continue;
-
-                    // 2. استبعاد العطلات الرسمية
                     if (holidays.includes(dateStr)) continue;
-
-                    // 3. استبعاد الإجازات
-                    const isLeave = validLeaves.some((leave: any) => 
-                        dateStr >= leave.start_date && dateStr <= leave.end_date
-                    );
+                    const isLeave = validLeaves.some((leave: any) => dateStr >= leave.start_date && dateStr <= leave.end_date);
                     if (isLeave) continue;
 
-                    // 4. فحص الحالة
                     const status = statusMap.get(dateStr);
-
                     if (status === 'absent') {
-                        foundSuggestions.push({
-                            date: dateStr,
-                            label: formatDateArabic(dateStr),
-                            type: 'absence'
-                        });
+                        foundSuggestions.push({ date: dateStr, label: formatDateArabic(dateStr), type: 'absence' });
                     } else if (status === 'incomplete') {
-                        foundSuggestions.push({
-                            date: dateStr,
-                            label: formatDateArabic(dateStr),
-                            type: 'incomplete'
-                        });
+                        foundSuggestions.push({ date: dateStr, label: formatDateArabic(dateStr), type: 'incomplete' });
                     } else if (status === undefined) {
-                        // لم يحضر واليوم مطلوب عمل
-                        foundSuggestions.push({
-                            date: dateStr,
-                            label: formatDateArabic(dateStr),
-                            type: 'absence'
-                        });
+                        foundSuggestions.push({ date: dateStr, label: formatDateArabic(dateStr), type: 'absence' });
                     }
                 }
-
                 foundSuggestions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 setSuggestions(foundSuggestions);
-
             } catch (err) {
                 console.error("Error checking attendance:", err);
             } finally {
                 setLoadingSuggestions(false);
             }
         };
-
         fetchIrregularities();
     }, [employee.employee_id]);
 
@@ -209,6 +204,20 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         });
     };
 
+    // معالجة تغيير الموظف البديل
+    const handleBackupChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const selectedId = e.target.value;
+        const selectedColleague = colleagues.find(c => c.id === selectedId);
+        
+        if (selectedColleague) {
+            setFormData({ ...formData, backup: selectedColleague.name }); // نخزن الاسم لقاعدة البيانات
+            setSelectedBackupId(selectedColleague.id); // نخزن الـ UUID للإشعار
+        } else {
+            setFormData({ ...formData, backup: '' });
+            setSelectedBackupId('');
+        }
+    };
+
     const submit = async () => {
         if (!formData.type || !formData.start || !formData.end || !formData.returnDate || !formData.backup) {
             return alert('⚠️ عفواً، جميع الحقول الموضحة بعلامة (*) إجبارية.');
@@ -219,6 +228,7 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
 
         setSubmitting(true);
         try {
+            // 1. حفظ الطلب في قاعدة البيانات
             const { error } = await supabase.from('leave_requests').insert([{ 
                 employee_id: employee.employee_id, 
                 type: formData.type, 
@@ -230,9 +240,22 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                 notes: formData.notes 
             }]);
             if (error) throw error;
+
+            // 2. إشعار للمدير
             await sendNotification('admin', 'طلب جديد 📄', `قام ${employee.name} بتقديم طلب ${formData.type}`);
-            alert('✅ تم إرسال الطلب بنجاح'); 
+
+            // 3. 🔥 إشعار للموظف البديل
+            if (selectedBackupId) {
+                await sendNotification(
+                    selectedBackupId, 
+                    'تنبيه قائم بالعمل 🔄', 
+                    `قام ${employee.name} باختيارك كبديل (قائم بالعمل) في طلب ${formData.type} من ${formData.start}`
+                );
+            }
+
+            alert('✅ تم إرسال الطلب وإبلاغ الزميل بنجاح'); 
             setFormData({ type: LEAVE_TYPES[0], start: '', end: '', returnDate: '', backup: '', notes: '' }); 
+            setSelectedBackupId('');
             refresh();
         } catch (error: any) {
             alert('❌ خطأ في الإرسال: ' + error.message);
@@ -249,6 +272,7 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
             
             <div className="bg-white p-6 md:p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6">
                 
+                {/* قسم الاقتراحات - كما هو */}
                 {loadingSuggestions ? (
                     <div className="flex items-center justify-center gap-2 text-gray-400 text-sm py-4 bg-gray-50 rounded-2xl border border-dashed">
                         <Loader2 className="w-4 h-4 animate-spin"/> جاري فحص السجلات (آخر 60 يوم)...
@@ -288,7 +312,7 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
 
                 <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 text-blue-800 text-sm font-bold flex items-center gap-2">
                     <UserCheck className="w-5 h-5"/>
-                    يرجى التأكد من التنسيق مع الموظف البديل قبل تقديم الطلب.
+                    سيتم إرسال إشعار تلقائي للموظف البديل عند تقديم الطلب.
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -301,7 +325,32 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
                          <Input label="تاريخ العودة للعمل *" type="date" value={formData.returnDate} onChange={(v:any)=>setFormData({...formData, returnDate: v})} />
                         <Calendar className="absolute left-3 top-9 text-gray-400 w-4 h-4 pointer-events-none"/>
                     </div>
-                    <Input label="الموظف البديل *" value={formData.backup} onChange={(v:any)=>setFormData({...formData, backup: v})} placeholder="اسم الزميل القائم بالعمل" />
+                    
+                    {/* ✅ خانة الموظف البديل - قائمة منسدلة ذكية */}
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">الموظف البديل (القائم بالعمل) *</label>
+                        <div className="relative">
+                            <select 
+                                className="w-full p-3 rounded-xl border border-gray-200 bg-white outline-none focus:ring-2 focus:ring-emerald-500 transition-all text-sm font-bold text-gray-700 appearance-none"
+                                value={selectedBackupId} 
+                                onChange={handleBackupChange}
+                                disabled={loadingColleagues}
+                            >
+                                <option value="">اختر زميلاً من القسم...</option>
+                                {colleagues.map(colleague => (
+                                    <option key={colleague.id} value={colleague.id}>
+                                        {colleague.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {loadingColleagues && (
+                                <div className="absolute left-3 top-3">
+                                    <Loader2 className="w-5 h-5 animate-spin text-gray-400"/>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                     <div className="md:col-span-2">
                         <label className="block text-xs font-bold text-gray-500 mb-1">ملاحظات إضافية (اختياري)</label>
                         <textarea value={formData.notes} onChange={(e)=>setFormData({...formData, notes: e.target.value})} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all min-h-[100px] text-sm font-medium" placeholder="اكتب أي تفاصيل أخرى..." />
