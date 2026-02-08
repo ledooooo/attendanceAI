@@ -2,9 +2,13 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../supabaseClient';
 import { Employee } from '../../../../types';
-import { Search, Syringe, Printer, Save, Loader2, ArrowUpDown, PieChart } from 'lucide-react';
+import { Search, Syringe, Printer, Save, Loader2, ArrowUpDown, PieChart as PieIcon, AlertCircle, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useReactToPrint } from 'react-to-print';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+// --- ألوان الرسم البياني ---
+const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#9CA3AF']; // أخضر، أزرق، برتقالي، أحمر، رمادي
 
 export default function StaffVaccineManager() {
     const queryClient = useQueryClient();
@@ -54,25 +58,25 @@ export default function StaffVaccineManager() {
         return data;
     }, [employees, search, filterSpecialty, filterStatus, sortConfig]);
 
-    // --- Statistics Logic ---
+    // --- Statistics & Protocol Logic ---
     const stats = useMemo(() => {
+        const today = new Date();
         const total = employees.length;
-        const activeForce = employees.filter(e => e.status === 'نشط').length; // القوة الفعلية للنسب
         
         let d3 = 0, d2 = 0, d1 = 0, d0 = 0;
-        let notEligible = 0; // غير مستحق (مناعة/أجسام مضادة)
-        let leaves = employees.filter(e => e.status === 'إجازة').length;
-        
-        // العاملين الواجب تطعيمهم (نشط + لم يكمل 3 جرعات + مستحق)
-        let needVaccineList: Employee[] = [];
+        let notEligible = 0; // غير مستحق
+        let dueForVaccineCount = 0; // المستحقين للتطعيم اليوم
+        let dueList: Employee[] = [];
 
         filteredData.forEach(emp => {
-            // التحقق من "غير مستحق" بناءً على الملاحظات
-            const isNotEligible = emp.hep_b_notes && (emp.hep_b_notes.includes('مناعة') || emp.hep_b_notes.includes('غير مستحق'));
-            
-            if (isNotEligible) {
+            // 1. تحديد حالة "غير مستحق"
+            const notes = emp.hep_b_notes ? emp.hep_b_notes.toLowerCase() : '';
+            const isExempt = notes.includes('غير مستحق') || notes.includes('مناعة') || notes.includes('أجسام مضادة');
+
+            if (isExempt) {
                 notEligible++;
             } else {
+                // 2. عد الجرعات
                 let doses = 0;
                 if (emp.hep_b_dose1) doses++;
                 if (emp.hep_b_dose2) doses++;
@@ -83,27 +87,48 @@ export default function StaffVaccineManager() {
                 else if (doses === 1) d1++;
                 else d0++;
 
-                // تحديد من يحتاج تطعيم (نشط وغير مكتمل)
-                if (emp.status === 'نشط' && doses < 3) {
-                    needVaccineList.push(emp);
+                // 3. حساب الاستحقاق حسب البروتوكول (0 - 1 - 6 شهور)
+                if (emp.status === 'نشط') {
+                    let isDue = false;
+                    
+                    if (doses === 0) {
+                        // لم يبدأ وهو نشط -> مستحق للجرعة الأولى
+                        isDue = true;
+                    } else if (doses === 1 && emp.hep_b_dose1) {
+                        // أخذ الأولى، نتحقق هل مر شهر؟
+                        const d1Date = new Date(emp.hep_b_dose1);
+                        const diffTime = Math.abs(today.getTime() - d1Date.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        if (diffDays >= 30) isDue = true; // مر أكثر من 30 يوم
+                    } else if (doses === 2 && emp.hep_b_dose2) {
+                        // أخذ الثانية، نتحقق هل مر 5 شهور (من الثانية)؟
+                        const d2Date = new Date(emp.hep_b_dose2);
+                        const diffTime = Math.abs(today.getTime() - d2Date.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        if (diffDays >= 150) isDue = true; // مر أكثر من 5 شهور (150 يوم تقريباً)
+                    }
+
+                    if (isDue) {
+                        dueForVaccineCount++;
+                        dueList.push(emp);
+                    }
                 }
             }
         });
 
+        // تجهيز بيانات الرسم البياني
+        const chartData = [
+            { name: 'مكتمل (3 جرعات)', value: d3 },
+            { name: 'جرعتين', value: d2 },
+            { name: 'جرعة واحدة', value: d1 },
+            { name: 'لم يبدأ', value: d0 },
+            { name: 'غير مستحق', value: notEligible },
+        ].filter(item => item.value > 0); // إخفاء القيم الصفرية
+
         return {
-            total,
-            activeForce,
-            d3, d2, d1, d0,
-            notEligible,
-            leaves,
-            needVaccineList,
-            // النسب من القوة الفعلية (Active Force)
-            p3: activeForce ? Math.round((d3 / activeForce) * 100) : 0,
-            p2: activeForce ? Math.round((d2 / activeForce) * 100) : 0,
-            p1: activeForce ? Math.round((d1 / activeForce) * 100) : 0,
-            p0: activeForce ? Math.round((d0 / activeForce) * 100) : 0,
+            total, d3, d2, d1, d0, notEligible, dueForVaccineCount, dueList, chartData
         };
-    }, [filteredData, employees]);
+    }, [filteredData, employees]); // الاعتماد على filteredData لتحديث الرسم مع الفلتر
 
     // --- Mutation ---
     const updateMutation = useMutation({
@@ -149,7 +174,60 @@ export default function StaffVaccineManager() {
     return (
         <div className="space-y-6 animate-in fade-in pb-20">
             
-            {/* Filters & Controls */}
+            {/* 1. Dashboard / Statistics Section */}
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 no-print">
+                <div className="flex flex-col lg:flex-row gap-8">
+                    
+                    {/* A. Cards (KPIs) */}
+                    <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <StatCard title="إجمالي القوة" value={filteredData.length} icon={<Syringe className="w-5 h-5"/>} color="bg-gray-100 text-gray-700" />
+                        <StatCard title="مكتمل (3 جرعات)" value={stats.d3} icon={<CheckCircle2 className="w-5 h-5"/>} color="bg-emerald-50 text-emerald-700" />
+                        <StatCard title="جرعتين" value={stats.d2} icon={<Clock className="w-5 h-5"/>} color="bg-blue-50 text-blue-700" />
+                        <StatCard title="جرعة واحدة" value={stats.d1} icon={<Clock className="w-5 h-5"/>} color="bg-amber-50 text-amber-700" />
+                        <StatCard title="لم يبدأ" value={stats.d0} icon={<XCircle className="w-5 h-5"/>} color="bg-red-50 text-red-700" />
+                        <StatCard title="غير مستحق (مناعة)" value={stats.notEligible} icon={<AlertCircle className="w-5 h-5"/>} color="bg-gray-200 text-gray-600" />
+                        
+                        {/* كارت تنبيه المستحقين */}
+                        <div className="col-span-2 md:col-span-3 bg-red-500 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg shadow-red-200">
+                            <div>
+                                <h4 className="font-bold text-sm opacity-90">المستحقين للتطعيم اليوم (حسب البروتوكول)</h4>
+                                <p className="text-xs opacity-75 mt-1">نشط ولم يكمل الجرعات ومر الوقت المحدد</p>
+                            </div>
+                            <div className="text-4xl font-black">{stats.dueForVaccineCount}</div>
+                        </div>
+                    </div>
+
+                    {/* B. Pie Chart */}
+                    <div className="w-full lg:w-1/3 h-64 bg-gray-50 rounded-2xl border border-gray-100 p-2 relative">
+                        <h4 className="text-center text-xs font-bold text-gray-500 absolute top-2 right-0 left-0">توزيع نسب التطعيم</h4>
+                        <ResponsiveContainer width="100%" height="100%">
+                            
+
+[Image of Vaccine Status Pie Chart]
+
+                            <PieChart>
+                                <Pie
+                                    data={stats.chartData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={80}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                >
+                                    {stats.chartData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip />
+                                <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* 2. Filters & Controls */}
             <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 space-y-4 no-print">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="relative md:col-span-2">
@@ -175,7 +253,7 @@ export default function StaffVaccineManager() {
                     </div>
                     <div className="flex gap-2">
                         <button onClick={handlePrintStats} className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-orange-100">
-                            <PieChart className="w-4 h-4"/> طباعة الإحصائيات
+                            <PieIcon className="w-4 h-4"/> طباعة الإحصائيات
                         </button>
                         <button onClick={handlePrintTable} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-blue-700">
                             <Printer className="w-4 h-4"/> طباعة الجدول
@@ -184,7 +262,7 @@ export default function StaffVaccineManager() {
                 </div>
             </div>
 
-            {/* --- Table View (Printable) --- */}
+            {/* 3. Table View (Printable) */}
             <div ref={componentRef} className="bg-white rounded-3xl border shadow-sm p-6 overflow-hidden print:p-0 print:border-none print:shadow-none" dir="rtl">
                 <div className="hidden print:block text-center mb-4 border-b-2 border-black pb-2">
                     <p className="text-[12px] font-bold font-mono text-black">
@@ -246,7 +324,7 @@ export default function StaffVaccineManager() {
                 </div>
             </div>
 
-            {/* --- Statistics Report (Hidden Printable Area) --- */}
+            {/* 4. Statistics Report (Hidden Printable Area) */}
             <div className="hidden">
                 <div ref={statsRef} className="p-8 dir-rtl text-right" dir="rtl">
                     <div className="text-center border-b-2 border-black pb-4 mb-8">
@@ -259,44 +337,49 @@ export default function StaffVaccineManager() {
                         <div className="border border-gray-400 p-4 rounded-lg">
                             <h3 className="font-bold border-b border-gray-300 pb-2 mb-2">بيانات القوة</h3>
                             <div className="flex justify-between py-1"><span>إجمالي العاملين (المدرجين):</span> <span className="font-bold">{stats.total}</span></div>
-                            <div className="flex justify-between py-1"><span>القوة الفعلية (نشط):</span> <span className="font-bold">{stats.activeForce}</span></div>
-                            <div className="flex justify-between py-1"><span>إجازات طويلة/موقوف:</span> <span className="font-bold">{stats.total - stats.activeForce}</span></div>
+                            <div className="flex justify-between py-1"><span>القوة الفعلية (نشط):</span> <span className="font-bold">{employees.filter(e=>e.status==='نشط').length}</span></div>
                         </div>
                         <div className="border border-gray-400 p-4 rounded-lg">
-                            <h3 className="font-bold border-b border-gray-300 pb-2 mb-2">موقف التطعيم (من القوة الفعلية)</h3>
-                            <div className="flex justify-between py-1"><span>مكتمل (3 جرعات):</span> <span className="font-bold">{stats.d3} ({stats.p3}%)</span></div>
-                            <div className="flex justify-between py-1"><span>جرعتين:</span> <span className="font-bold">{stats.d2} ({stats.p2}%)</span></div>
-                            <div className="flex justify-between py-1"><span>جرعة واحدة:</span> <span className="font-bold">{stats.d1} ({stats.p1}%)</span></div>
-                            <div className="flex justify-between py-1"><span>لم يبدأ/صفر جرعات:</span> <span className="font-bold">{stats.d0} ({stats.p0}%)</span></div>
+                            <h3 className="font-bold border-b border-gray-300 pb-2 mb-2">موقف التطعيم</h3>
+                            <div className="flex justify-between py-1"><span>مكتمل (3 جرعات):</span> <span className="font-bold">{stats.d3}</span></div>
+                            <div className="flex justify-between py-1"><span>جرعتين:</span> <span className="font-bold">{stats.d2}</span></div>
+                            <div className="flex justify-between py-1"><span>جرعة واحدة:</span> <span className="font-bold">{stats.d1}</span></div>
+                            <div className="flex justify-between py-1"><span>لم يبدأ:</span> <span className="font-bold">{stats.d0}</span></div>
                             <div className="flex justify-between py-1 text-gray-500"><span>غير مستحق (مناعة):</span> <span className="font-bold">{stats.notEligible}</span></div>
                         </div>
                     </div>
 
+                    {/* قائمة المستحقين للتطعيم (إضافة جديدة للطباعة) */}
                     <div className="mt-8">
-                        <h3 className="font-bold text-lg mb-4 border-r-4 border-red-600 pr-2">قائمة العاملين الواجب تطعيمهم حالياً ({stats.needVaccineList.length})</h3>
-                        <table className="w-full text-sm text-right border-collapse">
-                            <thead className="bg-gray-100 border-b border-black">
-                                <tr>
-                                    <th className="p-2 border border-gray-400">م</th>
-                                    <th className="p-2 border border-gray-400">الاسم</th>
-                                    <th className="p-2 border border-gray-400">التخصص</th>
-                                    <th className="p-2 border border-gray-400">الموقف الحالي</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {stats.needVaccineList.map((emp, idx) => (
-                                    <tr key={emp.id} className="border-b border-gray-300">
-                                        <td className="p-2 border border-gray-300 text-center">{idx + 1}</td>
-                                        <td className="p-2 border border-gray-300 font-bold">{emp.name}</td>
-                                        <td className="p-2 border border-gray-300">{emp.specialty}</td>
-                                        <td className="p-2 border border-gray-300">
-                                            {!emp.hep_b_dose1 ? 'لم يبدأ (0 جرعات)' : !emp.hep_b_dose2 ? 'أخذ جرعة واحدة' : 'أخذ جرعتين'}
-                                        </td>
+                        <h3 className="font-bold text-lg mb-4 border-r-4 border-red-600 pr-2">
+                            قائمة المتأخرين / المستحقين للتطعيم حالياً ({stats.dueList.length})
+                        </h3>
+                        {stats.dueList.length > 0 ? (
+                            <table className="w-full text-sm text-right border-collapse">
+                                <thead className="bg-gray-100 border-b border-black">
+                                    <tr>
+                                        <th className="p-2 border border-gray-400">م</th>
+                                        <th className="p-2 border border-gray-400">الاسم</th>
+                                        <th className="p-2 border border-gray-400">التخصص</th>
+                                        <th className="p-2 border border-gray-400">عدد الجرعات الحالية</th>
                                     </tr>
-                                ))}
-                                {stats.needVaccineList.length === 0 && <tr><td colSpan={4} className="p-4 text-center">لا يوجد متأخرين عن التطعيم</td></tr>}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {stats.dueList.map((emp, idx) => (
+                                        <tr key={emp.id} className="border-b border-gray-300">
+                                            <td className="p-2 border border-gray-300 text-center">{idx + 1}</td>
+                                            <td className="p-2 border border-gray-300 font-bold">{emp.name}</td>
+                                            <td className="p-2 border border-gray-300">{emp.specialty}</td>
+                                            <td className="p-2 border border-gray-300">
+                                                {emp.hep_b_dose2 ? 'جرعتين (يحتاج الثالثة)' : emp.hep_b_dose1 ? 'جرعة واحدة (يحتاج الثانية)' : 'صفر (يحتاج الأولى)'}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <p className="text-center p-4 border border-gray-300 rounded bg-green-50 text-green-700">لا يوجد متأخرين حالياً 👏</p>
+                        )}
                     </div>
 
                     <div className="flex justify-between mt-16 px-10 font-bold text-sm">
@@ -314,3 +397,16 @@ export default function StaffVaccineManager() {
         </div>
     );
 }
+
+// --- Component Helper: StatCard ---
+const StatCard = ({ title, value, icon, color }: { title: string, value: number, icon: any, color: string }) => (
+    <div className={`p-4 rounded-2xl flex items-center justify-between ${color} transition-all hover:scale-105`}>
+        <div>
+            <p className="text-xs font-bold opacity-70 mb-1">{title}</p>
+            <h4 className="text-2xl font-black">{value}</h4>
+        </div>
+        <div className="bg-white/20 p-2 rounded-full backdrop-blur-sm">
+            {icon}
+        </div>
+    </div>
+);
