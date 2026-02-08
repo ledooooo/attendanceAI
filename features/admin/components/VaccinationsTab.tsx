@@ -61,30 +61,50 @@ export default function VaccinationsTab({ employees }: { employees: Employee[] }
     }, [filteredData]);
 
     // 3. معالجة ملف الإكسيل (Import Logic)
-    const handleExcelImport = async (data: any[]) => {
-        const updates = data.map((row: any) => {
-            // البحث عن الكود الوظيفي (يدعم أسماء أعمدة مختلفة للسهولة)
-            const empId = row['الكود'] || row['code'] || row['employee_id'] || row['الكود الوظيفي'];
+const handleExcelImport = async (data: any[]) => {
+        if (!data || data.length === 0) {
+            toast.error("الملف فارغ!");
+            return;
+        }
+
+        // ✅ تحسين: تنظيف أسماء الأعمدة (إزالة المسافات الزائدة وتحويلها لحروف صغيرة) لضمان المطابقة
+        const cleanData = data.map(row => {
+            const newRow: any = {};
+            Object.keys(row).forEach(key => {
+                newRow[key.trim().toLowerCase()] = row[key]; 
+            });
+            return newRow;
+        });
+
+        const updates = cleanData.map((row: any) => {
+            // ✅ البحث عن الكود الوظيفي (يدعم الاسم الموجود في ملفك وأسماء شائعة أخرى)
+            const empId = row['employee_id'] || row['code'] || row['id'];
             
             if (!empId) return null;
 
             return {
                 employee_id: String(empId), // مفتاح الربط
-                hep_b_dose1: formatDate(row['الجرعة الاولى'] || row['dose1']),
-                hep_b_dose2: formatDate(row['الجرعة الثانية'] || row['dose2']),
-                hep_b_dose3: formatDate(row['الجرعة الثالثة'] || row['dose3']),
-                hep_b_location: row['مكان التطعيم'] || row['location'],
-                hep_b_notes: row['ملاحظات'] || row['notes']
+                hep_b_dose1: formatDate(row['hep_b_dose1'] || row['dose1']),
+                hep_b_dose2: formatDate(row['hep_b_dose2'] || row['dose2']),
+                hep_b_dose3: formatDate(row['hep_b_dose3'] || row['dose3']),
+                hep_b_location: row['hep_b_location'] || row['location'],
+                hep_b_notes: row['hep_b_notes'] || row['notes']
             };
-        }).filter(Boolean); // استبعاد الصفوف الفارغة
+        }).filter(Boolean); // استبعاد الصفوف التي لا تحتوي على كود
 
         if (updates.length === 0) {
-            toast.error("لم يتم العثور على عمود 'الكود' في الملف");
+            toast.error("لم يتم العثور على عمود 'employee_id' في الملف");
             return;
         }
 
-        // تنفيذ التحديث لكل موظف
+        // ✅ تنفيذ التحديث (يفضل استخدام Upsert أو تحديث متعدد لتقليل الاستدعاءات)
         let successCount = 0;
+        let errorCount = 0;
+
+        // لتسريع العملية، نستخدم Promise.all (ولكن بحذر مع العدد الكبير)
+        // أو Loop عادية لعرض التقدم بدقة
+        const toastId = toast.loading('جاري تحديث البيانات...');
+
         for (const update of updates) {
             const { error } = await supabase
                 .from('employees')
@@ -95,15 +115,18 @@ export default function VaccinationsTab({ employees }: { employees: Employee[] }
                     hep_b_location: update.hep_b_location,
                     hep_b_notes: update.hep_b_notes
                 })
-                .eq('employee_id', update.employee_id);
+                .eq('employee_id', update.employee_id); // الربط بالكود الوظيفي
             
             if (!error) successCount++;
+            else errorCount++;
         }
 
-        toast.success(`تم تحديث بيانات ${successCount} موظف بنجاح`);
+        toast.dismiss(toastId);
+        if (successCount > 0) toast.success(`تم تحديث ${successCount} موظف بنجاح`);
+        if (errorCount > 0) toast.error(`فشل تحديث ${errorCount} موظف (تأكد من صحة الأكواد)`);
+        
         queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
     };
-
     // دالة مساعدة لتنسيق التاريخ من الإكسيل
     const formatDate = (val: any) => {
         if (!val) return null;
