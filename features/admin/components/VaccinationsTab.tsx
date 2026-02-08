@@ -3,7 +3,7 @@ import { Employee } from '../../../types';
 import { supabase } from '../../../supabaseClient';
 import { 
     Search, Printer, Syringe, CheckCircle2, AlertCircle, XCircle, 
-    Filter, ChevronUp, ChevronDown, Upload, Plus, Save, X, Loader2 
+    Plus, Save, X, Loader2 
 } from 'lucide-react';
 import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import toast from 'react-hot-toast';
@@ -26,14 +26,14 @@ export default function VaccinationsTab({ employees }: { employees: Employee[] }
     // استخراج التخصصات
     const specialties = ['all', ...Array.from(new Set(employees.map(e => e.specialty))).filter(Boolean)];
 
-    // 1. الفلترة والبحث (محدث ليشمل الكود الوظيفي)
+    // 1. الفلترة والبحث
     const filteredData = useMemo(() => {
         return employees.filter(emp => {
             const term = searchTerm.toLowerCase();
             const matchSearch = 
                 emp.name.toLowerCase().includes(term) || 
                 (emp.national_id && emp.national_id.includes(term)) ||
-                (emp.employee_id && emp.employee_id.toLowerCase().includes(term)); // ✅ البحث بالكود
+                (emp.employee_id && emp.employee_id.toLowerCase().includes(term));
             
             const matchSpec = filterSpecialty === 'all' || emp.specialty === filterSpecialty;
             const matchStatus = filterStatus === 'all' || (filterStatus === 'نشط' ? emp.status === 'نشط' : emp.status !== 'نشط');
@@ -60,14 +60,34 @@ export default function VaccinationsTab({ employees }: { employees: Employee[] }
         return { total, dose0, dose1, dose2, dose3 };
     }, [filteredData]);
 
-    // 3. معالجة ملف الإكسيل (Import Logic)
-const handleExcelImport = async (data: any[]) => {
+    // ✅ دالة تنسيق التاريخ الآمنة (تمنع الكراش)
+    const formatDate = (val: any) => {
+        if (!val) return null;
+        let date;
+
+        // معالجة تواريخ إكسيل الرقمية
+        if (typeof val === 'number') {
+            date = new Date(Math.round((val - 25569) * 86400 * 1000));
+        } else {
+            date = new Date(val);
+        }
+
+        // التحقق من صلاحية التاريخ
+        if (isNaN(date.getTime())) {
+            return null; 
+        }
+
+        return date.toISOString().split('T')[0];
+    };
+
+    // ✅ 3. معالجة ملف الإكسيل (Import Logic - Fixed)
+    const handleExcelImport = async (data: any[]) => {
         if (!data || data.length === 0) {
             toast.error("الملف فارغ!");
             return;
         }
 
-        // ✅ تحسين: تنظيف أسماء الأعمدة (إزالة المسافات الزائدة وتحويلها لحروف صغيرة) لضمان المطابقة
+        // 1. تنظيف أسماء الأعمدة (تحويل لـ lowercase وإزالة المسافات)
         const cleanData = data.map(row => {
             const newRow: any = {};
             Object.keys(row).forEach(key => {
@@ -76,35 +96,34 @@ const handleExcelImport = async (data: any[]) => {
             return newRow;
         });
 
+        // 2. تجهيز البيانات للتحديث
         const updates = cleanData.map((row: any) => {
-            // ✅ البحث عن الكود الوظيفي (يدعم الاسم الموجود في ملفك وأسماء شائعة أخرى)
+            // البحث عن الكود الوظيفي (employee_id)
             const empId = row['employee_id'] || row['code'] || row['id'];
             
             if (!empId) return null;
 
             return {
-                employee_id: String(empId), // مفتاح الربط
-                hep_b_dose1: formatDate(row['hep_b_dose1'] || row['dose1']),
-                hep_b_dose2: formatDate(row['hep_b_dose2'] || row['dose2']),
-                hep_b_dose3: formatDate(row['hep_b_dose3'] || row['dose3']),
+                employee_id: String(empId),
+                hep_b_dose1: formatDate(row['hep_b_dose1']),
+                hep_b_dose2: formatDate(row['hep_b_dose2']),
+                hep_b_dose3: formatDate(row['hep_b_dose3']),
                 hep_b_location: row['hep_b_location'] || row['location'],
                 hep_b_notes: row['hep_b_notes'] || row['notes']
             };
-        }).filter(Boolean); // استبعاد الصفوف التي لا تحتوي على كود
+        }).filter(Boolean);
 
         if (updates.length === 0) {
             toast.error("لم يتم العثور على عمود 'employee_id' في الملف");
             return;
         }
 
-        // ✅ تنفيذ التحديث (يفضل استخدام Upsert أو تحديث متعدد لتقليل الاستدعاءات)
+        // 3. تنفيذ التحديث
         let successCount = 0;
         let errorCount = 0;
+        const toastId = toast.loading(`جاري معالجة ${updates.length} موظف...`);
 
-        // لتسريع العملية، نستخدم Promise.all (ولكن بحذر مع العدد الكبير)
-        // أو Loop عادية لعرض التقدم بدقة
-        const toastId = toast.loading('جاري تحديث البيانات...');
-
+        // استخدام Loop للتحديث (يمكن استبدالها بـ Upsert إذا كنت تفضل السرعة القصوى، لكن Update آمن لعدم إنشاء موظفين جدد بالخطأ)
         for (const update of updates) {
             const { error } = await supabase
                 .from('employees')
@@ -115,28 +134,20 @@ const handleExcelImport = async (data: any[]) => {
                     hep_b_location: update.hep_b_location,
                     hep_b_notes: update.hep_b_notes
                 })
-                .eq('employee_id', update.employee_id); // الربط بالكود الوظيفي
+                .eq('employee_id', update.employee_id);
             
             if (!error) successCount++;
-            else errorCount++;
+            else {
+                console.error("Error updating:", update.employee_id, error);
+                errorCount++;
+            }
         }
 
         toast.dismiss(toastId);
-        if (successCount > 0) toast.success(`تم تحديث ${successCount} موظف بنجاح`);
-        if (errorCount > 0) toast.error(`فشل تحديث ${errorCount} موظف (تأكد من صحة الأكواد)`);
+        if (successCount > 0) toast.success(`تم تحديث ${successCount} سجل بنجاح`);
+        if (errorCount > 0) toast.error(`فشل تحديث ${errorCount} سجل (تأكد من صحة الأكواد)`);
         
         queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
-    };
-    // دالة مساعدة لتنسيق التاريخ من الإكسيل
-    const formatDate = (val: any) => {
-        if (!val) return null;
-        // إذا كان التاريخ رقم (Excel Serial Date)
-        if (typeof val === 'number') {
-            const date = new Date(Math.round((val - 25569)*86400*1000));
-            return date.toISOString().split('T')[0];
-        }
-        // محاولة قراءة النص
-        return new Date(val).toISOString().split('T')[0] || null;
     };
 
     // 4. الحفظ اليدوي (Mutation)
@@ -184,7 +195,7 @@ const handleExcelImport = async (data: any[]) => {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* CSS للطباعة: عرضي (Landscape) لتسع الأعمدة */}
+            {/* CSS للطباعة */}
             <style>
                 {`
                     @media print {
@@ -300,7 +311,6 @@ const handleExcelImport = async (data: any[]) => {
                         </div>
                         
                         <div className="p-6 space-y-4">
-                            {/* اختيار الموظف إذا لم يكن محدداً */}
                             {!selectedEmpId ? (
                                 <div>
                                     <label className="block text-sm font-bold text-gray-600 mb-1">اختر الموظف</label>
@@ -366,7 +376,7 @@ const handleExcelImport = async (data: any[]) => {
     );
 }
 
-// مكون فرعي للبطاقات (نفس السابق)
+// مكون فرعي للبطاقات
 const StatCard = ({ label, value, sub, color, icon }: any) => (
     <div className={`bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group hover:border-${color}-200 transition-all`}>
         <div>
