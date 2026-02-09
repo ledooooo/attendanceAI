@@ -12,7 +12,7 @@ import {
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Calendar, Settings, ShoppingBag, Trophy, BookOpen, Star
+  Calendar, Settings, ShoppingBag, Trophy, Star
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -58,6 +58,9 @@ export default function StaffDashboard({ employee }: Props) {
   // حالات القوائم المنسدلة
   const [showLevelMenu, setShowLevelMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
+
+  // ✅ حالة للتدريب الإجباري
+  const [pendingMandatoryTraining, setPendingMandatoryTraining] = useState<any>(null);
 
   const hasAdminAccess = employee.permissions && Array.isArray(employee.permissions) && employee.permissions.length > 0;
 
@@ -122,6 +125,39 @@ export default function StaffDashboard({ employee }: Props) {
 
     checkDailyVisitReward();
   }, [employee.employee_id, queryClient]);
+
+  // ✅ Query: فحص التدريبات الإلزامية غير المكتملة
+  useQuery({
+    queryKey: ['check_mandatory_training', employee.employee_id],
+    queryFn: async () => {
+        // 1. جلب كل التدريبات الإلزامية
+        const { data: mandatoryTrainings } = await supabase
+            .from('trainings')
+            .select('*')
+            .eq('is_mandatory', true);
+
+        if (!mandatoryTrainings || mandatoryTrainings.length === 0) return null;
+
+        // 2. جلب التدريبات التي أكملها الموظف بالفعل
+        const { data: myCompleted } = await supabase
+            .from('employee_trainings')
+            .select('training_id')
+            .eq('employee_id', employee.employee_id)
+            .eq('status', 'completed');
+
+        const completedIds = myCompleted?.map(c => c.training_id) || [];
+
+        // 3. إيجاد أول تدريب إلزامي لم يتم إكماله
+        const pending = mandatoryTrainings.find(t => !completedIds.includes(t.id));
+
+        if (pending) {
+            setPendingMandatoryTraining(pending); // سيؤدي هذا لظهور الـ Pop-up
+        }
+        return pending;
+    },
+    enabled: !pendingMandatoryTraining, // يتوقف عن البحث لو وجد واحد بالفعل أو تم حله
+    staleTime: 1000 * 60 * 5 // إعادة الفحص كل 5 دقائق
+  });
 
 
   const fetchNotifications = async () => {
@@ -278,6 +314,47 @@ export default function StaffDashboard({ employee }: Props) {
       
       {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
+
+      {/* ✅ مكون التدريب الإجباري (Pop-up Blocking) */}
+      {pendingMandatoryTraining && (
+        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+            <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border-4 border-red-500 relative animate-in zoom-in-95">
+                
+                {/* تحذير */}
+                <div className="bg-red-500 text-white p-6 text-center">
+                    <AlertTriangle className="w-16 h-16 mx-auto mb-3 text-yellow-300 animate-bounce" />
+                    <h2 className="text-2xl font-black">تنبيه هام: تدريب إلزامي</h2>
+                    <p className="text-sm font-bold opacity-90 mt-1">يوجد تدريب جديد يجب عليك إتمامه للمتابعة</p>
+                </div>
+
+                <div className="p-8 text-center space-y-6">
+                    <div>
+                        <h3 className="text-2xl font-black text-gray-800 mb-2">{pendingMandatoryTraining.title}</h3>
+                        <div className="flex justify-center gap-4 text-sm text-gray-500 font-bold">
+                            <span>📍 {pendingMandatoryTraining.type === 'online' ? 'Online' : pendingMandatoryTraining.location}</span>
+                            <span className="text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-lg border border-yellow-100">⭐ {pendingMandatoryTraining.points} نقطة</span>
+                        </div>
+                    </div>
+                    
+                    <p className="text-gray-600 text-sm bg-gray-50 p-4 rounded-xl border leading-relaxed">
+                        هذا التدريب مطلوب من قبل إدارة المركز لضمان الجودة والسلامة المهنية. <br/>
+                        لن تتمكن من استخدام التطبيق قبل مشاهدة المحتوى وتسجيل الإتمام.
+                    </p>
+
+                    {/* زر الانتقال للتدريب */}
+                    <button 
+                        onClick={() => {
+                            setPendingMandatoryTraining(null); // إخفاء الـ Pop-up
+                            setActiveTab('training'); // التوجيه لصفحة التدريب
+                        }}
+                        className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-lg hover:bg-red-700 shadow-lg shadow-red-200 transition-transform active:scale-95 flex items-center justify-center gap-2"
+                    >
+                        الذهاب للتدريب الآن 🚀
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* --- تظليل الخلفية عند فتح القائمة --- */}
       {isSidebarOpen && (
