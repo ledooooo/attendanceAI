@@ -5,7 +5,7 @@ import {
     Plus, Save, Trash2, BookOpen, MapPin, Layers, 
     Loader2, Image as ImageIcon, Video, X, UserPlus, Search, CheckCircle, FileText, Link as LinkIcon, Upload, Users, Eye
 } from 'lucide-react';
-import { Input, Select } from '../../../../components/ui/FormElements';
+import { Input, Select } from '../../../components/ui/FormElements';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../../types';
 
