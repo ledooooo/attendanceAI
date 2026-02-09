@@ -31,6 +31,7 @@ const AVAILABLE_PERMISSIONS = [
     { id: 'leaves', label: 'إدارة الإجازات والطلبات' },
     { id: 'absence', label: 'تقارير الغياب' },
     { id: 'quality', label: 'إدارة الجودة (OVR)' },
+    { id: 'training_manager', label: 'مسؤول التدريب والتعليم المستمر' } // ✅ تمت الإضافة هنا
 ];
 
 const formatLastSeen = (dateString: string | null) => {
