@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Employee } from '../../../types';
-import { Play, CheckCircle, Clock, MapPin, ChevronLeft, ChevronRight, X, Trophy } from 'lucide-react';
+import { Play, CheckCircle, Clock, MapPin, ChevronLeft, ChevronRight, X, Trophy, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 
@@ -127,61 +127,92 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
 
             {/* مشغل التدريب (Training Player Modal) */}
             {selectedTraining && (
-                <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-                    <div className="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[80vh]">
+                <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center md:p-4">
+                    <div className="bg-black md:bg-white w-full max-w-2xl md:rounded-3xl overflow-hidden shadow-2xl flex flex-col h-full md:h-auto md:max-h-[90vh]">
+                        
                         {/* Header */}
-                        <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
+                        <div className="p-4 bg-gray-900 md:bg-white md:border-b flex justify-between items-center shrink-0 z-10">
                             <div>
-                                <h3 className="font-black text-gray-800 text-sm">{selectedTraining.title}</h3>
-                                <p className="text-xs text-gray-500 font-bold mt-1">شريحة {currentSlideIndex + 1} من {selectedTraining.slides.length}</p>
+                                <h3 className="font-black text-white md:text-gray-800 text-sm">{selectedTraining.title}</h3>
+                                <p className="text-xs text-gray-400 md:text-gray-500 font-bold mt-1">شريحة {currentSlideIndex + 1} من {selectedTraining.slides.length}</p>
                             </div>
-                            <button onClick={() => setSelectedTraining(null)} className="p-2 hover:bg-red-50 rounded-full text-gray-400 hover:text-red-500"><X className="w-5 h-5"/></button>
+                            <button onClick={() => setSelectedTraining(null)} className="p-2 bg-white/10 md:bg-gray-100 rounded-full text-white md:text-gray-600 hover:bg-white/20"><X className="w-5 h-5"/></button>
                         </div>
 
-                        {/* Slide Content */}
-                        <div className="flex-1 p-8 overflow-y-auto flex flex-col justify-center items-center text-center bg-gradient-to-br from-white to-gray-50">
-                            <h2 className="text-2xl font-black text-indigo-900 mb-6 leading-tight">
-                                {selectedTraining.slides[currentSlideIndex]?.title}
-                            </h2>
-                            <p className="text-gray-700 text-lg leading-relaxed whitespace-pre-wrap max-w-lg">
-                                {selectedTraining.slides[currentSlideIndex]?.content}
-                            </p>
+                        {/* Slide Content Area */}
+                        <div className="flex-1 overflow-y-auto flex flex-col relative bg-black">
+                            
+                            {/* منطقة الميديا (فيديو أو صورة) */}
+                            {selectedTraining.slides[currentSlideIndex]?.mediaUrl ? (
+                                <div className="w-full flex-1 flex items-center justify-center bg-black min-h-[300px]">
+                                    {selectedTraining.slides[currentSlideIndex].mediaType === 'video' ? (
+                                        <video 
+                                            src={selectedTraining.slides[currentSlideIndex].mediaUrl} 
+                                            className="max-h-full w-full object-contain" 
+                                            controls 
+                                            autoPlay 
+                                            playsInline
+                                        />
+                                    ) : (
+                                        <img 
+                                            src={selectedTraining.slides[currentSlideIndex].mediaUrl} 
+                                            className="max-h-full w-full object-contain" 
+                                            alt="slide content" 
+                                        />
+                                    )}
+                                </div>
+                            ) : (
+                                // لو مفيش ميديا، مساحة فارغة بسيطة
+                                <div className="flex-1 bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center">
+                                    <Sparkles className="w-20 h-20 text-white/10"/>
+                                </div>
+                            )}
+
+                            {/* النص والشرح */}
+                            <div className="bg-white rounded-t-[30px] p-6 -mt-6 relative z-10 min-h-[200px]">
+                                <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4"></div>
+                                <h2 className="text-xl font-black text-gray-900 mb-3 text-center">
+                                    {selectedTraining.slides[currentSlideIndex]?.title}
+                                </h2>
+                                <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap text-center max-w-lg mx-auto">
+                                    {selectedTraining.slides[currentSlideIndex]?.content}
+                                </p>
+                            </div>
                         </div>
 
                         {/* Footer Controls */}
-                        <div className="p-4 border-t bg-white flex justify-between items-center">
+                        <div className="p-4 bg-white border-t flex justify-between items-center shrink-0">
                             <button 
                                 onClick={prevSlide} 
                                 disabled={currentSlideIndex === 0}
-                                className="px-4 py-2 rounded-xl text-gray-600 font-bold disabled:opacity-30 hover:bg-gray-100"
+                                className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-30 hover:bg-gray-200 transition-colors"
                             >
                                 <ChevronRight className="w-6 h-6"/>
                             </button>
 
-                            {/* زر الانتهاء يظهر فقط في آخر شريحة */}
+                            {/* مؤشر التقدم */}
+                            <div className="flex gap-1.5 mx-4 overflow-x-auto max-w-[200px] no-scrollbar">
+                                {selectedTraining.slides.map((_:any, idx:number) => (
+                                    <div key={idx} className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentSlideIndex ? 'bg-indigo-600 w-8' : idx < currentSlideIndex ? 'bg-indigo-300 w-2' : 'bg-gray-200 w-2'}`}></div>
+                                ))}
+                            </div>
+
                             {currentSlideIndex === selectedTraining.slides.length - 1 ? (
                                 <button 
                                     onClick={finishTraining}
                                     disabled={completeMutation.isPending}
-                                    className="bg-green-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-green-200 hover:scale-105 transition-transform flex items-center gap-2"
+                                    className="bg-green-600 text-white px-6 py-3 rounded-full font-black shadow-lg shadow-green-200 hover:scale-105 transition-transform flex items-center gap-2 text-sm"
                                 >
-                                    {completeMutation.isPending ? 'جاري التسجيل...' : 'إنهاء واستلام النقاط 🎁'}
+                                    {completeMutation.isPending ? '...' : 'إنهاء'} <CheckCircle className="w-4 h-4"/>
                                 </button>
                             ) : (
-                                <div className="flex gap-1">
-                                    {selectedTraining.slides.map((_:any, idx:number) => (
-                                        <div key={idx} className={`w-2 h-2 rounded-full transition-all ${idx === currentSlideIndex ? 'bg-indigo-600 w-4' : 'bg-gray-200'}`}></div>
-                                    ))}
-                                </div>
+                                <button 
+                                    onClick={nextSlide} 
+                                    className="w-12 h-12 flex items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-colors"
+                                >
+                                    <ChevronLeft className="w-6 h-6"/>
+                                </button>
                             )}
-
-                            <button 
-                                onClick={nextSlide} 
-                                disabled={currentSlideIndex === selectedTraining.slides.length - 1}
-                                className="px-4 py-2 rounded-xl text-gray-600 font-bold disabled:opacity-30 hover:bg-gray-100"
-                            >
-                                <ChevronLeft className="w-6 h-6"/>
-                            </button>
                         </div>
                     </div>
                 </div>
