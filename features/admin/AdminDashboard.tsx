@@ -89,7 +89,7 @@ export default function AdminDashboard() {
                 return { messages: 0, leaves: 0, ovr: 0, tasks: 0 };
             }
         },
-        refetchInterval: 10000, 
+        refetchInterval: 60000, 
     });
 
     // تصفير إشعارات المهام عند فتح التبويب
