@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { supabase } from '../../../supabaseClient';
+import { supabase } from '../../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
     Plus, Save, Trash2, BookOpen, MapPin, Layers, 
@@ -7,7 +7,7 @@ import {
     CheckCircle, FileText, Upload, Users, Eye, Link as LinkIcon,
     Filter, RefreshCw, Globe
 } from 'lucide-react';
-import { Input, Select } from '../../../components/ui/FormElements';
+import { Input, Select } from '../../../../components/ui/FormElements';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../../types';
 
@@ -309,7 +309,9 @@ export default function TrainingManager() {
                                      {t.target_specialties?.length > 2 && <span className="text-[10px] bg-gray-100 px-1 rounded">...</span>}
                                 </div>
                                 <div className="mt-4 flex justify-between items-center border-t border-gray-50 pt-3">
-                                    <button onClick={() => setShowStatsModal(t)} className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1 hover:bg-green-100"><Users className="w-3 h-3"/> {t.completed_count} اجتازوا</button>
+                                    <button onClick={() => setShowStatsModal(t)} className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1 hover:bg-green-100 transition-colors">
+                                        <Users className="w-3 h-3"/> {t.completed_count} اجتازوا
+                                    </button>
                                     <button onClick={() => { if(confirm('حذف؟')) deleteMutation.mutate(t.id); }} className="text-red-400 hover:text-red-600 p-2"><Trash2 className="w-4 h-4"/></button>
                                 </div>
                             </div>
@@ -322,7 +324,7 @@ export default function TrainingManager() {
             {activeTab === 'records' && (
                 <>
                     <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-indigo-50">
-                        <div><h2 className="text-xl font-black text-gray-800 flex items-center gap-2"><FileText className="w-6 h-6 text-green-600"/> السجل الشامل</h2><p className="text-gray-500 text-sm mt-1">عرض وتوثيق جميع التدريبات (إلكترونية ويدوية)</p></div>
+                        <div><h2 className="text-xl font-black text-gray-800 flex items-center gap-2"><FileText className="w-6 h-6 text-green-600"/> السجل الشامل</h2><p className="text-gray-500 text-sm mt-1">عرض جميع التدريبات (تفاعلي ويدوي)</p></div>
                         <div className="flex gap-2">
                             <button onClick={() => refetchRecords()} className="bg-gray-100 text-gray-600 px-3 py-2.5 rounded-xl hover:bg-gray-200"><RefreshCw className={`w-5 h-5 ${loadingRecords ? 'animate-spin' : ''}`}/></button>
                             <button onClick={() => setShowAssignModal(true)} className="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-lg shadow-green-200"><UserPlus className="w-5 h-5"/> تسجيل يدوي</button>
@@ -341,10 +343,10 @@ export default function TrainingManager() {
                                 <tr><th className="p-4">الموظف</th><th className="p-4">التخصص</th><th className="p-4">التدريب</th><th className="p-4">التاريخ</th><th className="p-4">النوع</th><th className="p-4 text-center">سجل كامل</th></tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {filteredRecords.length === 0 ? <tr><td colSpan={6} className="p-8 text-center text-gray-400">لا توجد بيانات مطابقة</td></tr> : 
+                                {filteredRecords.length === 0 ? <tr><td colSpan={6} className="p-8 text-center text-gray-400">لا توجد سجلات</td></tr> : 
                                 filteredRecords.map((rec: any) => (
                                     <tr key={rec.id} className="hover:bg-gray-50">
-                                        <td className="p-4 font-bold text-gray-800">{rec.employees?.name} <span className="block text-[10px] text-gray-400">{rec.employees?.employee_id}</span></td>
+                                        <td className="p-4 font-bold text-gray-800">{rec.employees?.name} <span className="block text-[10px] text-gray-400 font-mono">{rec.employees?.employee_id}</span></td>
                                         <td className="p-4 text-xs text-gray-500">{rec.employees?.specialty}</td>
                                         <td className="p-4 font-bold text-indigo-700">{rec.trainings?.title || rec.manual_title}</td>
                                         <td className="p-4 font-mono text-xs">{new Date(rec.manual_date || rec.completed_at).toLocaleDateString('ar-EG')}</td>
@@ -360,7 +362,7 @@ export default function TrainingManager() {
 
             {/* --- MODALS --- */}
 
-            {/* 1. Create Modal */}
+            {/* 1. Modal: Create Training */}
             {showCreateModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
                     <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl my-8 flex flex-col max-h-[90vh]">
@@ -395,7 +397,7 @@ export default function TrainingManager() {
                                     ))}
                                 </div>
                             </div>
-
+                            
                             {/* Slides */}
                             <div className="bg-gray-50 p-4 rounded-2xl border border-dashed">
                                 {createForm.slides.map((slide, idx) => (
@@ -514,7 +516,7 @@ export default function TrainingManager() {
                                 <label className="text-xs font-bold text-gray-500 mb-1 block">اختر الموظف</label>
                                 <input placeholder="ابحث..." className="w-full p-2 rounded-xl border bg-gray-50 mb-2 text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                                 <select className="w-full p-3 rounded-xl border bg-white font-bold" value={assignForm.employee_id} onChange={e => setAssignForm({...assignForm, employee_id: e.target.value})}>
-                                    <option value="">-- اختر --</option>
+                                    <option value="">-- اختر من القائمة --</option>
                                     {filteredEmployees.map(e => <option key={e.id} value={e.employee_id}>{e.name} ({e.specialty})</option>)}
                                 </select>
                             </div>
