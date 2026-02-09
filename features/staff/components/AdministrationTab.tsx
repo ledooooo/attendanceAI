@@ -2,71 +2,77 @@ import React, { useState } from 'react';
 import { Employee } from '../../../types';
 import { 
     Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, 
-    Users, FileSignature, ArrowRight, ShieldAlert, BookOpen // ✅ استيراد BookOpen
+    Users, FileSignature, ArrowRight, ShieldAlert, BookOpen, FileX 
 } from 'lucide-react';
 
-// استيراد المكونات الجديدة المخصصة للموظف
+// استيراد المكونات السبعة
 import StaffEmployeeManager from './admin_tools/StaffEmployeeManager';
 import StaffAttendanceManager from './admin_tools/StaffAttendanceManager';
 import StaffVaccineManager from './admin_tools/StaffVaccineManager';
 import StaffRequestsManager from './admin_tools/StaffRequestsManager';
 import StaffOVRManager from './admin_tools/StaffOVRManager';
-import TrainingManager from './admin_tools/TrainingManager'; // ✅ استيراد صفحة التدريب الجديدة
+import TrainingManager from './admin_tools/TrainingManager';
+import StaffAbsenceManager from './admin_tools/StaffAbsenceManager'; // ✅ تم إضافة الملف الجديد
 
 export default function AdministrationTab({ employee }: { employee: Employee }) {
     const [activeTool, setActiveTool] = useState<string | null>(null);
 
-    // تعريف الأدوات (يظهر فقط ما لديه صلاحية له)
+    // ✅ خريطة الصلاحيات الكاملة (7 صلاحيات = 7 أدوات)
     const TOOLS_CONFIG: any = {
-        'reports': { // صلاحية شئون العاملين
+        'reports': { 
             id: 'reports',
             label: 'إدارة بيانات الموظفين',
             icon: <Users className="w-8 h-8 text-emerald-600"/>,
             color: 'bg-emerald-50 border-emerald-100',
             component: <StaffEmployeeManager currentUser={employee} />
         },
-        'attendance': { // صلاحية البصمة
+        'attendance': { 
             id: 'attendance',
             label: 'إدخال البصمة والتقارير',
             icon: <Fingerprint className="w-8 h-8 text-purple-600"/>,
             color: 'bg-purple-50 border-purple-100',
             component: <StaffAttendanceManager />
         },
-        'vaccinations': { // صلاحية التطعيمات
+        'vaccinations': { 
             id: 'vaccinations',
             label: 'سجل التطعيمات',
             icon: <Syringe className="w-8 h-8 text-blue-600"/>,
             color: 'bg-blue-50 border-blue-100',
             component: <StaffVaccineManager />
         },
-        'leaves': { // صلاحية الطلبات
+        'leaves': { 
             id: 'leaves',
             label: 'مراجعة طلبات الموظفين',
             icon: <FileSignature className="w-8 h-8 text-orange-600"/>,
             color: 'bg-orange-50 border-orange-100',
             component: <StaffRequestsManager />
         },
-        'quality': { // صلاحية الجودة
+        'quality': { 
             id: 'quality',
             label: 'تقارير OVR',
             icon: <ShieldAlert className="w-8 h-8 text-red-600"/>,
             color: 'bg-red-50 border-red-100',
             component: <StaffOVRManager />
         },
-        // ✅ تمت إضافة قسم التدريب
         'training_manager': { 
             id: 'training_manager',
             label: 'إدارة التدريب والتعليم المستمر',
             icon: <BookOpen className="w-8 h-8 text-indigo-600"/>,
             color: 'bg-indigo-50 border-indigo-100',
             component: <TrainingManager />
+        },
+        'absence': { // ✅ تمت الإضافة
+            id: 'absence',
+            label: 'تقارير الغياب',
+            icon: <FileX className="w-8 h-8 text-rose-600"/>,
+            color: 'bg-rose-50 border-rose-100',
+            component: <StaffAbsenceManager />
         }
     };
 
     const userPermissions = employee.permissions || [];
     const allowedTools = Object.keys(TOOLS_CONFIG).filter(key => userPermissions.includes(key));
 
-    // وضع عرض الأداة
     if (activeTool) {
         const tool = TOOLS_CONFIG[activeTool];
         return (
@@ -84,7 +90,6 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
         );
     }
 
-    // القائمة الرئيسية
     return (
         <div className="p-6 space-y-6 animate-in fade-in pb-24">
             <div className="flex items-center gap-3 mb-8">
