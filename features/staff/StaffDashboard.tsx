@@ -207,7 +207,7 @@ export default function StaffDashboard({ employee }: Props) {
               ovr_replies: ovrReplies.count || 0
           };
       },
-      refetchInterval: 5000,
+      refetchInterval: 30000,
   });
 
   const fetchAllData = async () => {
