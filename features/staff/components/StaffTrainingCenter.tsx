@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Employee } from '../../../types';
-import { Play, CheckCircle, Clock, MapPin, ChevronLeft, ChevronRight, X, Trophy, Sparkles } from 'lucide-react';
+import { Play, CheckCircle, Clock, MapPin, ChevronLeft, ChevronRight, X, Trophy, Sparkles, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 
@@ -18,12 +18,12 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
             // جلب كل التدريبات
             const { data: allTrainings } = await supabase.from('trainings').select('*').order('created_at', { ascending: false });
             
-            // جلب سجلات الموظف لهذا التدريب
+            // جلب سجلات الموظف لهذا التدريب لمعرفة ما تم إنجازه
             const { data: myProgress } = await supabase.from('employee_trainings')
                 .select('training_id, status')
                 .eq('employee_id', employee.employee_id);
 
-            // دمج البيانات لمعرفة المكتمل
+            // دمج البيانات
             return allTrainings?.map(t => ({
                 ...t,
                 is_completed: myProgress?.some(p => p.training_id === t.id && p.status === 'completed')
@@ -31,7 +31,7 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
         }
     });
 
-    // 2. تسجيل الإكمال ومنح النقاط
+    // 2. تسجيل الإكمال ومنح النقاط (يعمل فقط للمرة الأولى)
     const completeMutation = useMutation({
         mutationFn: async (training: any) => {
             // أ) تسجيل في جدول التدريبات
@@ -57,10 +57,10 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
             toast.success(`أحسنت! تم إضافة ${selectedTraining.points} نقطة لرصيدك`);
             setSelectedTraining(null);
             queryClient.invalidateQueries({ queryKey: ['staff_trainings'] });
-            queryClient.invalidateQueries({ queryKey: ['employee_full_details'] }); // لتحديث النقاط في الهيدر
+            queryClient.invalidateQueries({ queryKey: ['employee_full_details'] });
         },
         onError: (err: any) => {
-            if (err.code === '23505') toast.error("لقد أكملت هذا التدريب مسبقاً"); // Unique Violation
+            if (err.code === '23505') toast.error("لقد أكملت هذا التدريب مسبقاً");
             else toast.error("حدث خطأ في التسجيل");
         }
     });
@@ -78,8 +78,15 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
         }
     };
 
-    const finishTraining = () => {
-        completeMutation.mutate(selectedTraining);
+    const handleFinish = () => {
+        // إذا كان التدريب مكتملاً مسبقاً، نغلق فقط
+        if (selectedTraining.is_completed) {
+            setSelectedTraining(null);
+            toast.success("تمت مراجعة التدريب بنجاح 👍");
+        } else {
+            // إذا كان جديداً، نسجل النقاط
+            completeMutation.mutate(selectedTraining);
+        }
     };
 
     const openTraining = (t: any) => {
@@ -93,14 +100,13 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
 
             <div className="grid grid-cols-1 gap-4 px-2 pb-20">
                 {trainings.map((t: any) => (
-                    <div key={t.id} className={`relative bg-white rounded-3xl p-5 border shadow-sm transition-all ${t.is_completed ? 'border-green-200 opacity-80' : 'border-gray-100 hover:shadow-md'}`}>
+                    <div key={t.id} className={`relative bg-white rounded-3xl p-5 border shadow-sm transition-all ${t.is_completed ? 'border-green-200' : 'border-gray-100 hover:shadow-md'}`}>
+                        
+                        {/* الشارات العلوية */}
                         {t.is_mandatory && !t.is_completed && (
                             <span className="absolute top-4 left-4 bg-red-100 text-red-600 text-[10px] font-black px-2 py-1 rounded-full animate-pulse">إلزامي</span>
                         )}
-                        {t.is_completed && (
-                            <span className="absolute top-4 left-4 bg-green-100 text-green-700 text-[10px] font-black px-2 py-1 rounded-full flex items-center gap-1"><CheckCircle className="w-3 h-3"/> مكتمل</span>
-                        )}
-
+                        
                         <h3 className="font-bold text-gray-800 mb-2">{t.title}</h3>
                         
                         <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
@@ -108,7 +114,7 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
                             <span className="flex items-center gap-1 text-yellow-600 font-bold"><Trophy className="w-3 h-3"/> {t.points} نقطة</span>
                         </div>
 
-                        {/* زر الإجراء */}
+                        {/* أزرار التحكم */}
                         {!t.is_completed ? (
                             <button 
                                 onClick={() => openTraining(t)}
@@ -117,8 +123,16 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
                                 <Play className="w-4 h-4 fill-current"/> ابدأ التدريب الآن
                             </button>
                         ) : (
-                            <div className="w-full bg-gray-100 text-gray-500 py-3 rounded-xl font-bold text-center text-sm cursor-not-allowed">
-                                تم الاجتياز
+                            <div className="flex gap-2">
+                                <div className="flex-1 bg-green-50 text-green-700 py-3 rounded-xl font-bold text-center text-sm border border-green-100 flex justify-center items-center gap-1 cursor-default">
+                                    <CheckCircle className="w-4 h-4"/> تم الاجتياز
+                                </div>
+                                <button 
+                                    onClick={() => openTraining(t)}
+                                    className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold text-center text-sm hover:bg-gray-200 transition-colors flex justify-center items-center gap-1 border border-gray-200"
+                                >
+                                    <RotateCcw className="w-4 h-4"/> مراجعة
+                                </button>
                             </div>
                         )}
                     </div>
@@ -127,7 +141,7 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
 
             {/* مشغل التدريب (Training Player Modal) */}
             {selectedTraining && (
-                <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center md:p-4">
+                <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center md:p-4 animate-in zoom-in-95 duration-200">
                     <div className="bg-black md:bg-white w-full max-w-2xl md:rounded-3xl overflow-hidden shadow-2xl flex flex-col h-full md:h-auto md:max-h-[90vh]">
                         
                         {/* Header */}
@@ -162,8 +176,8 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
                                     )}
                                 </div>
                             ) : (
-                                // لو مفيش ميديا، مساحة فارغة بسيطة
-                                <div className="flex-1 bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center">
+                                // لو مفيش ميديا، مساحة فارغة بسيطة مع خلفية
+                                <div className="flex-1 bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center min-h-[300px]">
                                     <Sparkles className="w-20 h-20 text-white/10"/>
                                 </div>
                             )}
@@ -197,13 +211,15 @@ export default function StaffTrainingCenter({ employee }: { employee: Employee }
                                 ))}
                             </div>
 
+                            {/* زر الإجراء (التالي أو إنهاء) */}
                             {currentSlideIndex === selectedTraining.slides.length - 1 ? (
                                 <button 
-                                    onClick={finishTraining}
+                                    onClick={handleFinish}
                                     disabled={completeMutation.isPending}
-                                    className="bg-green-600 text-white px-6 py-3 rounded-full font-black shadow-lg shadow-green-200 hover:scale-105 transition-transform flex items-center gap-2 text-sm"
+                                    className={`px-6 py-3 rounded-full font-black shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-sm text-white ${selectedTraining.is_completed ? 'bg-gray-600 hover:bg-gray-700' : 'bg-green-600 hover:bg-green-700 shadow-green-200'}`}
                                 >
-                                    {completeMutation.isPending ? '...' : 'إنهاء'} <CheckCircle className="w-4 h-4"/>
+                                    {completeMutation.isPending ? '...' : selectedTraining.is_completed ? 'إغلاق' : 'إنهاء'} 
+                                    {selectedTraining.is_completed ? <X className="w-4 h-4"/> : <CheckCircle className="w-4 h-4"/>}
                                 </button>
                             ) : (
                                 <button 
