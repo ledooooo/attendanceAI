@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { supabase } from '../../../supabaseClient';
+import { supabase } from '../../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
     Plus, Save, Trash2, BookOpen, MapPin, Layers, 
-    Loader2, Image as ImageIcon, Video, X, UserPlus, Search, CheckCircle, FileText
+    Loader2, Image as ImageIcon, Video, X, UserPlus, Search, CheckCircle, FileText, Link as LinkIcon, Upload
 } from 'lucide-react';
-import { Input, Select } from '../../../components/ui/FormElements';
+import { Input, Select } from '../../../../components/ui/FormElements';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../../types';
 
@@ -13,7 +13,7 @@ export default function TrainingManager() {
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState<'create' | 'records'>('create');
 
-    // --- State: Create Training (General) ---
+    // --- State: Create Training ---
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [uploading, setUploading] = useState<number | null>(null);
     const initialFormState = {
@@ -22,7 +22,7 @@ export default function TrainingManager() {
     };
     const [createForm, setCreateForm] = useState(initialFormState);
 
-    // --- State: Assign Training (Individual Record) ---
+    // --- State: Assign Training ---
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [assignForm, setAssignForm] = useState({
@@ -56,23 +56,16 @@ export default function TrainingManager() {
     const { data: trainingLogs = [] } = useQuery({
         queryKey: ['training_logs'],
         queryFn: async () => {
-            // جلب السجلات مع ربط جدول الموظفين
             const { data, error } = await supabase
                 .from('training_logs')
                 .select('*, employees(name, specialty)')
                 .order('training_date', { ascending: false });
-            
-            if (error) {
-                console.error("Error fetching logs:", error);
-                return [];
-            }
+            if (error) { console.error("Error logs:", error); return []; }
             return data;
         }
     });
 
     // --- Mutations ---
-
-    // 1. إنشاء تدريب عام (Course) + إشعار
     const createMutation = useMutation({
         mutationFn: async (newTraining: any) => {
             const payload = {
@@ -81,19 +74,16 @@ export default function TrainingManager() {
                 is_mandatory: newTraining.is_mandatory === 'true',
                 training_date: newTraining.training_date ? newTraining.training_date : null
             };
-
             const { error } = await supabase.from('trainings').insert([payload]);
             if (error) throw error;
 
-            // 🔔 إرسال إشعارات جماعية
             const { data: allStaff } = await supabase.from('employees').select('employee_id').eq('status', 'نشط');
-            if (allStaff && allStaff.length > 0) {
+            if (allStaff?.length) {
                 const notifs = allStaff.map(emp => ({
                     user_id: emp.employee_id,
                     title: payload.is_mandatory ? '🚨 تدريب إلزامي جديد' : '📚 تدريب جديد متاح',
-                    message: `تم إضافة تدريب بعنوان "${payload.title}". ${payload.is_mandatory ? 'يرجى إتمامه فوراً.' : 'تصفحه الآن واكسب نقاط.'}`,
-                    type: 'training',
-                    is_read: false
+                    message: `تم إضافة تدريب بعنوان "${payload.title}".`,
+                    type: 'training', is_read: false
                 }));
                 await supabase.from('notifications').insert(notifs);
             }
@@ -107,7 +97,6 @@ export default function TrainingManager() {
         onError: (err: any) => toast.error('حدث خطأ: ' + err.message)
     });
 
-    // 2. حذف تدريب
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
             const { error } = await supabase.from('trainings').delete().eq('id', id);
@@ -119,24 +108,19 @@ export default function TrainingManager() {
         }
     });
 
-    // 3. تسجيل تدريب فردي (Record) + إشعار
     const assignMutation = useMutation({
         mutationFn: async (data: any) => {
-            // أ) الحفظ في السجل
             const { error } = await supabase.from('training_logs').insert([data]);
             if (error) throw error;
-
-            // ب) إشعار للموظف
             await supabase.from('notifications').insert({
                 user_id: data.employee_id,
                 title: '✅ تم تسجيل تدريب',
-                message: `تم توثيق حصولك على تدريب: ${data.training_name} بتاريخ ${data.training_date}`,
-                type: 'info',
-                is_read: false
+                message: `تم توثيق حصولك على تدريب: ${data.training_name}`,
+                type: 'info', is_read: false
             });
         },
         onSuccess: () => {
-            toast.success('تم حفظ السجل وإبلاغ الموظف');
+            toast.success('تم حفظ السجل');
             setShowAssignModal(false);
             setAssignForm({ ...assignForm, employee_id: '', training_name: '' });
             queryClient.invalidateQueries({ queryKey: ['training_logs'] });
@@ -153,11 +137,16 @@ export default function TrainingManager() {
         setUploading(index);
         try {
             const fileExt = file.name.split('.').pop();
-            const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-            const filePath = `slides/${fileName}`;
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const filePath = `${fileName}`; // تبسيط المسار
 
-            const { error } = await supabase.storage.from('training-media').upload(filePath, file);
-            if (error) throw error;
+            // 1. محاولة الرفع
+            const { error: uploadError } = await supabase.storage.from('training-media').upload(filePath, file);
+            
+            if (uploadError) {
+                console.error("Upload Error Details:", uploadError); // للفحص
+                throw new Error(uploadError.message === "The resource was not found" ? "تأكد من إنشاء Bucket باسم training-media" : uploadError.message);
+            }
 
             const { data: { publicUrl } } = supabase.storage.from('training-media').getPublicUrl(filePath);
             const type = file.type.startsWith('video') ? 'video' : 'image';
@@ -170,10 +159,19 @@ export default function TrainingManager() {
             setCreateForm({ ...createForm, slides: newSlides });
             toast.success('تم الرفع');
         } catch (error: any) {
-            toast.error('فشل الرفع');
+            toast.error('فشل الرفع: ' + error.message);
         } finally {
             setUploading(null);
         }
+    };
+
+    const handleExternalLink = (val: string, index: number) => {
+        const newSlides: any = [...createForm.slides];
+        newSlides[index].mediaUrl = val;
+        // تخمين النوع
+        if (val.includes('youtube') || val.includes('youtu.be') || val.endsWith('.mp4')) newSlides[index].mediaType = 'video';
+        else newSlides[index].mediaType = 'image';
+        setCreateForm({ ...createForm, slides: newSlides });
     };
 
     const slideActions = {
@@ -192,9 +190,7 @@ export default function TrainingManager() {
         }
     };
 
-    // --- Filters ---
     const filteredEmployees = useMemo(() => employees.filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase()) || e.employee_id.includes(searchTerm)), [employees, searchTerm]);
-    
     const filteredLogs = useMemo(() => trainingLogs.filter((log: any) => {
         const empName = log.employees?.name || '';
         return empName.toLowerCase().includes(recordSearch.toLowerCase()) || log.training_name.includes(recordSearch);
@@ -202,46 +198,27 @@ export default function TrainingManager() {
 
     return (
         <div className="space-y-6 animate-in fade-in pb-20">
-            
-            {/* Tabs */}
             <div className="flex bg-white p-1.5 rounded-2xl border shadow-sm w-fit gap-1">
-                <button onClick={() => setActiveTab('create')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'create' ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>
-                    المحتوى التعليمي (LMS)
-                </button>
-                <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'records' ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>
-                    سجلات التدريب الفردية
-                </button>
+                <button onClick={() => setActiveTab('create')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'create' ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>المحتوى التعليمي (LMS)</button>
+                <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'records' ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>سجلات التدريب الفردية</button>
             </div>
 
-            {/* ======================= TAB 1: CREATE CONTENT ======================= */}
             {activeTab === 'create' && (
                 <>
                     <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-indigo-50">
-                        <div>
-                            <h2 className="text-xl font-black text-gray-800 flex items-center gap-2"><BookOpen className="w-6 h-6 text-indigo-600"/> الدورات التفاعلية</h2>
-                            <p className="text-gray-500 text-sm mt-1">دورات تظهر في التطبيق بنظام الشرائح والنقاط</p>
-                        </div>
-                        <button onClick={() => setShowCreateModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-200">
-                            <Plus className="w-5 h-5"/> دورة جديدة
-                        </button>
+                        <div><h2 className="text-xl font-black text-gray-800 flex items-center gap-2"><BookOpen className="w-6 h-6 text-indigo-600"/> الدورات التفاعلية</h2><p className="text-gray-500 text-sm mt-1">دورات تظهر في التطبيق بنظام الشرائح والنقاط</p></div>
+                        <button onClick={() => setShowCreateModal(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-200"><Plus className="w-5 h-5"/> دورة جديدة</button>
                     </div>
-
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {trainings.map((t: any) => (
                             <div key={t.id} className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm relative overflow-hidden hover:shadow-md transition-all group">
                                 <div className={`absolute top-0 right-0 left-0 h-1.5 ${t.type === 'online' ? 'bg-purple-500' : 'bg-blue-500'}`}></div>
                                 <div className="flex justify-between items-start mt-2">
-                                    <div>
-                                        <h3 className="font-bold text-gray-800 mb-1 line-clamp-1">{t.title}</h3>
-                                        <p className="text-xs text-gray-500 font-bold flex items-center gap-1"><MapPin className="w-3 h-3"/> {t.location || 'Online'}</p>
-                                    </div>
+                                    <div><h3 className="font-bold text-gray-800 mb-1 line-clamp-1">{t.title}</h3><p className="text-xs text-gray-500 font-bold flex items-center gap-1"><MapPin className="w-3 h-3"/> {t.location || 'Online'}</p></div>
                                     {t.is_mandatory && <span className="bg-red-50 text-red-600 text-[10px] font-black px-2 py-1 rounded-full border border-red-100">إجباري</span>}
                                 </div>
                                 <div className="mt-4 flex justify-between items-center border-t border-gray-50 pt-3">
-                                    <div className="flex gap-2">
-                                        <span className="text-xs font-bold text-gray-500 bg-gray-50 px-2 py-1 rounded-lg flex items-center gap-1"><Layers className="w-3 h-3"/> {t.slides?.length}</span>
-                                        <span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded-lg">{t.points} نقطة</span>
-                                    </div>
+                                    <div className="flex gap-2"><span className="text-xs font-bold text-gray-500 bg-gray-50 px-2 py-1 rounded-lg flex items-center gap-1"><Layers className="w-3 h-3"/> {t.slides?.length}</span><span className="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded-lg">{t.points} نقطة</span></div>
                                     <button onClick={() => deleteMutation.mutate(t.id)} className="text-red-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50"><Trash2 className="w-4 h-4"/></button>
                                 </div>
                             </div>
@@ -250,40 +227,22 @@ export default function TrainingManager() {
                 </>
             )}
 
-            {/* ======================= TAB 2: RECORDS ======================= */}
             {activeTab === 'records' && (
                 <>
                     <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-indigo-50">
-                        <div>
-                            <h2 className="text-xl font-black text-gray-800 flex items-center gap-2"><FileText className="w-6 h-6 text-green-600"/> سجل التدريبات</h2>
-                            <p className="text-gray-500 text-sm mt-1">أرشيف التدريبات والدورات الحاصل عليها الموظفون</p>
-                        </div>
-                        <button onClick={() => setShowAssignModal(true)} className="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-lg shadow-green-200">
-                            <UserPlus className="w-5 h-5"/> تسجيل جديد
-                        </button>
+                        <div><h2 className="text-xl font-black text-gray-800 flex items-center gap-2"><FileText className="w-6 h-6 text-green-600"/> سجل التدريبات</h2><p className="text-gray-500 text-sm mt-1">أرشيف التدريبات والدورات الحاصل عليها الموظفون</p></div>
+                        <button onClick={() => setShowAssignModal(true)} className="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-lg shadow-green-200"><UserPlus className="w-5 h-5"/> تسجيل جديد</button>
                     </div>
-
                     <div className="bg-white p-4 rounded-2xl border shadow-sm flex gap-4">
-                        <div className="relative flex-1">
-                            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
-                            <input value={recordSearch} onChange={e => setRecordSearch(e.target.value)} placeholder="بحث باسم الموظف أو التدريب..." className="w-full pr-9 pl-4 py-2 rounded-xl border bg-gray-50 outline-none text-sm"/>
-                        </div>
+                        <div className="relative flex-1"><Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/><input value={recordSearch} onChange={e => setRecordSearch(e.target.value)} placeholder="بحث باسم الموظف أو التدريب..." className="w-full pr-9 pl-4 py-2 rounded-xl border bg-gray-50 outline-none text-sm"/></div>
                     </div>
-
                     <div className="bg-white rounded-3xl border shadow-sm overflow-hidden">
                         <table className="w-full text-sm text-right">
                             <thead className="bg-gray-50 font-bold border-b text-gray-700">
-                                <tr>
-                                    <th className="p-4">الموظف</th>
-                                    <th className="p-4">التخصص</th>
-                                    <th className="p-4">اسم التدريب</th>
-                                    <th className="p-4">التاريخ</th>
-                                    <th className="p-4">المكان</th>
-                                </tr>
+                                <tr><th className="p-4">الموظف</th><th className="p-4">التخصص</th><th className="p-4">اسم التدريب</th><th className="p-4">التاريخ</th><th className="p-4">المكان</th></tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {filteredLogs.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-gray-400">لا توجد سجلات</td></tr> :
-                                filteredLogs.map((log: any) => (
+                                {filteredLogs.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-gray-400">لا توجد سجلات</td></tr> : filteredLogs.map((log: any) => (
                                     <tr key={log.id} className="hover:bg-gray-50">
                                         <td className="p-4 font-bold text-gray-800">{log.employees?.name}</td>
                                         <td className="p-4 text-xs text-gray-500">{log.employees?.specialty}</td>
@@ -298,9 +257,7 @@ export default function TrainingManager() {
                 </>
             )}
 
-            {/* ======================= MODALS ======================= */}
-
-            {/* Modal 1: Create Training (نفس الكود السابق مع بعض الاختصارات) */}
+            {/* Modal 1: Create Training */}
             {showCreateModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
                     <div className="bg-white rounded-3xl w-full max-w-5xl shadow-2xl my-8 flex flex-col max-h-[90vh]">
@@ -327,21 +284,29 @@ export default function TrainingManager() {
                                         <input placeholder="عنوان الشريحة" className="w-full font-bold mb-2 border-b outline-none" value={slide.title} onChange={e => slideActions.update(idx, 'title', e.target.value)} />
                                         
                                         <div className="flex gap-4">
-                                            <div className="w-32 h-32 bg-gray-100 rounded-xl flex items-center justify-center relative overflow-hidden">
+                                            <div className="w-40 h-40 bg-gray-100 rounded-2xl flex items-center justify-center relative overflow-hidden border">
                                                 {slide.mediaUrl ? (
                                                     <>
                                                         {slide.mediaType === 'video' ? <video src={slide.mediaUrl} className="w-full h-full object-cover"/> : <img src={slide.mediaUrl} className="w-full h-full object-cover" alt=""/>}
                                                         <button onClick={() => slideActions.removeMedia(idx)} className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full"><X className="w-3 h-3"/></button>
                                                     </>
                                                 ) : (
-                                                    <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center text-gray-400 text-xs text-center p-1">
-                                                        {uploading === idx ? <Loader2 className="animate-spin w-6 h-6"/> : <ImageIcon className="w-6 h-6"/>}
-                                                        <span className="mt-1">رفع</span>
-                                                        <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileUpload(e, idx)} disabled={uploading !== null}/>
-                                                    </label>
+                                                    <div className="flex flex-col items-center gap-2 p-2 w-full">
+                                                        <label className="cursor-pointer flex flex-col items-center justify-center text-gray-400 text-xs text-center hover:text-indigo-600 transition-colors">
+                                                            {uploading === idx ? <Loader2 className="animate-spin w-6 h-6"/> : <Upload className="w-6 h-6"/>}
+                                                            <span className="mt-1 font-bold">رفع ملف</span>
+                                                            <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileUpload(e, idx)} disabled={uploading !== null}/>
+                                                        </label>
+                                                        <div className="w-full border-t border-gray-200"></div>
+                                                        <input 
+                                                            placeholder="أو رابط خارجي..." 
+                                                            className="w-full text-[10px] p-1 border rounded bg-white text-center"
+                                                            onBlur={(e) => { if(e.target.value) handleExternalLink(e.target.value, idx); }}
+                                                        />
+                                                    </div>
                                                 )}
                                             </div>
-                                            <textarea placeholder="المحتوى..." className="flex-1 bg-gray-50 p-2 rounded-xl outline-none border resize-none" value={slide.content} onChange={e => slideActions.update(idx, 'content', e.target.value)} />
+                                            <textarea placeholder="المحتوى النصي للشريحة..." className="flex-1 bg-gray-50 p-3 rounded-2xl outline-none border resize-none focus:bg-white transition-all" value={slide.content} onChange={e => slideActions.update(idx, 'content', e.target.value)} />
                                         </div>
                                     </div>
                                 ))}
@@ -370,11 +335,7 @@ export default function TrainingManager() {
                             <div>
                                 <label className="text-xs font-bold text-gray-500 mb-1 block">اختر الموظف</label>
                                 <input placeholder="ابحث بالاسم..." className="w-full p-2 rounded-xl border bg-gray-50 mb-2 text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                                <select 
-                                    className="w-full p-3 rounded-xl border bg-white font-bold"
-                                    value={assignForm.employee_id}
-                                    onChange={e => setAssignForm({...assignForm, employee_id: e.target.value})}
-                                >
+                                <select className="w-full p-3 rounded-xl border bg-white font-bold" value={assignForm.employee_id} onChange={e => setAssignForm({...assignForm, employee_id: e.target.value})}>
                                     <option value="">-- اختر من القائمة --</option>
                                     {filteredEmployees.map(e => <option key={e.id} value={e.employee_id}>{e.name} ({e.specialty})</option>)}
                                 </select>
@@ -385,12 +346,7 @@ export default function TrainingManager() {
                                 <Select label="النوع" options={['internal', 'external']} value={assignForm.type} onChange={v => setAssignForm({...assignForm, type: v})} />
                             </div>
                             <Input label="المكان" value={assignForm.location} onChange={v => setAssignForm({...assignForm, location: v})} />
-                            
-                            <button 
-                                onClick={() => assignMutation.mutate(assignForm)}
-                                disabled={assignMutation.isPending || !assignForm.employee_id || !assignForm.training_name}
-                                className="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-green-700 disabled:opacity-50 mt-4"
-                            >
+                            <button onClick={() => assignMutation.mutate(assignForm)} disabled={assignMutation.isPending || !assignForm.employee_id || !assignForm.training_name} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-green-700 disabled:opacity-50 mt-4">
                                 {assignMutation.isPending ? 'جاري الحفظ...' : 'حفظ السجل'}
                             </button>
                         </div>
