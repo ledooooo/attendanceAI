@@ -12,7 +12,7 @@ import {
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Calendar, Settings, ShoppingBag, Trophy, Star
+  Calendar, Settings, ShoppingBag, Trophy, BookOpen, Star
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -36,6 +36,7 @@ import StaffLibrary from './components/StaffLibrary';
 import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
 import RewardsStore from './components/RewardsStore';
+import StaffTrainingCenter from './components/StaffTrainingCenter'; // ✅ استيراد
 
 // استيراد مكونات التحفيز
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
@@ -267,7 +268,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
-    
+    { id: 'training', label: 'مركز التدريب', icon: BookOpen }, // ✅ تمت الإضافة
   ];
 
   const unreadNotifsCount = notifications.filter(n => !n.is_read).length;
@@ -538,6 +539,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'store' && <RewardsStore employee={employee} />}
+                    {activeTab === 'training' && <StaffTrainingCenter employee={employee} />} {/* ✅ عرض المكون */}
                     {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
