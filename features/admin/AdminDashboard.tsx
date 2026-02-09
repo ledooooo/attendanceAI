@@ -32,7 +32,8 @@ import AbsenceReportTab from './components/AbsenceReportTab';
 import TasksManager from './components/TasksManager';
 import VaccinationsTab from './components/VaccinationsTab';
 import GamificationManager from './components/GamificationManager';
-
+import TrainingManager from './components/TrainingManager'; // ✅ استيراد المكون الجديد
+import { BookOpen } from 'lucide-react'; // ✅ أيقونة التدريب
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function AdminDashboard() {
@@ -141,6 +142,7 @@ export default function AdminDashboard() {
         { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
         { id: 'gamification', label: 'النقاط والجوائز', icon: Trophy },
         { id: 'vaccinations', label: 'التطعيمات (Virus B)', icon: Syringe },
+        { id: 'training', label: 'إدارة التدريب', icon: BookOpen }, // ✅ تمت الإضافة
         { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
         { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing },
         { id: 'settings', label: 'إعدادات النظام', icon: Settings },
@@ -282,6 +284,7 @@ export default function AdminDashboard() {
                         )}
                         {activeTab === 'all_messages' && <AdminMessagesTab employees={employees || []} />}
                         {activeTab === 'quality' && <QualityDashboard />}
+                        {activeTab === 'training' && <TrainingManager />}
                         {activeTab === 'library-manager' && <AdminLibraryManager />} 
                         {activeTab === 'data-reports' && <AdminDataReports employees={employees || []} />}
                         {activeTab === 'absence-report' && <AbsenceReportTab />}      
