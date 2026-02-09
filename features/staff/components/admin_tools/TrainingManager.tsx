@@ -1,12 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { supabase } from '../../../../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
     Plus, Save, Trash2, BookOpen, MapPin, Layers, 
     Loader2, Image as ImageIcon, Video, X, CheckCircle, AlertCircle,
     UserPlus, Search, Filter, Calendar
 } from 'lucide-react';
-import { Input, Select } from '../../../../components/ui/FormElements';
+import { Input, Select } from '../../../components/ui/FormElements';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../../types';
 
