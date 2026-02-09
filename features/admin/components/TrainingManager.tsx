@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { supabase } from '../../../../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
     Plus, Save, Trash2, BookOpen, MapPin, Layers, 
@@ -7,7 +7,7 @@ import {
     CheckCircle, FileText, Upload, Users, Eye, Link as LinkIcon,
     Filter, RefreshCw, Globe
 } from 'lucide-react';
-import { Input, Select } from '../../../../components/ui/FormElements';
+import { Input, Select } from '../../../components/ui/FormElements';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../../types';
 
