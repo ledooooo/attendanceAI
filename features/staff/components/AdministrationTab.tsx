@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Employee } from '../../../types';
 import { 
     Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, 
-    Users, FileSignature, ArrowRight, ShieldAlert 
+    Users, FileSignature, ArrowRight, ShieldAlert, BookOpen // ✅ استيراد BookOpen
 } from 'lucide-react';
 
 // استيراد المكونات الجديدة المخصصة للموظف
@@ -11,6 +11,7 @@ import StaffAttendanceManager from './admin_tools/StaffAttendanceManager';
 import StaffVaccineManager from './admin_tools/StaffVaccineManager';
 import StaffRequestsManager from './admin_tools/StaffRequestsManager';
 import StaffOVRManager from './admin_tools/StaffOVRManager';
+import TrainingManager from './admin_tools/TrainingManager'; // ✅ استيراد صفحة التدريب الجديدة
 
 export default function AdministrationTab({ employee }: { employee: Employee }) {
     const [activeTool, setActiveTool] = useState<string | null>(null);
@@ -51,6 +52,14 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
             icon: <ShieldAlert className="w-8 h-8 text-red-600"/>,
             color: 'bg-red-50 border-red-100',
             component: <StaffOVRManager />
+        },
+        // ✅ تمت إضافة قسم التدريب
+        'training_manager': { 
+            id: 'training_manager',
+            label: 'إدارة التدريب والتعليم المستمر',
+            icon: <BookOpen className="w-8 h-8 text-indigo-600"/>,
+            color: 'bg-indigo-50 border-indigo-100',
+            component: <TrainingManager />
         }
     };
 
