@@ -4,8 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Employee } from '../../../types';
 import { 
     Play, CheckCircle, MapPin, ChevronLeft, ChevronRight, X, 
-    Trophy, Sparkles, RotateCcw, UserCheck, Lock, SkipForward, Download 
-} from 'lucide-react'; // ✅ تمت إضافة Download
+    Trophy, Sparkles, RotateCcw, UserCheck, Lock, SkipForward, Download, FileText 
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 
@@ -62,18 +62,19 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
         setCanProceed(false);
 
+        const url = currentSlide.mediaUrl ? currentSlide.mediaUrl.toLowerCase() : '';
         const isVideo = currentSlide.mediaType === 'video' || 
-                        (currentSlide.mediaUrl && (currentSlide.mediaUrl.includes('.mp4') || currentSlide.mediaUrl.includes('youtube') || currentSlide.mediaUrl.includes('youtu.be')));
+                        (url && (url.includes('.mp4') || url.includes('youtube') || url.includes('youtu.be')));
 
         if (isVideo) {
             setTimer(0); 
-            if (videoRef.current && !currentSlide.mediaUrl.includes('youtu')) {
+            if (videoRef.current && !url.includes('youtu')) {
                 videoRef.current.defaultMuted = true;
                 videoRef.current.muted = true;
                 videoRef.current.load();
                 videoRef.current.play().catch(e => console.log("Autoplay prevented", e));
             }
-            if (currentSlide.mediaUrl.includes('youtu')) {
+            if (url.includes('youtu')) {
                  setTimer(15); 
                  const interval = setInterval(() => {
                     setTimer((prev) => {
@@ -88,7 +89,11 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                 return () => clearInterval(interval);
             }
         } else {
-            setTimer(5);
+            // للنصوص والصور والملفات (PPT, PDF)
+            // نضع وقتاً تقديرياً للقراءة (مثلاً 10 ثواني للملفات)
+            const isDoc = url.includes('.pdf') || url.includes('.ppt') || url.includes('.doc');
+            setTimer(isDoc ? 10 : 5); 
+
             const interval = setInterval(() => {
                 setTimer((prev) => {
                     if (prev <= 1) {
@@ -177,6 +182,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&rel=0&controls=1` : null;
     };
 
+    // ✅ دالة العرض المعدلة لتشمل الملفات
     const renderMedia = (slide: any) => {
         if (!slide.mediaUrl) return (
             <div className="flex-1 bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center min-h-[300px]">
@@ -184,8 +190,10 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
             </div>
         );
 
-        const isYoutube = slide.mediaUrl.includes('youtube.com') || slide.mediaUrl.includes('youtu.be');
-        if (isYoutube) {
+        const url = slide.mediaUrl.toLowerCase();
+
+        // 1. يوتيوب
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
             const embedUrl = getYouTubeEmbedUrl(slide.mediaUrl);
             if (embedUrl) {
                 return (
@@ -203,7 +211,8 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
             }
         }
 
-        if (slide.mediaType === 'video' || slide.mediaUrl.toLowerCase().includes('.mp4') || slide.mediaUrl.toLowerCase().includes('storage')) {
+        // 2. فيديو مباشر (MP4)
+        if (slide.mediaType === 'video' || (url.includes('.mp4') && !url.includes('.pdf') && !url.includes('.ppt'))) {
             return (
                 <div className="w-full flex-1 flex flex-col items-center justify-center bg-black min-h-[300px] pb-4">
                     <video 
@@ -219,7 +228,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         autoPlay
                         onEnded={() => setCanProceed(true)} 
                     />
-                    {/* ✅ زر تحميل الفيديو */}
                     <a 
                         href={slide.mediaUrl} 
                         target="_blank" 
@@ -227,12 +235,40 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         download
                         className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full text-xs font-bold transition-all border border-white/20"
                     >
-                        <Download className="w-4 h-4" /> اضغط هنا لتحميل الفيديو
+                        <Download className="w-4 h-4" /> تحميل الفيديو
                     </a>
                 </div>
             );
         }
 
+        // 3. ✅ ملفات المستندات (PDF, PPT, DOC)
+        if (url.includes('.pdf') || url.includes('.ppt') || url.includes('.pptx') || url.includes('.doc') || url.includes('.docx')) {
+            return (
+                <div className="w-full flex-1 flex flex-col items-center justify-center bg-gray-100 min-h-[300px] relative">
+                    {/* استخدام Google Docs Viewer لعرض الملفات */}
+                    <iframe 
+                        src={`https://docs.google.com/gview?url=${encodeURIComponent(slide.mediaUrl)}&embedded=true`}
+                        className="w-full h-full min-h-[400px] border-0"
+                        title="Document Viewer"
+                    />
+                    
+                    {/* زر تحميل الملف */}
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+                        <a 
+                            href={slide.mediaUrl} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            download
+                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-full text-xs font-bold shadow-lg transition-all animate-bounce"
+                        >
+                            <Download className="w-4 h-4" /> اضغط هنا لتحميل الملف
+                        </a>
+                    </div>
+                </div>
+            );
+        }
+
+        // 4. الصور (الافتراضي)
         return (
             <div className="w-full flex-1 flex items-center justify-center bg-black min-h-[300px]">
                 <img 
