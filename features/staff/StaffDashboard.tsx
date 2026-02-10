@@ -181,7 +181,7 @@ export default function StaffDashboard({ employee }: Props) {
     setShowLeaderboardMenu(false);
   };
 
-  // ✅ استعلام العدادات (تم تحديثه لحساب التدريبات الجديدة)
+  // ✅ استعلام العدادات
   const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0, training: 0 } } = useQuery({
       queryKey: ['staff_badges', employee.employee_id],
       queryFn: async () => {
@@ -220,7 +220,7 @@ export default function StaffDashboard({ employee }: Props) {
               swaps: swaps.count || 0,
               news: news.count || 0,
               ovr_replies: ovrReplies.count || 0,
-              training: pendingTrainingsCount // ✅ العداد الجديد
+              training: pendingTrainingsCount 
           };
       },
       refetchInterval: 20000,
@@ -297,7 +297,7 @@ export default function StaffDashboard({ employee }: Props) {
   };
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  // تعريف القائمة
+  // تعريف القائمة (تم إعادة الترتيب وإضافة البادجات)
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
@@ -306,6 +306,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight, badge: staffBadges.swaps },
     { id: 'messages', label: 'الرسائل', icon: Inbox, badge: staffBadges.messages },
     { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle, badge: staffBadges.ovr_replies },
+    { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: staffBadges.training }, // ✅ تم النقل هنا
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
@@ -318,7 +319,6 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
-    { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: staffBadges.training }, // ✅ إضافة البادج
   ];
 
   const unreadNotifsCount = notifications.filter(n => !n.is_read).length;
@@ -419,7 +419,7 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* ✅ تصميم البادج الجديد المميز */}
+                {/* ✅ تصميم البادج الجديد والمميز لجميع العناصر */}
                 {item.badge && item.badge > 0 && (
                     <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
                         {item.badge > 99 ? '+99' : item.badge}
@@ -532,7 +532,7 @@ export default function StaffDashboard({ employee }: Props) {
                                                         if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
                                                         else if(n.type === 'message') { setActiveTab('messages'); }
                                                         else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
-                                                        else if(n.type === 'training') { setActiveTab('training'); } // ✅ توجيه للتدريب
+                                                        else if(n.type === 'training') { setActiveTab('training'); }
                                                         setShowNotifMenu(false);
                                                     }}
                                                     className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
