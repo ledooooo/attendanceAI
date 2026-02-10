@@ -69,7 +69,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         (currentSlide.mediaUrl && (currentSlide.mediaUrl.includes('.mp4') || currentSlide.mediaUrl.includes('youtube') || currentSlide.mediaUrl.includes('youtu.be')));
 
         if (isVideo) {
-            // الفيديو: ننتظر حدث onEnded (أو المؤقت في حالة يوتيوب)
+            // الفيديو: ننتظر حدث onEnded
             setTimer(0);
         } else {
             // النص/الصورة: مؤقت زمني
@@ -154,7 +154,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         setCurrentSlideIndex(0);
     };
 
-    // --- دالة مساعدة لاستخراج ID اليوتيوب بشكل صحيح ---
+    // --- دالة مساعدة لاستخراج ID اليوتيوب ---
     const getYouTubeEmbedUrl = (url: string) => {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
         const match = url.match(regExp);
@@ -182,9 +182,10 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                             className="w-full h-full aspect-video" 
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                             allowFullScreen
+                            // ملاحظة: اليوتيوب لا يرسل أحداث للموبايل بسهولة، لذا نعتمد على المؤقت
                             onLoad={() => {
                                 if(!selectedTraining.is_completed) {
-                                    setTimer(15); // إجبار 15 ثانية لليوتيوب
+                                    setTimer(15); 
                                     setCanProceed(false);
                                 }
                             }}
@@ -195,18 +196,20 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
 
         // 2. معالجة الفيديو المرفوع (Direct Video)
-        // التحقق: إما النوع video أو الرابط يحتوي على صيغة فيديو أو يأتي من تخزين سوبابيز
         if (slide.mediaType === 'video' || slide.mediaUrl.toLowerCase().includes('.mp4') || slide.mediaUrl.toLowerCase().includes('storage')) {
             return (
                 <div className="w-full flex-1 flex items-center justify-center bg-black min-h-[300px]">
                     <video 
-                        key={slide.mediaUrl} // ✅ مهم جداً: يجبر الرياكت على إعادة تحميل الفيديو عند تغيير الشريحة
+                        key={slide.mediaUrl} 
                         src={slide.mediaUrl} 
                         className="max-h-full w-full object-contain" 
                         controls 
                         controlsList="nodownload" 
-                        autoPlay 
-                        playsInline
+                        // ✅ التعديلات الهامة للموبايل:
+                        playsInline // ضروري للآيفون
+                        autoPlay // تشغيل تلقائي
+                        muted // ضروري للتشغيل التلقائي على الموبايل (بدونه لن يعمل)
+                        preload="auto"
                         onEnded={() => setCanProceed(true)} 
                     />
                 </div>
