@@ -181,7 +181,7 @@ export default function StaffDashboard({ employee }: Props) {
     setShowLeaderboardMenu(false);
   };
 
-  // ✅ استعلام العدادات
+  // استعلام العدادات
   const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0, training: 0 } } = useQuery({
       queryKey: ['staff_badges', employee.employee_id],
       queryFn: async () => {
@@ -297,7 +297,7 @@ export default function StaffDashboard({ employee }: Props) {
   };
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  // تعريف القائمة (تم إعادة الترتيب وإضافة البادجات)
+  // ✅ ترتيب القائمة وتعيين البادجات
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
@@ -419,7 +419,7 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* ✅ تصميم البادج الجديد والمميز لجميع العناصر */}
+                {/* ✅ تطبيق تصميم البادج الجديد والموحد لجميع العناصر */}
                 {item.badge && item.badge > 0 && (
                     <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
                         {item.badge > 99 ? '+99' : item.badge}
