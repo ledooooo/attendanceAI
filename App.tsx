@@ -16,7 +16,8 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 
 // 2. ✅ استيراد المكونات الإضافية
 import OfflineBanner from './components/ui/OfflineBanner';
-import OnlineTracker from './components/OnlineTracker'; // ✅ تمت إضافة مستشعر التواجد
+import OnlineTracker from './components/OnlineTracker';
+import MandatoryTrainingGuard from './components/MandatoryTrainingGuard'; // ✅ استيراد حارس التدريب
 
 // 3. ✅ إعداد عميل التخزين والـ Persister
 const queryClient = new QueryClient({
@@ -101,7 +102,15 @@ const AppContent = () => {
     <>
       <OnlineTracker /> {/* ✅ يعمل في الخلفية لتتبع التواجد */}
       <OfflineBanner /> {/* ✅ ظهور البنر هنا */}
-      {isAdmin ? <AdminDashboard /> : <StaffDashboard employee={employeeProfile} />}
+      
+      {isAdmin ? (
+        <AdminDashboard />
+      ) : (
+        // ✅ حماية لوحة الموظف بالتدريب الإجباري
+        <MandatoryTrainingGuard employeeId={employeeProfile.employee_id}>
+            <StaffDashboard employee={employeeProfile} />
+        </MandatoryTrainingGuard>
+      )}
     </>
   );
 };
