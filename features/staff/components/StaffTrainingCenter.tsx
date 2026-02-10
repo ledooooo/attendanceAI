@@ -41,7 +41,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
     });
 
-    // 2. مراقبة التدريب الإجباري (إذا تم تمريره من الـ Guard)
+    // 2. مراقبة التدريب الإجباري
     useEffect(() => {
         if (forcedTraining) {
             setSelectedTraining(forcedTraining);
@@ -55,7 +55,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
         const currentSlide = selectedTraining.slides[currentSlideIndex];
         
-        // لو التدريب مكتمل مسبقاً، نسمح بالتنقل بحرية
+        // لو التدريب مكتمل مسبقاً، نسمح بالتنقل
         if (selectedTraining.is_completed) {
             setCanProceed(true);
             setTimer(0);
@@ -64,11 +64,15 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
         setCanProceed(false); // قفل الزر مبدئياً
 
-        if (currentSlide.mediaType === 'video') {
-            // الفيديو: ننتظر حدث onEnded (لا نفعل شيئاً هنا)
+        // التحقق من نوع الميديا
+        const isVideo = currentSlide.mediaType === 'video' || 
+                        (currentSlide.mediaUrl && (currentSlide.mediaUrl.includes('.mp4') || currentSlide.mediaUrl.includes('youtube') || currentSlide.mediaUrl.includes('youtu.be')));
+
+        if (isVideo) {
+            // الفيديو: ننتظر حدث onEnded (أو المؤقت في حالة يوتيوب)
             setTimer(0);
         } else {
-            // النص/الصورة: مؤقت زمني (مثلاً 5 ثوانٍ)
+            // النص/الصورة: مؤقت زمني
             setTimer(5);
             const interval = setInterval(() => {
                 setTimer((prev) => {
@@ -107,11 +111,9 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
             confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
             toast.success(`أحسنت! تم إضافة ${selectedTraining.points} نقطة لرصيدك`);
             
-            // تحديث البيانات
             queryClient.invalidateQueries({ queryKey: ['staff_trainings'] });
             queryClient.invalidateQueries({ queryKey: ['employee_full_details'] });
             
-            // إغلاق واستدعاء callback إذا وجد
             setSelectedTraining(null);
             if (onComplete) onComplete();
         },
@@ -126,7 +128,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
     });
 
-    // التنقل
     const nextSlide = () => {
         if (currentSlideIndex < selectedTraining.slides.length - 1) {
             setCurrentSlideIndex(curr => curr + 1);
@@ -153,7 +154,15 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         setCurrentSlideIndex(0);
     };
 
-    // دالة مساعدة لعرض الميديا (فيديو أو صورة أو يوتيوب)
+    // --- دالة مساعدة لاستخراج ID اليوتيوب بشكل صحيح ---
+    const getYouTubeEmbedUrl = (url: string) => {
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+        const match = url.match(regExp);
+        const videoId = (match && match[2].length === 11) ? match[2] : null;
+        return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+    };
+
+    // --- دالة عرض الميديا ---
     const renderMedia = (slide: any) => {
         if (!slide.mediaUrl) return (
             <div className="flex-1 bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center min-h-[300px]">
@@ -161,48 +170,50 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
             </div>
         );
 
-        // دعم بسيط لليوتيوب (تحويل الرابط إلى Embed إذا لزم الأمر)
+        // 1. معالجة اليوتيوب
         const isYoutube = slide.mediaUrl.includes('youtube.com') || slide.mediaUrl.includes('youtu.be');
-        
         if (isYoutube) {
-            // استخراج ID الفيديو بشكل بسيط (للتبسيط نستخدم الرابط كما هو إذا كان embed جاهز، أو نعرضه كـ iframe)
-            // ملاحظة: لتحويل رابط عادي لـ embed يحتاج منطق regex، هنا نفترض أن الرابط مباشر أو يدعمه المتصفح
-            return (
-                <div className="w-full h-full flex items-center justify-center bg-black min-h-[300px]">
-                     {/* في حالة اليوتيوب، لا يمكننا بسهولة تتبع onEnded بدون API، لذا سنعتمد على التايمر فقط */}
-                     {/* نقوم بتفعيل الزر بعد فترة زمنية تقديرية أو يدوياً */}
-                    <iframe 
-                        src={slide.mediaUrl.replace('watch?v=', 'embed/')} 
-                        className="w-full h-full aspect-video" 
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                        allowFullScreen
-                        onLoad={() => {
-                            if(!selectedTraining.is_completed) {
-                                setTimer(15); // إجبار 15 ثانية لليوتيوب كحد أدنى
-                                setCanProceed(false);
-                            }
-                        }}
-                    />
-                </div>
-            );
+            const embedUrl = getYouTubeEmbedUrl(slide.mediaUrl);
+            if (embedUrl) {
+                return (
+                    <div className="w-full h-full flex items-center justify-center bg-black min-h-[300px]">
+                        <iframe 
+                            src={embedUrl} 
+                            className="w-full h-full aspect-video" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                            allowFullScreen
+                            onLoad={() => {
+                                if(!selectedTraining.is_completed) {
+                                    setTimer(15); // إجبار 15 ثانية لليوتيوب
+                                    setCanProceed(false);
+                                }
+                            }}
+                        />
+                    </div>
+                );
+            }
         }
 
-        if (slide.mediaType === 'video' || slide.mediaUrl.endsWith('.mp4')) {
+        // 2. معالجة الفيديو المرفوع (Direct Video)
+        // التحقق: إما النوع video أو الرابط يحتوي على صيغة فيديو أو يأتي من تخزين سوبابيز
+        if (slide.mediaType === 'video' || slide.mediaUrl.toLowerCase().includes('.mp4') || slide.mediaUrl.toLowerCase().includes('storage')) {
             return (
                 <div className="w-full flex-1 flex items-center justify-center bg-black min-h-[300px]">
                     <video 
+                        key={slide.mediaUrl} // ✅ مهم جداً: يجبر الرياكت على إعادة تحميل الفيديو عند تغيير الشريحة
                         src={slide.mediaUrl} 
                         className="max-h-full w-full object-contain" 
                         controls 
-                        controlsList="nodownload" // منع التحميل
+                        controlsList="nodownload" 
                         autoPlay 
                         playsInline
-                        onEnded={() => setCanProceed(true)} // ✅ السماح بالمرور عند الانتهاء
+                        onEnded={() => setCanProceed(true)} 
                     />
                 </div>
             );
         }
 
+        // 3. الصور
         return (
             <div className="w-full flex-1 flex items-center justify-center bg-black min-h-[300px]">
                 <img 
@@ -222,14 +233,12 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                 {trainings.map((t: any) => (
                     <div key={t.id} className={`relative bg-white rounded-3xl p-5 border shadow-sm transition-all ${t.is_completed ? 'border-green-200' : 'border-gray-100 hover:shadow-md'}`}>
                         
-                        {/* الشارات */}
                         {t.is_mandatory && !t.is_completed && (
                             <span className="absolute top-4 left-4 bg-red-100 text-red-600 text-[10px] font-black px-2 py-1 rounded-full animate-pulse">إلزامي</span>
                         )}
                         
                         <h3 className="font-bold text-gray-800 mb-2">{t.title}</h3>
                         
-                        {/* تفاصيل المكان والمسؤول */}
                         <div className="space-y-1 mb-4">
                             <div className="flex items-center gap-4 text-xs text-gray-500">
                                 <span className="flex items-center gap-1"><MapPin className="w-3 h-3"/> {t.type === 'online' ? 'Online' : t.location}</span>
@@ -242,7 +251,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                             )}
                         </div>
 
-                        {/* أزرار التحكم */}
                         {!t.is_completed ? (
                             <button 
                                 onClick={() => openTraining(t)}
@@ -267,24 +275,20 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                 ))}
             </div>
 
-            {/* مشغل التدريب (Modal) */}
             {selectedTraining && (
                 <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center md:p-4 animate-in zoom-in-95 duration-200">
                     <div className="bg-black md:bg-white w-full max-w-2xl md:rounded-3xl overflow-hidden shadow-2xl flex flex-col h-full md:h-auto md:max-h-[90vh]">
                         
-                        {/* Header */}
                         <div className="p-4 bg-gray-900 md:bg-white md:border-b flex justify-between items-center shrink-0 z-10">
                             <div>
                                 <h3 className="font-black text-white md:text-gray-800 text-sm">{selectedTraining.title}</h3>
                                 <p className="text-xs text-gray-400 md:text-gray-500 font-bold mt-1">شريحة {currentSlideIndex + 1} من {selectedTraining.slides.length}</p>
                             </div>
-                            {/* إخفاء زر الإغلاق إذا كان إجبارياً وغير مكتمل */}
                             {(!forcedTraining || selectedTraining.is_completed) && (
                                 <button onClick={() => setSelectedTraining(null)} className="p-2 bg-white/10 md:bg-gray-100 rounded-full text-white md:text-gray-600 hover:bg-white/20"><X className="w-5 h-5"/></button>
                             )}
                         </div>
 
-                        {/* Content Area */}
                         <div className="flex-1 overflow-y-auto flex flex-col relative bg-black">
                             {renderMedia(selectedTraining.slides[currentSlideIndex])}
 
@@ -299,7 +303,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                             </div>
                         </div>
 
-                        {/* Footer Controls */}
                         <div className="p-4 bg-white border-t flex justify-between items-center shrink-0">
                             <button 
                                 onClick={prevSlide} 
@@ -315,7 +318,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                                 ))}
                             </div>
 
-                            {/* زر الإجراء مع قفل التخطي */}
                             {currentSlideIndex === selectedTraining.slides.length - 1 ? (
                                 <button 
                                     onClick={handleFinish}
