@@ -36,7 +36,7 @@ import StaffLibrary from './components/StaffLibrary';
 import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
 import RewardsStore from './components/RewardsStore';
-import StaffTrainingCenter from './components/StaffTrainingCenter'; // ✅ استيراد
+import StaffTrainingCenter from './components/StaffTrainingCenter';
 
 // استيراد مكونات التحفيز
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
@@ -59,7 +59,7 @@ export default function StaffDashboard({ employee }: Props) {
   const [showLevelMenu, setShowLevelMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
 
-  // ✅ حالة للتدريب الإجباري
+  // حالة للتدريب الإجباري
   const [pendingMandatoryTraining, setPendingMandatoryTraining] = useState<any>(null);
 
   const hasAdminAccess = employee.permissions && Array.isArray(employee.permissions) && employee.permissions.length > 0;
@@ -126,11 +126,10 @@ export default function StaffDashboard({ employee }: Props) {
     checkDailyVisitReward();
   }, [employee.employee_id, queryClient]);
 
-  // ✅ Query: فحص التدريبات الإلزامية غير المكتملة
+  // فحص التدريبات الإلزامية غير المكتملة
   useQuery({
     queryKey: ['check_mandatory_training', employee.employee_id],
     queryFn: async () => {
-        // 1. جلب كل التدريبات الإلزامية
         const { data: mandatoryTrainings } = await supabase
             .from('trainings')
             .select('*')
@@ -138,7 +137,6 @@ export default function StaffDashboard({ employee }: Props) {
 
         if (!mandatoryTrainings || mandatoryTrainings.length === 0) return null;
 
-        // 2. جلب التدريبات التي أكملها الموظف بالفعل
         const { data: myCompleted } = await supabase
             .from('employee_trainings')
             .select('training_id')
@@ -146,17 +144,15 @@ export default function StaffDashboard({ employee }: Props) {
             .eq('status', 'completed');
 
         const completedIds = myCompleted?.map(c => c.training_id) || [];
-
-        // 3. إيجاد أول تدريب إلزامي لم يتم إكماله
         const pending = mandatoryTrainings.find(t => !completedIds.includes(t.id));
 
         if (pending) {
-            setPendingMandatoryTraining(pending); // سيؤدي هذا لظهور الـ Pop-up
+            setPendingMandatoryTraining(pending);
         }
         return pending;
     },
-    enabled: !pendingMandatoryTraining, // يتوقف عن البحث لو وجد واحد بالفعل أو تم حله
-    staleTime: 1000 * 60 * 5 // إعادة الفحص كل 5 دقائق
+    enabled: !pendingMandatoryTraining,
+    staleTime: 1000 * 60 * 5 
   });
 
 
@@ -185,7 +181,8 @@ export default function StaffDashboard({ employee }: Props) {
     setShowLeaderboardMenu(false);
   };
 
-  const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0 } } = useQuery({
+  // ✅ استعلام العدادات (تم تحديثه لحساب التدريبات الجديدة)
+  const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0, training: 0 } } = useQuery({
       queryKey: ['staff_badges', employee.employee_id],
       queryFn: async () => {
           const yesterday = new Date();
@@ -199,12 +196,31 @@ export default function StaffDashboard({ employee }: Props) {
               supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('user_id', employee.employee_id).eq('type', 'ovr_reply').eq('is_read', false)
           ]);
 
+          // حساب التدريبات غير المكتملة
+          const { data: availableTrainings } = await supabase.from('trainings').select('id, target_specialties');
+          
+          const targetedTrainings = availableTrainings?.filter(t => 
+             !t.target_specialties || 
+             t.target_specialties.length === 0 || 
+             t.target_specialties.includes(employee.specialty)
+          ) || [];
+
+          const { data: myCompleted } = await supabase
+              .from('employee_trainings')
+              .select('training_id')
+              .eq('employee_id', employee.employee_id)
+              .eq('status', 'completed');
+          
+          const completedIds = myCompleted?.map(c => c.training_id) || [];
+          const pendingTrainingsCount = targetedTrainings.filter(t => !completedIds.includes(t.id)).length;
+
           return {
               messages: msg.count || 0,
               tasks: tasks.count || 0,
               swaps: swaps.count || 0,
               news: news.count || 0,
-              ovr_replies: ovrReplies.count || 0
+              ovr_replies: ovrReplies.count || 0,
+              training: pendingTrainingsCount // ✅ العداد الجديد
           };
       },
       refetchInterval: 20000,
@@ -255,10 +271,8 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.role]);
 
-  // ✅ تعديل السحب: يفتح فقط عند السحب من الربع الأيمن للشاشة (لأن التطبيق RTL)
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => { 
-        // نتأكد أن السحب بدأ من الربع الأيمن للشاشة (أكبر من 75% من العرض)
         if (eventData.initial[0] > window.innerWidth * 0.75) {
             setIsSidebarOpen(true); 
         }
@@ -304,7 +318,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
-    { id: 'training', label: 'مركز التدريب', icon: BookOpen }, // ✅ تمت الإضافة
+    { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: staffBadges.training }, // ✅ إضافة البادج
   ];
 
   const unreadNotifsCount = notifications.filter(n => !n.is_read).length;
@@ -315,12 +329,11 @@ export default function StaffDashboard({ employee }: Props) {
       {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
 
-      {/* ✅ مكون التدريب الإجباري (Pop-up Blocking) */}
+      {/* ✅ مكون التدريب الإجباري */}
       {pendingMandatoryTraining && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border-4 border-red-500 relative animate-in zoom-in-95">
                 
-                {/* تحذير */}
                 <div className="bg-red-500 text-white p-6 text-center">
                     <AlertTriangle className="w-16 h-16 mx-auto mb-3 text-yellow-300 animate-bounce" />
                     <h2 className="text-2xl font-black">تنبيه هام: تدريب إلزامي</h2>
@@ -341,11 +354,10 @@ export default function StaffDashboard({ employee }: Props) {
                         لن تتمكن من استخدام التطبيق قبل مشاهدة المحتوى وتسجيل الإتمام.
                     </p>
 
-                    {/* زر الانتقال للتدريب */}
                     <button 
                         onClick={() => {
-                            setPendingMandatoryTraining(null); // إخفاء الـ Pop-up
-                            setActiveTab('training'); // التوجيه لصفحة التدريب
+                            setPendingMandatoryTraining(null); 
+                            setActiveTab('training'); 
                         }}
                         className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-lg hover:bg-red-700 shadow-lg shadow-red-200 transition-transform active:scale-95 flex items-center justify-center gap-2"
                     >
@@ -407,9 +419,10 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
+                {/* ✅ تصميم البادج الجديد المميز */}
                 {item.badge && item.badge > 0 && (
-                    <span className="absolute left-4 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm border border-white">
-                        {item.badge}
+                    <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
+                        {item.badge > 99 ? '+99' : item.badge}
                     </span>
                 )}
               </button>
@@ -445,10 +458,10 @@ export default function StaffDashboard({ employee }: Props) {
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            {/* ✅ أيقونات الهيدر: مستوى - لوحة شرف - إشعارات */}
+            {/* ✅ أيقونات الهيدر */}
             <div className="flex items-center gap-2 md:gap-3">
                 
-                {/* 1. أيقونة المستوى (النجمة) */}
+                {/* 1. المستوى */}
                 <div className="relative">
                     <button 
                         onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
@@ -458,14 +471,11 @@ export default function StaffDashboard({ employee }: Props) {
                     </button>
                     {showLevelMenu && (
                         <>
-                            {/* Mobile Overlay: Fixed & Centered */}
                             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowLevelMenu(false)}>
                                 <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-1 overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
                                     <LevelProgressBar employee={employee} />
                                 </div>
                             </div>
-
-                            {/* Desktop Dropdown: Absolute */}
                             <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
                                 <LevelProgressBar employee={employee} />
                             </div>
@@ -473,7 +483,7 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                 </div>
 
-                {/* 2. أيقونة لوحة الشرف (الكأس) */}
+                {/* 2. لوحة الشرف */}
                 <div className="relative">
                     <button 
                         onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
@@ -483,14 +493,11 @@ export default function StaffDashboard({ employee }: Props) {
                     </button>
                     {showLeaderboardMenu && (
                         <>
-                            {/* Mobile Overlay: Fixed & Centered */}
                             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
                                 <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                                     <LeaderboardWidget />
                                 </div>
                             </div>
-
-                            {/* Desktop Dropdown: Absolute */}
                             <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
                                 <LeaderboardWidget />
                             </div>
@@ -498,7 +505,7 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                 </div>
 
-                {/* 3. أيقونة الإشعارات */}
+                {/* 3. الإشعارات */}
                 <div className="relative">
                     <button onClick={markNotifsAsRead} className={`p-2 rounded-full transition-colors relative ${showNotifMenu ? 'bg-gray-200 text-gray-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
                         <Bell className={`w-5 h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
@@ -508,7 +515,6 @@ export default function StaffDashboard({ employee }: Props) {
                     </button>
                     {showNotifMenu && (
                         <>
-                            {/* Mobile Overlay: Fixed & Centered */}
                             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowNotifMenu(false)}>
                                 <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
                                     <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
@@ -526,12 +532,13 @@ export default function StaffDashboard({ employee }: Props) {
                                                         if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
                                                         else if(n.type === 'message') { setActiveTab('messages'); }
                                                         else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
+                                                        else if(n.type === 'training') { setActiveTab('training'); } // ✅ توجيه للتدريب
                                                         setShowNotifMenu(false);
                                                     }}
                                                     className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
                                                 >
                                                     <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
-                                                        {n.type === 'task' ? <ListTodo size={16}/> : <Bell size={16}/>}
+                                                        {n.type === 'task' ? <ListTodo size={16}/> : n.type === 'training' ? <BookOpen size={16}/> : <Bell size={16}/>}
                                                     </div>
                                                     <div className="space-y-0.5">
                                                         <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
@@ -545,7 +552,6 @@ export default function StaffDashboard({ employee }: Props) {
                                 </div>
                             </div>
 
-                            {/* Desktop Dropdown: Absolute */}
                             <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
                                 <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
                                     <span>آخر التنبيهات</span>
@@ -562,12 +568,13 @@ export default function StaffDashboard({ employee }: Props) {
                                                     if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
                                                     else if(n.type === 'message') { setActiveTab('messages'); }
                                                     else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
+                                                    else if(n.type === 'training') { setActiveTab('training'); }
                                                     setShowNotifMenu(false);
                                                 }}
                                                 className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
                                             >
                                                 <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
-                                                    {n.type === 'task' ? <ListTodo size={16}/> : <Bell size={16}/>}
+                                                    {n.type === 'task' ? <ListTodo size={16}/> : n.type === 'training' ? <BookOpen size={16}/> : <Bell size={16}/>}
                                                 </div>
                                                 <div className="space-y-0.5">
                                                     <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
@@ -594,11 +601,7 @@ export default function StaffDashboard({ employee }: Props) {
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-3 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
                         <div className="space-y-4">
-                            
-                            {/* ❌ تم حذف كارت الترحيب المكرر من هنا */}
-                            
                             <EOMVotingCard employee={employee} />
-                            
                             <StaffNewsFeed employee={employee} />
                         </div>
                     )}
@@ -616,7 +619,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'store' && <RewardsStore employee={employee} />}
-                    {activeTab === 'training' && <StaffTrainingCenter employee={employee} />} {/* ✅ عرض المكون */}
+                    {activeTab === 'training' && <StaffTrainingCenter employee={employee} />} 
                     {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
@@ -626,7 +629,7 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
         </main>
 
-        {/* --- الشريط السفلي: تم تقليل الارتفاع (py-2) --- */}
+        {/* --- الشريط السفلي --- */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-2 flex justify-between items-center z-50 pb-safe md:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
                 onClick={() => setActiveTab('news')}
