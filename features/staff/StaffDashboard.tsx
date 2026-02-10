@@ -12,7 +12,7 @@ import {
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Calendar, Settings, ShoppingBag, Trophy, Star
+  Calendar, Settings, ShoppingBag, Trophy, Star, Check // ✅ تمت إضافة Check
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -306,7 +306,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight, badge: staffBadges.swaps },
     { id: 'messages', label: 'الرسائل', icon: Inbox, badge: staffBadges.messages },
     { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle, badge: staffBadges.ovr_replies },
-    { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: staffBadges.training }, // ✅ تم النقل هنا
+    { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: staffBadges.training }, 
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
@@ -419,11 +419,17 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* ✅ تطبيق تصميم البادج الجديد والموحد لجميع العناصر */}
-                {item.badge && item.badge > 0 && (
-                    <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
-                        {item.badge > 99 ? '+99' : item.badge}
-                    </span>
+                {/* ✅ تعديل البادج: يظهر الآن للجميع، أحمر إذا > 0 وأخضر (صح) إذا = 0 */}
+                {typeof item.badge !== 'undefined' && (
+                    item.badge > 0 ? (
+                        <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
+                            {item.badge > 99 ? '+99' : item.badge}
+                        </span>
+                    ) : (
+                        <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-emerald-400 to-green-500 text-white flex items-center justify-center rounded-full shadow-sm border-[1.5px] border-white">
+                            <Check size={12} strokeWidth={3} />
+                        </span>
+                    )
                 )}
               </button>
             );
