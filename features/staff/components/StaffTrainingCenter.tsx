@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react'; // ✅ إضافة useRef
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Employee } from '../../../types';
 import { 
     Play, CheckCircle, MapPin, ChevronLeft, ChevronRight, X, 
-    Trophy, Sparkles, RotateCcw, UserCheck, Lock 
+    Trophy, Sparkles, RotateCcw, UserCheck, Lock, SkipForward 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
@@ -20,7 +20,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
     const [selectedTraining, setSelectedTraining] = useState<any>(null);
     const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
     
-    // مرجع للفيديو للتحكم فيه برمجياً (مهم للآيفون)
+    // مرجع للفيديو (للملفات المرفوعة)
     const videoRef = useRef<HTMLVideoElement>(null); 
 
     const [canProceed, setCanProceed] = useState(false);
@@ -49,12 +49,13 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
     }, [forcedTraining]);
 
-    // 3. منطق المؤقت وتشغيل الفيديو
+    // 3. منطق المؤقت والتحكم
     useEffect(() => {
         if (!selectedTraining) return;
 
         const currentSlide = selectedTraining.slides[currentSlideIndex];
         
+        // إذا التدريب مكتمل، افتح كل شيء
         if (selectedTraining.is_completed) {
             setCanProceed(true);
             setTimer(0);
@@ -67,22 +68,31 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         (currentSlide.mediaUrl && (currentSlide.mediaUrl.includes('.mp4') || currentSlide.mediaUrl.includes('youtube') || currentSlide.mediaUrl.includes('youtu.be')));
 
         if (isVideo) {
-            setTimer(0);
-            // ✅ كود إصلاح الآيفون: فرض التشغيل برمجياً
-            if (videoRef.current) {
-                videoRef.current.defaultMuted = true; // ضروري لـ iOS
-                videoRef.current.muted = true; // ضروري لـ React
-                videoRef.current.load(); // إعادة تحميل المصدر
-                
-                const playPromise = videoRef.current.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(error => {
-                        console.log("Auto-play was prevented:", error);
-                        // في حالة منع التشغيل، يمكن إظهار زر تشغيل يدوي (اختياري)
+            setTimer(0); 
+            // للملفات المرفوعة مباشرة (Direct Uploads)
+            if (videoRef.current && !currentSlide.mediaUrl.includes('youtu')) {
+                videoRef.current.defaultMuted = true;
+                videoRef.current.muted = true;
+                videoRef.current.load();
+                videoRef.current.play().catch(e => console.log("Autoplay prevented", e));
+            }
+            // لليوتيوب: نعتمد على المؤقت كشبكة أمان في حالة عدم عمل الفيديو
+            if (currentSlide.mediaUrl.includes('youtu')) {
+                 setTimer(15); // حد أدنى 15 ثانية لليوتيوب قبل السماح (أو يستخدم زر التخطي)
+                 const interval = setInterval(() => {
+                    setTimer((prev) => {
+                        if (prev <= 1) {
+                            clearInterval(interval);
+                            setCanProceed(true);
+                            return 0;
+                        }
+                        return prev - 1;
                     });
-                }
+                }, 1000);
+                return () => clearInterval(interval);
             }
         } else {
+            // للنصوص والصور
             setTimer(5);
             const interval = setInterval(() => {
                 setTimer((prev) => {
@@ -145,6 +155,13 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
     };
 
+    // ✅ دالة التخطي الجديدة
+    const skipCurrentSlide = () => {
+        setCanProceed(true);
+        setTimer(0);
+        toast('تم تخطي الشريحة', { icon: '⏩' });
+    };
+
     const handleFinish = () => {
         if (selectedTraining.is_completed) {
             setSelectedTraining(null);
@@ -159,11 +176,13 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         setCurrentSlideIndex(0);
     };
 
+    // ✅ تحسين دالة اليوتيوب للآيفون
     const getYouTubeEmbedUrl = (url: string) => {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
         const match = url.match(regExp);
         const videoId = (match && match[2].length === 11) ? match[2] : null;
-        return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+        // إضافة playsinline=1 و mute=1 ضروري جداً للآيفون
+        return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&rel=0&controls=1` : null;
     };
 
     const renderMedia = (slide: any) => {
@@ -182,14 +201,11 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         <iframe 
                             src={embedUrl} 
                             className="w-full h-full aspect-video" 
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
                             allowFullScreen
-                            onLoad={() => {
-                                if(!selectedTraining.is_completed) {
-                                    setTimer(15); 
-                                    setCanProceed(false);
-                                }
-                            }}
+                            // playsInline ضروري هنا أيضاً كـ prop وإن كان غير قياسي في React ولكنه مفيد
+                            // @ts-ignore
+                            playsInline
                         />
                     </div>
                 );
@@ -199,7 +215,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         if (slide.mediaType === 'video' || slide.mediaUrl.toLowerCase().includes('.mp4') || slide.mediaUrl.toLowerCase().includes('storage')) {
             return (
                 <div className="w-full flex-1 flex items-center justify-center bg-black min-h-[300px]">
-                    {/* ✅ استخدام videoRef للتحكم الكامل */}
                     <video 
                         ref={videoRef} 
                         key={slide.mediaUrl} 
@@ -209,7 +224,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         controlsList="nodownload" 
                         playsInline // ✅ أساسي للآيفون
                         preload="auto"
-                        // الخصائص التالية يتم تعزيزها بالـ useEffect
                         muted 
                         autoPlay
                         onEnded={() => setCanProceed(true)} 
@@ -295,15 +309,25 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                             </div>
                         </div>
 
-                        <div className="p-4 bg-white border-t flex justify-between items-center shrink-0">
+                        <div className="p-4 bg-white border-t flex justify-between items-center shrink-0 gap-2">
+                            {/* زر السابق */}
                             <button onClick={prevSlide} disabled={currentSlideIndex === 0} className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-30 hover:bg-gray-200 transition-colors">
                                 <ChevronRight className="w-6 h-6"/>
                             </button>
-                            <div className="flex gap-1.5 mx-4 overflow-x-auto max-w-[200px] no-scrollbar">
-                                {selectedTraining.slides.map((_:any, idx:number) => (
-                                    <div key={idx} className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentSlideIndex ? 'bg-indigo-600 w-8' : idx < currentSlideIndex ? 'bg-indigo-300 w-2' : 'bg-gray-200 w-2'}`}></div>
-                                ))}
-                            </div>
+
+                            {/* زر تخطي الشريحة (Skip Button) - يظهر فقط إذا كان الفيديو معلقاً أو المؤقت يعمل */}
+                            {!canProceed && !selectedTraining.is_completed && (
+                                <button 
+                                    onClick={skipCurrentSlide}
+                                    className="px-4 py-3 bg-yellow-100 text-yellow-700 rounded-full font-bold text-xs flex items-center gap-1 hover:bg-yellow-200 transition-colors"
+                                >
+                                    <SkipForward className="w-4 h-4" /> تخطي
+                                </button>
+                            )}
+
+                            <div className="flex-1"></div>
+
+                            {/* زر التالي/إنهاء */}
                             {currentSlideIndex === selectedTraining.slides.length - 1 ? (
                                 <button onClick={handleFinish} disabled={!canProceed || completeMutation.isPending} className={`px-6 py-3 rounded-full font-black shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-sm text-white ${!canProceed ? 'bg-gray-400 cursor-not-allowed' : selectedTraining.is_completed ? 'bg-gray-600' : 'bg-green-600 shadow-green-200'}`}>
                                     {completeMutation.isPending ? '...' : !canProceed ? `انتظر (${timer})` : selectedTraining.is_completed ? 'إغلاق' : 'إنهاء'} 
