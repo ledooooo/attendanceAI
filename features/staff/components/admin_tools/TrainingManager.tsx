@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-// تعديل المسارات لتناسب المجلد الفرعي (4 مستويات للخلف)
 import { supabase } from '../../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
@@ -8,7 +7,6 @@ import {
     CheckCircle, FileText, Upload, Users, Eye, Link as LinkIcon,
     Filter, RefreshCw, UserCheck
 } from 'lucide-react';
-// تعديل المسارات للمكونات
 import { Input, Select } from '../../../../components/ui/FormElements';
 import { Employee } from '../../../../types';
 import toast from 'react-hot-toast';
@@ -26,7 +24,7 @@ export default function TrainingManager() {
         title: '', 
         type: 'internal', 
         location: '', 
-        responsible_person: '', // المسؤول عن التدريب
+        responsible_person: '', 
         training_date: '', 
         is_mandatory: 'false', 
         points: 10,
@@ -88,12 +86,10 @@ export default function TrainingManager() {
         }
     });
 
-    // 3. All Records (Unified Table)
+    // 3. All Records
     const { data: allRecords = [], refetch: refetchRecords, isLoading: loadingRecords } = useQuery({
         queryKey: ['all_training_records'],
         queryFn: async () => {
-            // جلب البيانات مع العلاقات، واستخدام اسم القيد (Foreign Key Constraint) لضمان الربط الصحيح
-            // في حالة حدوث خطأ في الربط، تأكد من تنفيذ كود SQL الخاص بإنشاء العلاقات في الردود السابقة
             const { data, error } = await supabase
                 .from('employee_trainings')
                 .select(`
@@ -210,14 +206,25 @@ export default function TrainingManager() {
         try {
             const fileExt = file.name.split('.').pop();
             const fileName = `${Date.now()}.${fileExt}`;
-            const { error } = await supabase.storage.from('training-media').upload(fileName, file);
+            const { error } = await supabase.storage.from('training-media').upload(fileName, file, {
+                contentType: file.type, 
+                upsert: true
+            });
             if (error) throw error;
             const { data } = supabase.storage.from('training-media').getPublicUrl(fileName);
+            
             const newSlides = [...createForm.slides];
             // @ts-ignore
             newSlides[index].mediaUrl = data.publicUrl;
+            
+            // ✅ تحديد نوع الملف بدقة
+            let type = 'document';
+            if (file.type.startsWith('video')) type = 'video';
+            else if (file.type.startsWith('image')) type = 'image';
+            
             // @ts-ignore
-            newSlides[index].mediaType = file.type.startsWith('video') ? 'video' : 'image';
+            newSlides[index].mediaType = type;
+            
             setCreateForm({ ...createForm, slides: newSlides });
             toast.success('تم الرفع');
         } catch (error: any) { toast.error('فشل الرفع'); } finally { setUploading(null); }
@@ -226,8 +233,16 @@ export default function TrainingManager() {
     const handleExternalLink = (val: string, index: number) => {
         const newSlides: any = [...createForm.slides];
         newSlides[index].mediaUrl = val;
-        if (val.includes('youtube') || val.includes('youtu.be') || val.endsWith('.mp4')) newSlides[index].mediaType = 'video';
-        else newSlides[index].mediaType = 'image';
+        
+        // ✅ تحديد نوع الرابط بدقة
+        if (val.includes('youtube') || val.includes('youtu.be') || val.endsWith('.mp4')) {
+            newSlides[index].mediaType = 'video';
+        } else if (val.endsWith('.pdf') || val.endsWith('.ppt') || val.endsWith('.pptx') || val.endsWith('.doc') || val.endsWith('.docx')) {
+            newSlides[index].mediaType = 'document';
+        } else {
+            newSlides[index].mediaType = 'image';
+        }
+        
         setCreateForm({ ...createForm, slides: newSlides });
     };
 
@@ -416,25 +431,33 @@ export default function TrainingManager() {
                                         <input placeholder="عنوان الشريحة" className="w-full font-bold mb-2 border-b outline-none" value={slide.title} onChange={e => slideActions.update(idx, 'title', e.target.value)} />
                                         
                                         <div className="flex gap-4">
+                                            {/* مربع الميديا */}
                                             <div className="w-40 h-40 bg-gray-100 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden border p-2">
                                                 {slide.mediaUrl ? (
                                                     <>
-                                                        {slide.mediaType === 'video' ? <video src={slide.mediaUrl} className="w-full h-full object-cover"/> : <img src={slide.mediaUrl} className="w-full h-full object-cover" alt=""/>}
+                                                        {slide.mediaType === 'video' ? (
+                                                            <video src={slide.mediaUrl} className="w-full h-full object-cover"/> 
+                                                        ) : (slide.mediaType === 'document' || slide.mediaUrl.includes('.pdf') || slide.mediaUrl.includes('.ppt')) ? (
+                                                            // ✅ عرض المستندات
+                                                            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-200 text-gray-600">
+                                                                <FileText className="w-10 h-10 mb-2"/>
+                                                                <span className="text-[9px] text-center font-bold px-2 truncate w-full">مستند</span>
+                                                                <a href={slide.mediaUrl} target="_blank" rel="noreferrer" className="text-[9px] text-indigo-600 underline mt-1">عرض</a>
+                                                            </div>
+                                                        ) : (
+                                                            <img src={slide.mediaUrl} className="w-full h-full object-cover" alt=""/>
+                                                        )}
                                                         <button onClick={() => slideActions.removeMedia(idx)} className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full"><X className="w-3 h-3"/></button>
                                                     </>
                                                 ) : (
                                                     <div className="flex flex-col gap-2 w-full">
                                                         <label className="cursor-pointer bg-white border rounded p-1 text-[10px] text-center hover:bg-gray-50 flex items-center justify-center gap-1">
                                                             {uploading === idx ? <Loader2 className="w-3 h-3 animate-spin"/> : <Upload className="w-3 h-3"/>} ملف
-                                                            <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileUpload(e, idx)} disabled={uploading !== null}/>
+                                                            {/* ✅ السماح برفع ملفات المستندات */}
+                                                            <input type="file" accept="image/*,video/*,.pdf,.ppt,.pptx,.doc,.docx" className="hidden" onChange={(e) => handleFileUpload(e, idx)} disabled={uploading !== null}/>
                                                         </label>
                                                         <div className="text-[9px] text-center text-gray-400 font-bold">- أو -</div>
-                                                        <button onClick={() => {
-                                                            const url = prompt('أدخل رابط الصورة أو الفيديو (Youtube/Direct):');
-                                                            if(url) handleExternalLink(url, idx);
-                                                        }} className="bg-white border rounded p-1 text-[10px] text-center hover:bg-gray-50 flex items-center justify-center gap-1">
-                                                            <LinkIcon className="w-3 h-3"/> رابط
-                                                        </button>
+                                                        <button onClick={() => { const url = prompt('رابط الصورة/الفيديو/الملف:'); if(url) handleExternalLink(url, idx); }} className="bg-white border rounded p-1 text-[10px] text-center hover:bg-gray-50 flex items-center justify-center gap-1"><LinkIcon className="w-3 h-3"/> رابط</button>
                                                     </div>
                                                 )}
                                             </div>
