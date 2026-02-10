@@ -4,8 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Employee } from '../../../types';
 import { 
     Play, CheckCircle, MapPin, ChevronLeft, ChevronRight, X, 
-    Trophy, Sparkles, RotateCcw, UserCheck, Lock, SkipForward 
-} from 'lucide-react';
+    Trophy, Sparkles, RotateCcw, UserCheck, Lock, SkipForward, Download 
+} from 'lucide-react'; // ✅ تمت إضافة Download
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 
@@ -20,7 +20,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
     const [selectedTraining, setSelectedTraining] = useState<any>(null);
     const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
     
-    // مرجع للفيديو (للملفات المرفوعة)
     const videoRef = useRef<HTMLVideoElement>(null); 
 
     const [canProceed, setCanProceed] = useState(false);
@@ -55,7 +54,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
         const currentSlide = selectedTraining.slides[currentSlideIndex];
         
-        // إذا التدريب مكتمل، افتح كل شيء
         if (selectedTraining.is_completed) {
             setCanProceed(true);
             setTimer(0);
@@ -69,16 +67,14 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
         if (isVideo) {
             setTimer(0); 
-            // للملفات المرفوعة مباشرة (Direct Uploads)
             if (videoRef.current && !currentSlide.mediaUrl.includes('youtu')) {
                 videoRef.current.defaultMuted = true;
                 videoRef.current.muted = true;
                 videoRef.current.load();
                 videoRef.current.play().catch(e => console.log("Autoplay prevented", e));
             }
-            // لليوتيوب: نعتمد على المؤقت كشبكة أمان في حالة عدم عمل الفيديو
             if (currentSlide.mediaUrl.includes('youtu')) {
-                 setTimer(15); // حد أدنى 15 ثانية لليوتيوب قبل السماح (أو يستخدم زر التخطي)
+                 setTimer(15); 
                  const interval = setInterval(() => {
                     setTimer((prev) => {
                         if (prev <= 1) {
@@ -92,7 +88,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                 return () => clearInterval(interval);
             }
         } else {
-            // للنصوص والصور
             setTimer(5);
             const interval = setInterval(() => {
                 setTimer((prev) => {
@@ -155,7 +150,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
     };
 
-    // ✅ دالة التخطي الجديدة
     const skipCurrentSlide = () => {
         setCanProceed(true);
         setTimer(0);
@@ -176,12 +170,10 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         setCurrentSlideIndex(0);
     };
 
-    // ✅ تحسين دالة اليوتيوب للآيفون
     const getYouTubeEmbedUrl = (url: string) => {
         const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
         const match = url.match(regExp);
         const videoId = (match && match[2].length === 11) ? match[2] : null;
-        // إضافة playsinline=1 و mute=1 ضروري جداً للآيفون
         return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&rel=0&controls=1` : null;
     };
 
@@ -203,7 +195,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                             className="w-full h-full aspect-video" 
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
                             allowFullScreen
-                            // playsInline ضروري هنا أيضاً كـ prop وإن كان غير قياسي في React ولكنه مفيد
                             // @ts-ignore
                             playsInline
                         />
@@ -214,20 +205,30 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
         if (slide.mediaType === 'video' || slide.mediaUrl.toLowerCase().includes('.mp4') || slide.mediaUrl.toLowerCase().includes('storage')) {
             return (
-                <div className="w-full flex-1 flex items-center justify-center bg-black min-h-[300px]">
+                <div className="w-full flex-1 flex flex-col items-center justify-center bg-black min-h-[300px] pb-4">
                     <video 
                         ref={videoRef} 
                         key={slide.mediaUrl} 
                         src={slide.mediaUrl} 
-                        className="max-h-full w-full object-contain" 
+                        className="max-h-[300px] md:max-h-[400px] w-full object-contain mb-4" 
                         controls 
                         controlsList="nodownload" 
-                        playsInline // ✅ أساسي للآيفون
+                        playsInline 
                         preload="auto"
                         muted 
                         autoPlay
                         onEnded={() => setCanProceed(true)} 
                     />
+                    {/* ✅ زر تحميل الفيديو */}
+                    <a 
+                        href={slide.mediaUrl} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        download
+                        className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full text-xs font-bold transition-all border border-white/20"
+                    >
+                        <Download className="w-4 h-4" /> اضغط هنا لتحميل الفيديو
+                    </a>
                 </div>
             );
         }
@@ -310,12 +311,10 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         </div>
 
                         <div className="p-4 bg-white border-t flex justify-between items-center shrink-0 gap-2">
-                            {/* زر السابق */}
                             <button onClick={prevSlide} disabled={currentSlideIndex === 0} className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-30 hover:bg-gray-200 transition-colors">
                                 <ChevronRight className="w-6 h-6"/>
                             </button>
 
-                            {/* زر تخطي الشريحة (Skip Button) - يظهر فقط إذا كان الفيديو معلقاً أو المؤقت يعمل */}
                             {!canProceed && !selectedTraining.is_completed && (
                                 <button 
                                     onClick={skipCurrentSlide}
@@ -327,7 +326,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
                             <div className="flex-1"></div>
 
-                            {/* زر التالي/إنهاء */}
                             {currentSlideIndex === selectedTraining.slides.length - 1 ? (
                                 <button onClick={handleFinish} disabled={!canProceed || completeMutation.isPending} className={`px-6 py-3 rounded-full font-black shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-sm text-white ${!canProceed ? 'bg-gray-400 cursor-not-allowed' : selectedTraining.is_completed ? 'bg-gray-600' : 'bg-green-600 shadow-green-200'}`}>
                                     {completeMutation.isPending ? '...' : !canProceed ? `انتظر (${timer})` : selectedTraining.is_completed ? 'إغلاق' : 'إنهاء'} 
