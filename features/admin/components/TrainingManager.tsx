@@ -418,8 +418,14 @@ export default function TrainingManager() {
                                                     <div className="flex flex-col gap-2 w-full">
                                                         <label className="cursor-pointer bg-white border rounded p-1 text-[10px] text-center hover:bg-gray-50 flex items-center justify-center gap-1">
                                                             {uploading === idx ? <Loader2 className="w-3 h-3 animate-spin"/> : <Upload className="w-3 h-3"/>} ملف
-                                                            <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => handleFileUpload(e, idx)} disabled={uploading !== null}/>
-                                                        </label>
+<input 
+    type="file" 
+    // 👇 التعديل هنا: أضفنا pdf و ppt و pptx
+    accept="image/*,video/*,.pdf,.ppt,.pptx,.doc,.docx" 
+    className="hidden" 
+    onChange={(e) => handleFileUpload(e, idx)} 
+    disabled={uploading !== null}
+/>                                                        </label>
                                                         <div className="text-[9px] text-center text-gray-400 font-bold">- أو -</div>
                                                         <button onClick={() => {
                                                             const url = prompt('أدخل رابط الصورة أو الفيديو (Youtube/Direct):');
