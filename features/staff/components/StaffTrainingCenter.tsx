@@ -13,13 +13,17 @@ interface Props {
     employee: Employee;
     forcedTraining?: any; 
     onComplete?: () => void; 
+    deepLinkTrainingId?: string | null; // ✅ تمت إضافة الخاصية
 }
 
-export default function StaffTrainingCenter({ employee, forcedTraining, onComplete }: Props) {
+export default function StaffTrainingCenter({ employee, forcedTraining, onComplete, deepLinkTrainingId }: Props) {
     const queryClient = useQueryClient();
     const [selectedTraining, setSelectedTraining] = useState<any>(null);
     const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
     
+    // ✅ حالة لمنع فتح التدريب أكثر من مرة (لو أغلقه الموظف)
+    const [handledDeepLink, setHandledDeepLink] = useState(false);
+
     const videoRef = useRef<HTMLVideoElement>(null); 
 
     const [canProceed, setCanProceed] = useState(false);
@@ -41,6 +45,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
     });
 
+    // 2. التحكم في التدريب الإجباري
     useEffect(() => {
         if (forcedTraining) {
             setSelectedTraining(forcedTraining);
@@ -48,7 +53,20 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
     }, [forcedTraining]);
 
-    // 3. منطق المؤقت والتحكم
+    // ✅ 3. الاستماع للرابط العميق وفتح التدريب المباشر
+    useEffect(() => {
+        if (trainings.length > 0 && deepLinkTrainingId && !handledDeepLink && !selectedTraining && !forcedTraining) {
+            const targetTraining = trainings.find((t: any) => String(t.id) === String(deepLinkTrainingId));
+            
+            if (targetTraining) {
+                setSelectedTraining(targetTraining);
+                setCurrentSlideIndex(0);
+                setHandledDeepLink(true); // تأكيد الفتح لكي لا يفتح مجدداً عند تقليب الشرائح
+            }
+        }
+    }, [trainings, deepLinkTrainingId, handledDeepLink, selectedTraining, forcedTraining]);
+
+    // 4. منطق المؤقت والتحكم
     useEffect(() => {
         if (!selectedTraining) return;
 
@@ -182,7 +200,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&rel=0&controls=1` : null;
     };
 
-    // ✅ دالة العرض المعدلة لتشمل الملفات
     const renderMedia = (slide: any) => {
         if (!slide.mediaUrl) return (
             <div className="flex-1 bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center min-h-[300px]">
@@ -241,7 +258,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
             );
         }
 
-        // 3. ✅ ملفات المستندات (PDF, PPT, DOC)
+        // 3. ملفات المستندات (PDF, PPT, DOC)
         if (url.includes('.pdf') || url.includes('.ppt') || url.includes('.pptx') || url.includes('.doc') || url.includes('.docx')) {
             return (
                 <div className="w-full flex-1 flex flex-col items-center justify-center bg-gray-100 min-h-[300px] relative">
