@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-import { Send, CheckSquare, Square, Loader2, Mail, Bug, FileText, Edit3 } from 'lucide-react';
+// ✅ تم إضافة Info هنا في سطر الاستيراد
+import { Send, CheckSquare, Square, Loader2, Mail, Bug, FileText, Edit3, Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -240,10 +241,9 @@ export default function SendReportsTab() {
 
     // ✅ توليد قالب الرسالة المخصصة
     const generateCustomHTML = (emp: Employee, messageContent: string) => {
-        // استبدال فواصل الأسطر بـ <br> ودعم الروابط والصور البسيطة
         const formattedMessage = messageContent
             .replace(/\n/g, '<br>')
-            .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color:#2563eb; text-decoration:underline;">$1</a>'); // دعم الروابط
+            .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color:#2563eb; text-decoration:underline;">$1</a>'); 
 
         return `
             <!DOCTYPE html>
@@ -406,7 +406,7 @@ export default function SendReportsTab() {
                 </button>
             </div>
 
-            {/* ✅ محرر الرسالة المخصصة (يظهر فقط إذا تم اختياره) */}
+            {/* ✅ محرر الرسالة المخصصة */}
             {emailType === 'custom' ? (
                 <div className="bg-indigo-50 p-6 rounded-[30px] border border-indigo-100 shadow-sm space-y-4 animate-in slide-in-from-top-4">
                     <h3 className="font-bold text-indigo-900">محتوى الرسالة</h3>
