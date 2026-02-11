@@ -32,7 +32,7 @@ export default function TrainingManager() {
         is_mandatory: 'false', 
         points: 10,
         target_specialties: [] as string[],
-        target_employees: [] as string[], // ✅ تمت الإضافة: مصفوفة للموظفين المحددين
+        target_employees: [] as string[], // ✅ مصفوفة للموظفين المحددين
         slides: [{ title: 'مقدمة', content: '', mediaUrl: '', mediaType: 'none' }] 
     };
     const [createForm, setCreateForm] = useState(initialFormState);
@@ -136,14 +136,13 @@ export default function TrainingManager() {
                 is_mandatory: form.is_mandatory === 'true', 
                 training_date: form.training_date || null, 
                 target_specialties: form.target_specialties.length ? form.target_specialties : null,
-                target_employees: form.target_employees.length ? form.target_employees : null, // ✅ حفظ الموظفين المحددين
+                target_employees: form.target_employees.length ? form.target_employees : null, 
                 responsible_person: form.responsible_person
             };
             const { error } = await supabase.from('trainings').insert([payload]);
             if(error) throw error;
 
             // Notify Target Users Logic
-            // 1. الحالة الافتراضية: للجميع
             let targetIds = new Set<string>();
 
             if (!payload.target_specialties && !payload.target_employees) {
@@ -217,6 +216,16 @@ export default function TrainingManager() {
 
     // ================= HELPERS =================
 
+    // ✅ إضافة دالة نسخ الرابط المباشر
+    const copyDeepLink = (trainingId: string) => {
+        const url = `${window.location.origin}/?tab=training&training_id=${trainingId}`;
+        navigator.clipboard.writeText(url);
+        toast.success('تم نسخ الرابط المباشر للتدريب! يمكنك إرساله للموظفين.', {
+            icon: '🔗',
+            style: { borderRadius: '10px', background: '#333', color: '#fff' }
+        });
+    };
+
     const handleFileUpload = async (event: any, index: number) => {
         const file = event.target.files[0];
         if (!file) return;
@@ -287,7 +296,6 @@ export default function TrainingManager() {
         }
     };
 
-    // ✅ دالة اختيار/إلغاء اختيار الموظف
     const toggleTargetEmployee = (empId: string) => {
         const current = createForm.target_employees;
         if (current.includes(empId)) {
@@ -317,7 +325,6 @@ export default function TrainingManager() {
 
     const filteredEmployees = useMemo(() => employees.filter(e => e.name.toLowerCase().includes(searchTerm.toLowerCase()) || e.employee_id.includes(searchTerm)), [employees, searchTerm]);
     
-    // ✅ فلترة الموظفين داخل المودال (للقائمة الجديدة)
     const filteredEmployeesForSelect = useMemo(() => 
         employees.filter(e => 
             e.name.toLowerCase().includes(empSelectSearch.toLowerCase()) || 
@@ -378,11 +385,28 @@ export default function TrainingManager() {
                                         <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded">للجميع</span>
                                     )}
                                 </div>
+                                
+                                {/* ✅ تحديث منطقة الأزرار لإضافة زر النسخ */}
                                 <div className="mt-4 flex justify-between items-center border-t border-gray-50 pt-3">
                                     <button onClick={() => setShowStatsModal(t)} className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1.5 rounded-lg flex items-center gap-1 hover:bg-green-100 transition-colors">
                                         <Users className="w-3 h-3"/> {t.completed_count || 0} اجتازوا
                                     </button>
-                                    <button onClick={() => { if(confirm('حذف؟')) deleteMutation.mutate(t.id); }} className="text-red-400 hover:text-red-600 p-2"><Trash2 className="w-4 h-4"/></button>
+                                    
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => copyDeepLink(t.id)} 
+                                            className="text-indigo-400 hover:text-indigo-600 bg-indigo-50 p-2 rounded-lg transition-colors"
+                                            title="نسخ رابط مباشر"
+                                        >
+                                            <LinkIcon className="w-4 h-4"/>
+                                        </button>
+                                        <button 
+                                            onClick={() => { if(confirm('حذف؟')) deleteMutation.mutate(t.id); }} 
+                                            className="text-red-400 hover:text-red-600 bg-red-50 p-2 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 className="w-4 h-4"/>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -471,7 +495,7 @@ export default function TrainingManager() {
                                     </div>
                                 </div>
 
-                                {/* ✅ اختيار موظفين محددين */}
+                                {/* اختيار موظفين محددين */}
                                 <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
                                     <div className="flex justify-between items-center mb-2">
                                         <label className="text-sm font-bold text-amber-800">أو موظفين محددين</label>
