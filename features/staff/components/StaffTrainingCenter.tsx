@@ -13,7 +13,7 @@ interface Props {
     employee: Employee;
     forcedTraining?: any; 
     onComplete?: () => void; 
-    deepLinkTrainingId?: string | null; // ✅ تمت إضافة الخاصية
+    deepLinkTrainingId?: string | null; 
 }
 
 export default function StaffTrainingCenter({ employee, forcedTraining, onComplete, deepLinkTrainingId }: Props) {
@@ -21,7 +21,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
     const [selectedTraining, setSelectedTraining] = useState<any>(null);
     const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
     
-    // ✅ حالة لمنع فتح التدريب أكثر من مرة (لو أغلقه الموظف)
     const [handledDeepLink, setHandledDeepLink] = useState(false);
 
     const videoRef = useRef<HTMLVideoElement>(null); 
@@ -53,7 +52,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         }
     }, [forcedTraining]);
 
-    // ✅ 3. الاستماع للرابط العميق وفتح التدريب المباشر
+    // 3. الاستماع للرابط العميق وفتح التدريب المباشر
     useEffect(() => {
         if (trainings.length > 0 && deepLinkTrainingId && !handledDeepLink && !selectedTraining && !forcedTraining) {
             const targetTraining = trainings.find((t: any) => String(t.id) === String(deepLinkTrainingId));
@@ -61,7 +60,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
             if (targetTraining) {
                 setSelectedTraining(targetTraining);
                 setCurrentSlideIndex(0);
-                setHandledDeepLink(true); // تأكيد الفتح لكي لا يفتح مجدداً عند تقليب الشرائح
+                setHandledDeepLink(true); 
             }
         }
     }, [trainings, deepLinkTrainingId, handledDeepLink, selectedTraining, forcedTraining]);
@@ -107,8 +106,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                 return () => clearInterval(interval);
             }
         } else {
-            // للنصوص والصور والملفات (PPT, PDF)
-            // نضع وقتاً تقديرياً للقراءة (مثلاً 10 ثواني للملفات)
             const isDoc = url.includes('.pdf') || url.includes('.ppt') || url.includes('.doc');
             setTimer(isDoc ? 10 : 5); 
 
@@ -200,6 +197,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&rel=0&controls=1` : null;
     };
 
+    // 5. دالة العرض بدون أزرار التحميل
     const renderMedia = (slide: any) => {
         if (!slide.mediaUrl) return (
             <div className="flex-1 bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center min-h-[300px]">
@@ -209,7 +207,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
         const url = slide.mediaUrl.toLowerCase();
 
-        // 1. يوتيوب
         if (url.includes('youtube.com') || url.includes('youtu.be')) {
             const embedUrl = getYouTubeEmbedUrl(slide.mediaUrl);
             if (embedUrl) {
@@ -228,7 +225,6 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
             }
         }
 
-        // 2. فيديو مباشر (MP4)
         if (slide.mediaType === 'video' || (url.includes('.mp4') && !url.includes('.pdf') && !url.includes('.ppt'))) {
             return (
                 <div className="w-full flex-1 flex flex-col items-center justify-center bg-black min-h-[300px] pb-4">
@@ -236,7 +232,7 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         ref={videoRef} 
                         key={slide.mediaUrl} 
                         src={slide.mediaUrl} 
-                        className="max-h-[300px] md:max-h-[400px] w-full object-contain mb-4" 
+                        className="max-h-full w-full object-contain" 
                         controls 
                         controlsList="nodownload" 
                         playsInline 
@@ -245,47 +241,22 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                         autoPlay
                         onEnded={() => setCanProceed(true)} 
                     />
-                    <a 
-                        href={slide.mediaUrl} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        download
-                        className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full text-xs font-bold transition-all border border-white/20"
-                    >
-                        <Download className="w-4 h-4" /> تحميل الفيديو
-                    </a>
                 </div>
             );
         }
 
-        // 3. ملفات المستندات (PDF, PPT, DOC)
         if (url.includes('.pdf') || url.includes('.ppt') || url.includes('.pptx') || url.includes('.doc') || url.includes('.docx')) {
             return (
-                <div className="w-full flex-1 flex flex-col items-center justify-center bg-gray-100 min-h-[300px] relative">
-                    {/* استخدام Google Docs Viewer لعرض الملفات */}
+                <div className="w-full flex-1 flex flex-col items-center justify-center bg-gray-100 min-h-[300px]">
                     <iframe 
                         src={`https://docs.google.com/gview?url=${encodeURIComponent(slide.mediaUrl)}&embedded=true`}
                         className="w-full h-full min-h-[400px] border-0"
                         title="Document Viewer"
                     />
-                    
-                    {/* زر تحميل الملف */}
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
-                        <a 
-                            href={slide.mediaUrl} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            download
-                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-full text-xs font-bold shadow-lg transition-all animate-bounce"
-                        >
-                            <Download className="w-4 h-4" /> اضغط هنا لتحميل الملف
-                        </a>
-                    </div>
                 </div>
             );
         }
 
-        // 4. الصور (الافتراضي)
         return (
             <div className="w-full flex-1 flex items-center justify-center bg-black min-h-[300px]">
                 <img 
@@ -363,24 +334,47 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                             </div>
                         </div>
 
-                        <div className="p-4 bg-white border-t flex justify-between items-center shrink-0 gap-2">
-                            <button onClick={prevSlide} disabled={currentSlideIndex === 0} className="w-12 h-12 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-30 hover:bg-gray-200 transition-colors">
-                                <ChevronRight className="w-6 h-6"/>
+                        {/* شريط الإجراءات السفلي (Footer) */}
+                        <div className="p-4 bg-white border-t flex flex-wrap justify-between items-center shrink-0 gap-2">
+                            
+                            {/* زر العودة */}
+                            <button onClick={prevSlide} disabled={currentSlideIndex === 0} className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-30 hover:bg-gray-200 transition-colors">
+                                <ChevronRight className="w-5 h-5"/>
                             </button>
 
-                            {!canProceed && !selectedTraining.is_completed && (
-                                <button 
-                                    onClick={skipCurrentSlide}
-                                    className="px-4 py-3 bg-yellow-100 text-yellow-700 rounded-full font-bold text-xs flex items-center gap-1 hover:bg-yellow-200 transition-colors"
-                                >
-                                    <SkipForward className="w-4 h-4" /> تخطي
-                                </button>
-                            )}
+                            {/* أزرار الإجراءات الإضافية (تخطي وتحميل) */}
+                            <div className="flex gap-2">
+                                {/* زر التحميل إذا كان هناك رابط ميديا (ولا يعمل مع يوتيوب) */}
+                                {selectedTraining.slides[currentSlideIndex]?.mediaUrl && !selectedTraining.slides[currentSlideIndex]?.mediaUrl.includes('youtube') && !selectedTraining.slides[currentSlideIndex]?.mediaUrl.includes('youtu.be') && (
+                                    <a 
+                                        href={selectedTraining.slides[currentSlideIndex].mediaUrl} 
+                                        target="_blank" 
+                                        rel="noreferrer" 
+                                        download
+                                        className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-full font-bold text-xs flex items-center gap-1 hover:bg-indigo-100 transition-colors"
+                                        title="تحميل المرفق"
+                                    >
+                                        <Download className="w-4 h-4" /> تحميل
+                                    </a>
+                                )}
+
+                                {/* زر التخطي */}
+                                {!canProceed && !selectedTraining.is_completed && (
+                                    <button 
+                                        onClick={skipCurrentSlide}
+                                        className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-full font-bold text-xs flex items-center gap-1 hover:bg-yellow-200 transition-colors"
+                                        title="تخطي المؤقت"
+                                    >
+                                        <SkipForward className="w-4 h-4" /> تخطي
+                                    </button>
+                                )}
+                            </div>
 
                             <div className="flex-1"></div>
 
+                            {/* زر التالي / إنهاء */}
                             {currentSlideIndex === selectedTraining.slides.length - 1 ? (
-                                <button onClick={handleFinish} disabled={!canProceed || completeMutation.isPending} className={`px-6 py-3 rounded-full font-black shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-sm text-white ${!canProceed ? 'bg-gray-400 cursor-not-allowed' : selectedTraining.is_completed ? 'bg-gray-600' : 'bg-green-600 shadow-green-200'}`}>
+                                <button onClick={handleFinish} disabled={!canProceed || completeMutation.isPending} className={`px-6 py-2.5 rounded-full font-black shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-sm text-white ${!canProceed ? 'bg-gray-400 cursor-not-allowed' : selectedTraining.is_completed ? 'bg-gray-600' : 'bg-green-600 shadow-green-200'}`}>
                                     {completeMutation.isPending ? '...' : !canProceed ? `انتظر (${timer})` : selectedTraining.is_completed ? 'إغلاق' : 'إنهاء'} 
                                     {canProceed && (selectedTraining.is_completed ? <X className="w-4 h-4"/> : <CheckCircle className="w-4 h-4"/>)}
                                     {!canProceed && <Lock className="w-3 h-3"/>}
