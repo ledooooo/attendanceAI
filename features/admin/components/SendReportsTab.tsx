@@ -2,23 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-import { Send, CheckSquare, Square, Loader2, Mail, Bug } from 'lucide-react';
+import { Send, CheckSquare, Square, Loader2, Mail, Bug, FileText, Edit3 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
 // --- دوال مساعدة ---
 const normalizeDate = (dateInput: any): string => {
     if (!dateInput) return "";
-    // نحاول التعامل مع التاريخ سواء كان كائن Date أو نص
     let d = new Date(dateInput);
     if (isNaN(d.getTime())) {
-        // محاولة اصلاح التنسيق اذا كان نصاً وبه مسافات
         const str = String(dateInput).trim();
         d = new Date(str);
     }
-    // إرجاع التاريخ بتنسيق YYYY-MM-DD
     if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-    return String(dateInput).substring(0, 10); // فشل التحويل، نعيد النص كما هو
+    return String(dateInput).substring(0, 10); 
 };
 
 const parseWorkDays = (workDays: any): string[] => {
@@ -42,15 +40,20 @@ export default function SendReportsTab() {
     const [fId, setFId] = useState('');
     const [settings, setSettings] = useState<any>(null);
 
-    // Leaves (طلبات الإجازات ليست كثيرة عادة، يمكن جلبها كلها)
+    // Leaves
     const [rawLeaves, setRawLeaves] = useState<LeaveRequest[]>([]);
+
+    // ✅ State for Email Type
+    const [emailType, setEmailType] = useState<'report' | 'custom'>('report');
+    const [customSubject, setCustomSubject] = useState('');
+    const [customMessage, setCustomMessage] = useState('');
 
     useEffect(() => { fetchData(); }, [month]); 
 
     const fetchData = async () => {
         const { data: emps } = await supabase.from('employees').select('*').order('name');
         const { data: sett } = await supabase.from('general_settings').select('*').single();
-        const { data: lvs } = await supabase.from('leave_requests').select('*'); // الإجازات عددها قليل مقارنة بالحضور
+        const { data: lvs } = await supabase.from('leave_requests').select('*'); 
 
         if (emps) setEmployees(emps);
         if (sett) setSettings(sett);
@@ -73,20 +76,13 @@ export default function SendReportsTab() {
         else setSelectedIds([...selectedIds, id]);
     };
 
-    // --- HTML Generator ---
-    const generateEmailHTML = (emp: Employee, attendance: AttendanceRecord[], leaves: LeaveRequest[], monthStr: string) => {
+    // --- HTML Generators ---
+    const generateReportHTML = (emp: Employee, attendance: AttendanceRecord[], leaves: LeaveRequest[], monthStr: string) => {
         const [y, m] = monthStr.split('-').map(Number);
-        const daysInMonth = new Date(y, m, 0).getDate(); // عدد أيام الشهر
+        const daysInMonth = new Date(y, m, 0).getDate(); 
         let rowsHTML = '';
         
-        let stats = {
-            present: 0,
-            absent: 0,
-            late: 0,
-            leaves: 0,
-            totalHours: 0
-        };
-
+        let stats = { present: 0, absent: 0, late: 0, leaves: 0, totalHours: 0 };
         const empWorkDays = parseWorkDays(emp.work_days);
         const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -94,25 +90,22 @@ export default function SendReportsTab() {
             const dayString = String(d).padStart(2, '0');
             const targetDate = `${monthStr}-${dayString}`;
             
-            // تخطي الأيام المستقبلية
             if (targetDate > todayStr) continue;
 
             const dateObj = new Date(targetDate);
             const dayName = DAYS_AR[dateObj.getDay()];
             const isWorkDay = empWorkDays.includes(dayName);
             
-            // المطابقة باستخدام الدالة الموحدة
             const att = attendance.find(a => normalizeDate(a.date) === targetDate);
             const leave = leaves.find(l => l.status === 'مقبول' && normalizeDate(l.start_date) <= targetDate && normalizeDate(l.end_date) >= targetDate);
 
             let statusText = 'غياب';
-            let rowColor = '#fee2e2'; // أحمر فاتح
-            let textColor = '#991b1b'; // أحمر غامق
+            let rowColor = '#fee2e2'; 
+            let textColor = '#991b1b'; 
             let inTime = '--:--';
             let outTime = '--:--';
             let dailyHours = 0;
 
-            // 1. حضور
             if (att && att.times && att.times.trim().length > 0) {
                 const times = att.times.match(/\d{1,2}:\d{2}/g) || [];
                 if (times.length > 0) {
@@ -144,22 +137,16 @@ export default function SendReportsTab() {
                 stats.present++;
                 stats.totalHours += dailyHours;
 
-            } 
-            // 2. إجازة
-            else if (leave) {
+            } else if (leave) {
                 statusText = `إجازة (${leave.type})`;
                 rowColor = '#dcfce7'; textColor = '#166534';
                 inTime = 'إجازة'; outTime = 'إجازة';
                 stats.leaves++;
-            } 
-            // 3. راحة
-            else if (!isWorkDay) {
+            } else if (!isWorkDay) {
                 statusText = 'راحة';
                 rowColor = '#f3f4f6'; textColor = '#6b7280';
                 inTime = '-'; outTime = '-';
-            } 
-            // 4. غياب
-            else {
+            } else {
                 stats.absent++;
             }
 
@@ -251,6 +238,45 @@ export default function SendReportsTab() {
         `;
     };
 
+    // ✅ توليد قالب الرسالة المخصصة
+    const generateCustomHTML = (emp: Employee, messageContent: string) => {
+        // استبدال فواصل الأسطر بـ <br> ودعم الروابط والصور البسيطة
+        const formattedMessage = messageContent
+            .replace(/\n/g, '<br>')
+            .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color:#2563eb; text-decoration:underline;">$1</a>'); // دعم الروابط
+
+        return `
+            <!DOCTYPE html>
+            <html dir="rtl" lang="ar">
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; margin: 0; padding: 20px; direction: rtl; }
+                    .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }
+                    .header { background: #1e3a8a; color: white; padding: 20px; text-align: center; }
+                    .content { padding: 30px; color: #334155; font-size: 16px; line-height: 1.8; }
+                    .footer { padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+                    img { max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h2 style="margin:0;">${settings?.center_name || 'المركز الطبي'}</h2>
+                    </div>
+                    <div class="content">
+                        <p style="font-weight:bold; margin-top:0;">عزيزي/عزيزتي ${emp.name}،</p>
+                        <div>${formattedMessage}</div>
+                    </div>
+                    <div class="footer">
+                        رسالة إدارية مرسلة من نظام العاملين
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+    };
+
     const sendViaServer = async (toEmail: string, toName: string, subject: string, htmlContent: string) => {
         try {
             const response = await fetch('/api/send-email', {
@@ -266,8 +292,13 @@ export default function SendReportsTab() {
     };
 
     const handleSendReports = async () => {
-        if (selectedIds.length === 0) return alert('اختر موظفاً واحداً على الأقل');
-        if (!confirm(`إرسال ${selectedIds.length} تقرير؟`)) return;
+        if (selectedIds.length === 0) return toast.error('اختر موظفاً واحداً على الأقل');
+        
+        if (emailType === 'custom' && (!customSubject || !customMessage)) {
+            return toast.error('يرجى كتابة عنوان ومحتوى الرسالة');
+        }
+
+        if (!confirm(`سيتم الإرسال لعدد ${selectedIds.length} موظف. متأكد؟`)) return;
         
         setSending(true);
         let successCount = 0;
@@ -275,7 +306,6 @@ export default function SendReportsTab() {
         let lastError = '';
 
         try {
-            // حساب أيام الشهر المحدد للجلب الدقيق
             const [y, m] = month.split('-').map(Number);
             const daysInMonth = new Date(y, m, 0).getDate();
             const startOfMonth = `${month}-01`;
@@ -285,20 +315,27 @@ export default function SendReportsTab() {
                 const emp = employees.find(e => e.id === empId);
                 if (!emp || !emp.email) { failCount++; continue; }
 
-                // === التغيير الجذري هنا ===
-                // جلب بيانات الحضور لهذا الموظف تحديداً من قاعدة البيانات مباشرة لتجاوز حد الـ 1000 صف
-                const { data: empAtt } = await supabase
-                    .from('attendance')
-                    .select('*')
-                    .eq('employee_id', emp.employee_id)
-                    .gte('date', startOfMonth)
-                    .lte('date', endOfMonth);
+                let htmlContent = '';
+                let subject = '';
 
-                const empLeaves = rawLeaves.filter(l => l.employee_id === emp.employee_id);
-                
-                // استخدام البيانات التي تم جلبها للتو (empAtt) وليس البيانات العامة
-                const htmlContent = generateEmailHTML(emp, empAtt || [], empLeaves, month);
-                const subject = `تقرير شهر ${month} - ${emp.name}`;
+                // ✅ المعالجة بناءً على نوع الرسالة المختار
+                if (emailType === 'report') {
+                    const { data: empAtt } = await supabase
+                        .from('attendance')
+                        .select('*')
+                        .eq('employee_id', emp.employee_id)
+                        .gte('date', startOfMonth)
+                        .lte('date', endOfMonth);
+
+                    const empLeaves = rawLeaves.filter(l => l.employee_id === emp.employee_id);
+                    
+                    htmlContent = generateReportHTML(emp, empAtt || [], empLeaves, month);
+                    subject = `تقرير شهر ${month} - ${emp.name}`;
+                } else {
+                    // رسالة مخصصة
+                    htmlContent = generateCustomHTML(emp, customMessage);
+                    subject = customSubject;
+                }
 
                 const result = await sendViaServer(emp.email, emp.name, subject, htmlContent);
                 
@@ -310,6 +347,10 @@ export default function SendReportsTab() {
                 }
             }
             alert(`النتيجة:\n✅ تم الإرسال: ${successCount}\n❌ فشل: ${failCount}\n${lastError ? 'آخر خطأ: ' + lastError : ''}`);
+            if (emailType === 'custom') {
+                setCustomMessage('');
+                setCustomSubject('');
+            }
         } catch (e: any) {
             alert('خطأ غير متوقع: ' + e.message);
         } finally {
@@ -318,7 +359,6 @@ export default function SendReportsTab() {
         }
     };
 
-    // --- زر الفحص (Debug) محدث أيضاً ---
     const handleDebug = async () => {
         if (selectedIds.length === 0) return alert("اختر موظفاً واحداً للفحص");
         const emp = employees.find(e => e.id === selectedIds[0]);
@@ -327,7 +367,6 @@ export default function SendReportsTab() {
         const startOfMonth = `${month}-01`;
         const endOfMonth = `${month}-31`;
 
-        // جلب خاص لهذا الموظف للفحص
         const { data: dbAtt } = await supabase
             .from('attendance')
             .select('*')
@@ -349,31 +388,76 @@ export default function SendReportsTab() {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Mail className="text-emerald-600"/> إرسال التقارير الشهرية</h2>
+            <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Mail className="text-emerald-600"/> إرسال المراسلات والتقارير</h2>
             
-            <div className="bg-white p-6 rounded-[30px] border shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
-                <Input type="month" label="الشهر" value={month} onChange={setMonth} />
-                <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e=>e.specialty)))]} value={fSpec} onChange={setFSpec} />
-                <Select label="الحالة" options={['all', 'نشط', 'موقوف']} value={fStatus} onChange={setFStatus} />
-                <Input label="كود الموظف" value={fId} onChange={setFId} placeholder="بحث..." />
+            {/* ✅ اختيار نوع الرسالة */}
+            <div className="flex bg-white p-2 rounded-2xl border shadow-sm w-fit gap-2 mx-auto">
+                <button 
+                    onClick={() => setEmailType('report')} 
+                    className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${emailType === 'report' ? 'bg-emerald-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                    <FileText className="w-4 h-4"/> تقرير الحضور الشهري
+                </button>
+                <button 
+                    onClick={() => setEmailType('custom')} 
+                    className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${emailType === 'custom' ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                    <Edit3 className="w-4 h-4"/> رسالة مخصصة (نص/صور)
+                </button>
             </div>
 
+            {/* ✅ محرر الرسالة المخصصة (يظهر فقط إذا تم اختياره) */}
+            {emailType === 'custom' ? (
+                <div className="bg-indigo-50 p-6 rounded-[30px] border border-indigo-100 shadow-sm space-y-4 animate-in slide-in-from-top-4">
+                    <h3 className="font-bold text-indigo-900">محتوى الرسالة</h3>
+                    <Input 
+                        label="عنوان الرسالة (Subject)" 
+                        value={customSubject} 
+                        onChange={setCustomSubject} 
+                        placeholder="مثال: تعليمات هامة بخصوص الإجازات..." 
+                    />
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">محتوى الرسالة</label>
+                        <textarea 
+                            className="w-full p-4 rounded-2xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all h-40 resize-none font-medium text-sm leading-relaxed"
+                            placeholder="اكتب نص الرسالة هنا. يمكنك لصق روابط مباشرة وسيتم تفعيلها..."
+                            value={customMessage}
+                            onChange={(e) => setCustomMessage(e.target.value)}
+                        />
+                        <p className="text-[10px] text-gray-500 mt-2 font-bold flex items-center gap-1">
+                            <Info className="w-3 h-3"/> سيتم إضافة اسم الموظف تلقائياً في بداية الرسالة (مثال: عزيزي أحمد،).
+                        </p>
+                    </div>
+                </div>
+            ) : (
+                /* فلتر تقرير الحضور */
+                <div className="bg-white p-6 rounded-[30px] border shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-4">
+                    <Input type="month" label="شريط تقرير شهر" value={month} onChange={setMonth} />
+                    <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e=>e.specialty)))]} value={fSpec} onChange={setFSpec} />
+                    <Select label="الحالة" options={['all', 'نشط', 'موقوف']} value={fStatus} onChange={setFStatus} />
+                    <Input label="كود الموظف" value={fId} onChange={setFId} placeholder="بحث..." />
+                </div>
+            )}
+
+            {/* قائمة الموظفين (مشتركة لكلا النوعين) */}
             <div className="bg-white rounded-[30px] border shadow-sm overflow-hidden min-h-[400px] mb-20">
                 <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
                     <button onClick={toggleSelectAll} className="flex items-center gap-2 font-bold text-gray-600 hover:text-emerald-600">
                         {selectedIds.length === filteredEmployees.length && filteredEmployees.length > 0 ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>} تحديد الكل ({filteredEmployees.length})
                     </button>
                     <div className="flex gap-2">
-                         <button onClick={handleDebug} className="flex items-center gap-1 bg-amber-100 text-amber-800 px-3 py-1 rounded-lg text-xs font-bold hover:bg-amber-200 transition-colors">
-                            <Bug className="w-4 h-4"/> فحص البيانات
-                        </button>
+                        {emailType === 'report' && (
+                            <button onClick={handleDebug} className="flex items-center gap-1 bg-amber-100 text-amber-800 px-3 py-1 rounded-lg text-xs font-bold hover:bg-amber-200 transition-colors">
+                                <Bug className="w-4 h-4"/> فحص البيانات
+                            </button>
+                        )}
                         <div className="text-sm font-bold text-gray-500 pt-1">محدد: {selectedIds.length}</div>
                     </div>
                 </div>
-                <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
+                <div className="overflow-x-auto max-h-[400px] custom-scrollbar">
                     <table className="w-full text-sm text-right min-w-[600px]">
-                        <thead className="bg-gray-100 font-black text-gray-600 sticky top-0">
-                            <tr><th className="p-4 w-10"></th><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">البريد</th><th className="p-4 text-center">أيام العمل</th></tr>
+                        <thead className="bg-gray-100 font-black text-gray-600 sticky top-0 shadow-sm">
+                            <tr><th className="p-4 w-10"></th><th className="p-4">الكود</th><th className="p-4">الاسم</th><th className="p-4">البريد</th><th className="p-4 text-center">التخصص</th></tr>
                         </thead>
                         <tbody>
                             {filteredEmployees.map(emp => (
@@ -382,7 +466,7 @@ export default function SendReportsTab() {
                                     <td className="p-4 font-mono font-bold">{emp.employee_id}</td>
                                     <td className="p-4 font-bold">{emp.name}</td>
                                     <td className="p-4 text-xs font-mono text-gray-500">{emp.email||'-'}</td>
-                                    <td className="p-4 text-center text-xs">{parseWorkDays(emp.work_days).length} أيام</td>
+                                    <td className="p-4 text-center text-xs">{emp.specialty}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -391,7 +475,7 @@ export default function SendReportsTab() {
             </div>
 
             <div className="fixed bottom-8 left-8 z-50">
-                <button onClick={handleSendReports} disabled={sending || selectedIds.length === 0} className="bg-emerald-800 text-white px-8 py-4 rounded-2xl font-black shadow-2xl hover:bg-emerald-900 transition-all flex items-center gap-3 disabled:bg-gray-400">
+                <button onClick={handleSendReports} disabled={sending || selectedIds.length === 0} className={`text-white px-8 py-4 rounded-2xl font-black shadow-2xl transition-all flex items-center gap-3 disabled:bg-gray-400 hover:scale-105 active:scale-95 ${emailType === 'report' ? 'bg-emerald-800 hover:bg-emerald-900' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
                     {sending ? <Loader2 className="w-6 h-6 animate-spin"/> : <Send className="w-6 h-6"/>}
                     {sending ? 'جاري الإرسال...' : `إرسال (${selectedIds.length})`}
                 </button>
