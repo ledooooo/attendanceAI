@@ -197,13 +197,8 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
         return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&playsinline=1&rel=0&controls=1` : null;
     };
 
-    // 5. دالة العرض بدون أزرار التحميل
     const renderMedia = (slide: any) => {
-        if (!slide.mediaUrl) return (
-            <div className="flex-1 bg-gradient-to-br from-indigo-900 to-black flex items-center justify-center min-h-[300px]">
-                <Sparkles className="w-20 h-20 text-white/10"/>
-            </div>
-        );
+        if (!slide.mediaUrl) return null;
 
         const url = slide.mediaUrl.toLowerCase();
 
@@ -310,51 +305,88 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
             {selectedTraining && (
                 <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center md:p-4 animate-in zoom-in-95 duration-200">
-                    <div className="bg-black md:bg-white w-full max-w-2xl md:rounded-3xl overflow-hidden shadow-2xl flex flex-col h-full md:h-auto md:max-h-[90vh]">
-                        <div className="p-4 bg-gray-900 md:bg-white md:border-b flex justify-between items-center shrink-0 z-10">
+                    <div className="bg-black md:bg-white w-full max-w-3xl md:rounded-3xl overflow-hidden shadow-2xl flex flex-col h-full md:h-auto md:max-h-[90vh]">
+                        
+                        {/* Header */}
+                        <div className="p-4 bg-gray-900 md:bg-white flex justify-between items-center shrink-0 z-10 relative">
                             <div>
-                                <h3 className="font-black text-white md:text-gray-800 text-sm">{selectedTraining.title}</h3>
+                                <h3 className="font-black text-white md:text-gray-800 text-sm md:text-base">{selectedTraining.title}</h3>
                                 <p className="text-xs text-gray-400 md:text-gray-500 font-bold mt-1">شريحة {currentSlideIndex + 1} من {selectedTraining.slides.length}</p>
                             </div>
                             {(!forcedTraining || selectedTraining.is_completed) && (
-                                <button onClick={() => setSelectedTraining(null)} className="p-2 bg-white/10 md:bg-gray-100 rounded-full text-white md:text-gray-600 hover:bg-white/20"><X className="w-5 h-5"/></button>
+                                <button onClick={() => setSelectedTraining(null)} className="p-2 bg-white/10 md:bg-gray-100 rounded-full text-white md:text-gray-600 hover:bg-white/20 transition-colors"><X className="w-5 h-5"/></button>
                             )}
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto flex flex-col relative bg-black">
-                            {renderMedia(selectedTraining.slides[currentSlideIndex])}
-                            <div className="bg-white rounded-t-[30px] p-6 -mt-6 relative z-10 min-h-[200px]">
-                                <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4"></div>
-                                <h2 className="text-xl font-black text-gray-900 mb-3 text-center">
-                                    {selectedTraining.slides[currentSlideIndex]?.title}
-                                </h2>
-                                <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap text-center max-w-lg mx-auto">
-                                    {selectedTraining.slides[currentSlideIndex]?.content}
-                                </p>
+                            
+                            {/* Progress Bar (شريط التقدم العلوي) */}
+                            <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-200 md:bg-gray-100">
+                                <div 
+                                    className="h-full bg-indigo-500 transition-all duration-300"
+                                    style={{ width: `${((currentSlideIndex + 1) / selectedTraining.slides.length) * 100}%` }}
+                                />
                             </div>
                         </div>
 
-                        {/* شريط الإجراءات السفلي (Footer) */}
-                        <div className="p-4 bg-white border-t flex flex-wrap justify-between items-center shrink-0 gap-2">
+                        {/* Body */}
+                        <div className="flex-1 overflow-y-auto flex flex-col relative bg-gray-50">
                             
-                            {/* زر العودة */}
-                            <button onClick={prevSlide} disabled={currentSlideIndex === 0} className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-30 hover:bg-gray-200 transition-colors">
+                            {/* التحقق مما إذا كان هناك ميديا أم لا */}
+                            {selectedTraining.slides[currentSlideIndex]?.mediaUrl ? (
+                                <>
+                                    {renderMedia(selectedTraining.slides[currentSlideIndex])}
+                                    <div className="bg-white rounded-t-[30px] p-6 md:p-8 -mt-6 relative z-10 min-h-[200px] shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
+                                        <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+                                        <div className="max-w-2xl mx-auto w-full text-right">
+                                            <h2 className="text-xl md:text-2xl font-black text-gray-900 mb-4">
+                                                {selectedTraining.slides[currentSlideIndex]?.title}
+                                            </h2>
+                                            <p className="text-gray-700 text-sm md:text-base leading-loose whitespace-pre-wrap font-medium">
+                                                {selectedTraining.slides[currentSlideIndex]?.content}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                /* شاشة كاملة للنص إذا لم يكن هناك ميديا */
+                                <div className="flex-1 bg-white p-8 md:p-12 flex flex-col justify-center items-center text-right relative">
+                                    <div className="max-w-2xl w-full">
+                                        <h2 className="text-2xl md:text-4xl font-black text-indigo-700 mb-6 pb-4 border-b-2 border-indigo-50">
+                                            {selectedTraining.slides[currentSlideIndex]?.title}
+                                        </h2>
+                                        <p className="text-gray-700 text-base md:text-lg leading-loose whitespace-pre-wrap font-medium">
+                                            {selectedTraining.slides[currentSlideIndex]?.content}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+
+                        {/* شريط الإجراءات السفلي (Footer) */}
+                        <div className="p-4 md:p-5 bg-white border-t flex flex-wrap justify-between items-center shrink-0 gap-2">
+                            
+                            {/* زر العودة (السابق) */}
+                            <button 
+                                onClick={prevSlide} 
+                                disabled={currentSlideIndex === 0} 
+                                className="px-4 py-2.5 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 disabled:opacity-30 hover:bg-gray-200 transition-colors gap-1.5"
+                            >
                                 <ChevronRight className="w-5 h-5"/>
+                                <span className="text-xs font-bold hidden sm:inline">السابق</span>
                             </button>
 
                             {/* أزرار الإجراءات الإضافية (تخطي وتحميل) */}
                             <div className="flex gap-2">
-                                {/* زر التحميل إذا كان هناك رابط ميديا (ولا يعمل مع يوتيوب) */}
+                                {/* زر التحميل */}
                                 {selectedTraining.slides[currentSlideIndex]?.mediaUrl && !selectedTraining.slides[currentSlideIndex]?.mediaUrl.includes('youtube') && !selectedTraining.slides[currentSlideIndex]?.mediaUrl.includes('youtu.be') && (
                                     <a 
                                         href={selectedTraining.slides[currentSlideIndex].mediaUrl} 
                                         target="_blank" 
                                         rel="noreferrer" 
                                         download
-                                        className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-full font-bold text-xs flex items-center gap-1 hover:bg-indigo-100 transition-colors"
+                                        className="px-4 py-2.5 bg-indigo-50 text-indigo-600 rounded-full font-bold text-xs flex items-center gap-1.5 hover:bg-indigo-100 transition-colors"
                                         title="تحميل المرفق"
                                     >
-                                        <Download className="w-4 h-4" /> تحميل
+                                        <Download className="w-4 h-4" /> <span className="hidden sm:inline">تحميل المرفق</span>
                                     </a>
                                 )}
 
@@ -362,10 +394,10 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
                                 {!canProceed && !selectedTraining.is_completed && (
                                     <button 
                                         onClick={skipCurrentSlide}
-                                        className="px-3 py-2 bg-yellow-100 text-yellow-700 rounded-full font-bold text-xs flex items-center gap-1 hover:bg-yellow-200 transition-colors"
+                                        className="px-4 py-2.5 bg-yellow-100 text-yellow-700 rounded-full font-bold text-xs flex items-center gap-1.5 hover:bg-yellow-200 transition-colors"
                                         title="تخطي المؤقت"
                                     >
-                                        <SkipForward className="w-4 h-4" /> تخطي
+                                        <SkipForward className="w-4 h-4" /> <span className="hidden sm:inline">تخطي</span>
                                     </button>
                                 )}
                             </div>
@@ -374,14 +406,29 @@ export default function StaffTrainingCenter({ employee, forcedTraining, onComple
 
                             {/* زر التالي / إنهاء */}
                             {currentSlideIndex === selectedTraining.slides.length - 1 ? (
-                                <button onClick={handleFinish} disabled={!canProceed || completeMutation.isPending} className={`px-6 py-2.5 rounded-full font-black shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-sm text-white ${!canProceed ? 'bg-gray-400 cursor-not-allowed' : selectedTraining.is_completed ? 'bg-gray-600' : 'bg-green-600 shadow-green-200'}`}>
-                                    {completeMutation.isPending ? '...' : !canProceed ? `انتظر (${timer})` : selectedTraining.is_completed ? 'إغلاق' : 'إنهاء'} 
-                                    {canProceed && (selectedTraining.is_completed ? <X className="w-4 h-4"/> : <CheckCircle className="w-4 h-4"/>)}
-                                    {!canProceed && <Lock className="w-3 h-3"/>}
+                                <button 
+                                    onClick={handleFinish} 
+                                    disabled={!canProceed || completeMutation.isPending} 
+                                    className={`px-6 py-2.5 rounded-full font-black shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-sm text-white ${!canProceed ? 'bg-gray-400 cursor-not-allowed' : selectedTraining.is_completed ? 'bg-gray-800' : 'bg-green-600 shadow-green-200'}`}
+                                >
+                                    {completeMutation.isPending ? '...' : !canProceed ? `انتظر (${timer})` : selectedTraining.is_completed ? 'إغلاق الدورة' : 'إنهاء وإرسال'} 
+                                    {canProceed && (selectedTraining.is_completed ? <X className="w-4 h-4"/> : <CheckCircle className="w-5 h-5"/>)}
+                                    {!canProceed && <Lock className="w-4 h-4"/>}
                                 </button>
                             ) : (
-                                <button onClick={nextSlide} disabled={!canProceed} className={`w-12 h-12 flex items-center justify-center rounded-full text-white shadow-lg transition-colors ${!canProceed ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}>
-                                    {!canProceed && timer > 0 ? <span className="text-xs font-bold">{timer}</span> : <ChevronLeft className="w-6 h-6"/>}
+                                <button 
+                                    onClick={nextSlide} 
+                                    disabled={!canProceed} 
+                                    className={`px-5 py-2.5 flex items-center justify-center rounded-full text-white shadow-lg transition-colors gap-1.5 ${!canProceed ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}
+                                >
+                                    {!canProceed && timer > 0 ? (
+                                        <span className="text-sm font-bold px-2">{timer} ث</span>
+                                    ) : (
+                                        <>
+                                            <span className="text-sm font-bold">التالي</span>
+                                            <ChevronLeft className="w-5 h-5"/>
+                                        </>
+                                    )}
                                 </button>
                             )}
                         </div>
