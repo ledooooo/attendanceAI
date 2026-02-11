@@ -4,8 +4,7 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Clock, CheckCircle2, AlertCircle, Play, Eye, FileText, Loader2, Timer } from 'lucide-react';
-import { sendSystemNotification } from '../../../utils/pushNotifications';
-import confetti from 'canvas-confetti'; // ✅ استيراد تأثير الاحتفال
+import confetti from 'canvas-confetti';
 
 export default function StaffTasks({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
@@ -34,7 +33,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
 
     // 2. معالجة تحديث الحالة + التنبيهات + النقاط
     const updateStatusMutation = useMutation({
-        mutationFn: async ({ taskId, newStatus, replyNote, taskTitle, priority }: { taskId: string, newStatus: string, replyNote?: string, taskTitle?: string, priority?: string }) => {
+        mutationFn: async ({ taskId, newStatus, replyNote, taskTitle }: { taskId: string, newStatus: string, replyNote?: string, taskTitle?: string }) => {
             
             // أ) تحديث الحالة في قاعدة البيانات
             const updates: any = { status: newStatus };
@@ -59,19 +58,19 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                 notifTitle = '✅ تم الإنجاز';
                 notifMsg = `أنهى ${employee.name} المهمة: ${taskTitle}`;
 
-                // ✅ ج) إضافة النقاط عند الإنجاز
-                const points = priority === 'urgent' ? 20 : 15; // 20 للمهام العاجلة، 15 للعادية
+                // ✅ ج) إضافة 20 نقطة عند الإنجاز
+                const pointsToAdd = 20;
                 
                 // 1. زيادة الرصيد
                 await supabase.rpc('increment_points', { 
                     emp_id: employee.employee_id, 
-                    amount: points 
+                    amount: pointsToAdd 
                 });
 
                 // 2. تسجيل في السجل
                 await supabase.from('points_ledger').insert({
                     employee_id: employee.employee_id,
-                    points: points,
+                    points: pointsToAdd,
                     reason: `إنجاز تكليف: ${taskTitle}`
                 });
             }
@@ -85,7 +84,6 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
             if (admins && admins.length > 0) {
                 await Promise.all(admins.map(async (admin) => {
                     const targetId = admin.id || admin.employee_id;
-                    
                     await supabase.from('notifications').insert({
                         user_id: targetId, 
                         title: notifTitle,
@@ -94,31 +92,17 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                         sender_name: employee.name,
                         is_read: false
                     });
-
-                    if (admin.id) {
-                        try {
-                            await supabase.functions.invoke('send-push-notification', {
-                                body: {
-                                    userId: admin.id,
-                                    title: notifTitle,
-                                    body: notifMsg,
-                                    url: '/tasks' 
-                                }
-                            });
-                        } catch (e) {
-                            console.error("Push failed for admin:", admin.id);
-                        }
-                    }
                 }));
             }
         },
         onSuccess: (_, variables) => {
+            // تحديث البيانات في الواجهة
             queryClient.invalidateQueries({ queryKey: ['staff_tasks'] });
-            queryClient.invalidateQueries({ queryKey: ['staff_badges'] }); // لتحديث النقاط في الواجهة إذا كنت تعرضها
+            queryClient.invalidateQueries({ queryKey: ['employee_full_details'] }); // لتحديث نقاط الموظف
             
             if (variables.newStatus === 'completed') {
-                toast.success('تم الإنجاز وإضافة النقاط! 🎉');
-                // ✅ تشغيل تأثير الاحتفال
+                toast.success('تم الإنجاز وحصلت على 20 نقطة! 🎉');
+                // تشغيل تأثير الاحتفال
                 try {
                     confetti({
                         particleCount: 100,
@@ -136,9 +120,9 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
         }
     });
 
-    const handleUpdate = (taskId: string, newStatus: string, title: string, priority: string, replyNote?: string) => {
+    const handleUpdate = (taskId: string, newStatus: string, title: string, replyNote?: string) => {
         toast.promise(
-            updateStatusMutation.mutateAsync({ taskId, newStatus, replyNote, taskTitle: title, priority }),
+            updateStatusMutation.mutateAsync({ taskId, newStatus, replyNote, taskTitle: title }),
             {
                 loading: 'جاري التحديث...',
                 success: 'تم!',
@@ -211,14 +195,14 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                             
                             {/* 1. زر تأكيد العلم */}
                             {task.status === 'pending' && (
-                                <button onClick={() => handleUpdate(task.id, 'acknowledged', task.title, task.priority)} className="w-full bg-blue-50 text-blue-700 py-2.5 rounded-xl font-bold text-xs hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors active:scale-95">
+                                <button onClick={() => handleUpdate(task.id, 'acknowledged', task.title)} className="w-full bg-blue-50 text-blue-700 py-2.5 rounded-xl font-bold text-xs hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors active:scale-95">
                                     <Eye className="w-4 h-4"/> اضغط لتأكيد العلم
                                 </button>
                             )}
 
                             {/* 2. زر بدء التنفيذ */}
                             {task.status === 'acknowledged' && (
-                                <button onClick={() => handleUpdate(task.id, 'in_progress', task.title, task.priority)} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-indigo-700 flex items-center justify-center gap-2 transition-colors active:scale-95 shadow-md shadow-indigo-200">
+                                <button onClick={() => handleUpdate(task.id, 'in_progress', task.title)} className="w-full bg-indigo-600 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-indigo-700 flex items-center justify-center gap-2 transition-colors active:scale-95 shadow-md shadow-indigo-200">
                                     <Play className="w-4 h-4 rtl:rotate-180"/> اضغط لبدء التنفيذ
                                 </button>
                             )}
@@ -232,7 +216,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                                         value={notes[task.id] || ''}
                                         onChange={(e) => setNotes({...notes, [task.id]: e.target.value})}
                                     />
-                                    <button onClick={() => handleUpdate(task.id, 'completed', task.title, task.priority, notes[task.id])} className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-green-700 flex items-center justify-center gap-2 transition-colors shadow-md shadow-green-200 active:scale-95">
+                                    <button onClick={() => handleUpdate(task.id, 'completed', task.title, notes[task.id])} className="w-full bg-green-600 text-white py-2.5 rounded-xl font-bold text-xs hover:bg-green-700 flex items-center justify-center gap-2 transition-colors shadow-md shadow-green-200 active:scale-95">
                                         <CheckCircle2 className="w-4 h-4"/> تم الانتهاء من المهمة
                                     </button>
                                 </div>
@@ -242,7 +226,7 @@ export default function StaffTasks({ employee }: { employee: Employee }) {
                             {task.status === 'completed' && (
                                 <div className="bg-green-50 p-3 rounded-xl border border-green-100 text-center">
                                     <span className="text-green-700 font-bold text-xs flex items-center justify-center gap-1 mb-1">
-                                        <CheckCircle2 className="w-4 h-4"/> المهمة مكتملة (+{task.priority === 'urgent' ? 20 : 15} نقطة)
+                                        <CheckCircle2 className="w-4 h-4"/> المهمة مكتملة (+20 نقطة)
                                     </span>
                                     {task.response_note && <p className="text-[10px] text-green-600 mt-1">ملاحظاتك: {task.response_note}</p>}
                                 </div>
