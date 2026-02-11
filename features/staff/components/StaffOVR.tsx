@@ -3,7 +3,7 @@ import { supabase } from '../../../supabaseClient';
 import { Employee, OVRReport } from '../../../types';
 import { 
     AlertTriangle, Send, FileText, MapPin, Clock, 
-    Eye, EyeOff, RefreshCcw, CheckCircle, Image as ImageIcon, X, UploadCloud
+    Eye, EyeOff, RefreshCcw, CheckCircle, Image as ImageIcon, X, UploadCloud, Info
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
@@ -19,6 +19,9 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
     const [myReports, setMyReports] = useState<OVRReport[]>([]);
     const [isAnonymous, setIsAnonymous] = useState(false);
     
+    // حالة المودال التعريفي
+    const [showInfoModal, setShowInfoModal] = useState(false);
+
     // حالة للتحقق من الحد اليومي (1 فقط يومياً)
     const [hasSubmittedToday, setHasSubmittedToday] = useState(false);
     const [checkingLimit, setCheckingLimit] = useState(true);
@@ -179,8 +182,8 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
         <div className="space-y-8 animate-in fade-in duration-500 pb-20">
             
             {/* نموذج الإرسال */}
-            <div className="bg-white p-6 rounded-[30px] border border-red-100 shadow-sm">
-                <div className="flex justify-between items-center mb-6 border-b border-red-50 pb-4">
+            <div className="bg-white p-6 rounded-[30px] border border-red-100 shadow-sm relative">
+                <div className="flex justify-between items-start mb-6 border-b border-red-50 pb-4">
                     <div className="flex items-center gap-3">
                         <div className="bg-red-50 p-3 rounded-full">
                             <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -190,9 +193,19 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
                             <p className="text-xs text-gray-500 font-bold">تقرير سري يذهب لمسؤول الجودة مباشرة</p>
                         </div>
                     </div>
-                    {/* شارة توضح أنه بمكافأة */}
-                    <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1">
-                        +15 نقطة 🌟
+                    
+                    <div className="flex flex-col gap-2 items-end">
+                        {/* شارة توضح أنه بمكافأة */}
+                        <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1">
+                            +15 نقطة 🌟
+                        </div>
+                        {/* زر التوضيح */}
+                        <button 
+                            onClick={() => setShowInfoModal(true)} 
+                            className="text-[10px] text-red-600 bg-red-50 px-2 py-1.5 rounded-lg font-bold flex items-center gap-1 hover:bg-red-100 transition-colors border border-red-100"
+                        >
+                            <Info className="w-3 h-3"/> ما هو الـ OVR؟
+                        </button>
                     </div>
                 </div>
 
@@ -357,7 +370,7 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
                                     <p className="text-sm font-medium text-gray-700 leading-relaxed line-clamp-2">{rep.description}</p>
                                 </div>
 
-                                {/* عرض الصورة إذا وجدت (Thumbnail مصغر) */}
+                                {/* عرض الصورة إذا وجدت */}
                                 {/* @ts-ignore */}
                                 {rep.image_url && (
                                     <div className="mb-3">
@@ -383,6 +396,46 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
                     )}
                 </div>
             </div>
+
+            {/* مودال الشرح التعريفي */}
+            {showInfoModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setShowInfoModal(false)}>
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl relative" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setShowInfoModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100 text-gray-500">
+                            <X className="w-5 h-5" />
+                        </button>
+                        
+                        <div className="flex justify-center mb-4">
+                            <div className="bg-indigo-50 p-4 rounded-full border border-indigo-100">
+                                <Info className="w-8 h-8 text-indigo-600" />
+                            </div>
+                        </div>
+
+                        <h2 className="text-xl font-black text-center text-gray-800 mb-2">ما هو تقرير الـ OVR؟</h2>
+                        <p className="text-center text-xs text-indigo-600 font-bold mb-6">Occurrence Variance Report</p>
+
+                        <div className="space-y-4 text-sm text-gray-600 font-medium leading-relaxed bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                            <p>
+                                <strong className="text-gray-800 block mb-1">الهدف الرئيسي:</strong>
+                                هو نظام آمن وسري يهدف إلى حماية المرضى وتحسين بيئة العمل، ولا يهدف إطلاقاً لتصيد الأخطاء أو معاقبة الموظفين.
+                            </p>
+                            <p>
+                                <strong className="text-gray-800 block mb-1">متى تستخدمه؟</strong>
+                                يُستخدم للإبلاغ عن أي خطأ، حادثة، أو موقف كاد أن يسبب ضرراً للمريض أو الزملاء (مثل: مشكلة في المعدات، خطأ دوائي، زحام أو تصادم، انقطاع مفاجئ للكهرباء).
+                            </p>
+                            <p>
+                                <strong className="text-gray-800 block mb-1">أهميته:</strong>
+                                يساعد قسم الجودة على دراسة أسباب هذه المواقف ووضع حلول جذرية تمنع تكرارها وتضمن سلامة الجميع.
+                            </p>
+                        </div>
+                        
+                        <button onClick={() => setShowInfoModal(false)} className="w-full mt-6 bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-gray-900 transition-colors">
+                            فهمت ذلك
+                        </button>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }
