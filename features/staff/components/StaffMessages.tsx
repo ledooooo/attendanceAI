@@ -10,6 +10,7 @@ interface Props {
     currentUserId: string;
 }
 
+// الأدوار التي تمتلك صلاحية الدخول لغرفة الإدارة
 const PRIVILEGED_ROLES = ['admin', 'head_of_dept', 'quality_manager'];
 
 export default function StaffMessages({ employee }: Props) {
@@ -19,27 +20,26 @@ export default function StaffMessages({ employee }: Props) {
     
     // حالة لتحديد المحادثة النشطة: 
     // null = شاشة اختيار جهة الاتصال
-    // 'general' = شات جماعي للجميع
     // 'group' = شات الإدارة
-    // 'employee_id' = شات فردي
+    // 'employee_id' = شات فردي مع موظف
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
     
     const [sending, setSending] = useState(false);
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
+    // هل المستخدم من الإدارة؟
     const isPrivileged = PRIVILEGED_ROLES.includes(employee.role);
+    const isAdmin = employee.role === 'admin';
     const myId = employee.employee_id;
 
-    // 1. جلب جهات الاتصال
+    // 1. جلب جهات الاتصال حسب الصلاحيات
     useEffect(() => {
         const fetchContacts = async () => {
             let query = supabase.from('employees').select('*').eq('status', 'نشط').neq('employee_id', myId);
 
-            if (employee.role === 'admin') {
-                // المدير يرى الجميع
-            } else {
-                // الموظف العادي يرى الإدارة ورؤساء الأقسام ومسؤول الجودة
+            // إذا لم يكن مديراً (أي موظف عادي أو رئيس قسم أو جودة)، اجلب له الإدارة فقط
+            if (!isAdmin) {
                 query = query.in('role', PRIVILEGED_ROLES);
             }
 
@@ -47,14 +47,16 @@ export default function StaffMessages({ employee }: Props) {
             if (data) setContacts(data as Employee[]);
         };
         fetchContacts();
-    }, [employee.role, myId]);
+    }, [employee.role, myId, isAdmin]);
 
-    // 2. جلب الرسائل (الخاصة، العامة، وإدارة)
+    // 2. جلب الرسائل
     const fetchMessages = async () => {
         setLoading(true);
         let query = supabase.from('messages').select('*').order('created_at', { ascending: false });
 
-        let queryStr = `from_user.eq.${myId},to_user.eq.${myId},to_user.eq.general_group`;
+        let queryStr = `from_user.eq.${myId},to_user.eq.${myId}`;
+        
+        // إذا كان من الإدارة، نضيف رسائل جروب الإدارة إلى القائمة
         if (isPrivileged) {
             queryStr += `,to_user.eq.group_managers`;
         }
@@ -82,7 +84,6 @@ export default function StaffMessages({ employee }: Props) {
                     if (
                         newMsg.to_user === myId || 
                         newMsg.from_user === myId || 
-                        newMsg.to_user === 'general_group' ||
                         (newMsg.to_user === 'group_managers' && isPrivileged)
                     ) {
                         setLocalMessages((prev) => [newMsg, ...prev]);
@@ -103,7 +104,7 @@ export default function StaffMessages({ employee }: Props) {
 
     // تحديد الرسائل كمقروءة للشات الفردي
     useEffect(() => {
-        if (activeChatId && activeChatId !== 'group' && activeChatId !== 'general') {
+        if (activeChatId && activeChatId !== 'group') {
             const markAsRead = async () => {
                 const unreadIds = localMessages
                     .filter(m => !m.is_read && m.to_user === myId && m.from_user === activeChatId)
@@ -122,9 +123,7 @@ export default function StaffMessages({ employee }: Props) {
     const activeMessages = useMemo(() => {
         if (!activeChatId) return [];
         
-        if (activeChatId === 'general') {
-            return localMessages.filter(m => m.to_user === 'general_group');
-        } else if (activeChatId === 'group') {
+        if (activeChatId === 'group') {
             return localMessages.filter(m => m.to_user === 'group_managers');
         } else {
             return localMessages.filter(m => 
@@ -140,17 +139,16 @@ export default function StaffMessages({ employee }: Props) {
         if (!newMessage.trim() || !activeChatId) return;
         setSending(true);
 
-        const isGeneral = activeChatId === 'general';
         const isGroup = activeChatId === 'group';
         const msgContent = newMessage;
 
-        const toUserStr = isGeneral ? 'general_group' : isGroup ? 'group_managers' : activeChatId;
+        const toUserStr = isGroup ? 'group_managers' : activeChatId;
 
         const payload = {
             from_user: myId,
             to_user: toUserStr,
             content: msgContent,
-            is_read: (isGroup || isGeneral) ? true : false
+            is_read: isGroup ? true : false
         };
 
         const { error } = await supabase.from('messages').insert(payload);
@@ -163,11 +161,7 @@ export default function StaffMessages({ employee }: Props) {
                 let targetEmps: any[] = [];
                 let notifTitle = '';
 
-                if (isGeneral) {
-                    const { data } = await supabase.from('employees').select('id, employee_id').eq('status', 'نشط').neq('employee_id', myId);
-                    targetEmps = data || [];
-                    notifTitle = `📣 نقاش عام: ${employee.name}`;
-                } else if (isGroup) {
+                if (isGroup) {
                     const { data } = await supabase.from('employees').select('id, employee_id').eq('status', 'نشط').in('role', PRIVILEGED_ROLES).neq('employee_id', myId);
                     targetEmps = data || [];
                     notifTitle = `👥 الإدارة: ${employee.name}`;
@@ -215,8 +209,7 @@ export default function StaffMessages({ employee }: Props) {
         return localMessages.filter(m => !m.is_read && m.to_user === myId && m.from_user === senderId).length;
     };
 
-    const activeContactName = activeChatId === 'general' ? 'نقاش عام للجميع' 
-        : activeChatId === 'group' ? 'غرفة الإدارة' 
+    const activeContactName = activeChatId === 'group' ? 'غرفة الإدارة' 
         : contacts.find(c => c.employee_id === activeChatId)?.name || 'مستخدم';
 
     return (
@@ -231,26 +224,12 @@ export default function StaffMessages({ employee }: Props) {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
-                    
-                    {/* الغرفة العامة للجميع */}
-                    <button 
-                        onClick={() => setActiveChatId('general')}
-                        className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all mb-2 ${activeChatId === 'general' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-emerald-50 hover:border-emerald-200 text-gray-700'}`}
-                    >
-                        <div className={`p-2 rounded-full ${activeChatId === 'general' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-600'}`}>
-                            <Users className="w-5 h-5"/>
-                        </div>
-                        <div className="text-right flex-1">
-                            <h4 className="font-bold text-sm">نقاش عام</h4>
-                            <p className={`text-[10px] font-medium mt-0.5 ${activeChatId === 'general' ? 'text-emerald-100' : 'text-gray-400'}`}>الجميع متواجد هنا</p>
-                        </div>
-                    </button>
 
                     {/* غرفة الإدارة (تظهر لأصحاب الصلاحيات فقط) */}
                     {isPrivileged && (
                         <button 
                             onClick={() => setActiveChatId('group')}
-                            className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all ${activeChatId === 'group' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-indigo-50 hover:border-indigo-200 text-gray-700'}`}
+                            className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all mb-2 ${activeChatId === 'group' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-indigo-50 hover:border-indigo-200 text-gray-700'}`}
                         >
                             <div className={`p-2 rounded-full ${activeChatId === 'group' ? 'bg-white/20' : 'bg-indigo-100 text-indigo-600'}`}>
                                 <Users className="w-5 h-5"/>
@@ -262,10 +241,10 @@ export default function StaffMessages({ employee }: Props) {
                         </button>
                     )}
 
-                    {/* قائمة الأفراد */}
+                    {/* عنوان القائمة يختلف حسب صلاحية المستخدم */}
                     <div className="pt-2 pb-1 px-2">
                         <span className="text-xs font-black text-gray-400 uppercase tracking-wider">
-                            {employee.role === 'admin' ? 'جميع الموظفين' : 'الإدارة ورؤساء الأقسام'}
+                            {isAdmin ? 'جميع الموظفين' : 'الإدارة ورؤساء الأقسام'}
                         </span>
                     </div>
 
@@ -317,8 +296,8 @@ export default function StaffMessages({ employee }: Props) {
                             <button onClick={() => setActiveChatId(null)} className="md:hidden p-2 bg-gray-50 rounded-full text-gray-600 hover:bg-gray-200">
                                 <ArrowRight className="w-5 h-5"/>
                             </button>
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${activeChatId === 'general' ? 'bg-emerald-100 text-emerald-600' : activeChatId === 'group' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'}`}>
-                                {(activeChatId === 'group' || activeChatId === 'general') ? <Users className="w-5 h-5"/> : <User className="w-5 h-5"/>}
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${activeChatId === 'group' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'}`}>
+                                {activeChatId === 'group' ? <Users className="w-5 h-5"/> : <User className="w-5 h-5"/>}
                             </div>
                             <div>
                                 <h4 className="font-black text-gray-800 text-base">{activeContactName}</h4>
@@ -338,8 +317,8 @@ export default function StaffMessages({ employee }: Props) {
                             ) : (
                                 activeMessages.map(msg => {
                                     const isMe = msg.from_user === myId;
-                                    // إذا كان شات جماعي/عام، نود إظهار اسم المرسل بجوار رسالته (إذا لم أكن أنا)
-                                    const senderName = !isMe && (activeChatId === 'group' || activeChatId === 'general')
+                                    // إذا كان شات جماعي، نود إظهار اسم المرسل بجوار رسالته (إذا لم أكن أنا)
+                                    const senderName = !isMe && activeChatId === 'group'
                                         ? contacts.find(c => c.employee_id === msg.from_user)?.name || 'زميل'
                                         : null;
 
@@ -363,7 +342,7 @@ export default function StaffMessages({ employee }: Props) {
                                                     <span className="text-[9px] font-bold text-gray-400">
                                                         {new Date(msg.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
-                                                    {isMe && activeChatId !== 'group' && activeChatId !== 'general' && (
+                                                    {isMe && activeChatId !== 'group' && (
                                                         msg.is_read ? <CheckCheck className="w-3 h-3 text-blue-500"/> : <Check className="w-3 h-3 text-gray-300"/>
                                                     )}
                                                 </div>
@@ -388,7 +367,7 @@ export default function StaffMessages({ employee }: Props) {
                                 type="submit" 
                                 disabled={!newMessage.trim() || sending} 
                                 className={`p-3 md:p-4 rounded-2xl text-white transition-all shadow-lg active:scale-95 flex items-center justify-center
-                                    ${!newMessage.trim() || sending ? 'bg-gray-300 shadow-none' : activeChatId === 'general' ? 'bg-emerald-600 hover:bg-emerald-700' : activeChatId === 'group' ? 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-200'}
+                                    ${!newMessage.trim() || sending ? 'bg-gray-300 shadow-none' : activeChatId === 'group' ? 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-200'}
                                 `}
                             >
                                 {sending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5 rtl:rotate-180"/>}
