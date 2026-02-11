@@ -12,7 +12,7 @@ import {
   List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
   Share2, Info, Moon, FileText, ListTodo, 
   Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Calendar, Settings, ShoppingBag, Trophy, Star, Check // ✅ تمت إضافة Check
+  Calendar, Settings, ShoppingBag, Trophy, Star, Check 
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -85,9 +85,6 @@ export default function StaffDashboard({ employee }: Props) {
         requestNotificationPermission(employee.employee_id);
     }
   }, [employee.employee_id]);
-
-
-  const [deepLinkTrainingId, setDeepLinkTrainingId] = useState<string | null>(null);
 
     // ✅ 2. قراءة الرابط عند تشغيل التطبيق
     useEffect(() => {
