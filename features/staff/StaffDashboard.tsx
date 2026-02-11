@@ -52,6 +52,7 @@ export default function StaffDashboard({ employee }: Props) {
   const queryClient = useQueryClient();
   
   const [activeTab, setActiveTab] = useState('news');
+  const [deepLinkTrainingId, setDeepLinkTrainingId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
 
@@ -85,6 +86,26 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.employee_id]);
 
+
+  const [deepLinkTrainingId, setDeepLinkTrainingId] = useState<string | null>(null);
+
+    // ✅ 2. قراءة الرابط عند تشغيل التطبيق
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get('tab');
+        const trainingIdParam = params.get('training_id');
+
+        if (tabParam) {
+            setActiveTab(tabParam); // فتح تبويب التدريب
+        }
+        if (trainingIdParam) {
+            setDeepLinkTrainingId(trainingIdParam); // حفظ ID التدريب
+            
+            // اختياري: تنظيف الرابط بعد قراءته حتى لا يظل معلقاً
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, []);
+  
   // منطق احتساب نقطة الزيارة اليومية
   useEffect(() => {
     const checkDailyVisitReward = async () => {
@@ -625,8 +646,12 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'store' && <RewardsStore employee={employee} />}
-                    {activeTab === 'training' && <StaffTrainingCenter employee={employee} />} 
-                    {activeTab === 'links' && <StaffLinksTab />}
+{activeTab === 'training' && (
+        <StaffTrainingCenter 
+            employee={employee} 
+            deepLinkTrainingId={deepLinkTrainingId} // تمرير الـ ID هنا
+        />
+    )}                    {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
                     {activeTab === 'evaluations' && <StaffEvaluations evals={evaluations} employee={employee} />}
