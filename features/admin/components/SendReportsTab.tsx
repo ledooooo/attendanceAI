@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-// ✅ تم إضافة Info هنا في سطر الاستيراد
-import { Send, CheckSquare, Square, Loader2, Mail, Bug, FileText, Edit3, Info } from 'lucide-react';
+import { 
+    Send, CheckSquare, Square, Loader2, Mail, Bug, FileText, Edit3, Info,
+    Bold, Italic, Underline, Heading1, Heading2, Type, 
+    AlignRight, AlignCenter, AlignLeft, Link as LinkIcon, Image as ImageIcon
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -44,10 +47,13 @@ export default function SendReportsTab() {
     // Leaves
     const [rawLeaves, setRawLeaves] = useState<LeaveRequest[]>([]);
 
-    // ✅ State for Email Type
+    // State for Email Type
     const [emailType, setEmailType] = useState<'report' | 'custom'>('report');
     const [customSubject, setCustomSubject] = useState('');
-    const [customMessage, setCustomMessage] = useState('');
+    const [customMessageHTML, setCustomMessageHTML] = useState('');
+    
+    // مرجع لمربع محرر النصوص
+    const editorRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => { fetchData(); }, [month]); 
 
@@ -75,6 +81,25 @@ export default function SendReportsTab() {
     const toggleSelect = (id: string) => {
         if (selectedIds.includes(id)) setSelectedIds(selectedIds.filter(i => i !== id));
         else setSelectedIds([...selectedIds, id]);
+    };
+
+    // --- Editor Commands ---
+    const execCommand = (command: string, value: string | undefined = undefined) => {
+        document.execCommand(command, false, value);
+        if (editorRef.current) {
+            setCustomMessageHTML(editorRef.current.innerHTML);
+            editorRef.current.focus();
+        }
+    };
+
+    const addLink = () => {
+        const url = prompt('أدخل الرابط هنا:');
+        if (url) execCommand('createLink', url);
+    };
+
+    const addImage = () => {
+        const url = prompt('أدخل الرابط المباشر للصورة:');
+        if (url) execCommand('insertImage', url);
     };
 
     // --- HTML Generators ---
@@ -239,12 +264,8 @@ export default function SendReportsTab() {
         `;
     };
 
-    // ✅ توليد قالب الرسالة المخصصة
-    const generateCustomHTML = (emp: Employee, messageContent: string) => {
-        const formattedMessage = messageContent
-            .replace(/\n/g, '<br>')
-            .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" style="color:#2563eb; text-decoration:underline;">$1</a>'); 
-
+    // ✅ توليد قالب الرسالة المخصصة بناءً على الـ HTML المتولد من المحرر
+    const generateCustomHTML = (emp: Employee, htmlContent: string) => {
         return `
             <!DOCTYPE html>
             <html dir="rtl" lang="ar">
@@ -257,6 +278,7 @@ export default function SendReportsTab() {
                     .content { padding: 30px; color: #334155; font-size: 16px; line-height: 1.8; }
                     .footer { padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; background: #f8fafc; border-top: 1px solid #e2e8f0; }
                     img { max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0; }
+                    a { color: #2563eb; text-decoration: underline; }
                 </style>
             </head>
             <body>
@@ -266,7 +288,7 @@ export default function SendReportsTab() {
                     </div>
                     <div class="content">
                         <p style="font-weight:bold; margin-top:0;">عزيزي/عزيزتي ${emp.name}،</p>
-                        <div>${formattedMessage}</div>
+                        <div>${htmlContent}</div>
                     </div>
                     <div class="footer">
                         رسالة إدارية مرسلة من نظام العاملين
@@ -294,7 +316,7 @@ export default function SendReportsTab() {
     const handleSendReports = async () => {
         if (selectedIds.length === 0) return toast.error('اختر موظفاً واحداً على الأقل');
         
-        if (emailType === 'custom' && (!customSubject || !customMessage)) {
+        if (emailType === 'custom' && (!customSubject || !customMessageHTML.trim() || customMessageHTML === '<br>')) {
             return toast.error('يرجى كتابة عنوان ومحتوى الرسالة');
         }
 
@@ -318,7 +340,6 @@ export default function SendReportsTab() {
                 let htmlContent = '';
                 let subject = '';
 
-                // ✅ المعالجة بناءً على نوع الرسالة المختار
                 if (emailType === 'report') {
                     const { data: empAtt } = await supabase
                         .from('attendance')
@@ -332,8 +353,7 @@ export default function SendReportsTab() {
                     htmlContent = generateReportHTML(emp, empAtt || [], empLeaves, month);
                     subject = `تقرير شهر ${month} - ${emp.name}`;
                 } else {
-                    // رسالة مخصصة
-                    htmlContent = generateCustomHTML(emp, customMessage);
+                    htmlContent = generateCustomHTML(emp, customMessageHTML);
                     subject = customSubject;
                 }
 
@@ -348,8 +368,9 @@ export default function SendReportsTab() {
             }
             alert(`النتيجة:\n✅ تم الإرسال: ${successCount}\n❌ فشل: ${failCount}\n${lastError ? 'آخر خطأ: ' + lastError : ''}`);
             if (emailType === 'custom') {
-                setCustomMessage('');
                 setCustomSubject('');
+                setCustomMessageHTML('');
+                if (editorRef.current) editorRef.current.innerHTML = '';
             }
         } catch (e: any) {
             alert('خطأ غير متوقع: ' + e.message);
@@ -390,7 +411,6 @@ export default function SendReportsTab() {
         <div className="space-y-6 animate-in fade-in duration-500">
             <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2"><Mail className="text-emerald-600"/> إرسال المراسلات والتقارير</h2>
             
-            {/* ✅ اختيار نوع الرسالة */}
             <div className="flex bg-white p-2 rounded-2xl border shadow-sm w-fit gap-2 mx-auto">
                 <button 
                     onClick={() => setEmailType('report')} 
@@ -406,7 +426,7 @@ export default function SendReportsTab() {
                 </button>
             </div>
 
-            {/* ✅ محرر الرسالة المخصصة */}
+            {/* ✅ محرر النصوص المتطور */}
             {emailType === 'custom' ? (
                 <div className="bg-indigo-50 p-6 rounded-[30px] border border-indigo-100 shadow-sm space-y-4 animate-in slide-in-from-top-4">
                     <h3 className="font-bold text-indigo-900">محتوى الرسالة</h3>
@@ -418,19 +438,46 @@ export default function SendReportsTab() {
                     />
                     <div>
                         <label className="block text-xs font-bold text-gray-500 mb-2">محتوى الرسالة</label>
-                        <textarea 
-                            className="w-full p-4 rounded-2xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all h-40 resize-none font-medium text-sm leading-relaxed"
-                            placeholder="اكتب نص الرسالة هنا. يمكنك لصق روابط مباشرة وسيتم تفعيلها..."
-                            value={customMessage}
-                            onChange={(e) => setCustomMessage(e.target.value)}
+                        
+                        {/* Toolbar */}
+                        <div className="border border-gray-300 rounded-t-xl bg-white p-2 flex flex-wrap gap-1 items-center border-b-0">
+                            <button title="عريض" onClick={() => execCommand('bold')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><Bold className="w-4 h-4"/></button>
+                            <button title="مائل" onClick={() => execCommand('italic')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><Italic className="w-4 h-4"/></button>
+                            <button title="تسطير" onClick={() => execCommand('underline')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><Underline className="w-4 h-4"/></button>
+                            
+                            <div className="w-px h-6 bg-gray-200 mx-1"></div>
+                            
+                            <button title="عنوان كبير" onClick={() => execCommand('formatBlock', 'H1')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><Heading1 className="w-4 h-4"/></button>
+                            <button title="عنوان متوسط" onClick={() => execCommand('formatBlock', 'H2')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><Heading2 className="w-4 h-4"/></button>
+                            <button title="نص عادي" onClick={() => execCommand('formatBlock', 'P')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><Type className="w-4 h-4"/></button>
+                            
+                            <div className="w-px h-6 bg-gray-200 mx-1"></div>
+                            
+                            <button title="محاذاة لليمين" onClick={() => execCommand('justifyRight')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><AlignRight className="w-4 h-4"/></button>
+                            <button title="محاذاة للوسط" onClick={() => execCommand('justifyCenter')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><AlignCenter className="w-4 h-4"/></button>
+                            <button title="محاذاة لليسار" onClick={() => execCommand('justifyLeft')} className="p-2 hover:bg-gray-100 rounded text-gray-700 transition-colors"><AlignLeft className="w-4 h-4"/></button>
+                            
+                            <div className="w-px h-6 bg-gray-200 mx-1"></div>
+                            
+                            <button title="إدراج رابط" onClick={addLink} className="p-2 hover:bg-gray-100 rounded text-blue-600 transition-colors"><LinkIcon className="w-4 h-4"/></button>
+                            <button title="إدراج صورة" onClick={addImage} className="p-2 hover:bg-gray-100 rounded text-emerald-600 transition-colors"><ImageIcon className="w-4 h-4"/></button>
+                        </div>
+
+                        {/* Content Editable Area */}
+                        <div 
+                            ref={editorRef}
+                            contentEditable
+                            className="w-full p-4 rounded-b-xl border border-gray-300 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none transition-all min-h-[200px] text-sm leading-relaxed"
+                            onInput={(e) => setCustomMessageHTML(e.currentTarget.innerHTML)}
+                            style={{ direction: 'rtl' }}
                         />
+
                         <p className="text-[10px] text-gray-500 mt-2 font-bold flex items-center gap-1">
                             <Info className="w-3 h-3"/> سيتم إضافة اسم الموظف تلقائياً في بداية الرسالة (مثال: عزيزي أحمد،).
                         </p>
                     </div>
                 </div>
             ) : (
-                /* فلتر تقرير الحضور */
                 <div className="bg-white p-6 rounded-[30px] border shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-4">
                     <Input type="month" label="شريط تقرير شهر" value={month} onChange={setMonth} />
                     <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e=>e.specialty)))]} value={fSpec} onChange={setFSpec} />
@@ -439,7 +486,6 @@ export default function SendReportsTab() {
                 </div>
             )}
 
-            {/* قائمة الموظفين (مشتركة لكلا النوعين) */}
             <div className="bg-white rounded-[30px] border shadow-sm overflow-hidden min-h-[400px] mb-20">
                 <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
                     <button onClick={toggleSelectAll} className="flex items-center gap-2 font-bold text-gray-600 hover:text-emerald-600">
