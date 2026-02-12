@@ -8,11 +8,11 @@ import { requestNotificationPermission } from '../../utils/pushNotifications';
 import toast from 'react-hot-toast'; 
 
 import { 
-  LogOut, User, Clock, Printer, FilePlus, 
-  List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
-  Share2, Info, Moon, FileText, ListTodo, 
-  Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-  Calendar, Settings, ShoppingBag, Trophy, Star, Check 
+    LogOut, User, Clock, Printer, FilePlus, 
+    List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
+    Share2, Info, Moon, FileText, ListTodo, 
+    Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
+    Calendar, Settings, ShoppingBag, Trophy, Star, Check, Box // ✅ تمت إضافة Box
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -37,6 +37,8 @@ import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
 import RewardsStore from './components/RewardsStore';
 import StaffTrainingCenter from './components/StaffTrainingCenter';
+// ✅ استيراد مكون إدارة العهد (تأكد من المسار الصحيح لديك)
+import AssetsManager from '../admin/components/AssetsManager'; 
 
 // استيراد مكونات التحفيز
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
@@ -64,6 +66,9 @@ export default function StaffDashboard({ employee }: Props) {
   const [pendingMandatoryTraining, setPendingMandatoryTraining] = useState<any>(null);
 
   const hasAdminAccess = employee.permissions && Array.isArray(employee.permissions) && employee.permissions.length > 0;
+  
+  // ✅ التحقق من صلاحية العهد
+  const hasAssetsAccess = employee.role === 'admin' || employee.permissions?.includes('assets_manager');
 
   // --- States ---
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
@@ -86,19 +91,17 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.employee_id]);
 
-    // ✅ 2. قراءة الرابط عند تشغيل التطبيق
+    // قراءة الرابط عند تشغيل التطبيق
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const tabParam = params.get('tab');
         const trainingIdParam = params.get('training_id');
 
         if (tabParam) {
-            setActiveTab(tabParam); // فتح تبويب التدريب
+            setActiveTab(tabParam); 
         }
         if (trainingIdParam) {
-            setDeepLinkTrainingId(trainingIdParam); // حفظ ID التدريب
-            
-            // اختياري: تنظيف الرابط بعد قراءته حتى لا يظل معلقاً
+            setDeepLinkTrainingId(trainingIdParam); 
             window.history.replaceState({}, document.title, window.location.pathname);
         }
     }, []);
@@ -214,7 +217,6 @@ export default function StaffDashboard({ employee }: Props) {
               supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('user_id', employee.employee_id).eq('type', 'ovr_reply').eq('is_read', false)
           ]);
 
-          // حساب التدريبات غير المكتملة
           const { data: availableTrainings } = await supabase.from('trainings').select('id, target_specialties');
           
           const targetedTrainings = availableTrainings?.filter(t => 
@@ -326,6 +328,10 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle, badge: staffBadges.ovr_replies },
     { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: staffBadges.training }, 
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
+    
+    // ✅ إضافة تبويب العهد هنا لمن يملك الصلاحية
+    ...(hasAssetsAccess ? [{ id: 'assets_management', label: 'إدارة العهد', icon: Box }] : []),
+
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
@@ -347,7 +353,7 @@ export default function StaffDashboard({ employee }: Props) {
       {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
 
-      {/* ✅ مكون التدريب الإجباري */}
+      {/* مكون التدريب الإجباري */}
       {pendingMandatoryTraining && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border-4 border-red-500 relative animate-in zoom-in-95">
@@ -437,7 +443,7 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* ✅ تعديل البادج: يظهر الآن للجميع، أحمر إذا > 0 وأخضر (صح) إذا = 0 */}
+                {/* تعديل البادج */}
                 {typeof item.badge !== 'undefined' && (
                     item.badge > 0 ? (
                         <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
@@ -482,7 +488,7 @@ export default function StaffDashboard({ employee }: Props) {
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            {/* ✅ أيقونات الهيدر */}
+            {/* أيقونات الهيدر */}
             <div className="flex items-center gap-2 md:gap-3">
                 
                 {/* 1. المستوى */}
@@ -643,12 +649,23 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'store' && <RewardsStore employee={employee} />}
-{activeTab === 'training' && (
-        <StaffTrainingCenter 
-            employee={employee} 
-            deepLinkTrainingId={deepLinkTrainingId} // تمرير الـ ID هنا
-        />
-    )}                    {activeTab === 'links' && <StaffLinksTab />}
+                    {activeTab === 'training' && (
+                        <StaffTrainingCenter 
+                            employee={employee} 
+                            deepLinkTrainingId={deepLinkTrainingId} 
+                        />
+                    )}
+                    {/* ✅ عرض مكون إدارة العهد عند تفعيل التبويب */}
+                    {activeTab === 'assets_management' && hasAssetsAccess && (
+                        <div className="animate-in fade-in">
+                            <h2 className="text-2xl font-black text-gray-800 mb-6 flex items-center gap-2">
+                                <Box className="w-8 h-8 text-indigo-600"/> إدارة العهد والأصول
+                            </h2>
+                            <AssetsManager />
+                        </div>
+                    )}
+
+                    {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
                     {activeTab === 'evaluations' && <StaffEvaluations evals={evaluations} employee={employee} />}
