@@ -7,7 +7,7 @@ import {
     Users, Clock, CalendarRange, ClipboardList, 
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
-    Database, BellRing, Smartphone, FileX, Loader2, CheckSquare, Syringe, LayoutDashboard
+    Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, LayoutDashboard
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
@@ -35,6 +35,7 @@ import GamificationManager from './components/GamificationManager';
 import TrainingManager from './components/TrainingManager'; // ✅ استيراد المكون الجديد
 import { BookOpen } from 'lucide-react'; // ✅ أيقونة التدريب
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import AssetsManager from './components/AssetsManager'; // 1. استيراد المكون
 
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
@@ -140,6 +141,7 @@ export default function AdminDashboard() {
         { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
         { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
         { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
+        { id: 'assets', label: 'العهد والأجهزة', icon: Box }, // 2. إضافة للقائمة
         { id: 'gamification', label: 'النقاط والجوائز', icon: Trophy },
         { id: 'vaccinations', label: 'التطعيمات (Virus B)', icon: Syringe },
         { id: 'training', label: 'إدارة التدريب', icon: BookOpen }, // ✅ تمت الإضافة
@@ -284,6 +286,7 @@ export default function AdminDashboard() {
                         )}
                         {activeTab === 'all_messages' && <AdminMessagesTab employees={employees || []} />}
                         {activeTab === 'quality' && <QualityDashboard />}
+                        {activeTab === 'assets' && <AssetsManager />} {/* 3. عرض المكون */}
                         {activeTab === 'training' && <TrainingManager />}
                         {activeTab === 'library-manager' && <AdminLibraryManager />} 
                         {activeTab === 'data-reports' && <AdminDataReports employees={employees || []} />}
