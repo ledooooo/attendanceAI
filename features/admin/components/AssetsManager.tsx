@@ -5,7 +5,7 @@ import {
     Box, Search, Plus, FileSpreadsheet, 
     Monitor, Stethoscope, AlertTriangle, 
     Trash2, Edit, Save, X, Wrench, Printer, QrCode, FileText, 
-    ChevronLeft, ChevronRight, Users, Filter, Briefcase
+    ChevronLeft, ChevronRight, Users, UserPlus, Layers
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import QRCode from 'react-qr-code';
@@ -35,18 +35,18 @@ const STATUS_TRANSLATION: any = {
     'stagnant': 'راكد'
 };
 
-const PAGE_SIZE = 10; // عدد العناصر في الصفحة الواحدة
+const PAGE_SIZE = 10;
 
 export default function AssetsManager() {
     const [assets, setAssets] = useState<Asset[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
-    const [departments, setDepartments] = useState<string[]>([]); // قائمة الأقسام
+    const [specialties, setSpecialties] = useState<string[]>([]); // قائمة التخصصات
     const [loading, setLoading] = useState(false);
     
     // إدارة الأماكن
     const [locations, setLocations] = useState<string[]>(INITIAL_LOCATIONS);
 
-    // ✅ Pagination States
+    // Pagination
     const [page, setPage] = useState(0);
     const [totalCount, setTotalCount] = useState(0);
 
@@ -62,9 +62,11 @@ export default function AssetsManager() {
     const [showQRModal, setShowQRModal] = useState<Asset | null>(null);
     const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
     
-    // ✅ حالات المودال المتقدمة (لاختيار الموظفين)
+    // ✅ حالات المودال المتقدمة (لاختيار العهدة)
+    const [custodianMode, setCustodianMode] = useState<'individual' | 'group'>('individual'); // فردي أو تخصص
     const [empStatusFilter, setEmpStatusFilter] = useState<'active' | 'inactive'>('active');
-    const [selectedDeptToAdd, setSelectedDeptToAdd] = useState('');
+    const [empSearchInModal, setEmpSearchInModal] = useState('');
+    const [selectedSpecialtyToAdd, setSelectedSpecialtyToAdd] = useState('');
 
     const [formData, setFormData] = useState<Partial<Asset>>({
         type: 'medical',
@@ -73,15 +75,15 @@ export default function AssetsManager() {
         location: ''
     });
 
-    // جلب البيانات الأولية (الموظفين والأقسام)
+    // جلب البيانات الأولية
     useEffect(() => {
         const fetchMeta = async () => {
-            const { data: emps } = await supabase.from('employees').select('id, name, employee_id, status, department');
+            const { data: emps } = await supabase.from('employees').select('id, name, employee_id, status, specialty');
             if (emps) {
                 setEmployees(emps as Employee[]);
-                // استخراج الأقسام الفريدة
-                const depts = Array.from(new Set(emps.map((e: any) => e.department).filter(Boolean)));
-                setDepartments(depts as string[]);
+                // استخراج التخصصات الفريدة
+                const specs = Array.from(new Set(emps.map((e: any) => e.specialty).filter(Boolean)));
+                setSpecialties(specs as string[]);
             }
             const savedLocs = localStorage.getItem('asset_locations');
             if (savedLocs) setLocations(JSON.parse(savedLocs));
@@ -89,7 +91,7 @@ export default function AssetsManager() {
         fetchMeta();
     }, []);
 
-    // ✅ جلب الأصول (Server-side Filter & Pagination)
+    // جلب الأصول
     useEffect(() => {
         fetchAssets();
     }, [page, filterLocation, filterCustodian, filterStatus, filterType, searchTerm]);
@@ -99,22 +101,18 @@ export default function AssetsManager() {
         try {
             let query = supabase.from('assets').select('*', { count: 'exact' });
 
-            // تطبيق الفلاتر على مستوى قاعدة البيانات
             if (filterLocation !== 'all') query = query.eq('location', filterLocation);
             if (filterStatus !== 'all') query = query.eq('status', filterStatus);
             if (filterType !== 'all') query = query.eq('type', filterType);
             
-            // فلتر البحث النصي (الاسم أو السريال)
             if (searchTerm) {
                 query = query.or(`name.ilike.%${searchTerm}%,serial_number.ilike.%${searchTerm}%`);
             }
 
-            // فلتر صاحب العهدة (مصفوفة)
             if (filterCustodian !== 'all') {
                 query = query.contains('custodians', [filterCustodian]);
             }
 
-            // ✅ الترقيم (Pagination Logic)
             const from = page * PAGE_SIZE;
             const to = from + PAGE_SIZE - 1;
 
@@ -125,7 +123,6 @@ export default function AssetsManager() {
             if (error) throw error;
 
             if (data) {
-                // تنظيف البيانات
                 const sanitizedAssets = data.map((item: any) => ({
                     ...item,
                     custodians: item.custodians || []
@@ -140,7 +137,6 @@ export default function AssetsManager() {
         }
     };
 
-    // إضافة مكان جديد
     const handleAddLocation = () => {
         const newLoc = prompt('أدخل اسم المكان الجديد:');
         if (newLoc && !locations.includes(newLoc)) {
@@ -152,27 +148,25 @@ export default function AssetsManager() {
         }
     };
 
-    // ✅ إضافة قسم كامل للعهدة
-    const handleAddDepartment = () => {
-        if (!selectedDeptToAdd) return;
+    // ✅ إضافة تخصص كامل للعهدة
+    const handleAddSpecialtyGroup = () => {
+        if (!selectedSpecialtyToAdd) return;
         
-        // جلب موظفي القسم المختار (حسب الحالة المفلترة أيضاً)
-        const deptEmployees = employees
-            .filter(e => e.department === selectedDeptToAdd && (empStatusFilter === 'active' ? e.status === 'نشط' : true))
+        const specEmployees = employees
+            .filter(e => e.specialty === selectedSpecialtyToAdd && (empStatusFilter === 'active' ? e.status === 'نشط' : true))
             .map(e => e.employee_id);
 
-        if (deptEmployees.length === 0) {
-            toast.error('لا يوجد موظفين في هذا القسم');
+        if (specEmployees.length === 0) {
+            toast.error('لا يوجد موظفين بهذا التخصص والحالة');
             return;
         }
 
-        // دمج مع الموجودين منعاً للتكرار
         const currentCustodians = formData.custodians || [];
-        const newCustodians = Array.from(new Set([...currentCustodians, ...deptEmployees]));
+        const newCustodians = Array.from(new Set([...currentCustodians, ...specEmployees]));
         
         setFormData({ ...formData, custodians: newCustodians });
-        toast.success(`تم إضافة ${deptEmployees.length} موظف من قسم ${selectedDeptToAdd}`);
-        setSelectedDeptToAdd(''); // إعادة تعيين
+        toast.success(`تم إضافة ${specEmployees.length} موظف من تخصص ${selectedSpecialtyToAdd}`);
+        setSelectedSpecialtyToAdd('');
     };
 
     const handleSave = async () => {
@@ -197,7 +191,7 @@ export default function AssetsManager() {
             setShowModal(false); 
             setEditingAsset(null); 
             setFormData({ type: 'medical', status: 'working', custodians: [], location: '' }); 
-            fetchAssets(); // Refresh
+            fetchAssets(); 
         } catch (e: any) { 
             toast.error('خطأ: ' + e.message); 
         }
@@ -221,8 +215,7 @@ export default function AssetsManager() {
         }
     };
 
-    // طباعة القائمة الحالية (تأخذ بعين الاعتبار الفلترة الحالية ولكن تطبع كل الصفحات إذا أردت)
-    // للتبسيط سنطبع ما هو معروض أو نزيد الليمت للطباعة
+    // الطباعة (مختصرة للتبسيط)
     const handlePrintList = () => {
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
@@ -237,55 +230,31 @@ export default function AssetsManager() {
     };
 
     const handlePrintCard = (asset: Asset) => {
-        // ... (نفس دالة طباعة الكارت - لم تتغير)
-         const printWindow = window.open('', '_blank');
+        const printWindow = window.open('', '_blank');
         if (!printWindow) return;
-        const qrValue = JSON.stringify({ id: asset.id, n: asset.name, s: asset.serial_number });
         const htmlContent = `
             <html dir="rtl">
             <head>
                 <title>كارت جهاز - ${asset.name}</title>
-                <style>
-                    @page { size: A5 landscape; margin: 0; }
-                    body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 10px; margin: 0; }
-                    .card-container { border: 2px solid #000; padding: 15px; height: 95vh; display: flex; flex-direction: column; }
-                    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-                    .asset-details { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 12px; margin-bottom: 10px; background: #f3f4f6; padding: 10px; }
-                    .maintenance-table { width: 100%; border-collapse: collapse; font-size: 10px; flex-1: 1; }
-                    .maintenance-table th, .maintenance-table td { border: 1px solid #000; padding: 4px; text-align: center; }
-                </style>
+                <style>@page { size: A5 landscape; margin: 0; } body { font-family: sans-serif; padding: 10px; margin: 0; } .card-container { border: 2px solid #000; padding: 15px; height: 95vh; display: flex; flex-direction: column; } .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; } .asset-details { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 12px; margin-bottom: 10px; background: #f3f4f6; padding: 10px; } .maintenance-table { width: 100%; border-collapse: collapse; font-size: 10px; flex-1: 1; } .maintenance-table th, .maintenance-table td { border: 1px solid #000; padding: 4px; text-align: center; }</style>
             </head>
             <body>
                 <div class="card-container">
-                    <div class="header">
-                        <div><h1>بطاقة جهاز</h1><p>مركز طب أسرة غرب المطار</p></div>
-                        <div id="qrcode"></div>
-                    </div>
-                    <div class="asset-details">
-                        <div><strong>الجهاز:</strong> ${asset.name}</div>
-                        <div><strong>الموديل:</strong> ${asset.model || '-'}</div>
-                        <div><strong>S/N:</strong> ${asset.serial_number || '-'}</div>
-                        <div><strong>المكان:</strong> ${asset.location}</div>
-                    </div>
-                    <table class="maintenance-table">
-                        <thead><tr><th>الشهر</th><th>التاريخ</th><th>الإجراء</th><th>الفني</th><th>التوقيع</th></tr></thead>
-                        <tbody>${['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'].map(m => `<tr style="height:25px"><td>${m}</td><td></td><td></td><td></td><td></td></tr>`).join('')}</tbody>
-                    </table>
+                    <div class="header"><div><h1>بطاقة جهاز</h1><p>مركز طب أسرة غرب المطار</p></div><div id="qrcode"></div></div>
+                    <div class="asset-details"><div><strong>الجهاز:</strong> ${asset.name}</div><div><strong>الموديل:</strong> ${asset.model || '-'}</div><div><strong>S/N:</strong> ${asset.serial_number || '-'}</div><div><strong>المكان:</strong> ${asset.location}</div></div>
+                    <table class="maintenance-table"><thead><tr><th>الشهر</th><th>التاريخ</th><th>الإجراء</th><th>الفني</th><th>التوقيع</th></tr></thead><tbody>${['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'].map(m => `<tr style="height:25px"><td>${m}</td><td></td><td></td><td></td><td></td></tr>`).join('')}</tbody></table>
                 </div>
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-                <script>
-                    new QRCode(document.getElementById("qrcode"), { text: '${asset.id}', width: 64, height: 64 });
-                    setTimeout(() => window.print(), 500);
-                </script>
-            </body>
-            </html>`;
+                <script>new QRCode(document.getElementById("qrcode"), { text: '${asset.id}', width: 64, height: 64 }); setTimeout(() => window.print(), 500);</script>
+            </body></html>`;
         printWindow.document.write(htmlContent);
         printWindow.document.close();
     };
 
-    // تصفية الموظفين داخل المودال
+    // تصفية الموظفين داخل المودال (للاختيار الفردي)
     const filteredEmployeesForModal = employees.filter(e => 
-        empStatusFilter === 'active' ? e.status === 'نشط' : true
+        (empStatusFilter === 'active' ? e.status === 'نشط' : true) &&
+        (e.name.toLowerCase().includes(empSearchInModal.toLowerCase()) || e.employee_id.includes(empSearchInModal))
     );
 
     return (
@@ -295,21 +264,11 @@ export default function AssetsManager() {
                 <div className="flex flex-wrap gap-3 items-center justify-between">
                     <div className="relative flex-1 min-w-[200px]">
                         <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
-                        <input 
-                            type="text" 
-                            placeholder="بحث بالاسم أو السريال..." 
-                            className="w-full pr-9 pl-4 py-2 rounded-xl border bg-gray-50 text-sm focus:bg-white transition-all"
-                            value={searchTerm}
-                            onChange={e => { setSearchTerm(e.target.value); setPage(0); }}
-                        />
+                        <input type="text" placeholder="بحث بالاسم أو السريال..." className="w-full pr-9 pl-4 py-2 rounded-xl border bg-gray-50 text-sm focus:bg-white transition-all" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setPage(0); }} />
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={handlePrintList} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-black transition-colors">
-                            <Printer className="w-4 h-4" /> طباعة الصفحة
-                        </button>
-                        <button onClick={() => { setEditingAsset(null); setFormData({ type: 'medical', status: 'working', custodians: [], location: '' }); setShowModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-indigo-700 transition-colors">
-                            <Plus className="w-4 h-4" /> إضافة جهاز
-                        </button>
+                        <button onClick={handlePrintList} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-black transition-colors"><Printer className="w-4 h-4" /> طباعة الصفحة</button>
+                        <button onClick={() => { setEditingAsset(null); setFormData({ type: 'medical', status: 'working', custodians: [], location: '' }); setShowModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-indigo-700 transition-colors"><Plus className="w-4 h-4" /> إضافة جهاز</button>
                     </div>
                 </div>
 
@@ -318,7 +277,6 @@ export default function AssetsManager() {
                         <option value="all">📍 كل الأماكن</option>
                         {locations.map(l => <option key={l} value={l}>{l}</option>)}
                     </select>
-
                     <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(0); }}>
                         <option value="all">📊 كل الحالات</option>
                         <option value="working">يعمل</option>
@@ -327,13 +285,11 @@ export default function AssetsManager() {
                         <option value="scrap">كهنة</option>
                         <option value="stagnant">راكد</option>
                     </select>
-
                     <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterType} onChange={e => { setFilterType(e.target.value); setPage(0); }}>
                         <option value="all">🩺 النوع (الكل)</option>
                         <option value="medical">طبي</option>
                         <option value="non_medical">غير طبي</option>
                     </select>
-
                     <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterCustodian} onChange={e => { setFilterCustodian(e.target.value); setPage(0); }}>
                         <option value="all">👤 كل العهد</option>
                         {employees.map(emp => <option key={emp.id} value={emp.employee_id}>{emp.name}</option>)}
@@ -383,11 +339,7 @@ export default function AssetsManager() {
                                                     </div>
                                                 </td>
                                                 <td className="p-4">
-                                                    <span className={`px-2 py-1 rounded-full text-xs font-bold border ${
-                                                        asset.status === 'working' ? 'bg-green-100 text-green-700 border-green-200' :
-                                                        asset.status === 'broken' ? 'bg-red-100 text-red-700 border-red-200' :
-                                                        'bg-gray-100 text-gray-600 border-gray-200'
-                                                    }`}>
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-bold border ${asset.status === 'working' ? 'bg-green-100 text-green-700 border-green-200' : asset.status === 'broken' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
                                                         {STATUS_TRANSLATION[asset.status]}
                                                     </span>
                                                 </td>
@@ -406,25 +358,11 @@ export default function AssetsManager() {
                                 </tbody>
                             </table>
                         </div>
-                        {/* ✅ Pagination Controls */}
+                        {/* Pagination Controls */}
                         <div className="p-4 border-t flex justify-between items-center bg-gray-50">
-                            <button 
-                                onClick={() => setPage(p => Math.max(0, p - 1))} 
-                                disabled={page === 0}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border hover:bg-gray-100 disabled:opacity-50 text-xs font-bold"
-                            >
-                                <ChevronRight className="w-4 h-4"/> السابق
-                            </button>
-                            <span className="text-xs font-bold text-gray-600">
-                                صفحة {page + 1} من {Math.ceil(totalCount / PAGE_SIZE)} (إجمالي {totalCount})
-                            </span>
-                            <button 
-                                onClick={() => setPage(p => p + 1)} 
-                                disabled={(page + 1) * PAGE_SIZE >= totalCount}
-                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border hover:bg-gray-100 disabled:opacity-50 text-xs font-bold"
-                            >
-                                التالي <ChevronLeft className="w-4 h-4"/>
-                            </button>
+                            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border hover:bg-gray-100 disabled:opacity-50 text-xs font-bold"><ChevronRight className="w-4 h-4"/> السابق</button>
+                            <span className="text-xs font-bold text-gray-600">صفحة {page + 1} من {Math.ceil(totalCount / PAGE_SIZE)} (إجمالي {totalCount})</span>
+                            <button onClick={() => setPage(p => p + 1)} disabled={(page + 1) * PAGE_SIZE >= totalCount} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border hover:bg-gray-100 disabled:opacity-50 text-xs font-bold">التالي <ChevronLeft className="w-4 h-4"/></button>
                         </div>
                     </>
                 )}
@@ -436,12 +374,8 @@ export default function AssetsManager() {
                     <div className="bg-white p-8 rounded-3xl text-center shadow-2xl max-w-sm w-full relative">
                         <button onClick={() => setShowQRModal(null)} className="absolute top-4 right-4 p-1 bg-gray-100 rounded-full"><X className="w-5 h-5"/></button>
                         <h3 className="font-black text-xl mb-6 text-gray-800">{showQRModal.name}</h3>
-                        <div className="bg-white p-4 border-4 border-black rounded-xl inline-block mb-4">
-                            <QRCode value={showQRModal.id} size={200} />
-                        </div>
-                        <button onClick={() => handlePrintCard(showQRModal)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 flex justify-center gap-2">
-                            <Printer className="w-5 h-5"/> طباعة
-                        </button>
+                        <div className="bg-white p-4 border-4 border-black rounded-xl inline-block mb-4"><QRCode value={showQRModal.id} size={200} /></div>
+                        <button onClick={() => handlePrintCard(showQRModal)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 flex justify-center gap-2"><Printer className="w-5 h-5"/> طباعة</button>
                     </div>
                 </div>
             )}
@@ -456,7 +390,6 @@ export default function AssetsManager() {
                         </div>
                         
                         <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
-                            {/* ... (حقول الاسم والموديل - نفس السابق) ... */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div><label className="block text-xs font-bold text-gray-500 mb-1">الاسم *</label><input className="w-full p-3 rounded-xl border bg-gray-50 font-bold" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                                 <div><label className="block text-xs font-bold text-gray-500 mb-1">الموديل</label><input className="w-full p-3 rounded-xl border bg-gray-50" value={formData.model || ''} onChange={e => setFormData({...formData, model: e.target.value})} /></div>
@@ -498,37 +431,116 @@ export default function AssetsManager() {
                             <div className="bg-gray-50 p-4 rounded-xl border">
                                 <div className="flex justify-between items-center mb-3 border-b pb-2">
                                     <label className="block text-sm font-bold text-gray-700">أصحاب العهدة</label>
-                                    <div className="flex gap-2 bg-white p-1 rounded-lg border">
-                                        <button onClick={() => setEmpStatusFilter('active')} className={`px-3 py-1 rounded text-xs font-bold ${empStatusFilter === 'active' ? 'bg-green-100 text-green-700' : 'text-gray-500'}`}>قوة فعلية</button>
-                                        <button onClick={() => setEmpStatusFilter('inactive')} className={`px-3 py-1 rounded text-xs font-bold ${empStatusFilter === 'inactive' ? 'bg-red-100 text-red-700' : 'text-gray-500'}`}>غير نشط</button>
+                                    
+                                    {/* زر التبديل بين الوضعين */}
+                                    <div className="flex bg-white p-1 rounded-lg border">
+                                        <button 
+                                            onClick={() => setCustodianMode('individual')} 
+                                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${custodianMode === 'individual' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                                        >
+                                            <UserPlus className="w-3 h-3 inline-block ml-1"/> أفراد
+                                        </button>
+                                        <button 
+                                            onClick={() => setCustodianMode('group')} 
+                                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${custodianMode === 'group' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                                        >
+                                            <Layers className="w-3 h-3 inline-block ml-1"/> تخصص كامل
+                                        </button>
                                     </div>
                                 </div>
-                                
-                                {/* إضافة قسم كامل */}
-                                <div className="flex gap-2 mb-3">
-                                    <select className="flex-1 p-2 rounded-lg border text-xs" value={selectedDeptToAdd} onChange={e => setSelectedDeptToAdd(e.target.value)}>
-                                        <option value="">-- اختر قسماً لإضافته بالكامل --</option>
-                                        {departments.map(d => <option key={d} value={d}>{d}</option>)}
-                                    </select>
-                                    <button onClick={handleAddDepartment} disabled={!selectedDeptToAdd} className="bg-indigo-600 text-white px-3 py-1 rounded-lg text-xs font-bold disabled:bg-gray-300">
-                                        <Users className="w-4 h-4"/> إضافة القسم
-                                    </button>
-                                </div>
 
-                                <select 
-                                    multiple 
-                                    className="w-full p-2 rounded-xl border bg-white h-40 custom-scrollbar text-xs font-bold" 
-                                    value={formData.custodians || []} 
-                                    onChange={e => {
-                                        const selected = Array.from(e.target.selectedOptions, option => option.value);
-                                        setFormData({...formData, custodians: selected});
-                                    }}
-                                >
-                                    {filteredEmployeesForModal.map(emp => (
-                                        <option key={emp.id} value={emp.employee_id}>{emp.name} ({emp.department || 'عام'})</option>
-                                    ))}
-                                </select>
-                                <p className="text-[10px] text-gray-400 mt-1">💡 اضغط Ctrl (أو Cmd) لتحديد أفراد متعددين يدوياً.</p>
+                                {/* الوضع 1: إضافة تخصص كامل */}
+                                {custodianMode === 'group' && (
+                                    <div className="animate-in fade-in space-y-2">
+                                        <div className="flex gap-2">
+                                            <select 
+                                                className="flex-1 p-2 rounded-lg border text-xs" 
+                                                value={selectedSpecialtyToAdd} 
+                                                onChange={e => setSelectedSpecialtyToAdd(e.target.value)}
+                                            >
+                                                <option value="">-- اختر التخصص لإضافته بالكامل --</option>
+                                                {specialties.map(spec => <option key={spec} value={spec}>{spec}</option>)}
+                                            </select>
+                                            
+                                            <div className="flex items-center gap-1 bg-white p-1 rounded-lg border">
+                                                <button onClick={() => setEmpStatusFilter('active')} className={`px-2 py-1 rounded text-[10px] font-bold ${empStatusFilter === 'active' ? 'bg-green-100 text-green-700' : 'text-gray-400'}`}>نشط</button>
+                                                <button onClick={() => setEmpStatusFilter('inactive')} className={`px-2 py-1 rounded text-[10px] font-bold ${empStatusFilter === 'inactive' ? 'bg-red-100 text-red-700' : 'text-gray-400'}`}>غير نشط</button>
+                                            </div>
+
+                                            <button onClick={handleAddSpecialtyGroup} disabled={!selectedSpecialtyToAdd} className="bg-indigo-600 text-white px-3 py-1 rounded-lg text-xs font-bold disabled:bg-gray-300">
+                                                <Users className="w-4 h-4"/> إضافة
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-indigo-600 bg-indigo-50 p-2 rounded border border-indigo-100">سيتم إضافة جميع الموظفين الذين ينتمون لهذا التخصص والحالة المختارة.</p>
+                                    </div>
+                                )}
+
+                                {/* الوضع 2: اختيار أفراد (مع البحث والفلترة) */}
+                                {custodianMode === 'individual' && (
+                                    <div className="animate-in fade-in space-y-2">
+                                        <div className="flex gap-2 mb-2">
+                                            <div className="relative flex-1">
+                                                <Search className="absolute right-2 top-2 w-3 h-3 text-gray-400"/>
+                                                <input 
+                                                    placeholder="بحث عن موظف..." 
+                                                    className="w-full pr-7 pl-2 py-1.5 rounded-lg border text-xs outline-none focus:border-indigo-500"
+                                                    value={empSearchInModal}
+                                                    onChange={e => setEmpSearchInModal(e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="flex items-center gap-1 bg-white p-1 rounded-lg border shrink-0">
+                                                <button onClick={() => setEmpStatusFilter('active')} className={`px-2 py-1 rounded text-[10px] font-bold ${empStatusFilter === 'active' ? 'bg-green-100 text-green-700' : 'text-gray-400'}`}>نشط</button>
+                                                <button onClick={() => setEmpStatusFilter('inactive')} className={`px-2 py-1 rounded text-[10px] font-bold ${empStatusFilter === 'inactive' ? 'bg-red-100 text-red-700' : 'text-gray-400'}`}>غير نشط</button>
+                                            </div>
+                                        </div>
+
+                                        <select 
+                                            multiple 
+                                            className="w-full p-2 rounded-xl border bg-white h-32 custom-scrollbar text-xs font-bold" 
+                                            value={formData.custodians || []} 
+                                            onChange={e => {
+                                                const selected = Array.from(e.target.selectedOptions, option => option.value);
+                                                // دمج الاختيار الجديد مع القديم إذا أردت، أو استبداله (هنا استبدال وهو الأفضل للـ select multiple)
+                                                // لكن بما أننا نضيف مجموعات، قد نحتاج لمنطق أذكى. 
+                                                // للتبسيط: الـ select multiple يعيد القائمة الكاملة المختارة حالياً.
+                                                setFormData({...formData, custodians: selected});
+                                            }}
+                                        >
+                                            {filteredEmployeesForModal.map(emp => (
+                                                <option key={emp.id} value={emp.employee_id}>
+                                                    {emp.name} ({emp.specialty || 'عام'})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <p className="text-[10px] text-gray-400">💡 اضغط Ctrl (أو Cmd) لتحديد أفراد متعددين يدوياً.</p>
+                                    </div>
+                                )}
+                                
+                                {/* عرض الملخص (من تم اختياره فعلياً) */}
+                                {formData.custodians && formData.custodians.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t">
+                                        <p className="text-[10px] font-bold text-gray-500 mb-1">تم اختيار {formData.custodians.length} موظف:</p>
+                                        <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto custom-scrollbar">
+                                            {formData.custodians.map(cId => (
+                                                <span key={cId} className="bg-white border px-2 py-0.5 rounded text-[10px] flex items-center gap-1 shadow-sm">
+                                                    {employees.find(e => e.employee_id === cId)?.name || cId}
+                                                    <button 
+                                                        onClick={() => setFormData({...formData, custodians: formData.custodians?.filter(id => id !== cId)})}
+                                                        className="text-red-500 hover:text-red-700"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <button 
+                                            onClick={() => setFormData({...formData, custodians: []})}
+                                            className="text-[10px] text-red-600 underline mt-1"
+                                        >
+                                            مسح الكل
+                                        </button>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
