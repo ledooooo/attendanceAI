@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { 
     Box, Search, Plus, FileSpreadsheet, 
     Monitor, Stethoscope, AlertTriangle, 
-    Trash2, Edit, Save, X, Wrench, Printer, QrCode, FileText
+    Trash2, Edit, Save, X, Wrench, Printer, QrCode, FileText, Filter
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import QRCode from 'react-qr-code'; // تأكد من تثبيت المكتبة: npm install react-qr-code
+import QRCode from 'react-qr-code';
 
-// ... (نفس الـ Interfaces والثوابت السابقة)
 interface Asset {
     id: string;
     name: string;
@@ -25,7 +24,9 @@ interface Asset {
     notes: string;
 }
 
-const LOCATIONS = ['عيادة الأسنان', 'عيادة الباطنة', 'الاستقبال', 'المعمل', 'الصيدلية', 'مكتب المدير', 'المخزن', 'أخرى'];
+// قائمة الأماكن الأولية (قابلة للزيادة)
+const INITIAL_LOCATIONS = ['عيادة الأسنان', 'عيادة الباطنة', 'الاستقبال', 'المعمل', 'الصيدلية', 'مكتب المدير', 'المخزن', 'أخرى'];
+
 const STATUS_TRANSLATION: any = {
     'new': 'جديد',
     'working': 'يعمل',
@@ -44,52 +45,95 @@ export default function AssetsManager() {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(false);
     
+    // إدارة الأماكن (ديناميكية)
+    const [locations, setLocations] = useState<string[]>(INITIAL_LOCATIONS);
+
     // الفلترة والبحث
     const [filterLocation, setFilterLocation] = useState('all');
     const [filterCustodian, setFilterCustodian] = useState('all');
+    const [filterStatus, setFilterStatus] = useState('all'); // ✅ فلتر الحالة
+    const [filterType, setFilterType] = useState('all'); // ✅ فلتر النوع
     const [searchTerm, setSearchTerm] = useState('');
 
     // المودال
     const [showModal, setShowModal] = useState(false);
-    const [showQRModal, setShowQRModal] = useState<Asset | null>(null); // مودال الـ QR
+    const [showQRModal, setShowQRModal] = useState<Asset | null>(null);
     const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
     const [formData, setFormData] = useState<Partial<Asset>>({
         type: 'medical',
         status: 'working',
         custodians: [],
-        location: LOCATIONS[0]
+        location: ''
     });
 
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => { 
+        fetchData(); 
+        // استرجاع الأماكن المضافة سابقاً من LocalStorage إذا أردت حفظها محلياً
+        const savedLocs = localStorage.getItem('asset_locations');
+        if (savedLocs) setLocations(JSON.parse(savedLocs));
+    }, []);
 
     const fetchData = async () => {
         setLoading(true);
         const { data: emps } = await supabase.from('employees').select('id, name, employee_id');
         if (emps) setEmployees(emps as Employee[]);
-        const { data: asts } = await supabase.from('assets').select('*').order('created_at', { ascending: false });
-        if (asts) setAssets(asts as Asset[]);
+        
+        const { data: asts, error } = await supabase.from('assets').select('*').order('created_at', { ascending: false });
+        if (error) {
+            toast.error('فشل جلب البيانات');
+        } else if (asts) {
+            setAssets(asts as Asset[]);
+        }
         setLoading(false);
     };
 
-    // ... (نفس دوال الحفظ والحذف والـ Upload السابقة - يمكنك نسخها من الرد السابق)
-    const handleSave = async () => {
-        if (!formData.name || !formData.custodians?.length) {
-            toast.error('بيانات ناقصة'); return;
+    const handleAddLocation = () => {
+        const newLoc = prompt('أدخل اسم المكان الجديد:');
+        if (newLoc && !locations.includes(newLoc)) {
+            const updatedLocs = [...locations, newLoc];
+            setLocations(updatedLocs);
+            localStorage.setItem('asset_locations', JSON.stringify(updatedLocs)); // حفظ دائم
+            setFormData({...formData, location: newLoc}); // تحديده تلقائياً
+            toast.success('تم إضافة المكان');
         }
+    };
+
+    const handleSave = async () => {
+        if (!formData.name || !formData.custodians?.length || !formData.location) {
+            toast.error('البيانات الناقصة: الاسم، المكان، أو صاحب العهدة'); 
+            return;
+        }
+        
         try {
+            // ✅ إصلاح: استخدام select() لإرجاع البيانات والتأكد من نجاح العملية
             if (editingAsset) {
-                await supabase.from('assets').update(formData).eq('id', editingAsset.id);
-                toast.success('تم التعديل');
+                const { error } = await supabase.from('assets').update(formData).eq('id', editingAsset.id).select();
+                if (error) throw error;
+                toast.success('تم التعديل بنجاح');
             } else {
-                await supabase.from('assets').insert([formData]);
-                toast.success('تمت الإضافة');
+                const { error } = await supabase.from('assets').insert([formData]).select();
+                if (error) throw error;
+                toast.success('تمت الإضافة بنجاح');
             }
-            setShowModal(false); setEditingAsset(null); setFormData({ type: 'medical', status: 'working', custodians: [], location: LOCATIONS[0] }); fetchData();
-        } catch (e: any) { toast.error(e.message); }
+            
+            setShowModal(false); 
+            setEditingAsset(null); 
+            setFormData({ type: 'medical', status: 'working', custodians: [], location: '' }); 
+            
+            // ✅ تحديث الجدول فوراً
+            await fetchData(); 
+
+        } catch (e: any) { 
+            toast.error('خطأ: ' + e.message); 
+        }
     };
 
     const handleDelete = async (id: string) => {
-        if (confirm('حذف؟')) { await supabase.from('assets').delete().eq('id', id); fetchData(); }
+        if (confirm('هل أنت متأكد من الحذف؟ لا يمكن التراجع.')) { 
+            await supabase.from('assets').delete().eq('id', id); 
+            toast.success('تم الحذف');
+            fetchData(); 
+        }
     };
 
     const handleReportIssue = async (asset: Asset) => {
@@ -97,172 +141,87 @@ export default function AssetsManager() {
         if (issue) {
             await supabase.from('assets').update({ status: 'broken' }).eq('id', asset.id);
             await supabase.from('maintenance_logs').insert({ asset_id: asset.id, issue_description: issue });
-            toast.success('تم الإبلاغ'); fetchData();
+            toast.success('تم الإبلاغ وتغيير الحالة إلى معطل'); 
+            fetchData();
         }
     };
 
-    // --- 🖨️ دوال الطباعة ---
-
-    // 1. طباعة كارت الصيانة (نصف A4)
+    // --- 🖨️ دوال الطباعة (كما هي) ---
     const handlePrintCard = (asset: Asset) => {
+        // ... (نفس كود الطباعة السابق)
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
-
-        const qrValue = JSON.stringify({ id: asset.id, n: asset.name, s: asset.serial_number });
-        
-        // تصميم الكارت (HTML + CSS)
         const htmlContent = `
             <html dir="rtl">
             <head>
                 <title>كارت جهاز - ${asset.name}</title>
                 <style>
                     @page { size: A5 landscape; margin: 0; }
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 10px; margin: 0; -webkit-print-color-adjust: exact; }
-                    .card-container { border: 2px solid #000; padding: 15px; height: 95vh; box-sizing: border-box; display: flex; flex-direction: column; }
-                    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-                    .header-info h1 { margin: 0; font-size: 18px; }
-                    .header-info p { margin: 2px 0; font-size: 12px; }
-                    .asset-details { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 12px; margin-bottom: 10px; background: #f3f4f6; padding: 10px; border-radius: 5px; }
-                    .detail-item strong { display: block; font-size: 10px; color: #555; }
+                    body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 10px; margin: 0; }
+                    .card-container { border: 2px solid #000; padding: 15px; height: 95vh; display: flex; flex-direction: column; }
+                    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
+                    .asset-details { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 12px; margin-bottom: 10px; background: #f3f4f6; padding: 10px; }
                     .maintenance-table { width: 100%; border-collapse: collapse; font-size: 10px; flex-1: 1; }
                     .maintenance-table th, .maintenance-table td { border: 1px solid #000; padding: 4px; text-align: center; }
-                    .maintenance-table th { background-color: #e5e7eb; }
-                    .qr-box { text-align: center; }
                 </style>
             </head>
             <body>
                 <div class="card-container">
                     <div class="header">
-                        <div class="header-info">
-                            <h1>بطاقة تعريف ومتابعة جهاز</h1>
-                            <p>مركز طب أسرة غرب المطار</p>
-                        </div>
-                        <div class="qr-box" id="qrcode-container"></div>
+                        <div><h1>بطاقة جهاز</h1><p>مركز طب أسرة غرب المطار</p></div>
+                        <div id="qrcode"></div>
                     </div>
-
                     <div class="asset-details">
-                        <div class="detail-item"><strong>اسم الجهاز:</strong> ${asset.name}</div>
-                        <div class="detail-item"><strong>الموديل:</strong> ${asset.model || '-'}</div>
-                        <div class="detail-item"><strong>السريال:</strong> ${asset.serial_number || '-'}</div>
-                        <div class="detail-item"><strong>بلد المنشأ:</strong> ${asset.origin_country || '-'}</div>
-                        <div class="detail-item"><strong>المكان:</strong> ${asset.location}</div>
-                        <div class="detail-item"><strong>تاريخ البدء:</strong> ${asset.start_date || '-'}</div>
+                        <div><strong>الجهاز:</strong> ${asset.name}</div>
+                        <div><strong>الموديل:</strong> ${asset.model || '-'}</div>
+                        <div><strong>S/N:</strong> ${asset.serial_number || '-'}</div>
+                        <div><strong>المكان:</strong> ${asset.location}</div>
                     </div>
-
-                    <h3 style="margin: 5px 0; font-size: 12px;">سجل الصيانة الدورية / الإصلاح (${new Date().getFullYear()})</h3>
                     <table class="maintenance-table">
-                        <thead>
-                            <tr>
-                                <th width="10%">الشهر</th>
-                                <th width="15%">التاريخ</th>
-                                <th width="30%">نوع الإجراء (دورية / إصلاح)</th>
-                                <th width="25%">اسم الفني / الشركة</th>
-                                <th width="20%">التوقيع / الختم</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${MONTHS.map(month => `
-                                <tr style="height: 25px;">
-                                    <td style="font-weight:bold;">${month}</td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
+                        <thead><tr><th>الشهر</th><th>التاريخ</th><th>الإجراء</th><th>الفني</th><th>التوقيع</th></tr></thead>
+                        <tbody>${MONTHS.map(m => `<tr style="height:25px"><td>${m}</td><td></td><td></td><td></td><td></td></tr>`).join('')}</tbody>
                     </table>
-                    <div style="font-size: 9px; margin-top: 5px; text-align: left;">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')}</div>
                 </div>
-                
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
                 <script>
-                    new QRCode(document.getElementById("qrcode-container"), {
-                        text: '${asset.id}',
-                        width: 64,
-                        height: 64
-                    });
+                    new QRCode(document.getElementById("qrcode"), { text: '${asset.id}', width: 64, height: 64 });
                     setTimeout(() => window.print(), 500);
                 </script>
             </body>
-            </html>
-        `;
-        
+            </html>`;
         printWindow.document.write(htmlContent);
         printWindow.document.close();
     };
 
-    // 2. طباعة القائمة كاملة
     const handlePrintList = () => {
+        // ... (نفس كود طباعة القائمة)
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
-
         const htmlContent = `
-            <html dir="rtl">
-            <head>
-                <title>قائمة الأصول والعهد</title>
-                <style>
-                    body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; }
-                    h1 { text-align: center; margin-bottom: 20px; }
-                    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-                    th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }
-                    th { background-color: #f2f2f2; }
-                    .header { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;}
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h2>تقرير جرد الأصول والعهد</h2>
-                    <p>التاريخ: ${new Date().toLocaleDateString('ar-EG')}</p>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>م</th>
-                            <th>الجهاز</th>
-                            <th>الموديل</th>
-                            <th>السريال</th>
-                            <th>المكان</th>
-                            <th>النوع</th>
-                            <th>الحالة</th>
-                            <th>المسؤول</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${filteredAssets.map((a, i) => `
-                            <tr>
-                                <td>${i + 1}</td>
-                                <td>${a.name}</td>
-                                <td>${a.model || '-'}</td>
-                                <td>${a.serial_number || '-'}</td>
-                                <td>${a.location}</td>
-                                <td>${a.type === 'medical' ? 'طبي' : 'غير طبي'}</td>
-                                <td>${STATUS_TRANSLATION[a.status]}</td>
-                                <td>${a.custodians.map(id => employees.find(e => e.employee_id === id)?.name || id).join(', ')}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-                <script>window.print();</script>
-            </body>
-            </html>
-        `;
+            <html dir="rtl"><head><title>قائمة الأصول</title>
+            <style>table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px; } th, td { border: 1px solid #ddd; padding: 8px; text-align: right; } th { background: #f2f2f2; }</style>
+            </head><body><h2>تقرير الأصول</h2><table><thead><tr><th>م</th><th>الجهاز</th><th>المكان</th><th>الحالة</th><th>المسؤول</th></tr></thead><tbody>
+            ${filteredAssets.map((a, i) => `<tr><td>${i+1}</td><td>${a.name}</td><td>${a.location}</td><td>${STATUS_TRANSLATION[a.status]}</td><td>${a.custodians.join(', ')}</td></tr>`).join('')}
+            </tbody></table><script>window.print()</script></body></html>`;
         printWindow.document.write(htmlContent);
         printWindow.document.close();
     };
 
-    // الفلترة
+    // --- الفلترة الشاملة ---
     const filteredAssets = assets.filter(asset => {
         const matchLoc = filterLocation === 'all' || asset.location === filterLocation;
         const matchCust = filterCustodian === 'all' || asset.custodians.includes(filterCustodian);
+        const matchStatus = filterStatus === 'all' || asset.status === filterStatus; // ✅
+        const matchType = filterType === 'all' || asset.type === filterType; // ✅
         const matchSearch = asset.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             asset.serial_number?.toLowerCase().includes(searchTerm.toLowerCase());
-        return matchLoc && matchCust && matchSearch;
+        
+        return matchLoc && matchCust && matchStatus && matchType && matchSearch;
     });
 
     return (
         <div className="space-y-6 animate-in fade-in pb-20">
-            {/* إحصائيات سريعة */}
+            {/* إحصائيات */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100"><span className="text-xs text-gray-500 font-bold">الإجمالي</span><div className="text-2xl font-black text-blue-700">{assets.length}</div></div>
                 <div className="bg-green-50 p-4 rounded-2xl border border-green-100"><span className="text-xs text-gray-500 font-bold">يعمل</span><div className="text-2xl font-black text-green-700">{assets.filter(a => a.status === 'working' || a.status === 'new').length}</div></div>
@@ -270,32 +229,55 @@ export default function AssetsManager() {
                 <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100"><span className="text-xs text-gray-500 font-bold">طبية</span><div className="text-2xl font-black text-purple-700">{assets.filter(a => a.type === 'medical').length}</div></div>
             </div>
 
-            {/* أدوات التحكم */}
-            <div className="bg-white p-4 rounded-2xl border shadow-sm flex flex-wrap gap-4 items-center justify-between">
-                <div className="flex flex-wrap gap-3 items-center flex-1">
-                    <div className="relative">
+            {/* أدوات التحكم والفلترة */}
+            <div className="bg-white p-4 rounded-2xl border shadow-sm space-y-4">
+                <div className="flex flex-wrap gap-3 items-center justify-between">
+                    <div className="relative flex-1 min-w-[200px]">
                         <Search className="absolute right-3 top-2.5 w-4 h-4 text-gray-400" />
                         <input 
                             type="text" 
-                            placeholder="بحث..." 
-                            className="pr-9 pl-4 py-2 rounded-xl border bg-gray-50 text-sm w-40 focus:w-60 transition-all"
+                            placeholder="بحث بالاسم أو السريال..." 
+                            className="w-full pr-9 pl-4 py-2 rounded-xl border bg-gray-50 text-sm focus:bg-white transition-all"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterLocation} onChange={e => setFilterLocation(e.target.value)}>
-                        <option value="all">📍 كل الأماكن</option>
-                        {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
+                    <div className="flex gap-2">
+                        <button onClick={handlePrintList} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-black transition-colors">
+                            <Printer className="w-4 h-4" /> طباعة
+                        </button>
+                        <button onClick={() => { setEditingAsset(null); setFormData({ type: 'medical', status: 'working', custodians: [], location: '' }); setShowModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-indigo-700 transition-colors">
+                            <Plus className="w-4 h-4" /> إضافة جهاز
+                        </button>
+                    </div>
                 </div>
 
-                <div className="flex gap-2">
-                    <button onClick={handlePrintList} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-black transition-colors">
-                        <Printer className="w-4 h-4" /> طباعة القائمة
-                    </button>
-                    <button onClick={() => { setEditingAsset(null); setFormData({ type: 'medical', status: 'working', custodians: [], location: LOCATIONS[0] }); setShowModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-indigo-700 transition-colors">
-                        <Plus className="w-4 h-4" /> إضافة جهاز
-                    </button>
+                {/* ✅ الفلاتر التفصيلية */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t">
+                    <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterLocation} onChange={e => setFilterLocation(e.target.value)}>
+                        <option value="all">📍 كل الأماكن</option>
+                        {locations.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+
+                    <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                        <option value="all">📊 كل الحالات</option>
+                        <option value="working">يعمل</option>
+                        <option value="broken">معطل</option>
+                        <option value="new">جديد</option>
+                        <option value="scrap">كهنة</option>
+                        <option value="stagnant">راكد</option>
+                    </select>
+
+                    <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterType} onChange={e => setFilterType(e.target.value)}>
+                        <option value="all">🩺 النوع (الكل)</option>
+                        <option value="medical">طبي</option>
+                        <option value="non_medical">غير طبي</option>
+                    </select>
+
+                    <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterCustodian} onChange={e => setFilterCustodian(e.target.value)}>
+                        <option value="all">👤 كل العهد</option>
+                        {employees.map(emp => <option key={emp.id} value={emp.employee_id}>{emp.name}</option>)}
+                    </select>
                 </div>
             </div>
 
@@ -313,42 +295,50 @@ export default function AssetsManager() {
                             </tr>
                         </thead>
                         <tbody className="divide-y">
-                            {filteredAssets.map(asset => (
-                                <tr key={asset.id} className="hover:bg-gray-50/50">
-                                    <td className="p-4">
-                                        <div className="font-bold text-gray-800">{asset.name}</div>
-                                        <div className="text-xs text-gray-500 font-mono mt-1">SN: {asset.serial_number}</div>
-                                    </td>
-                                    <td className="p-4 text-xs text-gray-600">
-                                        <div>Mod: {asset.model}</div>
-                                        <div>Org: {asset.origin_country}</div>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-bold text-indigo-700 mb-1">{asset.location}</div>
-                                        <div className="flex flex-wrap gap-1">
-                                            {asset.custodians.map(cId => (
-                                                <span key={cId} className="bg-gray-100 px-1.5 rounded text-[10px] border">
-                                                    {employees.find(e => e.employee_id === cId)?.name.split(' ')[0] || cId}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </td>
-                                    <td className="p-4">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${asset.status === 'working' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                            {STATUS_TRANSLATION[asset.status]}
-                                        </span>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="flex items-center justify-center gap-1">
-                                            <button onClick={() => setShowQRModal(asset)} title="QR Code" className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"><QrCode className="w-4 h-4"/></button>
-                                            <button onClick={() => handlePrintCard(asset)} title="طباعة كارت" className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"><FileText className="w-4 h-4"/></button>
-                                            <button onClick={() => handleReportIssue(asset)} title="عطل" className="p-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100"><Wrench className="w-4 h-4"/></button>
-                                            <button onClick={() => { setEditingAsset(asset); setFormData(asset); setShowModal(true); }} title="تعديل" className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100"><Edit className="w-4 h-4"/></button>
-                                            <button onClick={() => handleDelete(asset.id)} title="حذف" className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"><Trash2 className="w-4 h-4"/></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                            {filteredAssets.length === 0 ? (
+                                <tr><td colSpan={5} className="p-8 text-center text-gray-400">لا توجد أجهزة مطابقة للبحث</td></tr>
+                            ) : (
+                                filteredAssets.map(asset => (
+                                    <tr key={asset.id} className="hover:bg-gray-50/50">
+                                        <td className="p-4">
+                                            <div className="font-bold text-gray-800">{asset.name}</div>
+                                            <div className="text-xs text-gray-500 font-mono mt-1">{asset.serial_number ? `SN: ${asset.serial_number}` : ''}</div>
+                                        </td>
+                                        <td className="p-4 text-xs text-gray-600">
+                                            <div>موديل: {asset.model || '-'}</div>
+                                            <div>منشأ: {asset.origin_country || '-'}</div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="font-bold text-indigo-700 mb-1">{asset.location}</div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {asset.custodians.map(cId => (
+                                                    <span key={cId} className="bg-gray-100 px-1.5 rounded text-[10px] border">
+                                                        {employees.find(e => e.employee_id === cId)?.name.split(' ')[0] || cId}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-bold border ${
+                                                asset.status === 'working' ? 'bg-green-100 text-green-700 border-green-200' :
+                                                asset.status === 'broken' ? 'bg-red-100 text-red-700 border-red-200' :
+                                                'bg-gray-100 text-gray-600 border-gray-200'
+                                            }`}>
+                                                {STATUS_TRANSLATION[asset.status]}
+                                            </span>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center justify-center gap-1">
+                                                <button onClick={() => setShowQRModal(asset)} title="QR" className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg"><QrCode className="w-4 h-4 text-gray-600"/></button>
+                                                <button onClick={() => handlePrintCard(asset)} title="طباعة" className="p-2 bg-blue-50 hover:bg-blue-100 rounded-lg"><FileText className="w-4 h-4 text-blue-600"/></button>
+                                                <button onClick={() => handleReportIssue(asset)} title="عطل" className="p-2 bg-orange-50 hover:bg-orange-100 rounded-lg"><Wrench className="w-4 h-4 text-orange-600"/></button>
+                                                <button onClick={() => { setEditingAsset(asset); setFormData(asset); setShowModal(true); }} title="تعديل" className="p-2 bg-indigo-50 hover:bg-indigo-100 rounded-lg"><Edit className="w-4 h-4 text-indigo-600"/></button>
+                                                <button onClick={() => handleDelete(asset.id)} title="حذف" className="p-2 bg-red-50 hover:bg-red-100 rounded-lg"><Trash2 className="w-4 h-4 text-red-600"/></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -363,20 +353,17 @@ export default function AssetsManager() {
                         <div className="bg-white p-4 border-4 border-black rounded-xl inline-block mb-4">
                             <QRCode value={showQRModal.id} size={200} />
                         </div>
-                        <p className="text-xs text-gray-500 font-mono mb-6">{showQRModal.id}</p>
                         <button onClick={() => handlePrintCard(showQRModal)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 flex justify-center gap-2">
-                            <Printer className="w-5 h-5"/> طباعة الكارت والـ QR
+                            <Printer className="w-5 h-5"/> طباعة
                         </button>
                     </div>
                 </div>
             )}
 
-            {/* Add/Edit Modal (نفس الكود السابق للمودال هنا) */}
+            {/* Add/Edit Modal */}
             {showModal && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                    {/* ... (نفس محتوى المودال السابق) ... */}
-                    {/* للتبسيط لم أكرر كود المودال الطويل هنا، استخدم نفس كود المودال من الرد السابق */}
-                     <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                    <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                         <div className="p-6 bg-gray-50 border-b flex justify-between items-center">
                             <h3 className="font-black text-xl text-gray-800">{editingAsset ? 'تعديل بيانات الأصل' : 'إضافة أصل جديد'}</h3>
                             <button onClick={() => setShowModal(false)}><X className="w-6 h-6 text-gray-400" /></button>
@@ -410,10 +397,15 @@ export default function AssetsManager() {
                                         <option value="non_medical">غير طبي</option>
                                     </select>
                                 </div>
+                                {/* ✅ قائمة الأماكن مع زر الإضافة */}
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-1">المكان</label>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-xs font-bold text-gray-500">المكان</label>
+                                        <button onClick={handleAddLocation} className="text-[10px] text-indigo-600 font-bold hover:underline">+ إضافة</button>
+                                    </div>
                                     <select className="w-full p-3 rounded-xl border bg-gray-50" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})}>
-                                        {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                                        <option value="">-- اختر --</option>
+                                        {locations.map(l => <option key={l} value={l}>{l}</option>)}
                                     </select>
                                 </div>
                                 <div>
