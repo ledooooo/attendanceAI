@@ -10,7 +10,7 @@ interface Props {
     currentUserId: string;
 }
 
-// الأدوار التي تمتلك صلاحية الدخول لغرفة الإدارة
+// تعريف الرتب التي تعتبر "مسؤولين"
 const PRIVILEGED_ROLES = ['admin', 'head_of_dept', 'quality_manager'];
 
 export default function StaffMessages({ employee }: Props) {
@@ -20,26 +20,30 @@ export default function StaffMessages({ employee }: Props) {
     
     // حالة لتحديد المحادثة النشطة: 
     // null = شاشة اختيار جهة الاتصال
+    // 'general' = شات جماعي للجميع
     // 'group' = شات الإدارة
-    // 'employee_id' = شات فردي مع موظف
+    // 'employee_id' = شات فردي
     const [activeChatId, setActiveChatId] = useState<string | null>(null);
     
     const [sending, setSending] = useState(false);
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // هل المستخدم من الإدارة؟
+    // هل المستخدم الحالي مسؤول؟
     const isPrivileged = PRIVILEGED_ROLES.includes(employee.role);
-    const isAdmin = employee.role === 'admin';
     const myId = employee.employee_id;
 
-    // 1. جلب جهات الاتصال حسب الصلاحيات
+    // 1. جلب جهات الاتصال بناءً على الصلاحيات (التعديل الجديد)
     useEffect(() => {
         const fetchContacts = async () => {
+            // الاستعلام الأساسي: هات كل المستخدمين النشطين ما عدا أنا
             let query = supabase.from('employees').select('*').eq('status', 'نشط').neq('employee_id', myId);
 
-            // إذا لم يكن مديراً (أي موظف عادي أو رئيس قسم أو جودة)، اجلب له الإدارة فقط
-            if (!isAdmin) {
+            if (isPrivileged) {
+                // ✅ إذا كان مسؤولاً: يرى "الجميع" (ليتواصل مع المسؤولين الآخرين ومع الموظفين)
+                // لا نحتاج فلتر إضافي هنا
+            } else {
+                // ✅ إذا كان موظف عادي: يرى "المسؤولين" فقط
                 query = query.in('role', PRIVILEGED_ROLES);
             }
 
@@ -47,16 +51,17 @@ export default function StaffMessages({ employee }: Props) {
             if (data) setContacts(data as Employee[]);
         };
         fetchContacts();
-    }, [employee.role, myId, isAdmin]);
+    }, [employee.role, myId, isPrivileged]);
 
-    // 2. جلب الرسائل
+    // 2. جلب الرسائل (الخاصة، العامة، وإدارة)
     const fetchMessages = async () => {
         setLoading(true);
         let query = supabase.from('messages').select('*').order('created_at', { ascending: false });
 
-        let queryStr = `from_user.eq.${myId},to_user.eq.${myId}`;
+        // بناء استعلام الرسائل
+        let queryStr = `from_user.eq.${myId},to_user.eq.${myId},to_user.eq.general_group`;
         
-        // إذا كان من الإدارة، نضيف رسائل جروب الإدارة إلى القائمة
+        // إذا كان مسؤولاً، اجلب أيضاً رسائل مجموعة الإدارة
         if (isPrivileged) {
             queryStr += `,to_user.eq.group_managers`;
         }
@@ -84,6 +89,7 @@ export default function StaffMessages({ employee }: Props) {
                     if (
                         newMsg.to_user === myId || 
                         newMsg.from_user === myId || 
+                        newMsg.to_user === 'general_group' ||
                         (newMsg.to_user === 'group_managers' && isPrivileged)
                     ) {
                         setLocalMessages((prev) => [newMsg, ...prev]);
@@ -104,7 +110,7 @@ export default function StaffMessages({ employee }: Props) {
 
     // تحديد الرسائل كمقروءة للشات الفردي
     useEffect(() => {
-        if (activeChatId && activeChatId !== 'group') {
+        if (activeChatId && activeChatId !== 'group' && activeChatId !== 'general') {
             const markAsRead = async () => {
                 const unreadIds = localMessages
                     .filter(m => !m.is_read && m.to_user === myId && m.from_user === activeChatId)
@@ -123,7 +129,9 @@ export default function StaffMessages({ employee }: Props) {
     const activeMessages = useMemo(() => {
         if (!activeChatId) return [];
         
-        if (activeChatId === 'group') {
+        if (activeChatId === 'general') {
+            return localMessages.filter(m => m.to_user === 'general_group');
+        } else if (activeChatId === 'group') {
             return localMessages.filter(m => m.to_user === 'group_managers');
         } else {
             return localMessages.filter(m => 
@@ -133,22 +141,23 @@ export default function StaffMessages({ employee }: Props) {
         }
     }, [localMessages, activeChatId, myId]);
 
-    // 6. دالة الإرسال مع الإشعارات المتكاملة (In-App + Push)
+    // 6. دالة الإرسال
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newMessage.trim() || !activeChatId) return;
         setSending(true);
 
+        const isGeneral = activeChatId === 'general';
         const isGroup = activeChatId === 'group';
         const msgContent = newMessage;
 
-        const toUserStr = isGroup ? 'group_managers' : activeChatId;
+        const toUserStr = isGeneral ? 'general_group' : isGroup ? 'group_managers' : activeChatId;
 
         const payload = {
             from_user: myId,
             to_user: toUserStr,
             content: msgContent,
-            is_read: isGroup ? true : false
+            is_read: (isGroup || isGeneral) ? true : false
         };
 
         const { error } = await supabase.from('messages').insert(payload);
@@ -161,7 +170,11 @@ export default function StaffMessages({ employee }: Props) {
                 let targetEmps: any[] = [];
                 let notifTitle = '';
 
-                if (isGroup) {
+                if (isGeneral) {
+                    const { data } = await supabase.from('employees').select('id, employee_id').eq('status', 'نشط').neq('employee_id', myId);
+                    targetEmps = data || [];
+                    notifTitle = `📣 نقاش عام: ${employee.name}`;
+                } else if (isGroup) {
                     const { data } = await supabase.from('employees').select('id, employee_id').eq('status', 'نشط').in('role', PRIVILEGED_ROLES).neq('employee_id', myId);
                     targetEmps = data || [];
                     notifTitle = `👥 الإدارة: ${employee.name}`;
@@ -172,7 +185,6 @@ export default function StaffMessages({ employee }: Props) {
                 }
 
                 if (targetEmps.length > 0) {
-                    // 1. إدراج إشعارات داخل التطبيق (جرس التنبيهات)
                     const appNotifs = targetEmps.map(emp => ({
                         user_id: emp.employee_id,
                         title: notifTitle,
@@ -182,7 +194,6 @@ export default function StaffMessages({ employee }: Props) {
                     }));
                     await supabase.from('notifications').insert(appNotifs);
 
-                    // 2. إرسال Push Notifications (خارج التطبيق)
                     const pushTargetIds = targetEmps.map(emp => emp.id).filter(Boolean);
                     if (pushTargetIds.length > 0) {
                         await supabase.functions.invoke('send-push-notification', {
@@ -209,13 +220,14 @@ export default function StaffMessages({ employee }: Props) {
         return localMessages.filter(m => !m.is_read && m.to_user === myId && m.from_user === senderId).length;
     };
 
-    const activeContactName = activeChatId === 'group' ? 'غرفة الإدارة' 
+    const activeContactName = activeChatId === 'general' ? 'نقاش عام للجميع' 
+        : activeChatId === 'group' ? 'غرفة الإدارة' 
         : contacts.find(c => c.employee_id === activeChatId)?.name || 'مستخدم';
 
     return (
         <div className="h-[650px] flex bg-white rounded-[30px] border border-gray-100 shadow-sm overflow-hidden animate-in fade-in duration-500 relative">
             
-            {/* القائمة الجانبية (جهات الاتصال) */}
+            {/* القائمة الجانبية */}
             <div className={`w-full md:w-1/3 bg-gray-50 border-l border-gray-100 flex flex-col transition-transform ${activeChatId ? 'hidden md:flex' : 'flex'}`}>
                 <div className="p-5 border-b border-gray-200 bg-white">
                     <h3 className="font-black text-gray-800 text-lg flex items-center gap-2">
@@ -224,36 +236,54 @@ export default function StaffMessages({ employee }: Props) {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                    
+                    {/* الغرفة العامة للجميع */}
+                    <button 
+                        onClick={() => setActiveChatId('general')}
+                        className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all mb-2 ${activeChatId === 'general' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-emerald-50 hover:border-emerald-200 text-gray-700'}`}
+                    >
+                        <div className={`p-2 rounded-full ${activeChatId === 'general' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-600'}`}>
+                            <Users className="w-5 h-5"/>
+                        </div>
+                        <div className="text-right flex-1">
+                            <h4 className="font-bold text-sm">نقاش عام</h4>
+                            <p className={`text-[10px] font-medium mt-0.5 ${activeChatId === 'general' ? 'text-emerald-100' : 'text-gray-400'}`}>للجميع</p>
+                        </div>
+                    </button>
 
-                    {/* غرفة الإدارة (تظهر لأصحاب الصلاحيات فقط) */}
+                    {/* غرفة الإدارة (تظهر للمسؤولين فقط) */}
                     {isPrivileged && (
                         <button 
                             onClick={() => setActiveChatId('group')}
-                            className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all mb-2 ${activeChatId === 'group' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-indigo-50 hover:border-indigo-200 text-gray-700'}`}
+                            className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all ${activeChatId === 'group' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-indigo-50 hover:border-indigo-200 text-gray-700'}`}
                         >
                             <div className={`p-2 rounded-full ${activeChatId === 'group' ? 'bg-white/20' : 'bg-indigo-100 text-indigo-600'}`}>
                                 <Users className="w-5 h-5"/>
                             </div>
                             <div className="text-right flex-1">
                                 <h4 className="font-bold text-sm">غرفة الإدارة</h4>
-                                <p className={`text-[10px] font-medium mt-0.5 ${activeChatId === 'group' ? 'text-indigo-100' : 'text-gray-400'}`}>خاص بالإدارة ورؤساء الأقسام</p>
+                                <p className={`text-[10px] font-medium mt-0.5 ${activeChatId === 'group' ? 'text-indigo-100' : 'text-gray-400'}`}>خاص بالمسؤولين</p>
                             </div>
                         </button>
                     )}
 
-                    {/* عنوان القائمة يختلف حسب صلاحية المستخدم */}
+                    {/* عنوان القائمة */}
                     <div className="pt-2 pb-1 px-2">
                         <span className="text-xs font-black text-gray-400 uppercase tracking-wider">
-                            {isAdmin ? 'جميع الموظفين' : 'الإدارة ورؤساء الأقسام'}
+                            {isPrivileged ? 'جميع الموظفين' : 'الإدارة والمسؤولين'}
                         </span>
                     </div>
 
                     {contacts.length === 0 ? (
-                        <p className="text-center text-xs text-gray-400 py-4">لا توجد جهات اتصال متاحة</p>
+                        <p className="text-center text-xs text-gray-400 py-4">جاري التحميل...</p>
                     ) : (
                         contacts.map(contact => {
                             const unread = getUnreadCount(contact.employee_id);
                             const isActive = activeChatId === contact.employee_id;
+                            
+                            // تمييز المسؤولين بأيقونة أو لون
+                            const isContactPrivileged = PRIVILEGED_ROLES.includes(contact.role);
+
                             return (
                                 <button 
                                     key={contact.id}
@@ -261,7 +291,7 @@ export default function StaffMessages({ employee }: Props) {
                                     className={`w-full p-3 rounded-2xl flex items-center gap-3 transition-all ${isActive ? 'bg-blue-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-blue-50 text-gray-700'}`}
                                 >
                                     <div className="relative">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${isActive ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-600'}`}>
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${isActive ? 'bg-white/20 text-white' : isContactPrivileged ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'}`}>
                                             {contact.name.charAt(0)}
                                         </div>
                                         {unread > 0 && (
@@ -271,7 +301,10 @@ export default function StaffMessages({ employee }: Props) {
                                         )}
                                     </div>
                                     <div className="text-right flex-1 overflow-hidden">
-                                        <h4 className="font-bold text-sm truncate">{contact.name}</h4>
+                                        <h4 className="font-bold text-sm truncate flex items-center gap-1">
+                                            {contact.name}
+                                            {isContactPrivileged && <span className="w-2 h-2 rounded-full bg-indigo-500" title="مسؤول"></span>}
+                                        </h4>
                                         <p className={`text-[10px] font-medium truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-gray-400'}`}>{contact.specialty}</p>
                                     </div>
                                 </button>
@@ -283,7 +316,6 @@ export default function StaffMessages({ employee }: Props) {
 
             {/* نافذة الدردشة */}
             <div className={`flex-1 flex flex-col bg-white ${!activeChatId ? 'hidden md:flex' : 'flex'}`}>
-                
                 {!activeChatId ? (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
                         <MessageSquare className="w-20 h-20 mb-4 opacity-20"/>
@@ -291,20 +323,18 @@ export default function StaffMessages({ employee }: Props) {
                     </div>
                 ) : (
                     <>
-                        {/* Header Chat */}
                         <div className="p-4 bg-white border-b border-gray-100 flex items-center gap-3 shrink-0 shadow-sm z-10">
                             <button onClick={() => setActiveChatId(null)} className="md:hidden p-2 bg-gray-50 rounded-full text-gray-600 hover:bg-gray-200">
                                 <ArrowRight className="w-5 h-5"/>
                             </button>
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${activeChatId === 'group' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'}`}>
-                                {activeChatId === 'group' ? <Users className="w-5 h-5"/> : <User className="w-5 h-5"/>}
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${activeChatId === 'general' ? 'bg-emerald-100 text-emerald-600' : activeChatId === 'group' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'}`}>
+                                {(activeChatId === 'group' || activeChatId === 'general') ? <Users className="w-5 h-5"/> : <User className="w-5 h-5"/>}
                             </div>
                             <div>
                                 <h4 className="font-black text-gray-800 text-base">{activeContactName}</h4>
                             </div>
                         </div>
 
-                        {/* Messages Area */}
                         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar bg-slate-50 flex flex-col-reverse">
                             {loading ? (
                                 <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -312,37 +342,31 @@ export default function StaffMessages({ employee }: Props) {
                                 </div>
                             ) : activeMessages.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full text-gray-400 opacity-50">
-                                    <p className="font-bold">ابدأ المحادثة الآن!</p>
+                                    <p className="font-bold">لا توجد رسائل سابقة.</p>
                                 </div>
                             ) : (
                                 activeMessages.map(msg => {
                                     const isMe = msg.from_user === myId;
-                                    // إذا كان شات جماعي، نود إظهار اسم المرسل بجوار رسالته (إذا لم أكن أنا)
-                                    const senderName = !isMe && activeChatId === 'group'
-                                        ? contacts.find(c => c.employee_id === msg.from_user)?.name || 'زميل'
+                                    const senderName = !isMe && (activeChatId === 'group' || activeChatId === 'general')
+                                        ? contacts.find(c => c.employee_id === msg.from_user)?.name || 'مستخدم'
                                         : null;
 
                                     return (
                                         <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
                                             <div className={`max-w-[85%] md:max-w-[70%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                                                
                                                 {senderName && (
-                                                    <span className="text-[10px] font-black text-gray-500 mb-1 ml-2">{senderName}</span>
+                                                    <span className="text-[10px] font-black text-indigo-400 mb-1 ml-2">{senderName}</span>
                                                 )}
-
                                                 <div className={`p-4 rounded-2xl shadow-sm relative text-sm font-medium leading-relaxed ${
-                                                    isMe 
-                                                    ? 'bg-blue-600 text-white rounded-br-sm' 
-                                                    : 'bg-white border border-gray-200 text-gray-700 rounded-bl-sm'
+                                                    isMe ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white border border-gray-200 text-gray-700 rounded-bl-sm'
                                                 }`}>
                                                     {msg.content || msg.message || <span className="italic opacity-50">...</span>} 
                                                 </div>
-                                                
                                                 <div className="flex items-center gap-1 mt-1 px-1">
                                                     <span className="text-[9px] font-bold text-gray-400">
                                                         {new Date(msg.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
-                                                    {isMe && activeChatId !== 'group' && (
+                                                    {isMe && activeChatId !== 'group' && activeChatId !== 'general' && (
                                                         msg.is_read ? <CheckCheck className="w-3 h-3 text-blue-500"/> : <Check className="w-3 h-3 text-gray-300"/>
                                                     )}
                                                 </div>
@@ -354,7 +378,6 @@ export default function StaffMessages({ employee }: Props) {
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Input Area */}
                         <form onSubmit={handleSend} className="p-3 md:p-4 bg-white border-t border-gray-100 flex gap-2 items-center">
                             <input 
                                 type="text" 
@@ -367,7 +390,7 @@ export default function StaffMessages({ employee }: Props) {
                                 type="submit" 
                                 disabled={!newMessage.trim() || sending} 
                                 className={`p-3 md:p-4 rounded-2xl text-white transition-all shadow-lg active:scale-95 flex items-center justify-center
-                                    ${!newMessage.trim() || sending ? 'bg-gray-300 shadow-none' : activeChatId === 'group' ? 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-200'}
+                                    ${!newMessage.trim() || sending ? 'bg-gray-300 shadow-none' : activeChatId === 'general' ? 'bg-emerald-600 hover:bg-emerald-700' : activeChatId === 'group' ? 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-200'}
                                 `}
                             >
                                 {sending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5 rtl:rotate-180"/>}
