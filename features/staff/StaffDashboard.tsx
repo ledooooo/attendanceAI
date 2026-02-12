@@ -4,15 +4,15 @@ import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { requestNotificationPermission } from '../../utils/pushNotifications'; 
-import toast from 'react-hot-toast'; 
+import { requestNotificationPermission } from '../../utils/pushNotifications';
+import toast from 'react-hot-toast';
 
 import { 
     LogOut, User, Clock, Printer, FilePlus, 
     List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-    Calendar, Settings, ShoppingBag, Trophy, Star, Check, Box // ✅ تمت إضافة Box
+    Calendar, Settings, ShoppingBag, Trophy, Star, Check 
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -31,14 +31,12 @@ import DepartmentRequests from './components/DepartmentRequests';
 import StaffLinksTab from './components/StaffLinksTab';
 import StaffOVR from './components/StaffOVR';
 import ShiftRequestsTab from './components/ShiftRequestsTab';
-import QualityDashboard from '../admin/components/QualityDashboard'; 
+import QualityDashboard from '../admin/components/QualityDashboard';
 import StaffLibrary from './components/StaffLibrary';
 import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
 import RewardsStore from './components/RewardsStore';
 import StaffTrainingCenter from './components/StaffTrainingCenter';
-// ✅ استيراد مكون إدارة العهد (تأكد من المسار الصحيح لديك)
-import AssetsManager from '../admin/components/AssetsManager'; 
 
 // استيراد مكونات التحفيز
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
@@ -65,11 +63,9 @@ export default function StaffDashboard({ employee }: Props) {
   // حالة للتدريب الإجباري
   const [pendingMandatoryTraining, setPendingMandatoryTraining] = useState<any>(null);
 
-  const hasAdminAccess = employee.permissions && Array.isArray(employee.permissions) && employee.permissions.length > 0;
+  // ✅ تعديل: السماح بظهور لوحة الإدارة إذا كان أدمن أو لديه أي صلاحيات (بما فيها العهد)
+  const hasAdminAccess = employee.role === 'admin' || (employee.permissions && employee.permissions.length > 0);
   
-  // ✅ التحقق من صلاحية العهد
-  const hasAssetsAccess = employee.role === 'admin' || employee.permissions?.includes('assets_manager');
-
   // --- States ---
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
@@ -91,20 +87,20 @@ export default function StaffDashboard({ employee }: Props) {
     }
   }, [employee.employee_id]);
 
-    // قراءة الرابط عند تشغيل التطبيق
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const tabParam = params.get('tab');
-        const trainingIdParam = params.get('training_id');
+  // قراءة الرابط عند تشغيل التطبيق
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    const trainingIdParam = params.get('training_id');
 
-        if (tabParam) {
-            setActiveTab(tabParam); 
-        }
-        if (trainingIdParam) {
-            setDeepLinkTrainingId(trainingIdParam); 
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    }, []);
+    if (tabParam) {
+        setActiveTab(tabParam); 
+    }
+    if (trainingIdParam) {
+        setDeepLinkTrainingId(trainingIdParam); 
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
   
   // منطق احتساب نقطة الزيارة اليومية
   useEffect(() => {
@@ -175,7 +171,6 @@ export default function StaffDashboard({ employee }: Props) {
     enabled: !pendingMandatoryTraining,
     staleTime: 1000 * 60 * 5 
   });
-
 
   const fetchNotifications = async () => {
     const { data } = await supabase
@@ -318,6 +313,7 @@ export default function StaffDashboard({ employee }: Props) {
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
   // ✅ ترتيب القائمة وتعيين البادجات
+  // تمت إزالة شرط hasAssetsAccess من هنا لأنها ستظهر داخل لوحة الإدارة
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
@@ -328,10 +324,6 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'ovr', label: 'إبلاغ OVR', icon: AlertTriangle, badge: staffBadges.ovr_replies },
     { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: staffBadges.training }, 
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
-    
-    // ✅ إضافة تبويب العهد هنا لمن يملك الصلاحية
-    ...(hasAssetsAccess ? [{ id: 'assets_management', label: 'إدارة العهد', icon: Box }] : []),
-
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
@@ -357,13 +349,11 @@ export default function StaffDashboard({ employee }: Props) {
       {pendingMandatoryTraining && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border-4 border-red-500 relative animate-in zoom-in-95">
-                
                 <div className="bg-red-500 text-white p-6 text-center">
                     <AlertTriangle className="w-16 h-16 mx-auto mb-3 text-yellow-300 animate-bounce" />
                     <h2 className="text-2xl font-black">تنبيه هام: تدريب إلزامي</h2>
                     <p className="text-sm font-bold opacity-90 mt-1">يوجد تدريب جديد يجب عليك إتمامه للمتابعة</p>
                 </div>
-
                 <div className="p-8 text-center space-y-6">
                     <div>
                         <h3 className="text-2xl font-black text-gray-800 mb-2">{pendingMandatoryTraining.title}</h3>
@@ -372,12 +362,10 @@ export default function StaffDashboard({ employee }: Props) {
                             <span className="text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-lg border border-yellow-100">⭐ {pendingMandatoryTraining.points} نقطة</span>
                         </div>
                     </div>
-                    
                     <p className="text-gray-600 text-sm bg-gray-50 p-4 rounded-xl border leading-relaxed">
                         هذا التدريب مطلوب من قبل إدارة المركز لضمان الجودة والسلامة المهنية. <br/>
                         لن تتمكن من استخدام التطبيق قبل مشاهدة المحتوى وتسجيل الإتمام.
                     </p>
-
                     <button 
                         onClick={() => {
                             setPendingMandatoryTraining(null); 
@@ -443,7 +431,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* تعديل البادج */}
                 {typeof item.badge !== 'undefined' && (
                     item.badge > 0 ? (
                         <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
@@ -488,7 +475,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            {/* أيقونات الهيدر */}
             <div className="flex items-center gap-2 md:gap-3">
                 
                 {/* 1. المستوى */}
@@ -619,7 +605,6 @@ export default function StaffDashboard({ employee }: Props) {
                         </>
                     )}
                 </div>
-
                 <div className="w-9 h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden">
                     {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full bg-emerald-200 flex items-center justify-center rounded-full text-emerald-700 font-bold text-sm">{employee.name.charAt(0)}</div>}
                 </div>
@@ -655,16 +640,7 @@ export default function StaffDashboard({ employee }: Props) {
                             deepLinkTrainingId={deepLinkTrainingId} 
                         />
                     )}
-                    {/* ✅ عرض مكون إدارة العهد عند تفعيل التبويب */}
-                    {activeTab === 'assets_management' && hasAssetsAccess && (
-                        <div className="animate-in fade-in">
-                            <h2 className="text-2xl font-black text-gray-800 mb-6 flex items-center gap-2">
-                                <Box className="w-8 h-8 text-indigo-600"/> إدارة العهد والأصول
-                            </h2>
-                            <AssetsManager />
-                        </div>
-                    )}
-
+                    
                     {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
@@ -674,7 +650,6 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
         </main>
 
-        {/* --- الشريط السفلي --- */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-2 flex justify-between items-center z-50 pb-safe md:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button 
                 onClick={() => setActiveTab('news')}
@@ -696,7 +671,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <span className="text-[10px] font-bold">طلب جديد</span>
             </button>
 
-            {/* زر عائم مميز للبروفايل */}
             <button 
                 onClick={() => setActiveTab('profile')}
                 className="relative -top-6 bg-emerald-600 text-white p-4 rounded-full shadow-xl shadow-emerald-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform"
