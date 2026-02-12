@@ -95,6 +95,7 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
   const processConversations = (msgs: InternalMessage[]) => {
     const convMap = new Map<string, Conversation>();
 
+    // ✅ الخطوة الأهم: إضافة جميع الموظفين للخريطة مبدئياً
     employees.forEach(emp => {
       convMap.set(emp.employee_id, {
         employee: emp,
@@ -103,8 +104,8 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
       });
     });
 
+    // تحديث البيانات بناءً على الرسائل الموجودة
     msgs.forEach(msg => {
-      // نتجاهل رسائل الجروبات هنا لأننا سنعرضها بشكل منفصل
       if (msg.to_user === 'general_group' || msg.to_user === 'group_managers') return;
 
       const otherPartyId = msg.from_user === 'admin' ? msg.to_user : msg.from_user;
@@ -116,14 +117,21 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
       }
     });
 
+    // ترتيب المحادثات: الأحدث أولاً، ثم الأبجدي لمن ليس لديهم رسائل
     const sorted = Array.from(convMap.values()).sort((a, b) => {
       const timeA = a.lastMessage ? new Date(a.lastMessage.created_at).getTime() : 0;
       const timeB = b.lastMessage ? new Date(b.lastMessage.created_at).getTime() : 0;
-      return timeB - timeA;
+      
+      if (timeB !== timeA) {
+          return timeB - timeA; // الأحدث وقتاً أولاً
+      }
+      
+      // إذا تساوى الوقت (كلاهما 0)، رتب أبجدياً
+      return a.employee.name.localeCompare(b.employee.name);
     });
 
-    // عرض من لديهم رسائل أو يتم البحث عنهم
-    setConversations(sorted.filter(c => c.lastMessage !== null || searchTerm));
+    // ✅ تم إزالة الفلتر الذي كان يخفي الموظفين بدون رسائل
+    setConversations(sorted);
   };
 
   // 4. فلترة رسائل الشات المفتوح
@@ -275,7 +283,7 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
                         <div className="flex justify-between items-center mb-0.5">
                             <h4 className={`text-sm font-bold truncate ${selectedChatId === conv.employee.employee_id ? 'text-blue-700' : 'text-gray-800'}`}>{conv.employee.name}</h4>
                             <span className="text-[10px] text-gray-400 whitespace-nowrap">
-                                {conv.lastMessage ? new Date(conv.lastMessage.created_at).toLocaleDateString('ar-EG', {month: 'short', day: 'numeric'}) : formatRelativeTime(conv.employee.last_seen)}
+                                {conv.lastMessage ? new Date(conv.lastMessage.created_at).toLocaleDateString('ar-EG', {month: 'short', day: 'numeric'}) : ''}
                             </span>
                         </div>
                         <p className="text-xs text-gray-500 truncate font-medium flex items-center gap-1">
@@ -285,7 +293,7 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
                                     {(conv.lastMessage as any).content || 'مرفق'}
                                 </>
                             ) : (
-                                <span className="italic opacity-50">لا توجد رسائل</span>
+                                <span className="italic opacity-50 text-[10px]">انقر لبدء محادثة</span>
                             )}
                         </p>
                     </div>
