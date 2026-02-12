@@ -24,7 +24,6 @@ interface Asset {
     notes: string;
 }
 
-// قائمة الأماكن الأولية (قابلة للزيادة)
 const INITIAL_LOCATIONS = ['عيادة الأسنان', 'عيادة الباطنة', 'الاستقبال', 'المعمل', 'الصيدلية', 'مكتب المدير', 'المخزن', 'أخرى'];
 
 const STATUS_TRANSLATION: any = {
@@ -45,14 +44,13 @@ export default function AssetsManager() {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(false);
     
-    // إدارة الأماكن (ديناميكية)
     const [locations, setLocations] = useState<string[]>(INITIAL_LOCATIONS);
 
     // الفلترة والبحث
     const [filterLocation, setFilterLocation] = useState('all');
     const [filterCustodian, setFilterCustodian] = useState('all');
-    const [filterStatus, setFilterStatus] = useState('all'); // ✅ فلتر الحالة
-    const [filterType, setFilterType] = useState('all'); // ✅ فلتر النوع
+    const [filterStatus, setFilterStatus] = useState('all');
+    const [filterType, setFilterType] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
 
     // المودال
@@ -68,24 +66,25 @@ export default function AssetsManager() {
 
     useEffect(() => { 
         fetchData(); 
-        // استرجاع الأماكن المضافة سابقاً من LocalStorage إذا أردت حفظها محلياً
         const savedLocs = localStorage.getItem('asset_locations');
         if (savedLocs) setLocations(JSON.parse(savedLocs));
     }, []);
 
-const fetchData = async () => {
+    const fetchData = async () => {
         setLoading(true);
         const { data: emps } = await supabase.from('employees').select('id, name, employee_id');
         if (emps) setEmployees(emps as Employee[]);
         
-        // طباعة الخطأ في الكونسول للتوضيح
         const { data: asts, error } = await supabase.from('assets').select('*').order('created_at', { ascending: false });
-        
         if (error) {
-            console.error("Supabase Error:", error); // 👈 هذا السطر سيكشف السبب الحقيقي
-            toast.error('فشل جلب البيانات: ' + error.message);
+            toast.error('فشل جلب البيانات');
         } else if (asts) {
-            setAssets(asts as Asset[]);
+            // ✅ إصلاح الخطأ هنا: تنظيف البيانات لضمان أن المصفوفات ليست null
+            const sanitizedAssets = asts.map((item: any) => ({
+                ...item,
+                custodians: item.custodians || [] // تحويل null إلى []
+            }));
+            setAssets(sanitizedAssets as Asset[]);
         }
         setLoading(false);
     };
@@ -95,26 +94,32 @@ const fetchData = async () => {
         if (newLoc && !locations.includes(newLoc)) {
             const updatedLocs = [...locations, newLoc];
             setLocations(updatedLocs);
-            localStorage.setItem('asset_locations', JSON.stringify(updatedLocs)); // حفظ دائم
-            setFormData({...formData, location: newLoc}); // تحديده تلقائياً
+            localStorage.setItem('asset_locations', JSON.stringify(updatedLocs));
+            setFormData({...formData, location: newLoc});
             toast.success('تم إضافة المكان');
         }
     };
 
     const handleSave = async () => {
-        if (!formData.name || !formData.custodians?.length || !formData.location) {
-            toast.error('البيانات الناقصة: الاسم، المكان، أو صاحب العهدة'); 
+        // التحقق من الحقول الإجبارية (الاسم والمكان فقط، العهدة اختيارية الآن لتجنب المشاكل)
+        if (!formData.name || !formData.location) {
+            toast.error('الرجاء إدخال اسم الجهاز والمكان'); 
             return;
         }
         
         try {
-            // ✅ إصلاح: استخدام select() لإرجاع البيانات والتأكد من نجاح العملية
+            // ضمان أن العهدة مصفوفة حتى لو فارغة
+            const payload = {
+                ...formData,
+                custodians: formData.custodians || []
+            };
+
             if (editingAsset) {
-                const { error } = await supabase.from('assets').update(formData).eq('id', editingAsset.id).select();
+                const { error } = await supabase.from('assets').update(payload).eq('id', editingAsset.id).select();
                 if (error) throw error;
                 toast.success('تم التعديل بنجاح');
             } else {
-                const { error } = await supabase.from('assets').insert([formData]).select();
+                const { error } = await supabase.from('assets').insert([payload]).select();
                 if (error) throw error;
                 toast.success('تمت الإضافة بنجاح');
             }
@@ -123,10 +128,10 @@ const fetchData = async () => {
             setEditingAsset(null); 
             setFormData({ type: 'medical', status: 'working', custodians: [], location: '' }); 
             
-            // ✅ تحديث الجدول فوراً
             await fetchData(); 
 
         } catch (e: any) { 
+            console.error(e);
             toast.error('خطأ: ' + e.message); 
         }
     };
@@ -149,9 +154,8 @@ const fetchData = async () => {
         }
     };
 
-    // --- 🖨️ دوال الطباعة (كما هي) ---
+    // --- 🖨️ دوال الطباعة ---
     const handlePrintCard = (asset: Asset) => {
-        // ... (نفس كود الطباعة السابق)
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
         const htmlContent = `
@@ -197,25 +201,30 @@ const fetchData = async () => {
     };
 
     const handlePrintList = () => {
-        // ... (نفس كود طباعة القائمة)
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
         const htmlContent = `
             <html dir="rtl"><head><title>قائمة الأصول</title>
             <style>table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px; } th, td { border: 1px solid #ddd; padding: 8px; text-align: right; } th { background: #f2f2f2; }</style>
             </head><body><h2>تقرير الأصول</h2><table><thead><tr><th>م</th><th>الجهاز</th><th>المكان</th><th>الحالة</th><th>المسؤول</th></tr></thead><tbody>
-            ${filteredAssets.map((a, i) => `<tr><td>${i+1}</td><td>${a.name}</td><td>${a.location}</td><td>${STATUS_TRANSLATION[a.status]}</td><td>${a.custodians.join(', ')}</td></tr>`).join('')}
+            ${filteredAssets.map((a, i) => `
+                <tr>
+                    <td>${i+1}</td>
+                    <td>${a.name}</td>
+                    <td>${a.location}</td>
+                    <td>${STATUS_TRANSLATION[a.status]}</td>
+                    <td>${(a.custodians || []).join(', ')}</td> </tr>`).join('')}
             </tbody></table><script>window.print()</script></body></html>`;
         printWindow.document.write(htmlContent);
         printWindow.document.close();
     };
 
-    // --- الفلترة الشاملة ---
+    // --- الفلترة ---
     const filteredAssets = assets.filter(asset => {
         const matchLoc = filterLocation === 'all' || asset.location === filterLocation;
-        const matchCust = filterCustodian === 'all' || asset.custodians.includes(filterCustodian);
-        const matchStatus = filterStatus === 'all' || asset.status === filterStatus; // ✅
-        const matchType = filterType === 'all' || asset.type === filterType; // ✅
+        const matchCust = filterCustodian === 'all' || (asset.custodians || []).includes(filterCustodian); // ✅ حماية هنا
+        const matchStatus = filterStatus === 'all' || asset.status === filterStatus; 
+        const matchType = filterType === 'all' || asset.type === filterType; 
         const matchSearch = asset.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             asset.serial_number?.toLowerCase().includes(searchTerm.toLowerCase());
         
@@ -255,7 +264,6 @@ const fetchData = async () => {
                     </div>
                 </div>
 
-                {/* ✅ الفلاتر التفصيلية */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t">
                     <select className="p-2 rounded-xl border bg-gray-50 text-sm font-bold" value={filterLocation} onChange={e => setFilterLocation(e.target.value)}>
                         <option value="all">📍 كل الأماكن</option>
@@ -314,7 +322,8 @@ const fetchData = async () => {
                                         <td className="p-4">
                                             <div className="font-bold text-indigo-700 mb-1">{asset.location}</div>
                                             <div className="flex flex-wrap gap-1">
-                                                {asset.custodians.map(cId => (
+                                                {/* ✅ حماية هنا: (asset.custodians || []).map */}
+                                                {(asset.custodians || []).map(cId => (
                                                     <span key={cId} className="bg-gray-100 px-1.5 rounded text-[10px] border">
                                                         {employees.find(e => e.employee_id === cId)?.name.split(' ')[0] || cId}
                                                     </span>
@@ -400,7 +409,6 @@ const fetchData = async () => {
                                         <option value="non_medical">غير طبي</option>
                                     </select>
                                 </div>
-                                {/* ✅ قائمة الأماكن مع زر الإضافة */}
                                 <div>
                                     <div className="flex justify-between items-center mb-1">
                                         <label className="text-xs font-bold text-gray-500">المكان</label>
@@ -428,7 +436,7 @@ const fetchData = async () => {
                                 <select 
                                     multiple 
                                     className="w-full p-3 rounded-xl border bg-gray-50 h-32 custom-scrollbar" 
-                                    value={formData.custodians} 
+                                    value={formData.custodians || []} // ✅ حماية هنا
                                     onChange={e => {
                                         const selected = Array.from(e.target.selectedOptions, option => option.value);
                                         setFormData({...formData, custodians: selected});
