@@ -73,14 +73,17 @@ export default function AssetsManager() {
         if (savedLocs) setLocations(JSON.parse(savedLocs));
     }, []);
 
-    const fetchData = async () => {
+const fetchData = async () => {
         setLoading(true);
         const { data: emps } = await supabase.from('employees').select('id, name, employee_id');
         if (emps) setEmployees(emps as Employee[]);
         
+        // طباعة الخطأ في الكونسول للتوضيح
         const { data: asts, error } = await supabase.from('assets').select('*').order('created_at', { ascending: false });
+        
         if (error) {
-            toast.error('فشل جلب البيانات');
+            console.error("Supabase Error:", error); // 👈 هذا السطر سيكشف السبب الحقيقي
+            toast.error('فشل جلب البيانات: ' + error.message);
         } else if (asts) {
             setAssets(asts as Asset[]);
         }
