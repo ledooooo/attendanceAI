@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Employee } from '../../../types';
 import { 
     Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, 
-    Users, FileSignature, ArrowRight, ShieldAlert, BookOpen, FileX 
+    Users, FileSignature, ArrowRight, ShieldAlert, BookOpen, FileX, Box // ✅ استيراد أيقونة Box
 } from 'lucide-react';
 
 // استيراد المكونات السبعة
@@ -12,12 +12,15 @@ import StaffVaccineManager from './admin_tools/StaffVaccineManager';
 import StaffRequestsManager from './admin_tools/StaffRequestsManager';
 import StaffOVRManager from './admin_tools/StaffOVRManager';
 import TrainingManager from './admin_tools/TrainingManager';
-import StaffAbsenceManager from './admin_tools/StaffAbsenceManager'; // ✅ تم إضافة الملف الجديد
+import StaffAbsenceManager from './admin_tools/StaffAbsenceManager'; 
+
+// ✅ استيراد مكون إدارة العهد (تأكد من المسار الصحيح)
+import AssetsManager from '../../admin/components/AssetsManager'; 
 
 export default function AdministrationTab({ employee }: { employee: Employee }) {
     const [activeTool, setActiveTool] = useState<string | null>(null);
 
-    // ✅ خريطة الصلاحيات الكاملة (7 صلاحيات = 7 أدوات)
+    // ✅ خريطة الصلاحيات الكاملة (تمت إضافة assets_manager)
     const TOOLS_CONFIG: any = {
         'reports': { 
             id: 'reports',
@@ -28,7 +31,7 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
         },
         'attendance': { 
             id: 'attendance',
-            label: 'إدخال البصمة والتقارير',
+            label: 'إدارة البصمة والتقارير',
             icon: <Fingerprint className="w-8 h-8 text-purple-600"/>,
             color: 'bg-purple-50 border-purple-100',
             component: <StaffAttendanceManager />
@@ -61,17 +64,29 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
             color: 'bg-indigo-50 border-indigo-100',
             component: <TrainingManager />
         },
-        'absence': { // ✅ تمت الإضافة
+        'absence': {
             id: 'absence',
             label: 'تقارير الغياب',
             icon: <FileX className="w-8 h-8 text-rose-600"/>,
             color: 'bg-rose-50 border-rose-100',
             component: <StaffAbsenceManager />
+        },
+        // ✅ إضافة إدارة العهد
+        'assets_manager': {
+            id: 'assets_manager',
+            label: 'إدارة العهد والأصول',
+            icon: <Box className="w-8 h-8 text-cyan-600"/>,
+            color: 'bg-cyan-50 border-cyan-100',
+            component: <AssetsManager />
         }
     };
 
     const userPermissions = employee.permissions || [];
-    const allowedTools = Object.keys(TOOLS_CONFIG).filter(key => userPermissions.includes(key));
+    
+    // إذا كان Admin يرى كل شيء، وإلا يرى فقط الصلاحيات الممنوحة له
+    const allowedTools = employee.role === 'admin' 
+        ? Object.keys(TOOLS_CONFIG) 
+        : Object.keys(TOOLS_CONFIG).filter(key => userPermissions.includes(key));
 
     if (activeTool) {
         const tool = TOOLS_CONFIG[activeTool];
@@ -106,6 +121,8 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {allowedTools.map(key => {
                         const tool = TOOLS_CONFIG[key];
+                        if (!tool) return null; // حماية ضد الأخطاء
+                        
                         return (
                             <button
                                 key={key}
