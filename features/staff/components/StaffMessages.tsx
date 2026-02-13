@@ -166,7 +166,12 @@ export default function StaffMessages({ employee }: Props) {
                     targetEmps = data || [];
                     notifTitle = `👥 الإدارة: ${employee.name}`;
                 } else {
-                    const target = contacts.find(c => c.employee_id === activeChatId);
+                    let target = contacts.find(c => c.employee_id === activeChatId);
+                    // ✅ ضمان إرسال إشعار للمدير حتى لو لم يكن في قائمة contacts
+                    if (activeChatId === 'admin' && !target) {
+                        target = { employee_id: 'admin', id: null } as any;
+                    }
+                    
                     if (target) {
                         targetEmps = [target];
                         notifTitle = `💬 رسالة من: ${employee.name}`;
@@ -199,8 +204,10 @@ export default function StaffMessages({ employee }: Props) {
 
     const getUnreadCount = (senderId: string) => localMessages.filter(m => !m.is_read && m.to_user === myId && m.from_user === senderId).length;
     
+    // ✅ تحديث اسم جهة الاتصال ليعرض "المدير العام" إذا كان الـ ID هو admin
     const activeContactName = activeChatId === 'general' ? 'نقاش عام للجميع' 
         : activeChatId === 'group' ? 'غرفة الإدارة' 
+        : activeChatId === 'admin' ? 'المدير العام'
         : contacts.find(c => c.employee_id === activeChatId)?.name || 'مستخدم';
 
     return (
@@ -224,9 +231,25 @@ export default function StaffMessages({ employee }: Props) {
 
                     {/* غرفة الإدارة (لأصحاب الصلاحيات فقط) */}
                     {isPrivileged && (
-                        <button onClick={() => setActiveChatId('group')} className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all ${activeChatId === 'group' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-indigo-50 text-gray-700'}`}>
+                        <button onClick={() => setActiveChatId('group')} className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all mb-2 ${activeChatId === 'group' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-indigo-50 text-gray-700'}`}>
                             <div className={`p-2 rounded-full ${activeChatId === 'group' ? 'bg-white/20' : 'bg-indigo-100 text-indigo-600'}`}><Users className="w-5 h-5"/></div>
                             <div className="text-right flex-1"><h4 className="font-bold text-sm">غرفة الإدارة</h4><p className={`text-[10px] font-medium mt-0.5 ${activeChatId === 'group' ? 'text-indigo-100' : 'text-gray-400'}`}>الإدارة ورؤساء الأقسام</p></div>
+                        </button>
+                    )}
+
+                    {/* ✅ محادثة المدير العام الثابتة (تظهر للجميع عدا المدير نفسه) */}
+                    {myId !== 'admin' && (
+                        <button onClick={() => setActiveChatId('admin')} className={`w-full p-4 rounded-2xl flex items-center gap-3 transition-all mb-2 ${activeChatId === 'admin' ? 'bg-slate-800 text-white shadow-lg' : 'bg-white border border-gray-100 hover:bg-slate-100 text-gray-700'}`}>
+                            <div className="relative">
+                                <div className={`p-2 rounded-full ${activeChatId === 'admin' ? 'bg-white/20' : 'bg-slate-200 text-slate-700'}`}>
+                                    <User className="w-5 h-5"/>
+                                </div>
+                                {getUnreadCount('admin') > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white animate-bounce">{getUnreadCount('admin')}</span>}
+                            </div>
+                            <div className="text-right flex-1">
+                                <h4 className="font-bold text-sm">المدير العام (Admin)</h4>
+                                <p className={`text-[10px] font-medium mt-0.5 ${activeChatId === 'admin' ? 'text-slate-300' : 'text-gray-400'}`}>الإدارة العليا</p>
+                            </div>
                         </button>
                     )}
 
@@ -240,7 +263,10 @@ export default function StaffMessages({ employee }: Props) {
                     {contacts.length === 0 ? (
                         <p className="text-center text-xs text-gray-400 py-4">جاري التحميل...</p>
                     ) : (
-                        contacts.map(contact => {
+                        contacts
+                        // ✅ استبعاد المدير من التكرار إذا كان مسجلاً كجهة اتصال عادية (لأننا أضفناه بشكل منفصل بالأعلى)
+                        .filter(c => c.employee_id !== 'admin')
+                        .map(contact => {
                             const unread = getUnreadCount(contact.employee_id);
                             const isActive = activeChatId === contact.employee_id;
                             // تمييز المسؤولين للموظف العادي
@@ -279,7 +305,7 @@ export default function StaffMessages({ employee }: Props) {
                     <>
                         <div className="p-4 bg-white border-b border-gray-100 flex items-center gap-3 shrink-0 shadow-sm z-10">
                             <button onClick={() => setActiveChatId(null)} className="md:hidden p-2 bg-gray-50 rounded-full text-gray-600 hover:bg-gray-200"><ArrowRight className="w-5 h-5"/></button>
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${activeChatId === 'general' ? 'bg-emerald-100 text-emerald-600' : activeChatId === 'group' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'}`}>
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${activeChatId === 'general' ? 'bg-emerald-100 text-emerald-600' : activeChatId === 'group' ? 'bg-indigo-100 text-indigo-600' : activeChatId === 'admin' ? 'bg-slate-800 text-white' : 'bg-blue-100 text-blue-600'}`}>
                                 {(activeChatId === 'group' || activeChatId === 'general') ? <Users className="w-5 h-5"/> : <User className="w-5 h-5"/>}
                             </div>
                             <div><h4 className="font-black text-gray-800 text-base">{activeContactName}</h4></div>
