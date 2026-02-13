@@ -19,18 +19,35 @@ export default function GamificationManager() {
     const [editingRewardId, setEditingRewardId] = useState<string | null>(null);
 
     const [newQuestion, setNewQuestion] = useState({
-        question_text: '', options: ['', '', '', ''], correct_answer: '', specialty: 'all', points: 10
+        question_text: '', options: ['', '', '', ''], correct_answer: '', 
+        specialties: ['all'], // ✅ تم التعديل لدعم الاختيار المتعدد
+        points: 10
     });
 
+    // ✅ تحديث المتغيرات لتتطابق مع أسماء الأعمدة في قاعدة البيانات (stock, cost)
     const [newReward, setNewReward] = useState({
-        title: '', quantity: 10, points_cost: 100, discount_points: '', discount_end_date: '', image_url: ''
+        title: '', stock: 10, cost: 100, discount_points: '', discount_end_date: '', image_url: ''
     });
 
     const [newPromo, setNewPromo] = useState({
         code: '', discount_value: 50, valid_until: ''
     });
 
-    // 1. جلب طلبات الجوائز (طريقة يدوية تتخطى أخطاء العلاقات)
+    // --- Queries ---
+
+    // 1. جلب التخصصات المتاحة ديناميكياً من الموظفين
+    const { data: specialties = [] } = useQuery({
+        queryKey: ['employee_specialties'],
+        queryFn: async () => {
+            const { data } = await supabase.from('employees').select('specialty');
+            if (!data) return [];
+            // استخراج التخصصات الفريدة فقط
+            const unique = [...new Set(data.map(e => e.specialty))].filter(Boolean);
+            return unique as string[];
+        }
+    });
+
+    // 2. جلب طلبات الجوائز 
     const { data: pendingRequests = [], isLoading: loadingRequests } = useQuery({
         queryKey: ['admin_pending_rewards'],
         queryFn: async () => {
@@ -60,7 +77,7 @@ export default function GamificationManager() {
         }
     });
 
-    // 2. جلب الجوائز المتاحة
+    // 3. جلب الجوائز المتاحة
     const { data: rewardsCatalog = [] } = useQuery({
         queryKey: ['admin_rewards_catalog'],
         queryFn: async () => {
@@ -69,7 +86,7 @@ export default function GamificationManager() {
         }
     });
 
-    // 3. جلب أكواد الخصم
+    // 4. جلب أكواد الخصم
     const { data: promoCodes = [] } = useQuery({
         queryKey: ['admin_promo_codes'],
         queryFn: async () => {
@@ -104,6 +121,7 @@ export default function GamificationManager() {
 
     // --- Mutations ---
 
+    // معالجة وتسليم الطلبات (تم إضافة إشعار التسليم)
     const handleRequestMutation = useMutation({
         mutationFn: async ({ id, status, empId, cost, rewardName }: { id: string, status: 'approved' | 'rejected', empId: string, cost: number, rewardName: string }) => {
             const { error } = await supabase.from('rewards_redemptions').update({ status }).eq('id', id);
@@ -111,33 +129,40 @@ export default function GamificationManager() {
 
             let notificationMsg = status === 'rejected' 
                 ? `عذراً، تم رفض طلبك للحصول على "${rewardName}". تمت إعادة ${cost} نقطة لرصيدك.`
-                : `تهانينا! 🎉 تم الموافقة على طلبك للحصول على "${rewardName}". يرجى التوجه للإدارة للاستلام.`;
+                : `تهانينا! 🎉 تم تسليم طلبك للحصول على "${rewardName}" بنجاح. نتمنى لك يوماً سعيداً!`;
 
             if (status === 'rejected') {
                 await supabase.rpc('increment_points', { emp_id: empId, amount: cost });
                 await supabase.from('points_ledger').insert({ employee_id: empId, points: cost, reason: `استرداد نقاط (رفض طلب ${rewardName})` });
             }
 
+            // ✅ إرسال إشعار في جميع الحالات (تسليم أو رفض)
             await supabase.from('notifications').insert({
-                user_id: empId, title: status === 'approved' ? '✅ طلب جائزة مقبول' : '❌ طلب جائزة مرفوض',
-                message: notificationMsg, type: 'reward_update', is_read: false
+                user_id: empId, 
+                title: status === 'approved' ? '✅ تم تسليم الجائزة' : '❌ طلب جائزة مرفوض',
+                message: notificationMsg, 
+                type: 'reward_update', 
+                is_read: false
             });
         },
         onSuccess: (_, variables) => {
-            toast.success(variables.status === 'approved' ? 'تمت الموافقة وتم إرسال تنبيه' : 'تم الرفض واسترجاع النقاط');
+            toast.success(variables.status === 'approved' ? 'تمت الموافقة وتم إرسال تنبيه للموظف' : 'تم الرفض واسترجاع النقاط');
             queryClient.invalidateQueries({ queryKey: ['admin_pending_rewards'] });
         }
     });
 
+    // حفظ/تعديل جائزة في المتجر
     const addRewardMutation = useMutation({
         mutationFn: async () => {
-            if (!newReward.title || newReward.points_cost <= 0) throw new Error("أدخل البيانات الأساسية بشكل صحيح");
+            if (!newReward.title || newReward.cost <= 0) throw new Error("أدخل البيانات الأساسية بشكل صحيح");
             
             const hasDiscount = newReward.discount_points && newReward.discount_end_date;
+            
+            // ✅ مطابقة الحمولة مع أعمدة قاعدة البيانات (stock و cost)
             const payload = {
                 title: newReward.title,
-                quantity: newReward.quantity,
-                points_cost: newReward.points_cost,
+                stock: newReward.stock,
+                cost: newReward.cost,
                 discount_points: hasDiscount ? Number(newReward.discount_points) : null,
                 discount_end_date: hasDiscount ? newReward.discount_end_date : null,
                 image_url: newReward.image_url || null,
@@ -162,7 +187,7 @@ export default function GamificationManager() {
         },
         onSuccess: () => {
             toast.success(editingRewardId ? 'تم تحديث الجائزة بنجاح' : 'تمت إضافة الجائزة للمتجر');
-            setNewReward({ title: '', quantity: 10, points_cost: 100, discount_points: '', discount_end_date: '', image_url: '' });
+            setNewReward({ title: '', stock: 10, cost: 100, discount_points: '', discount_end_date: '', image_url: '' });
             setEditingRewardId(null);
             queryClient.invalidateQueries({ queryKey: ['admin_rewards_catalog'] });
         },
@@ -185,12 +210,18 @@ export default function GamificationManager() {
 
     const addQuestionMutation = useMutation({
         mutationFn: async () => {
-            if (!newQuestion.question_text || !newQuestion.correct_answer) throw new Error("أكمل البيانات");
+            if (!newQuestion.question_text || !newQuestion.correct_answer || newQuestion.specialties.length === 0) {
+                throw new Error("أكمل البيانات وتأكد من اختيار تخصص واحد على الأقل");
+            }
+
+            // دمج التخصصات كنص مفصول بفواصل لتخزينه في عمود الـ DB
+            const specialtyString = newQuestion.specialties.join(',');
+
             const payload = {
                 question_text: newQuestion.question_text,
                 options: JSON.stringify(newQuestion.options),
                 correct_answer: newQuestion.correct_answer,
-                specialty: newQuestion.specialty,
+                specialty: specialtyString,
                 points: newQuestion.points
             };
             const { error } = await supabase.from('quiz_questions').insert([payload]);
@@ -198,29 +229,25 @@ export default function GamificationManager() {
         },
         onSuccess: () => {
             toast.success('تم إضافة السؤال بنك الأسئلة');
-            setNewQuestion({ question_text: '', options: ['', '', '', ''], correct_answer: '', specialty: 'all', points: 10 });
+            setNewQuestion({ question_text: '', options: ['', '', '', ''], correct_answer: '', specialties: ['all'], points: 10 });
         },
         onError: (err: any) => toast.error(err.message)
     });
 
-    // --- فحص أعياد الميلاد باستخدام الرقم القومي ---
+    // --- فحص أعياد الميلاد ---
     const checkBirthdays = async () => {
         const loadingToast = toast.loading('جاري فحص أعياد الميلاد بالرقم القومي...');
         try {
-            // بافتراض أن عمود الرقم القومي اسمه national_id (إذا كان مختلفاً قم بتعديل الكلمة)
             const { data: employees, error } = await supabase.from('employees').select('employee_id, name, national_id');
             if (error) throw error;
 
             const today = new Date();
-            // تجهيز اليوم والشهر بصيغة من خانتين (مثال: شهر 4 يصبح '04')
             const currentMonth = String(today.getMonth() + 1).padStart(2, '0');
             const currentDay = String(today.getDate()).padStart(2, '0');
 
             const birthdayEmployees = employees?.filter(emp => {
                 if (!emp.national_id || emp.national_id.length !== 14) return false;
                 
-                // الرقم القومي المصري: الرقم 3 و 4 هما الشهر، والرقم 5 و 6 هما اليوم
-                // الفهرسة (Index) تبدأ من صفر (أي نستخرج من الفهرس 3 إلى 5 للشهر، ومن 5 إلى 7 لليوم)
                 const birthMonth = emp.national_id.substring(3, 5);
                 const birthDay = emp.national_id.substring(5, 7);
 
@@ -232,7 +259,6 @@ export default function GamificationManager() {
                 return;
             }
 
-            // توزيع الجوائز
             for (const emp of birthdayEmployees) {
                 await supabase.rpc('increment_points', { emp_id: emp.employee_id, amount: 50 });
                 await supabase.from('points_ledger').insert({ employee_id: emp.employee_id, points: 50, reason: 'هدية عيد ميلاد 🎂' });
@@ -251,7 +277,7 @@ export default function GamificationManager() {
     return (
         <div className="space-y-6 animate-in fade-in">
             
-            {/* Header Stats & Actions */}
+            {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-3xl shadow-sm border gap-4">
                 <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
                     <Trophy className="w-6 h-6 text-yellow-500"/> إدارة التحفيز والجوائز
@@ -335,15 +361,16 @@ export default function GamificationManager() {
                                 {editingRewardId ? 'تعديل الجائزة' : 'إضافة للمتجر'}
                             </h3>
                             {editingRewardId && (
-                                <button onClick={() => {setEditingRewardId(null); setNewReward({title: '', quantity: 10, points_cost: 100, discount_points: '', discount_end_date: '', image_url: ''})}} className="text-xs text-red-500 font-bold hover:underline">إلغاء التعديل</button>
+                                <button onClick={() => {setEditingRewardId(null); setNewReward({title: '', stock: 10, cost: 100, discount_points: '', discount_end_date: '', image_url: ''})}} className="text-xs text-red-500 font-bold hover:underline">إلغاء التعديل</button>
                             )}
                         </div>
 
                         <div className="space-y-4">
                             <Input label="اسم الجائزة *" value={newReward.title} onChange={v => setNewReward({...newReward, title: v})} placeholder="مثال: إذن انصراف مبكر" />
                             <div className="grid grid-cols-2 gap-3">
-                                <Input type="number" label="الكمية *" value={newReward.quantity} onChange={v => setNewReward({...newReward, quantity: Number(v)})} />
-                                <Input type="number" label="النقاط المطلوبة *" value={newReward.points_cost} onChange={v => setNewReward({...newReward, points_cost: Number(v)})} />
+                                {/* ✅ تم تعديل المتغيرات هنا للتعامل مع stock و cost */}
+                                <Input type="number" label="الكمية *" value={newReward.stock} onChange={v => setNewReward({...newReward, stock: Number(v)})} />
+                                <Input type="number" label="النقاط المطلوبة *" value={newReward.cost} onChange={v => setNewReward({...newReward, cost: Number(v)})} />
                             </div>
                             
                             <div className="space-y-2">
@@ -380,17 +407,30 @@ export default function GamificationManager() {
                                 <div key={item.id} className="border rounded-2xl flex flex-col relative overflow-hidden group bg-white">
                                     <div className="w-full h-32 bg-gray-100 flex items-center justify-center border-b relative">
                                         {item.image_url ? <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" /> : <Gift className="w-10 h-10 text-gray-300" />}
+                                        {item.discount_points && new Date(item.discount_end_date) >= new Date() && (
+                                            <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-sm z-10">
+                                                عرض خاص!
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="p-4 flex-1 flex flex-col justify-between">
                                         <div>
                                             <h4 className="font-bold text-gray-800 text-lg mb-1">{item.title}</h4>
-                                            <p className="text-xs text-gray-500">متبقي: <span className="font-bold">{item.quantity}</span> | {item.points_cost} نقطة</p>
+                                            <p className="text-xs text-gray-500">متبقي: <span className="font-bold">{item.stock}</span> | {item.cost} نقطة</p>
                                         </div>
                                         <div className="flex items-center justify-end mt-4 gap-2 border-t pt-3">
                                             <button 
                                                 onClick={() => {
                                                     setEditingRewardId(item.id);
-                                                    setNewReward({ title: item.title, quantity: item.quantity, points_cost: item.points_cost, discount_points: item.discount_points || '', discount_end_date: item.discount_end_date || '', image_url: item.image_url || '' });
+                                                    // ✅ ربط البيانات بالتعديل مع مراعاة الحقول (stock و cost)
+                                                    setNewReward({ 
+                                                        title: item.title, 
+                                                        stock: item.stock || 0, 
+                                                        cost: item.cost || 0, 
+                                                        discount_points: item.discount_points || '', 
+                                                        discount_end_date: item.discount_end_date || '', 
+                                                        image_url: item.image_url || '' 
+                                                    });
                                                 }}
                                                 className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-1"
                                             >
@@ -516,18 +556,45 @@ export default function GamificationManager() {
                             />
                             
                             <div className="grid grid-cols-2 gap-4">
-                                <Select 
-                                    label="التخصص المستهدف" 
-                                    options={['all', 'أسنان', 'تمريض', 'صيدلة', 'إداري']} 
-                                    value={newQuestion.specialty} 
-                                    onChange={v => setNewQuestion({...newQuestion, specialty: v})} 
-                                />
-                                <Input 
-                                    type="number" 
-                                    label="النقاط" 
-                                    value={newQuestion.points} 
-                                    onChange={v => setNewQuestion({...newQuestion, points: Number(v)})} 
-                                />
+                                {/* ✅ اختيار التخصصات المتعددة */}
+                                <div className="space-y-2 col-span-2">
+                                    <label className="block text-xs font-bold text-gray-500">التخصص المستهدف (يمكنك اختيار أكثر من تخصص)</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button 
+                                            onClick={() => setNewQuestion({...newQuestion, specialties: ['all']})}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${newQuestion.specialties.includes('all') ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                        >
+                                            الجميع
+                                        </button>
+                                        {specialties.map(spec => (
+                                            <button 
+                                                key={spec}
+                                                onClick={() => {
+                                                    let newSpecs = newQuestion.specialties.filter(s => s !== 'all');
+                                                    if (newSpecs.includes(spec)) {
+                                                        newSpecs = newSpecs.filter(s => s !== spec);
+                                                        if (newSpecs.length === 0) newSpecs = ['all'];
+                                                    } else {
+                                                        newSpecs.push(spec);
+                                                    }
+                                                    setNewQuestion({...newQuestion, specialties: newSpecs});
+                                                }}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${newQuestion.specialties.includes(spec) ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                            >
+                                                {spec}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="col-span-2 md:col-span-1">
+                                    <Input 
+                                        type="number" 
+                                        label="النقاط الممنوحة" 
+                                        value={newQuestion.points} 
+                                        onChange={v => setNewQuestion({...newQuestion, points: Number(v)})} 
+                                    />
+                                </div>
                             </div>
 
                             <button 
