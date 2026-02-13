@@ -4,7 +4,7 @@ import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
     Gift, Clock, Award, Coffee, ShoppingBag, 
-    Loader2, Tag, Image as ImageIcon, CheckCircle, XCircle, AlertCircle
+    Loader2, Tag, Image as ImageIcon, CheckCircle, XCircle, AlertCircle, History
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,14 +25,20 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
         }
     });
 
-    // 2. جلب طلباتي السابقة
+    // 2. جلب طلباتي السابقة (تم إصلاح خطأ العلاقات هنا ✅)
     const { data: myRedemptions = [] } = useQuery({
         queryKey: ['my_redemptions', employee.employee_id],
         queryFn: async () => {
-            const { data } = await supabase.from('rewards_redemptions')
-                .select('*, rewards_catalog(title)')
+            const { data, error } = await supabase.from('rewards_redemptions')
+                // استخدام !reward_id لتحديد العلاقة الصحيحة وتفادي الخطأ
+                .select('*, reward:rewards_catalog!reward_id(title)')
                 .eq('employee_id', employee.employee_id)
                 .order('created_at', { ascending: false });
+            
+            if (error) {
+                console.error("خطأ في جلب طلباتي:", error);
+                return [];
+            }
             return data || [];
         }
     });
@@ -76,7 +82,7 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                 reason: `طلب جائزة: ${reward.title}`
             });
 
-            // هـ) خصم 1 من الكمية المتاحة في المتجر (اختياري لضمان عدم تجاوز المخزون)
+            // هـ) خصم 1 من الكمية المتاحة في المتجر
             await supabase.from('rewards_catalog').update({ stock: reward.stock - 1 }).eq('id', reward.id);
         },
         onSuccess: () => {
@@ -207,7 +213,8 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                                      <Clock className="w-5 h-5"/>}
                                 </div>
                                 <div>
-                                    <h4 className="font-bold text-gray-800 text-sm">{item.rewards_catalog?.title || 'جائزة'}</h4>
+                                    {/* ✅ تم تحديث طريقة عرض الاسم لتتطابق مع الاستعلام الجديد */}
+                                    <h4 className="font-bold text-gray-800 text-sm">{item.reward?.title || 'جائزة'}</h4>
                                     <p className="text-[10px] text-gray-400 mt-0.5">{new Date(item.created_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
                                 </div>
                             </div>
