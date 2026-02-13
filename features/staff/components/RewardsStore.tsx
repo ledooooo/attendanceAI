@@ -25,13 +25,13 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
         }
     });
 
-    // 2. جلب طلباتي السابقة (تم إصلاح خطأ العلاقات هنا ✅)
+    // 2. جلب طلباتي السابقة (بالطريقة اليدوية المضمونة لتخطي أخطاء العلاقات ✅)
     const { data: myRedemptions = [] } = useQuery({
         queryKey: ['my_redemptions', employee.employee_id],
         queryFn: async () => {
-            const { data, error } = await supabase.from('rewards_redemptions')
-                // استخدام !reward_id لتحديد العلاقة الصحيحة وتفادي الخطأ
-                .select('*, reward:rewards_catalog!reward_id(title)')
+            // أ) جلب الطلبات الخاصة بالموظف فقط
+            const { data: requests, error } = await supabase.from('rewards_redemptions')
+                .select('*')
                 .eq('employee_id', employee.employee_id)
                 .order('created_at', { ascending: false });
             
@@ -39,7 +39,17 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                 console.error("خطأ في جلب طلباتي:", error);
                 return [];
             }
-            return data || [];
+            if (!requests || requests.length === 0) return [];
+
+            // ب) جلب أسماء الجوائز يدوياً
+            const rewardIds = [...new Set(requests.map(r => r.reward_id))].filter(Boolean);
+            const { data: rews } = await supabase.from('rewards_catalog').select('id, title').in('id', rewardIds);
+
+            // ج) دمج البيانات
+            return requests.map(req => ({
+                ...req,
+                reward_title: rews?.find(r => r.id === req.reward_id)?.title || 'جائزة'
+            }));
         }
     });
 
@@ -213,8 +223,8 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                                      <Clock className="w-5 h-5"/>}
                                 </div>
                                 <div>
-                                    {/* ✅ تم تحديث طريقة عرض الاسم لتتطابق مع الاستعلام الجديد */}
-                                    <h4 className="font-bold text-gray-800 text-sm">{item.reward?.title || 'جائزة'}</h4>
+                                    {/* ✅ تم تحديث متغير عرض الاسم ليكون reward_title */}
+                                    <h4 className="font-bold text-gray-800 text-sm">{item.reward_title}</h4>
                                     <p className="text-[10px] text-gray-400 mt-0.5">{new Date(item.created_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
                                 </div>
                             </div>
