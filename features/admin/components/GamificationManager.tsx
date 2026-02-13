@@ -30,11 +30,10 @@ export default function GamificationManager() {
         code: '', discount_value: 50, valid_until: ''
     });
 
-    // 1. جلب طلبات الجوائز (طريقة يدوية مضمونه 100% تتخطى أخطاء العلاقات)
+    // 1. جلب طلبات الجوائز (طريقة يدوية تتخطى أخطاء العلاقات)
     const { data: pendingRequests = [], isLoading: loadingRequests } = useQuery({
         queryKey: ['admin_pending_rewards'],
         queryFn: async () => {
-            // أ. جلب الطلبات المعلقة
             const { data: requests, error } = await supabase
                 .from('rewards_redemptions')
                 .select('*')
@@ -47,14 +46,12 @@ export default function GamificationManager() {
             }
             if (!requests || requests.length === 0) return [];
 
-            // ب. جلب أسماء الموظفين والجوائز يدوياً لضمان عدم حدوث خطأ العلاقات
             const empIds = [...new Set(requests.map(r => r.employee_id))].filter(Boolean);
             const rewardIds = [...new Set(requests.map(r => r.reward_id))].filter(Boolean);
 
             const { data: emps } = await supabase.from('employees').select('employee_id, name').in('employee_id', empIds);
             const { data: rews } = await supabase.from('rewards_catalog').select('id, title').in('id', rewardIds);
 
-            // ج. دمج البيانات
             return requests.map(req => ({
                 ...req,
                 emp_name: emps?.find(e => e.employee_id === req.employee_id)?.name || 'موظف غير معروف',
@@ -92,7 +89,6 @@ export default function GamificationManager() {
         const filePath = `rewards/${fileName}`;
 
         try {
-            // ملاحظة: تأكد من إنشاء Storage Bucket باسم 'rewards' في سوبابيز
             const { error: uploadError } = await supabase.storage.from('rewards').upload(filePath, file);
             if (uploadError) throw uploadError;
 
@@ -148,7 +144,6 @@ export default function GamificationManager() {
                 is_active: true
             };
 
-            // إذا كان وضع التعديل مفعلاً
             if (editingRewardId) {
                 const { error } = await supabase.from('rewards_catalog').update(payload).eq('id', editingRewardId);
                 if (error) throw error;
@@ -174,18 +169,62 @@ export default function GamificationManager() {
         onError: (err: any) => toast.error(err.message)
     });
 
+    const addPromoMutation = useMutation({
+        mutationFn: async () => {
+            if (!newPromo.code || newPromo.discount_value <= 0 || !newPromo.valid_until) throw new Error("أكمل بيانات كود الخصم");
+            const { error } = await supabase.from('promo_codes').insert([newPromo]);
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            toast.success('تم إنشاء كود الخصم بنجاح');
+            setNewPromo({ code: '', discount_value: 50, valid_until: '' });
+            queryClient.invalidateQueries({ queryKey: ['admin_promo_codes'] });
+        },
+        onError: () => toast.error('هذا الكود موجود مسبقاً أو حدث خطأ')
+    });
+
+    const addQuestionMutation = useMutation({
+        mutationFn: async () => {
+            if (!newQuestion.question_text || !newQuestion.correct_answer) throw new Error("أكمل البيانات");
+            const payload = {
+                question_text: newQuestion.question_text,
+                options: JSON.stringify(newQuestion.options),
+                correct_answer: newQuestion.correct_answer,
+                specialty: newQuestion.specialty,
+                points: newQuestion.points
+            };
+            const { error } = await supabase.from('quiz_questions').insert([payload]);
+            if (error) throw error;
+        },
+        onSuccess: () => {
+            toast.success('تم إضافة السؤال بنك الأسئلة');
+            setNewQuestion({ question_text: '', options: ['', '', '', ''], correct_answer: '', specialty: 'all', points: 10 });
+        },
+        onError: (err: any) => toast.error(err.message)
+    });
+
+    // --- فحص أعياد الميلاد باستخدام الرقم القومي ---
     const checkBirthdays = async () => {
-        const loadingToast = toast.loading('جاري الفحص المباشر لأعياد الميلاد...');
+        const loadingToast = toast.loading('جاري فحص أعياد الميلاد بالرقم القومي...');
         try {
-            // جلب الموظفين وتاريخ ميلادهم (تأكد أن اسم العمود في جدولك هو birth_date أو dob)
-            const { data: employees, error } = await supabase.from('employees').select('employee_id, name, birth_date');
+            // بافتراض أن عمود الرقم القومي اسمه national_id (إذا كان مختلفاً قم بتعديل الكلمة)
+            const { data: employees, error } = await supabase.from('employees').select('employee_id, name, national_id');
             if (error) throw error;
 
             const today = new Date();
+            // تجهيز اليوم والشهر بصيغة من خانتين (مثال: شهر 4 يصبح '04')
+            const currentMonth = String(today.getMonth() + 1).padStart(2, '0');
+            const currentDay = String(today.getDate()).padStart(2, '0');
+
             const birthdayEmployees = employees?.filter(emp => {
-                if (!emp.birth_date) return false;
-                const bDate = new Date(emp.birth_date);
-                return bDate.getDate() === today.getDate() && bDate.getMonth() === today.getMonth();
+                if (!emp.national_id || emp.national_id.length !== 14) return false;
+                
+                // الرقم القومي المصري: الرقم 3 و 4 هما الشهر، والرقم 5 و 6 هما اليوم
+                // الفهرسة (Index) تبدأ من صفر (أي نستخرج من الفهرس 3 إلى 5 للشهر، ومن 5 إلى 7 لليوم)
+                const birthMonth = emp.national_id.substring(3, 5);
+                const birthDay = emp.national_id.substring(5, 7);
+
+                return birthMonth === currentMonth && birthDay === currentDay;
             }) || [];
 
             if (birthdayEmployees.length === 0) {
@@ -235,6 +274,9 @@ export default function GamificationManager() {
                 </button>
                 <button onClick={() => setActiveTab('promo')} className={`px-5 py-3 rounded-xl font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'promo' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-50 border'}`}>
                     <Ticket className="w-4 h-4"/> أكواد الخصم
+                </button>
+                <button onClick={() => setActiveTab('questions')} className={`px-5 py-3 rounded-xl font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'questions' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-50 border'}`}>
+                    <HelpCircle className="w-4 h-4"/> بنك الأسئلة
                 </button>
             </div>
 
@@ -298,13 +340,12 @@ export default function GamificationManager() {
                         </div>
 
                         <div className="space-y-4">
-                            <Input label="اسم الجائزة *" value={newReward.title} onChange={v => setNewReward({...newReward, title: v})} />
+                            <Input label="اسم الجائزة *" value={newReward.title} onChange={v => setNewReward({...newReward, title: v})} placeholder="مثال: إذن انصراف مبكر" />
                             <div className="grid grid-cols-2 gap-3">
                                 <Input type="number" label="الكمية *" value={newReward.quantity} onChange={v => setNewReward({...newReward, quantity: Number(v)})} />
                                 <Input type="number" label="النقاط المطلوبة *" value={newReward.points_cost} onChange={v => setNewReward({...newReward, points_cost: Number(v)})} />
                             </div>
                             
-                            {/* رابط/رفع الصورة */}
                             <div className="space-y-2">
                                 <label className="block text-xs font-bold text-gray-500 flex items-center justify-between">
                                     <span className="flex items-center gap-1"><ImageIcon className="w-4 h-4"/> رابط الصورة</span>
@@ -365,6 +406,138 @@ export default function GamificationManager() {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 3. Content: Promo Codes */}
+            {activeTab === 'promo' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="bg-white p-6 rounded-[30px] border shadow-sm h-fit">
+                        <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2 border-b pb-4">
+                            <Ticket className="w-5 h-5 text-teal-600"/> إنشاء كود خصم
+                        </h3>
+                        <div className="space-y-4">
+                            <Input label="كود الخصم (انجليزي/أرقام) *" value={newPromo.code} onChange={v => setNewPromo({...newPromo, code: v.toUpperCase()})} placeholder="مثال: WEEKEND50" />
+                            <Input type="number" label="قيمة الخصم (بالنقاط) *" value={newPromo.discount_value} onChange={v => setNewPromo({...newPromo, discount_value: Number(v)})} />
+                            <Input type="date" label="صالح حتى تاريخ *" value={newPromo.valid_until} onChange={v => setNewPromo({...newPromo, valid_until: v})} />
+                            
+                            <button 
+                                onClick={() => addPromoMutation.mutate()}
+                                disabled={addPromoMutation.isPending}
+                                className="w-full bg-teal-600 text-white py-3 rounded-xl font-black hover:bg-teal-700 shadow-md flex justify-center items-center gap-2 mt-4"
+                            >
+                                {addPromoMutation.isPending ? <Loader2 className="animate-spin w-5 h-5"/> : <Save className="w-5 h-5"/>} تفعيل الكود
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="lg:col-span-2 bg-white rounded-[30px] border shadow-sm p-6">
+                        <h3 className="text-lg font-black text-gray-800 mb-4 border-b pb-4">الأكواد الفعالة</h3>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-right text-sm">
+                                <thead className="bg-gray-50 text-gray-600 font-bold">
+                                    <tr>
+                                        <th className="p-3">الكود</th>
+                                        <th className="p-3">يخصم</th>
+                                        <th className="p-3">تاريخ الانتهاء</th>
+                                        <th className="p-3 text-center">حذف</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {promoCodes.map((promo: any) => (
+                                        <tr key={promo.id}>
+                                            <td className="p-3 font-mono font-bold text-teal-700 bg-teal-50 rounded-r-lg border-y border-r border-teal-100">{promo.code}</td>
+                                            <td className="p-3 font-bold">{promo.discount_value} نقطة</td>
+                                            <td className="p-3 text-gray-500">{new Date(promo.valid_until).toLocaleDateString('ar-EG')}</td>
+                                            <td className="p-3 text-center">
+                                                <button 
+                                                    onClick={async () => {
+                                                        if(confirm('حذف هذا الكود؟')) {
+                                                            await supabase.from('promo_codes').delete().eq('id', promo.id);
+                                                            queryClient.invalidateQueries({ queryKey: ['admin_promo_codes'] });
+                                                        }
+                                                    }}
+                                                    className="text-gray-400 hover:text-red-500"
+                                                >
+                                                    <Trash2 className="w-4 h-4 mx-auto"/>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 4. Content: Add Question (بنك الأسئلة) */}
+            {activeTab === 'questions' && (
+                <div className="bg-white p-6 rounded-[30px] border shadow-sm">
+                    <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2 border-b pb-4">
+                        <PlusCircle className="w-5 h-5 text-blue-600"/> إضافة سؤال جديد للمسابقة اليومية
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                            <Input 
+                                label="نص السؤال" 
+                                value={newQuestion.question_text} 
+                                onChange={v => setNewQuestion({...newQuestion, question_text: v})} 
+                                placeholder="مثال: كم عدد..."
+                            />
+                            
+                            <div className="grid grid-cols-2 gap-3">
+                                {[0, 1, 2, 3].map((idx) => (
+                                    <div key={idx}>
+                                        <label className="block text-xs font-bold text-gray-500 mb-1">الخيار {idx + 1}</label>
+                                        <input 
+                                            className="w-full p-3 rounded-xl border bg-gray-50 focus:border-blue-500 outline-none text-sm"
+                                            value={newQuestion.options[idx]}
+                                            onChange={(e) => {
+                                                const newOptions = [...newQuestion.options];
+                                                newOptions[idx] = e.target.value;
+                                                setNewQuestion({...newQuestion, options: newOptions});
+                                            }}
+                                            placeholder={`خيار ${idx + 1}`}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <Input 
+                                label="الإجابة الصحيحة (يجب أن تطابق أحد الخيارات)" 
+                                value={newQuestion.correct_answer} 
+                                onChange={v => setNewQuestion({...newQuestion, correct_answer: v})} 
+                            />
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                                <Select 
+                                    label="التخصص المستهدف" 
+                                    options={['all', 'أسنان', 'تمريض', 'صيدلة', 'إداري']} 
+                                    value={newQuestion.specialty} 
+                                    onChange={v => setNewQuestion({...newQuestion, specialty: v})} 
+                                />
+                                <Input 
+                                    type="number" 
+                                    label="النقاط" 
+                                    value={newQuestion.points} 
+                                    onChange={v => setNewQuestion({...newQuestion, points: Number(v)})} 
+                                />
+                            </div>
+
+                            <button 
+                                onClick={() => addQuestionMutation.mutate()}
+                                disabled={addQuestionMutation.isPending}
+                                className="w-full mt-6 bg-blue-600 text-white py-3 rounded-xl font-black hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
+                            >
+                                {addQuestionMutation.isPending ? <Loader2 className="animate-spin w-5 h-5"/> : <Save className="w-5 h-5"/>}
+                                حفظ السؤال
+                            </button>
                         </div>
                     </div>
                 </div>
