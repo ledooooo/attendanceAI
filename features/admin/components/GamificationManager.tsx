@@ -26,19 +26,18 @@ export default function GamificationManager() {
         code: '', discount_value: 50, valid_until: ''
     });
 
-    // 1. جلب طلبات الجوائز المعلقة (تم الإصلاح وتوسيع نطاق البحث)
+        // 1. جلب طلبات الجوائز المعلقة
     const { data: pendingRequests = [], isLoading: loadingRequests } = useQuery({
         queryKey: ['admin_pending_rewards'],
         queryFn: async () => {
             const { data, error } = await supabase
                 .from('rewards_redemptions')
-                // استخدام علاقات مرنة لتجنب الأخطاء
+                // ✅ أضفنا !employee_id و !reward_id لتحديد العلاقة المطلوبة بدقة وتجاهل أي علاقات مكررة
                 .select(`
                     *,
-                    employee:employees(name),
-                    reward:rewards_catalog(title)
+                    employee:employees!employee_id(name),
+                    reward:rewards_catalog!reward_id(title)
                 `)
-                // توسيع البحث ليشمل العربي والانجليزي
                 .in('status', ['pending', 'قيد الانتظار', 'معلق', 'new'])
                 .order('created_at', { ascending: false });
             
@@ -50,6 +49,9 @@ export default function GamificationManager() {
             return data || [];
         }
     });
+
+
+
 
     // 2. جلب الجوائز المتاحة (المتجر)
     const { data: rewardsCatalog = [] } = useQuery({
