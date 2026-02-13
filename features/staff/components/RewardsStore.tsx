@@ -4,15 +4,15 @@ import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
     Gift, Clock, Award, Coffee, ShoppingBag, 
-    Loader2, Tag, Image as ImageIcon, CheckCircle, XCircle, AlertCircle, History
+    Loader2, Tag, Image as ImageIcon, CheckCircle, XCircle, AlertCircle, History, Ticket
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function RewardsStore({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
-    const [filter, setFilter] = useState<'all' | 'my'>('all');
+    const [filter, setFilter] = useState<'all' | 'my' | 'promo'>('all');
 
-    // 1. جلب الجوائز
+    // 1. جلب الجوائز المتاحة
     const { data: rewards = [], isLoading } = useQuery({
         queryKey: ['rewards_catalog'],
         queryFn: async () => {
@@ -25,14 +25,29 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
         }
     });
 
-    // 2. جلب طلباتي السابقة (بالطريقة اليدوية المضمونة لتخطي أخطاء العلاقات ✅)
-    const { data: myRedemptions = [] } = useQuery({
-        queryKey: ['my_redemptions', employee.employee_id],
+    // 2. جلب الكوبونات الفعالة (الجديد ✅)
+    const { data: promoCodes = [], isLoading: isLoadingPromo } = useQuery({
+        queryKey: ['active_promo_codes'],
         queryFn: async () => {
-            // أ) جلب الطلبات الخاصة بالموظف فقط
+            const today = new Date().toISOString().split('T')[0];
+            const { data } = await supabase
+                .from('promo_codes')
+                .select('*')
+                .eq('is_active', true)
+                .gte('valid_until', today) // جلب الكوبونات غير المنتهية فقط
+                .order('discount_value', { ascending: false });
+            return data || [];
+        }
+    });
+
+    // 3. جلب طلباتي السابقة (تم إصلاح المشكلة هنا ✅)
+    const { data: myRedemptions = [], isLoading: loadingRedemptions } = useQuery({
+        queryKey: ['my_redemptions', employee.employee_id, employee.id],
+        queryFn: async () => {
+            // استخدام .or للبحث بالرقم الوظيفي أو المعرف الفريد لتجنب أي فقدان للبيانات
             const { data: requests, error } = await supabase.from('rewards_redemptions')
                 .select('*')
-                .eq('employee_id', employee.employee_id)
+                .or(`employee_id.eq.${employee.employee_id},employee_id.eq.${employee.id}`)
                 .order('created_at', { ascending: false });
             
             if (error) {
@@ -41,11 +56,10 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
             }
             if (!requests || requests.length === 0) return [];
 
-            // ب) جلب أسماء الجوائز يدوياً
+            // جلب أسماء الجوائز يدوياً (لضمان تخطي مشاكل العلاقات)
             const rewardIds = [...new Set(requests.map(r => r.reward_id))].filter(Boolean);
             const { data: rews } = await supabase.from('rewards_catalog').select('id, title').in('id', rewardIds);
 
-            // ج) دمج البيانات
             return requests.map(req => ({
                 ...req,
                 reward_title: rews?.find(r => r.id === req.reward_id)?.title || 'جائزة'
@@ -60,7 +74,7 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
         return { hasDiscount, actualCost };
     };
 
-    // 3. عملية الشراء
+    // 4. عملية الشراء
     const buyMutation = useMutation({
         mutationFn: async (reward: any) => {
             const { actualCost } = getRewardPricing(reward);
@@ -78,7 +92,7 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
 
             // ج) تسجيل عملية الشراء
             const { error: logErr } = await supabase.from('rewards_redemptions').insert({
-                employee_id: employee.employee_id,
+                employee_id: employee.employee_id, // تأكد أن هذا يطابق عمودك في الداتابيز
                 reward_id: reward.id,
                 cost: actualCost,
                 status: 'pending'
@@ -120,15 +134,20 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 border-b border-gray-100 pb-2">
-                <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all ${filter === 'all' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>الجوائز المتاحة</button>
-                <button onClick={() => setFilter('my')} className={`px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all ${filter === 'my' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>طلباتي السابقة</button>
+            <div className="flex gap-2 border-b border-gray-100 pb-2 overflow-x-auto no-scrollbar">
+                <button onClick={() => setFilter('all')} className={`whitespace-nowrap px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all ${filter === 'all' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>الجوائز المتاحة</button>
+                <button onClick={() => setFilter('my')} className={`whitespace-nowrap px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all ${filter === 'my' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>طلباتي السابقة</button>
+                {/* التبويب الجديد ✅ */}
+                <button onClick={() => setFilter('promo')} className={`whitespace-nowrap px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all ${filter === 'promo' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <span className="flex items-center gap-1"><Ticket className="w-4 h-4"/> كوبونات الخصم</span>
+                </button>
             </div>
 
             {/* Content */}
             {filter === 'all' ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
                     {isLoading ? <div className="col-span-full text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600"/></div> : 
+                     rewards.length === 0 ? <div className="col-span-full text-center py-10 text-gray-400">لا توجد جوائز متاحة حالياً</div> :
                      rewards.map((reward: any) => {
                         const { hasDiscount, actualCost } = getRewardPricing(reward);
                         const isOutOfStock = reward.stock <= 0;
@@ -202,9 +221,10 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                         );
                      })}
                 </div>
-            ) : (
+            ) : filter === 'my' ? (
                 <div className="space-y-3">
-                    {myRedemptions.length === 0 ? (
+                    {loadingRedemptions ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600"/></div> : 
+                     myRedemptions.length === 0 ? (
                         <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200">
                             <History className="w-12 h-12 text-gray-200 mx-auto mb-3" />
                             <p className="text-gray-400 font-bold text-sm">لم تقم بأي عمليات شراء بعد</p>
@@ -223,9 +243,8 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                                      <Clock className="w-5 h-5"/>}
                                 </div>
                                 <div>
-                                    {/* ✅ تم تحديث متغير عرض الاسم ليكون reward_title */}
                                     <h4 className="font-bold text-gray-800 text-sm">{item.reward_title}</h4>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">{new Date(item.created_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
+                                    <p className="text-[10px] text-gray-400 mt-0.5">{new Date(item.created_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                                 </div>
                             </div>
                             <div className="text-left flex flex-col items-end gap-1">
@@ -237,6 +256,32 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                                     {item.status === 'approved' ? 'تم التسليم' : item.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
                                 </span>
                                 <p className="text-xs font-black text-gray-900 bg-gray-50 px-2 py-1 rounded-lg border">-{item.cost} نقطة</p>
+                            </div>
+                        </div>
+                    )))}
+                </div>
+            ) : (
+                /* --- التبويب الجديد للكوبونات --- */
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {isLoadingPromo ? <div className="col-span-full text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600"/></div> : 
+                     promoCodes.length === 0 ? (
+                        <div className="col-span-full text-center py-16 bg-white rounded-3xl border border-dashed border-gray-200">
+                            <Ticket className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                            <p className="text-gray-400 font-bold text-sm">لا توجد كوبونات خصم متاحة حالياً</p>
+                        </div>
+                    ) : (
+                     promoCodes.map((promo: any) => (
+                        <div key={promo.id} className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-100 p-5 rounded-3xl flex justify-between items-center shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+                            <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-full border border-teal-100"></div>
+                            <div className="absolute -right-6 top-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-full border border-teal-100"></div>
+                            
+                            <div className="z-10 text-right pr-4">
+                                <h4 className="font-black text-teal-800 text-lg mb-1">{promo.code}</h4>
+                                <p className="text-xs text-teal-600 font-bold">صالح حتى: {new Date(promo.valid_until).toLocaleDateString('ar-EG')}</p>
+                            </div>
+                            <div className="z-10 text-center pl-4 border-r border-teal-200/50">
+                                <span className="block text-2xl font-black text-emerald-600">{promo.discount_value}</span>
+                                <span className="block text-[10px] font-bold text-teal-500">نقطة خصم</span>
                             </div>
                         </div>
                     )))}
