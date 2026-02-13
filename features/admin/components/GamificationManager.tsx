@@ -4,7 +4,7 @@ import { supabase } from '../../../supabaseClient';
 import { 
     Gift, CheckCircle, XCircle, PlusCircle, HelpCircle, 
     Save, Loader2, Cake, Trophy, History, ShoppingBag, 
-    Ticket, BellRing, Tag, Trash2 
+    Ticket, BellRing, Tag, Trash2, Image as ImageIcon
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Input, Select } from '../../../components/ui/FormElements';
@@ -19,27 +19,32 @@ export default function GamificationManager() {
     });
 
     const [newReward, setNewReward] = useState({
-        title: '', quantity: 10, points_cost: 100, discount_points: '', discount_end_date: ''
+        title: '', quantity: 10, points_cost: 100, discount_points: '', discount_end_date: '', image_url: '' // ✅ إضافة رابط الصورة
     });
 
     const [newPromo, setNewPromo] = useState({
         code: '', discount_value: 50, valid_until: ''
     });
 
-    // 1. جلب طلبات الجوائز المعلقة
+    // 1. جلب طلبات الجوائز المعلقة (تم الإصلاح وتوسيع نطاق البحث)
     const { data: pendingRequests = [], isLoading: loadingRequests } = useQuery({
         queryKey: ['admin_pending_rewards'],
         queryFn: async () => {
-            // تأكد أن اسم الجدول في قاعدة بياناتك هو rewards_redemptions (بالجمع)
             const { data, error } = await supabase
                 .from('rewards_redemptions')
-                .select('*, employees(name), rewards_catalog(title)')
-                .eq('status', 'pending')
+                // استخدام علاقات مرنة لتجنب الأخطاء
+                .select(`
+                    *,
+                    employee:employees(name),
+                    reward:rewards_catalog(title)
+                `)
+                // توسيع البحث ليشمل العربي والانجليزي
+                .in('status', ['pending', 'قيد الانتظار', 'معلق', 'new'])
                 .order('created_at', { ascending: false });
             
             if (error) {
                 console.error("Fetch requests error:", error);
-                toast.error('خطأ في جلب الطلبات');
+                toast.error(`خطأ في جلب الطلبات: ${error.message}`);
                 return [];
             }
             return data || [];
@@ -99,7 +104,7 @@ export default function GamificationManager() {
         onError: () => toast.error('حدث خطأ أثناء المعالجة')
     });
 
-    // ب. إضافة جائزة جديدة (مع فحص الخصم وإرسال تنبيه للجميع)
+    // ب. إضافة جائزة جديدة (مع الصورة وفحص الخصم)
     const addRewardMutation = useMutation({
         mutationFn: async () => {
             if (!newReward.title || newReward.points_cost <= 0) throw new Error("أدخل البيانات الأساسية بشكل صحيح");
@@ -112,17 +117,16 @@ export default function GamificationManager() {
                 points_cost: newReward.points_cost,
                 discount_points: hasDiscount ? Number(newReward.discount_points) : null,
                 discount_end_date: hasDiscount ? newReward.discount_end_date : null,
+                image_url: newReward.image_url || null, // ✅ إضافة رابط الصورة
                 is_active: true
             };
 
             const { data, error } = await supabase.from('rewards_catalog').insert([payload]).select();
             if (error) throw error;
 
-            // إذا كان هناك عرض (خصم)، نرسل تنبيه عام (بنظام إرسال لـ all أو حسب إعداداتك)
-            // هنا نفترض أن وضع user_id = 'all' يظهر للجميع، أو يمكنك استدعاء Edge Function
             if (hasDiscount) {
                 await supabase.from('notifications').insert({
-                    user_id: 'all', // أو حسب تصميم قاعدة بياناتك للإشعارات العامة
+                    user_id: 'all',
                     title: '🔥 عرض خاص في متجر الجوائز!',
                     message: `احصل على "${newReward.title}" بـ ${newReward.discount_points} نقطة فقط بدلاً من ${newReward.points_cost}! العرض ساري حتى ${newReward.discount_end_date}`,
                     type: 'system',
@@ -132,7 +136,7 @@ export default function GamificationManager() {
         },
         onSuccess: () => {
             toast.success('تمت إضافة الجائزة للمتجر');
-            setNewReward({ title: '', quantity: 10, points_cost: 100, discount_points: '', discount_end_date: '' });
+            setNewReward({ title: '', quantity: 10, points_cost: 100, discount_points: '', discount_end_date: '', image_url: '' });
             queryClient.invalidateQueries({ queryKey: ['admin_rewards_catalog'] });
         },
         onError: (err: any) => toast.error(err.message)
@@ -254,8 +258,9 @@ export default function GamificationManager() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {pendingRequests.map((req: any) => {
-                                        const empName = req.employees?.name || req.employee?.name || 'غير معروف';
-                                        const rewardTitle = req.rewards_catalog?.title || req.reward?.title || 'جائزة';
+                                        // تحديث طريقة عرض الأسماء لتتوافق مع استعلام Supabase الجديد
+                                        const empName = req.employee?.name || req.employees?.name || 'غير معروف';
+                                        const rewardTitle = req.reward?.title || req.rewards_catalog?.title || 'جائزة';
                                         return (
                                             <tr key={req.id} className="hover:bg-gray-50/50">
                                                 <td className="p-4 font-bold text-gray-800">{empName}</td>
@@ -305,6 +310,21 @@ export default function GamificationManager() {
                                 <Input type="number" label="النقاط المطلوبة *" value={newReward.points_cost} onChange={v => setNewReward({...newReward, points_cost: Number(v)})} />
                             </div>
                             
+                            {/* ✅ حقل إدخال رابط الصورة */}
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 mb-1 flex items-center gap-1">
+                                    <ImageIcon className="w-4 h-4"/> رابط الصورة (URL) اختياري
+                                </label>
+                                <input 
+                                    type="text"
+                                    className="w-full p-3 rounded-xl border bg-gray-50 focus:border-indigo-500 outline-none text-sm"
+                                    value={newReward.image_url}
+                                    onChange={(e) => setNewReward({...newReward, image_url: e.target.value})}
+                                    placeholder="https://example.com/image.png"
+                                    dir="ltr"
+                                />
+                            </div>
+                            
                             <div className="p-3 bg-yellow-50 rounded-xl border border-yellow-200 space-y-3 mt-4">
                                 <label className="text-xs font-bold text-yellow-800 flex items-center gap-1"><Tag className="w-4 h-4"/> إعدادات الخصم (اختياري)</label>
                                 <div className="grid grid-cols-2 gap-3">
@@ -329,38 +349,50 @@ export default function GamificationManager() {
                         <h3 className="text-lg font-black text-gray-800 mb-4 border-b pb-4">الجوائز المتاحة حالياً</h3>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {rewardsCatalog.map((item: any) => (
-                                <div key={item.id} className="border rounded-2xl p-4 flex flex-col justify-between relative overflow-hidden group hover:border-indigo-200 transition-colors">
-                                    {item.discount_points && new Date(item.discount_end_date) >= new Date() && (
-                                        <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-sm">
-                                            عرض خاص!
-                                        </div>
-                                    )}
-                                    <div>
-                                        <h4 className="font-bold text-gray-800 text-lg mb-1">{item.title}</h4>
-                                        <p className="text-xs text-gray-500 mb-3">الكمية المتبقية: <span className="font-bold text-gray-800">{item.quantity}</span></p>
+                                <div key={item.id} className="border rounded-2xl flex flex-col justify-between relative overflow-hidden group hover:border-indigo-200 transition-colors bg-white">
+                                    {/* عرض الصورة إن وجدت */}
+                                    <div className="w-full h-32 bg-gray-100 flex items-center justify-center border-b relative">
+                                        {item.image_url ? (
+                                            <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Gift className="w-10 h-10 text-gray-300" />
+                                        )}
+                                        {item.discount_points && new Date(item.discount_end_date) >= new Date() && (
+                                            <div className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl shadow-sm z-10">
+                                                عرض خاص!
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="flex items-center justify-between mt-2 pt-3 border-t">
-                                        <div className="flex items-center gap-2">
-                                            {item.discount_points && new Date(item.discount_end_date) >= new Date() ? (
-                                                <>
-                                                    <span className="text-sm font-black text-red-600">{item.discount_points} نقطة</span>
-                                                    <span className="text-xs line-through text-gray-400">{item.points_cost}</span>
-                                                </>
-                                            ) : (
-                                                <span className="text-sm font-black text-indigo-600">{item.points_cost} نقطة</span>
-                                            )}
+
+                                    <div className="p-4 flex-1 flex flex-col justify-between">
+                                        <div>
+                                            <h4 className="font-bold text-gray-800 text-lg mb-1">{item.title}</h4>
+                                            <p className="text-xs text-gray-500 mb-3">الكمية المتبقية: <span className="font-bold text-gray-800">{item.quantity}</span></p>
                                         </div>
-                                        <button 
-                                            onClick={async () => {
-                                                if(confirm('حذف هذه الجائزة من المتجر؟')) {
-                                                    await supabase.from('rewards_catalog').delete().eq('id', item.id);
-                                                    queryClient.invalidateQueries({ queryKey: ['admin_rewards_catalog'] });
-                                                }
-                                            }}
-                                            className="text-gray-400 hover:text-red-500 p-1"
-                                        >
-                                            <Trash2 className="w-4 h-4"/>
-                                        </button>
+                                        <div className="flex items-center justify-between mt-2 pt-3 border-t">
+                                            <div className="flex items-center gap-2">
+                                                {item.discount_points && new Date(item.discount_end_date) >= new Date() ? (
+                                                    <>
+                                                        <span className="text-sm font-black text-red-600">{item.discount_points} نقطة</span>
+                                                        <span className="text-xs line-through text-gray-400">{item.points_cost}</span>
+                                                    </>
+                                                ) : (
+                                                    <span className="text-sm font-black text-indigo-600">{item.points_cost} نقطة</span>
+                                                )}
+                                            </div>
+                                            <button 
+                                                onClick={async () => {
+                                                    if(confirm('حذف هذه الجائزة من المتجر؟')) {
+                                                        await supabase.from('rewards_catalog').delete().eq('id', item.id);
+                                                        queryClient.invalidateQueries({ queryKey: ['admin_rewards_catalog'] });
+                                                    }
+                                                }}
+                                                className="text-gray-400 hover:text-red-500 p-1 bg-gray-50 rounded-lg hover:bg-red-50"
+                                                title="حذف الجائزة"
+                                            >
+                                                <Trash2 className="w-4 h-4"/>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
