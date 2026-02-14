@@ -70,13 +70,30 @@ export default function ThemeOverlay({ employee }: Props) {
                 
                 {/* 🏮 ثيم رمضان: فوانيس تتدلى من الأعلى وتتأرجح */}
                 {finalTheme === 'ramadan' && (
-                    <div className="flex justify-between px-10 pt-[-10px] w-full absolute top-0">
-                        {[1, 2, 3, 4, 5, 6].map((i) => (
-                            <div key={i} className="animate-swing flex flex-col items-center" style={{ animationDelay: `${i * 0.3}s` }}>
-                                <div className="w-0.5 h-16 bg-yellow-600/50"></div>
-                                <span className="text-4xl drop-shadow-[0_0_10px_rgba(252,211,77,0.8)]">🏮</span>
-                            </div>
-                        ))}
+                    <div className="flex justify-around px-2 md:px-10 pt-[-10px] w-full absolute top-0">
+                        {[1, 2, 3, 4, 5, 6].map((i) => {
+                            // تغيير طول الحبل وحجم الفانوس بالتبادل ليعطي شكلاً واقعياً
+                            const isEven = i % 2 === 0;
+                            const ropeHeight = isEven ? 'h-12 md:h-16' : 'h-20 md:h-28';
+                            const lanternSize = isEven ? 'w-10 md:w-14' : 'w-12 md:w-16';
+                            
+                            return (
+                                <div key={i} className="animate-swing flex flex-col items-center" style={{ animationDelay: `${i * 0.4}s` }}>
+                                    {/* 1. الحبل (تم تحسينه بلون ذهبي متدرج) */}
+                                    <div className={`w-[2px] ${ropeHeight} bg-gradient-to-b from-yellow-300 to-yellow-700`}></div>
+                                    
+                                    {/* 2. صورة الفانوس مع تأثير التوهج الذهبي */}
+                                    <img 
+                                        src={isEven 
+                                            ? "https://cdn-icons-png.flaticon.com/512/2386/2386822.png" // شكل الفانوس الأول
+                                            : "https://cdn-icons-png.flaticon.com/512/2386/2386806.png" // شكل الفانوس الثاني
+                                        } 
+                                        alt="Ramadan Lantern" 
+                                        className={`${lanternSize} object-contain drop-shadow-[0_15px_20px_rgba(250,204,21,0.6)]`}
+                                    />
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 
