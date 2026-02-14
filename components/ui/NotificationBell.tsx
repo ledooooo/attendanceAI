@@ -4,7 +4,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useNotifications as usePush } from '../../hooks/useNotifications';
 import { useAuth } from '../../context/AuthContext';
 
-// 1. إضافة onNavigate كـ Prop
+// إضافة onNavigate لتفعيل التنقل بين التبويبات
 interface Props {
   onNavigate?: (tabId: string) => void;
 }
@@ -25,37 +25,58 @@ export default function NotificationBell({ onNavigate }: Props) {
     if (success) alert('تم ربط جهازك بنجاح! ستصلك التنبيهات حتى والموقع مغلق.');
   };
 
-  // 2. دالة التوجيه الذكي عند الضغط على الإشعار
+  // ✅ الدالة الذكية لتوجيه الإشعارات حسب الصلاحية والنوع
   const handleNotificationClick = (notif: any) => {
-    setIsOpen(false); // قفل قائمة الإشعارات
-    if (!onNavigate) return;
+    setIsOpen(false); // قفل القائمة المنسدلة
 
+    // تحديد هل نحن في صفحة الإدارة أم الموظف
     const isAdmin = window.location.pathname.includes('admin');
+    let targetTab = '';
 
+    // تحديد التبويب المستهدف بناءً على نوع الإشعار
     switch (notif.type) {
-      case 'leave_request':
-      case 'leave_update':
-        onNavigate('leaves');
+      case 'leave_request': // طلب إجازة جديد (للمدير)
+      case 'leave_update':  // تحديث حالة إجازة (للموظف)
+        targetTab = isAdmin ? 'leaves' : 'requests-history';
         break;
-      case 'message':
-        onNavigate(isAdmin ? 'all_messages' : 'messages');
+      
+      case 'message': // رسائل ومحادثات
+        targetTab = isAdmin ? 'all_messages' : 'messages';
         break;
-      case 'ovr_report':
-        onNavigate('quality');
+      
+      case 'ovr_report': // بلاغ OVR جديد (لمدير الجودة)
+        targetTab = isAdmin ? 'quality' : 'quality-manager-tab'; 
         break;
-      case 'ovr_reply':
-        onNavigate('ovr');
+      
+      case 'ovr_reply': // رد على بلاغ (للموظف)
+        targetTab = 'ovr';
         break;
-      case 'task':
+      
+      case 'task': // تكليفات جديدة أو تحديث عليها
       case 'task_update':
-        onNavigate('tasks');
+        targetTab = 'tasks';
         break;
-      case 'training':
-        onNavigate('training');
+      
+      case 'training': // مركز التدريب
+        targetTab = 'training';
         break;
+
+      case 'reward_update': // تحديثات متجر الجوائز
+         targetTab = 'store';
+         break;
+
       default:
-        // في حالة إشعار عام يمكن توجيهه للرئيسية أو تركه بدون توجيه
+        // في حالة إشعار عام لا يحتاج توجيه معين
+        targetTab = isAdmin ? 'home' : 'news';
         break;
+    }
+
+    // التنفيذ الفعلي للتوجيه
+    if (onNavigate && targetTab) {
+        onNavigate(targetTab);
+    } else if (targetTab) {
+        // لو الخاصية onNavigate غير موجودة (مثلاً تم فتح الرابط من خارج التطبيق)
+        window.location.href = isAdmin ? `/admin?tab=${targetTab}` : `/staff?tab=${targetTab}`;
     }
   };
 
@@ -90,7 +111,7 @@ export default function NotificationBell({ onNavigate }: Props) {
               notifications.map((notif) => (
                 <div 
                   key={notif.id} 
-                  onClick={() => handleNotificationClick(notif)} // 3. تشغيل دالة التوجيه هنا
+                  onClick={() => handleNotificationClick(notif)} // ✅ تفعيل دالة التوجيه عند الضغط
                   className={`p-4 border-b last:border-0 hover:bg-gray-50 cursor-pointer transition-colors ${!notif.is_read ? 'bg-orange-50/30' : ''}`}
                 >
                   <h4 className="font-bold text-xs text-gray-800 mb-1">{notif.title}</h4>
