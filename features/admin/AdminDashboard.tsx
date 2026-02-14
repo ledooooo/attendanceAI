@@ -267,7 +267,7 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <NotificationBell />
+                        <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
                     </div>
                 </header>
 
