@@ -307,7 +307,8 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
     }, [phase, timeLeft, onComplete]);
 
     const handleAnswer = (opt: string) => {
-        if (opt === question.correct_answer) {
+        // تنظيف المسافات قبل المقارنة لضمان الدقة
+        if (opt.trim() === question.correct_answer.trim()) {
             onComplete(pointsWon, true);
         } else {
             onComplete(0, false);
@@ -333,6 +334,21 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
         );
     }
 
+    // ✅ المعالج الذكي للخيارات لتخطي خطأ الـ JSON
+    let parsedOptions: string[] = [];
+    if (question && question.options) {
+        if (Array.isArray(question.options)) {
+            parsedOptions = question.options;
+        } else if (typeof question.options === 'string') {
+            try {
+                parsedOptions = JSON.parse(question.options);
+            } catch (e) {
+                // إذا فشل الـ JSON، قم بتقسيم النص بالفواصل
+                parsedOptions = question.options.split(',').map((s: string) => s.trim());
+            }
+        }
+    }
+
     return (
         <div className="text-center py-8 animate-in slide-in-from-right">
             <div className="flex justify-between items-center mb-6 px-4">
@@ -346,7 +362,7 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {JSON.parse(question.options).map((opt: string, i: number) => (
+                {parsedOptions.map((opt: string, i: number) => (
                     <button key={i} onClick={() => handleAnswer(opt)} className="bg-white border-2 border-gray-100 p-4 rounded-2xl font-bold text-gray-700 hover:border-violet-500 hover:bg-violet-50 transition-all active:scale-95">
                         {opt}
                     </button>
@@ -355,7 +371,6 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
         </div>
     );
 }
-
 // ==========================================
 // 2️⃣ فك الشفرة (Word Scramble) - حروف مفككة
 // ==========================================
