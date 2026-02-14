@@ -12,7 +12,7 @@ import {
     List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-    Calendar, Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Sparkles 
+    Calendar, Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Gamepad2, Sparkles 
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -38,6 +38,7 @@ import AdministrationTab from './components/AdministrationTab';
 import RewardsStore from './components/RewardsStore';
 import StaffTrainingCenter from './components/StaffTrainingCenter';
 import ThemeOverlay from './components/ThemeOverlay';
+import StaffArcade from './components/StaffArcade';
 
 // استيراد مكونات التحفيز
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
@@ -344,6 +345,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
+      { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, isNew: true },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     { id: 'store', label: 'متجر الجوائز', icon: ShoppingBag },
     ...(employee.role === 'head_of_dept' ? [{ id: 'dept-requests', label: 'إدارة القسم', icon: FileText }] : []),
@@ -433,8 +435,9 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
 
         {/* عناصر القائمة (Scrollable) */}
+{/* عناصر القائمة (Scrollable) */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
-          {menuItems.map((item) => {
+          {menuItems.map((item: any) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
@@ -452,7 +455,14 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {typeof item.badge !== 'undefined' && (
+                {/* ✅ الكود الخاص بكلمة NEW أو البادجات الرقمية */}
+                {item.isNew && (
+                    <span className="absolute left-4 bg-fuchsia-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse border border-white shadow-md">
+                        NEW!
+                    </span>
+                )}
+                
+                {typeof item.badge !== 'undefined' && !item.isNew && (
                     item.badge > 0 ? (
                         <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
                             {item.badge > 99 ? '+99' : item.badge}
@@ -681,6 +691,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'stats' && <StaffStats attendance={attendanceData} evals={evaluations} requests={leaveRequests} month={selectedMonth} employee={employee} />}
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={fetchAllData} />}
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
+                    {activeTab === 'arcade' && <StaffArcade employee={employee} />} {/* السطر الجديد */}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'store' && <RewardsStore employee={employee} />}
                     {activeTab === 'training' && (
