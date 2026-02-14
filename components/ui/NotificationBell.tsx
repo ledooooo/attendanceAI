@@ -4,7 +4,12 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useNotifications as usePush } from '../../hooks/useNotifications';
 import { useAuth } from '../../context/AuthContext';
 
-export default function NotificationBell() {
+// 1. إضافة onNavigate كـ Prop
+interface Props {
+  onNavigate?: (tabId: string) => void;
+}
+
+export default function NotificationBell({ onNavigate }: Props) {
   const { notifications, unreadCount, markAsRead } = useNotifications();
   const { user } = useAuth();
   const { requestPermission, permission } = usePush(user?.id || '');
@@ -18,6 +23,40 @@ export default function NotificationBell() {
   const handlePushActivate = async () => {
     const success = await requestPermission();
     if (success) alert('تم ربط جهازك بنجاح! ستصلك التنبيهات حتى والموقع مغلق.');
+  };
+
+  // 2. دالة التوجيه الذكي عند الضغط على الإشعار
+  const handleNotificationClick = (notif: any) => {
+    setIsOpen(false); // قفل قائمة الإشعارات
+    if (!onNavigate) return;
+
+    const isAdmin = window.location.pathname.includes('admin');
+
+    switch (notif.type) {
+      case 'leave_request':
+      case 'leave_update':
+        onNavigate('leaves');
+        break;
+      case 'message':
+        onNavigate(isAdmin ? 'all_messages' : 'messages');
+        break;
+      case 'ovr_report':
+        onNavigate('quality');
+        break;
+      case 'ovr_reply':
+        onNavigate('ovr');
+        break;
+      case 'task':
+      case 'task_update':
+        onNavigate('tasks');
+        break;
+      case 'training':
+        onNavigate('training');
+        break;
+      default:
+        // في حالة إشعار عام يمكن توجيهه للرئيسية أو تركه بدون توجيه
+        break;
+    }
   };
 
   return (
@@ -49,7 +88,11 @@ export default function NotificationBell() {
               <div className="p-10 text-center text-gray-400 text-xs italic">لا توجد إشعارات حالياً</div>
             ) : (
               notifications.map((notif) => (
-                <div key={notif.id} className={`p-4 border-b last:border-0 hover:bg-gray-50 ${!notif.is_read ? 'bg-orange-50/30' : ''}`}>
+                <div 
+                  key={notif.id} 
+                  onClick={() => handleNotificationClick(notif)} // 3. تشغيل دالة التوجيه هنا
+                  className={`p-4 border-b last:border-0 hover:bg-gray-50 cursor-pointer transition-colors ${!notif.is_read ? 'bg-orange-50/30' : ''}`}
+                >
                   <h4 className="font-bold text-xs text-gray-800 mb-1">{notif.title}</h4>
                   <p className="text-[11px] text-gray-500 leading-relaxed">{notif.message}</p>
                   <div className="flex items-center gap-1 text-[9px] text-gray-300 mt-2">
