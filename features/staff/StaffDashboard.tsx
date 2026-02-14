@@ -12,7 +12,7 @@ import {
     List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-    Calendar, Settings, ShoppingBag, Trophy, Star, Check 
+    Calendar, Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Sparkles 
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -60,6 +60,9 @@ export default function StaffDashboard({ employee }: Props) {
   // حالات القوائم المنسدلة
   const [showLevelMenu, setShowLevelMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
+  
+  // ✅ حالة لتشغيل/إيقاف الثيم (المظهر)
+  const [isThemeEnabled, setIsThemeEnabled] = useState(true);
 
   // حالة للتدريب الإجباري
   const [pendingMandatoryTraining, setPendingMandatoryTraining] = useState<any>(null);
@@ -314,7 +317,6 @@ export default function StaffDashboard({ employee }: Props) {
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
   // ✅ ترتيب القائمة وتعيين البادجات
-  // تمت إزالة شرط hasAssetsAccess من هنا لأنها ستظهر داخل لوحة الإدارة
   const menuItems = [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
@@ -345,7 +347,10 @@ export default function StaffDashboard({ employee }: Props) {
       
       {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
-      <ThemeOverlay employee={employee} />
+      
+      {/* ✅ إظهار مكون الثيم فقط إذا كان isThemeEnabled مفعل */}
+      {isThemeEnabled && <ThemeOverlay employee={employee} />}
+
       {/* مكون التدريب الإجباري */}
       {pendingMandatoryTraining && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -478,7 +483,29 @@ export default function StaffDashboard({ employee }: Props) {
 
             <div className="flex items-center gap-2 md:gap-3">
                 
-                {/* 1. المستوى */}
+                {/* ✅ 1. تبديل المظهر (الثيم) */}
+                <div className="relative hidden md:block">
+                    <button 
+                        onClick={() => setIsThemeEnabled(!isThemeEnabled)} 
+                        className={`p-2 rounded-full transition-colors ${isThemeEnabled ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                        title={isThemeEnabled ? "إيقاف المظهر الحالي" : "تشغيل المظهر"}
+                    >
+                        <Sparkles className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* ✅ 2. متجر الجوائز السريع */}
+                <div className="relative">
+                    <button 
+                        onClick={() => setActiveTab('store')} 
+                        className={`p-2 rounded-full transition-colors ${activeTab === 'store' ? 'bg-pink-100 text-pink-700' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
+                        title="متجر الجوائز"
+                    >
+                        <ShoppingCart className="w-5 h-5" />
+                    </button>
+                </div>
+
+                {/* 3. المستوى */}
                 <div className="relative">
                     <button 
                         onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
@@ -500,7 +527,7 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                 </div>
 
-                {/* 2. لوحة الشرف */}
+                {/* 4. لوحة الشرف */}
                 <div className="relative">
                     <button 
                         onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
@@ -522,7 +549,7 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                 </div>
 
-                {/* 3. الإشعارات */}
+                {/* 5. الإشعارات */}
                 <div className="relative">
                     <button onClick={markNotifsAsRead} className={`p-2 rounded-full transition-colors relative ${showNotifMenu ? 'bg-gray-200 text-gray-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
                         <Bell className={`w-5 h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
