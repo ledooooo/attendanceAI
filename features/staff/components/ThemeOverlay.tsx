@@ -86,7 +86,7 @@ export default function ThemeOverlay({ employee }: Props) {
                                     <img 
                                         src={isEven 
                                             ? "https://cdn-icons-png.flaticon.com/512/2386/2386822.png" // شكل الفانوس الأول
-                                            : "https://cdn-icons-png.flaticon.com/512/2386/2386806.png" // شكل الفانوس الثاني
+                                            : "https://cdn-icons-png.flaticon.com/512/2386/2386822.png" // شكل الفانوس الثاني
                                         } 
                                         alt="Ramadan Lantern" 
                                         className={`${lanternSize} object-contain drop-shadow-[0_15px_20px_rgba(250,204,21,0.6)]`}
