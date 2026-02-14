@@ -604,12 +604,19 @@ export default function StaffDashboard({ employee }: Props) {
                                                 <div 
                                                     key={n.id} 
                                                     onClick={() => {
-                                                        if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
-                                                        else if(n.type === 'message') { setActiveTab('messages'); }
-                                                        else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
-                                                        else if(n.type === 'training') { setActiveTab('training'); }
-                                                        setShowNotifMenu(false);
-                                                    }}
+    // توجيه ذكي يشمل جميع أنواع الإشعارات الممكنة
+    const type = n.type?.toLowerCase() || '';
+    
+    if(type.includes('task')) { setActiveTab('tasks'); }
+    else if(type.includes('message')) { setActiveTab('messages'); }
+    else if(type.includes('ovr')) { setActiveTab('ovr'); }
+    else if(type.includes('training')) { setActiveTab('training'); }
+    else if(type.includes('leave')) { setActiveTab('requests-history'); }
+    else if(type.includes('reward') || type.includes('store')) { setActiveTab('store'); }
+    else if(type.includes('shift') || type.includes('swap')) { setActiveTab('shift-requests'); }
+    
+    setShowNotifMenu(false);
+}}
                                                     className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
                                                 >
                                                     <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
