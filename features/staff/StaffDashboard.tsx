@@ -37,6 +37,7 @@ import StaffTasks from './components/StaffTasks';
 import AdministrationTab from './components/AdministrationTab';
 import RewardsStore from './components/RewardsStore';
 import StaffTrainingCenter from './components/StaffTrainingCenter';
+import ThemeOverlay from './components/ThemeOverlay';
 
 // استيراد مكونات التحفيز
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
@@ -344,7 +345,7 @@ export default function StaffDashboard({ employee }: Props) {
       
       {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
-
+      <ThemeOverlay employee={employee} />
       {/* مكون التدريب الإجباري */}
       {pendingMandatoryTraining && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
