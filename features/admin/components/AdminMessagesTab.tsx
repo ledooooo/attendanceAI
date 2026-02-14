@@ -3,6 +3,7 @@ import { supabase } from '../../../supabaseClient';
 import { Employee, InternalMessage } from '../../../types';
 import { Search, User, ChevronLeft, MessageSquare, Wifi, Clock, Users, Send, Check, CheckCheck, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useQueryClient } from '@tanstack/react-query'; // ✅ تم إضافة هذا الاستيراد
 
 interface Conversation {
   employee: Employee;
@@ -23,6 +24,7 @@ const formatRelativeTime = (dateString: string | null) => {
 };
 
 export default function AdminMessagesTab({ employees }: { employees: Employee[] }) {
+  const queryClient = useQueryClient(); // ✅ تهيئة محدث الكاش
   const [conversations, setConversations] = useState<Conversation[]>([]);
   
   // 'general' = شات عام، 'group' = شات الإدارة، أو ID الموظف
@@ -44,7 +46,6 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
       .on('presence', { event: 'sync' }, () => {
         const newState = channel.presenceState();
         const users = Object.values(newState).map((u: any) => u[0]);
-        // نفترض الربط بالاسم كما في السابق
         const activeEmps = employees.filter(e => users.some(u => u.name === e.name)).map(e => e.employee_id);
         setOnlineUsers(activeEmps);
       })
@@ -55,10 +56,6 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
   // 2. جلب الرسائل
   const fetchMessages = async () => {
     setLoading(true);
-    // المدير يرى:
-    // 1. الرسائل المرسلة منه أو إليه (شات فردي)
-    // 2. رسائل الجروب العام
-    // 3. رسائل جروب الإدارة
     const { data } = await supabase
       .from('messages')
       .select('*')
@@ -78,11 +75,9 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
       .channel('admin_messages_realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
          const newMsg = payload.new;
-         // تحديث إذا كانت الرسالة تعني المدير
          if (newMsg.to_user === 'admin' || newMsg.from_user === 'admin' || 
              newMsg.to_user === 'general_group' || newMsg.to_user === 'group_managers') {
              setAllMessages(prev => [newMsg as InternalMessage, ...prev]);
-             // نعيد معالجة المحادثات لتحديث آخر رسالة
              fetchMessages(); 
          }
       })
@@ -91,11 +86,36 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
     return () => { supabase.removeChannel(subscription); };
   }, []); 
 
+  // ✅ 2.5 دالة جعل الرسائل مقروءة فور فتح المحادثة وتصفير البادج
+  useEffect(() => {
+    if (selectedChatId && selectedChatId !== 'group' && selectedChatId !== 'general') {
+        const markAsRead = async () => {
+            const unreadIds = allMessages
+                .filter(m => !m.is_read && m.to_user === 'admin' && m.from_user === selectedChatId)
+                .map(m => m.id);
+
+            if (unreadIds.length > 0) {
+                // تحديث في الداتابيز
+                await supabase.from('messages').update({ is_read: true }).in('id', unreadIds);
+                
+                // تحديث القائمة المحلية
+                setAllMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, is_read: true } : m));
+                
+                // ✅ أمر للداشبورد الرئيسي بتحديث (تصفير) عداد الإشعارات
+                queryClient.invalidateQueries({ queryKey: ['admin_badges'] });
+                
+                // إعادة معالجة القائمة لتصفير العداد الجانبي فوراً
+                processConversations(allMessages.map(m => unreadIds.includes(m.id) ? { ...m, is_read: true } : m));
+            }
+        };
+        markAsRead();
+    }
+  }, [selectedChatId, allMessages, queryClient]);
+
   // 3. معالجة المحادثات (للقائمة الجانبية)
   const processConversations = (msgs: InternalMessage[]) => {
     const convMap = new Map<string, Conversation>();
 
-    // ✅ الخطوة الأهم: إضافة جميع الموظفين للخريطة مبدئياً
     employees.forEach(emp => {
       convMap.set(emp.employee_id, {
         employee: emp,
@@ -104,7 +124,6 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
       });
     });
 
-    // تحديث البيانات بناءً على الرسائل الموجودة
     msgs.forEach(msg => {
       if (msg.to_user === 'general_group' || msg.to_user === 'group_managers') return;
 
@@ -117,20 +136,16 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
       }
     });
 
-    // ترتيب المحادثات: الأحدث أولاً، ثم الأبجدي لمن ليس لديهم رسائل
     const sorted = Array.from(convMap.values()).sort((a, b) => {
       const timeA = a.lastMessage ? new Date(a.lastMessage.created_at).getTime() : 0;
       const timeB = b.lastMessage ? new Date(b.lastMessage.created_at).getTime() : 0;
       
       if (timeB !== timeA) {
-          return timeB - timeA; // الأحدث وقتاً أولاً
+          return timeB - timeA;
       }
-      
-      // إذا تساوى الوقت (كلاهما 0)، رتب أبجدياً
       return a.employee.name.localeCompare(b.employee.name);
     });
 
-    // ✅ تم إزالة الفلتر الذي كان يخفي الموظفين بدون رسائل
     setConversations(sorted);
   };
 
@@ -172,7 +187,6 @@ export default function AdminMessagesTab({ employees }: { employees: Employee[] 
 
       if (!error) {
           setNewMessage('');
-          // إرسال الإشعارات
           try {
               let targetIds: string[] = [];
               let title = '';
