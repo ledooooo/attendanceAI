@@ -473,35 +473,36 @@ export default function StaffDashboard({ employee }: Props) {
 
       {/* --- المحتوى الرئيسي --- */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
-        <header className="h-16 bg-white border-b flex items-center justify-between px-3 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
+        <header className="h-16 bg-white border-b flex items-center justify-between px-3 md:px-6 sticky top-0 z-30 shadow-sm shrink-0">
             <div className="flex items-center gap-2 md:gap-3">
                 <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors active:scale-95">
-                    <Menu className="w-6 h-6 text-gray-700"/>
+                    <Menu className="w-5 h-5 text-gray-700"/>
                 </button>
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            <div className="flex items-center gap-2 md:gap-3">
+            {/* ✅ تم إزالة hidden md:block من الأزرار وتقليل المسافات ليظهروا جميعاً على الموبايل */}
+            <div className="flex items-center gap-1 md:gap-2">
                 
-                {/* ✅ 1. تبديل المظهر (الثيم) */}
-                <div className="relative hidden md:block">
+                {/* 1. تبديل المظهر (الثيم) */}
+                <div className="relative">
                     <button 
                         onClick={() => setIsThemeEnabled(!isThemeEnabled)} 
                         className={`p-2 rounded-full transition-colors ${isThemeEnabled ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
                         title={isThemeEnabled ? "إيقاف المظهر الحالي" : "تشغيل المظهر"}
                     >
-                        <Sparkles className="w-5 h-5" />
+                        <Sparkles className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
                 </div>
 
-                {/* ✅ 2. متجر الجوائز السريع */}
+                {/* 2. متجر الجوائز السريع */}
                 <div className="relative">
                     <button 
                         onClick={() => setActiveTab('store')} 
                         className={`p-2 rounded-full transition-colors ${activeTab === 'store' ? 'bg-pink-100 text-pink-700' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
                         title="متجر الجوائز"
                     >
-                        <ShoppingCart className="w-5 h-5" />
+                        <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
                 </div>
 
@@ -511,7 +512,7 @@ export default function StaffDashboard({ employee }: Props) {
                         onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
                         className={`p-2 rounded-full transition-colors ${showLevelMenu ? 'bg-indigo-100 text-indigo-700' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                     >
-                        <Star className="w-5 h-5" />
+                        <Star className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
                     {showLevelMenu && (
                         <>
@@ -533,7 +534,7 @@ export default function StaffDashboard({ employee }: Props) {
                         onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
                         className={`p-2 rounded-full transition-colors ${showLeaderboardMenu ? 'bg-yellow-100 text-yellow-700' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
                     >
-                        <Trophy className="w-5 h-5" />
+                        <Trophy className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
                     {showLeaderboardMenu && (
                         <>
@@ -552,9 +553,9 @@ export default function StaffDashboard({ employee }: Props) {
                 {/* 5. الإشعارات */}
                 <div className="relative">
                     <button onClick={markNotifsAsRead} className={`p-2 rounded-full transition-colors relative ${showNotifMenu ? 'bg-gray-200 text-gray-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
-                        <Bell className={`w-5 h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
+                        <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
                         {unreadNotifsCount > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white animate-bounce">{unreadNotifsCount}</span>
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] md:text-[10px] font-bold w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border border-white animate-bounce">{unreadNotifsCount}</span>
                         )}
                     </button>
                     {showNotifMenu && (
@@ -633,7 +634,7 @@ export default function StaffDashboard({ employee }: Props) {
                         </>
                     )}
                 </div>
-                <div className="w-9 h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden">
+                <div className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1">
                     {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full bg-emerald-200 flex items-center justify-center rounded-full text-emerald-700 font-bold text-sm">{employee.name.charAt(0)}</div>}
                 </div>
             </div>
