@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Gamepad2, Lock, Timer, Trophy, Loader2, ArrowRight, Dices, HelpCircle, Star } from 'lucide-react';
+import { Gamepad2, Lock, Timer, Trophy, Loader2, Dices, HelpCircle, Star } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -24,6 +24,7 @@ const SCRAMBLE_WORDS = [
 export default function StaffArcade({ employee }: Props) {
     const queryClient = useQueryClient();
     const [activeGame, setActiveGame] = useState<string | null>(null);
+    const [sessionId, setSessionId] = useState<string | null>(null);
 
     // 1. جلب آخر محاولة لمعرفة هل هو في فترة الانتظار أم لا
     const { data: lastPlay, isLoading: loadingPlay } = useQuery({
@@ -78,7 +79,7 @@ export default function StaffArcade({ employee }: Props) {
         const now = new Date().getTime();
         const diffHours = (now - lastPlayTime) / (1000 * 60 * 60);
         
-        if (diffHours >= COOLDOWN_HOURS) return null; // مسموح له باللعب
+        if (diffHours >= COOLDOWN_HOURS) return null; 
         
         const remainingMs = (COOLDOWN_HOURS * 60 * 60 * 1000) - (now - lastPlayTime);
         const hrs = Math.floor(remainingMs / (1000 * 60 * 60));
@@ -86,16 +87,31 @@ export default function StaffArcade({ employee }: Props) {
         return { hrs, mins };
     }, [lastPlay]);
 
-    // تسجيل نتيجة اللعبة
-    const recordGameMutation = useMutation({
-        mutationFn: async ({ points, gameName, isWin }: { points: number, gameName: string, isWin: boolean }) => {
-            // تسجيل في جدول الألعاب (يبدأ فترة الانتظار)
-            await supabase.from('arcade_scores').insert({
-                employee_id: employee.employee_id,
-                game_name: gameName,
+    // ✅ دالة الخصم الفوري: تسجل المحاولة فور ضغط زر ابدأ لتجنب التلاعب
+    const consumeAttempt = async (gameName: string) => {
+        const { data, error } = await supabase.from('arcade_scores').insert({
+            employee_id: employee.employee_id,
+            game_name: gameName,
+            points_earned: 0,
+            is_win: false
+        }).select('id').single();
+
+        if (error) throw error;
+        setSessionId(data.id);
+        // تحديث الكاش لتفعيل القفل المؤقت في الخلفية مباشرة
+        queryClient.invalidateQueries({ queryKey: ['last_arcade_play'] });
+    };
+
+    // ✅ دالة تحديث النتيجة بعد انتهاء اللعبة
+    const finishAttemptMutation = useMutation({
+        mutationFn: async ({ points, isWin, gameName }: { points: number, isWin: boolean, gameName: string }) => {
+            if (!sessionId) return;
+
+            // تحديث السجل الذي تم إنشاؤه مسبقاً
+            await supabase.from('arcade_scores').update({
                 points_earned: points,
                 is_win: isWin
-            });
+            }).eq('id', sessionId);
 
             // إضافة النقاط للرصيد العام إذا فاز
             if (isWin && points > 0) {
@@ -113,16 +129,12 @@ export default function StaffArcade({ employee }: Props) {
             } else {
                 toast.error('حظ أوفر! تعال جرب تاني بعد 5 ساعات 💔', { duration: 4000 });
             }
-            queryClient.invalidateQueries({ queryKey: ['last_arcade_play'] });
             queryClient.invalidateQueries({ queryKey: ['arcade_leaderboard'] });
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] }); 
             setActiveGame(null); 
+            setSessionId(null);
         }
     });
-
-    const handleGameComplete = (points: number, isWin: boolean, gameName: string) => {
-        recordGameMutation.mutate({ points, gameName, isWin });
-    };
 
     return (
         <div className="space-y-6 animate-in fade-in pb-10">
@@ -136,6 +148,25 @@ export default function StaffArcade({ employee }: Props) {
 
             {loadingPlay ? (
                 <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-fuchsia-600"/></div>
+            ) : activeGame !== null ? (
+                /* 🕹️ شاشة اللعب النشطة (يجب أن تكون في الأعلى لكي لا تُخفى عند بدء العداد) */
+                <div className="bg-white rounded-[30px] shadow-sm border border-gray-100 p-4 md:p-8">
+                    <div className="flex justify-between items-center mb-6 border-b pb-4">
+                        <h3 className="font-black text-lg text-violet-700">تحدي قيد التنفيذ 🎯</h3>
+                        {/* تم إزالة زر الانسحاب للحفاظ على المحاولة */}
+                    </div>
+                    
+                    {finishAttemptMutation.isPending ? (
+                        <div className="text-center py-20"><Loader2 className="w-10 h-10 animate-spin mx-auto text-violet-600 mb-4"/><p className="font-bold text-gray-500">جاري تسجيل نتيجتك...</p></div>
+                    ) : (
+                        <>
+                            {activeGame === 'spin' && <SpinAndAnswerGame employee={employee} onStart={() => consumeAttempt('عجلة الحظ')} onComplete={(pts, win) => finishAttemptMutation.mutate({ points: pts, isWin: win, gameName: 'عجلة الحظ' })} />}
+                            {activeGame === 'scramble' && <WordScrambleGame onStart={() => consumeAttempt('فك الشفرة')} onComplete={(pts, win) => finishAttemptMutation.mutate({ points: pts, isWin: win, gameName: 'فك الشفرة' })} />}
+                            {activeGame === 'safe' && <SafeCrackerGame onStart={() => consumeAttempt('الخزنة السرية')} onComplete={(pts, win) => finishAttemptMutation.mutate({ points: pts, isWin: win, gameName: 'الخزنة السرية' })} />}
+                            {activeGame === 'memory' && <MemoryMatchGame onStart={() => consumeAttempt('تطابق الذاكرة')} onComplete={(pts, win) => finishAttemptMutation.mutate({ points: pts, isWin: win, gameName: 'تطابق الذاكرة' })} />}
+                        </>
+                    )}
+                </div>
             ) : timeRemaining ? (
                 /* 🔒 شاشة القفل المؤقت */
                 <div className="bg-white p-10 rounded-[30px] text-center border border-gray-100 shadow-sm animate-in zoom-in-95">
@@ -148,12 +179,11 @@ export default function StaffArcade({ employee }: Props) {
                         <span>{timeRemaining.mins}</span> <span className="text-sm font-bold text-violet-400">دقيقة</span>
                     </div>
                 </div>
-            ) : activeGame === null ? (
+            ) : (
                 /* 🎮 قائمة الألعاب */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Game 1 */}
                     <button onClick={() => setActiveGame('spin')} className="bg-white border-2 border-transparent hover:border-fuchsia-200 p-6 rounded-3xl shadow-sm hover:shadow-md transition-all group text-right flex flex-col relative overflow-hidden">
-                        <div className="absolute top-0 right-0 bg-fuchsia-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl shadow-sm">NEW</div>
                         <div className="w-14 h-14 bg-fuchsia-50 text-fuchsia-600 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 group-hover:rotate-12 transition-transform">
                             <Dices className="w-8 h-8"/>
                         </div>
@@ -191,27 +221,6 @@ export default function StaffArcade({ employee }: Props) {
                         <p className="text-[10px] text-gray-500 font-bold leading-relaxed mb-4 flex-1">اقلب الكروت وتذكر أماكنها لتطابق الأيقونات الطبية قبل انتهاء الوقت المخصص.</p>
                         <span className="text-[10px] bg-gray-100 text-gray-600 px-3 py-1 rounded-lg font-black w-max mt-auto">قوة ذاكرة</span>
                     </button>
-                </div>
-            ) : (
-                /* 🕹️ شاشة اللعب النشطة */
-                <div className="bg-white rounded-[30px] shadow-sm border border-gray-100 p-4 md:p-8">
-                    <div className="flex justify-between items-center mb-6 border-b pb-4">
-                        <h3 className="font-black text-lg text-violet-700">العب الآن</h3>
-                        <button onClick={() => setActiveGame(null)} className="text-xs font-bold bg-gray-100 text-gray-500 px-3 py-1.5 rounded-lg hover:bg-gray-200">
-                            انسحاب (العودة)
-                        </button>
-                    </div>
-                    
-                    {recordGameMutation.isPending ? (
-                        <div className="text-center py-20"><Loader2 className="w-10 h-10 animate-spin mx-auto text-violet-600 mb-4"/><p className="font-bold text-gray-500">جاري تسجيل نتيجتك...</p></div>
-                    ) : (
-                        <>
-                            {activeGame === 'spin' && <SpinAndAnswerGame employee={employee} onComplete={(pts, win) => handleGameComplete(pts, win, 'عجلة الحظ')} />}
-                            {activeGame === 'scramble' && <WordScrambleGame onComplete={(pts, win) => handleGameComplete(pts, win, 'فك الشفرة')} />}
-                            {activeGame === 'safe' && <SafeCrackerGame onComplete={(pts, win) => handleGameComplete(pts, win, 'الخزنة السرية')} />}
-                            {activeGame === 'memory' && <MemoryMatchGame onComplete={(pts, win) => handleGameComplete(pts, win, 'تطابق الذاكرة')} />}
-                        </>
-                    )}
                 </div>
             )}
 
@@ -255,28 +264,34 @@ export default function StaffArcade({ employee }: Props) {
 // ==========================================
 // 1️⃣ عجلة الحظ + سؤال (Spin & Answer)
 // ==========================================
-function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onComplete: (points: number, isWin: boolean) => void }) {
+function SpinAndAnswerGame({ employee, onStart, onComplete }: { employee: Employee, onStart: () => Promise<void>, onComplete: (points: number, isWin: boolean) => void }) {
     const [phase, setPhase] = useState<'spin' | 'question'>('spin');
     const [pointsWon, setPointsWon] = useState(0);
     const [spinning, setSpinning] = useState(false);
     const [question, setQuestion] = useState<any>(null);
     const [timeLeft, setTimeLeft] = useState(15);
+    const [starting, setStarting] = useState(false);
 
-    // جلب سؤال عشوائي من بنك الأسئلة يناسب التخصص
     const { data: questions } = useQuery({
         queryKey: ['arcade_question', employee.specialty],
         queryFn: async () => {
             const { data } = await supabase.from('quiz_questions').select('*');
             if (!data) return [];
-            // فلترة الأسئلة التي تناسب تخصص الموظف أو "الكل"
             return data.filter(q => q.specialty.includes('all') || q.specialty.includes(employee.specialty));
         }
     });
 
-    const startSpin = () => {
-        if (spinning) return;
+    const startSpin = async () => {
+        if (spinning || starting) return;
+        setStarting(true);
+        try {
+            await onStart(); // تسجيل المحاولة الفوري
+        } catch (e) {
+            setStarting(false);
+            return;
+        }
+
         setSpinning(true);
-        // خيارات النقاط على العجلة
         const options = [10, 20, 30, 40, 50];
         const result = options[Math.floor(Math.random() * options.length)];
         
@@ -284,16 +299,14 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
             setPointsWon(result);
             setSpinning(false);
             
-            // اختيار سؤال عشوائي
             if (questions && questions.length > 0) {
                 setQuestion(questions[Math.floor(Math.random() * questions.length)]);
                 setPhase('question');
             } else {
-                // في حالة عدم وجود أسئلة في البنك، نعتبره فاز بالنقاط مباشرة
                 toast.success('ربحت مباشرة لعدم توفر أسئلة!');
                 onComplete(result, true);
             }
-        }, 3000); // مدة دوران العجلة
+        }, 3000); 
     };
 
     useEffect(() => {
@@ -301,13 +314,12 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
         if (phase === 'question' && timeLeft > 0) {
             timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
         } else if (phase === 'question' && timeLeft === 0) {
-            onComplete(0, false); // خلص الوقت = خسارة
+            onComplete(0, false); 
         }
         return () => clearInterval(timer);
     }, [phase, timeLeft, onComplete]);
 
     const handleAnswer = (opt: string) => {
-        // تنظيف المسافات قبل المقارنة لضمان الدقة
         if (opt.trim() === question.correct_answer.trim()) {
             onComplete(pointsWon, true);
         } else {
@@ -319,7 +331,7 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
         return (
             <div className="text-center py-10 animate-in zoom-in-95">
                 <h3 className="text-2xl font-black text-gray-800 mb-2">لف العجلة!</h3>
-                <p className="text-sm font-bold text-gray-500 mb-8">اكتشف قيمة الجائزة التي ستلعب عليها</p>
+                <p className="text-sm font-bold text-gray-500 mb-8">سيتم خصم المحاولة بمجرد بدء اللف</p>
                 
                 <div className={`w-48 h-48 mx-auto rounded-full border-8 border-violet-200 flex items-center justify-center text-4xl shadow-xl transition-all duration-[3000ms] ${spinning ? 'rotate-[1080deg] blur-[2px]' : ''}`} style={{ background: 'conic-gradient(#fca5a5 0% 25%, #fcd34d 25% 50%, #86efac 50% 75%, #93c5fd 75% 100%)' }}>
                     <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-inner z-10 font-black text-violet-700">
@@ -327,25 +339,19 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
                     </div>
                 </div>
                 
-                <button onClick={startSpin} disabled={spinning} className="mt-8 bg-violet-600 text-white px-10 py-4 rounded-2xl font-black shadow-lg hover:bg-violet-700 active:scale-95 transition-all disabled:opacity-50">
-                    {spinning ? 'جاري اللف...' : 'اضغط للّف'}
+                <button onClick={startSpin} disabled={spinning || starting} className="mt-8 bg-violet-600 text-white px-10 py-4 rounded-2xl font-black shadow-lg hover:bg-violet-700 active:scale-95 transition-all disabled:opacity-50">
+                    {spinning ? 'جاري اللف...' : starting ? 'جاري البدء...' : 'اضغط للّف (خصم محاولة)'}
                 </button>
             </div>
         );
     }
 
-    // ✅ المعالج الذكي للخيارات لتخطي خطأ الـ JSON
     let parsedOptions: string[] = [];
     if (question && question.options) {
-        if (Array.isArray(question.options)) {
-            parsedOptions = question.options;
-        } else if (typeof question.options === 'string') {
-            try {
-                parsedOptions = JSON.parse(question.options);
-            } catch (e) {
-                // إذا فشل الـ JSON، قم بتقسيم النص بالفواصل
-                parsedOptions = question.options.split(',').map((s: string) => s.trim());
-            }
+        if (Array.isArray(question.options)) parsedOptions = question.options;
+        else if (typeof question.options === 'string') {
+            try { parsedOptions = JSON.parse(question.options); } 
+            catch (e) { parsedOptions = question.options.split(',').map((s: string) => s.trim()); }
         }
     }
 
@@ -355,12 +361,10 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
                 <span className="bg-red-50 text-red-600 px-4 py-2 rounded-xl font-black">⏳ {timeLeft} ثانية</span>
                 <span className="bg-amber-50 text-amber-600 px-4 py-2 rounded-xl font-black flex items-center gap-1"><Star className="w-4 h-4"/> الجائزة: {pointsWon} نقطة</span>
             </div>
-            
             <div className="bg-violet-50 p-6 rounded-3xl mb-6 border border-violet-100">
                 <HelpCircle className="w-10 h-10 text-violet-400 mx-auto mb-3"/>
                 <h3 className="text-xl font-black text-violet-900 leading-relaxed">{question.question_text}</h3>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {parsedOptions.map((opt: string, i: number) => (
                     <button key={i} onClick={() => handleAnswer(opt)} className="bg-white border-2 border-gray-100 p-4 rounded-2xl font-bold text-gray-700 hover:border-violet-500 hover:bg-violet-50 transition-all active:scale-95">
@@ -371,24 +375,34 @@ function SpinAndAnswerGame({ employee, onComplete }: { employee: Employee, onCom
         </div>
     );
 }
+
 // ==========================================
-// 2️⃣ فك الشفرة (Word Scramble) - حروف مفككة
+// 2️⃣ فك الشفرة (Word Scramble)
 // ==========================================
-function WordScrambleGame({ onComplete }: { onComplete: (points: number, isWin: boolean) => void }) {
+function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void>, onComplete: (points: number, isWin: boolean) => void }) {
     const [wordObj, setWordObj] = useState(SCRAMBLE_WORDS[0]);
     const [scrambledArray, setScrambledArray] = useState<string[]>([]);
     const [input, setInput] = useState('');
-    const [timeLeft, setTimeLeft] = useState(20); // 20 ثانية
+    const [timeLeft, setTimeLeft] = useState(20); 
     const [isActive, setIsActive] = useState(false);
+    const [starting, setStarting] = useState(false);
 
-    const startGame = () => {
+    const startGame = async () => {
+        setStarting(true);
+        try {
+            await onStart(); // تسجيل المحاولة الفوري
+        } catch(e) {
+            setStarting(false);
+            return;
+        }
+
         const randomWord = SCRAMBLE_WORDS[Math.floor(Math.random() * SCRAMBLE_WORDS.length)];
         setWordObj(randomWord);
-        // تفكيك الكلمة إلى مصفوفة حروف ولخبطتها
         setScrambledArray(randomWord.word.split('').sort(() => 0.5 - Math.random()));
         setTimeLeft(20);
         setInput('');
         setIsActive(true);
+        setStarting(false);
     };
 
     useEffect(() => {
@@ -397,7 +411,7 @@ function WordScrambleGame({ onComplete }: { onComplete: (points: number, isWin: 
             timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
         } else if (isActive && timeLeft === 0) {
             setIsActive(false);
-            onComplete(0, false); // خسارة
+            onComplete(0, false); 
         }
         return () => clearInterval(timer);
     }, [isActive, timeLeft, onComplete]);
@@ -405,22 +419,23 @@ function WordScrambleGame({ onComplete }: { onComplete: (points: number, isWin: 
     const checkAnswer = () => {
         if (input.trim() === wordObj.word) {
             setIsActive(false);
-            // حساب النقاط بناء على الوقت المتبقي (أدنى نقطة 5، أقصى نقطة 20)
             const points = Math.max(5, Math.floor(timeLeft)); 
             onComplete(points, true);
         } else {
             toast.error('كلمة خاطئة!');
-            setInput(''); // تفريغ الخانة للمحاولة مجدداً
+            setInput(''); 
         }
     };
 
-    if (!isActive && timeLeft === 20) {
+    if (!isActive) {
         return (
             <div className="text-center py-10">
                 <Timer className="w-16 h-16 text-blue-500 mx-auto mb-4 animate-pulse"/>
                 <h3 className="text-2xl font-black text-gray-800 mb-2">فك الشفرة!</h3>
                 <p className="text-sm font-bold text-gray-500 mb-6 max-w-sm mx-auto">النقاط تتناقص كل ثانية! رتب الحروف المبعثرة واكتب الكلمة بأسرع ما يمكن.</p>
-                <button onClick={startGame} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:bg-blue-700 hover:scale-105 transition-all">ابدأ التحدي</button>
+                <button onClick={startGame} disabled={starting} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:bg-blue-700 hover:scale-105 transition-all disabled:opacity-50">
+                    {starting ? 'جاري البدء...' : 'ابدأ التحدي (خصم محاولة)'}
+                </button>
             </div>
         );
     }
@@ -431,8 +446,6 @@ function WordScrambleGame({ onComplete }: { onComplete: (points: number, isWin: 
                 <span className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-black text-lg">⏳ {timeLeft} ث</span>
                 <span className="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">تلميح: {wordObj.hint}</span>
             </div>
-            
-            {/* عرض الحروف في مربعات منفصلة */}
             <div className="flex flex-wrap justify-center gap-2 mb-10" dir="ltr">
                 {scrambledArray.map((letter, idx) => (
                     <div key={idx} className="w-12 h-12 bg-white border-2 border-gray-200 rounded-xl flex items-center justify-center text-2xl font-black text-gray-800 shadow-sm">
@@ -440,18 +453,14 @@ function WordScrambleGame({ onComplete }: { onComplete: (points: number, isWin: 
                     </div>
                 ))}
             </div>
-
             <input 
-                type="text" 
-                value={input} 
-                onChange={e => setInput(e.target.value)} 
-                onKeyDown={e => e.key === 'Enter' && checkAnswer()}
+                type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && checkAnswer()}
                 className="w-full text-center text-xl font-black p-4 bg-gray-100 border-2 border-transparent focus:border-blue-500 outline-none rounded-2xl mb-4 transition-all"
-                placeholder="اكتب الكلمة مجمعة هنا..."
-                autoFocus
+                placeholder="اكتب الكلمة مجمعة هنا..." autoFocus
             />
-            
-            <button onClick={checkAnswer} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-md hover:bg-blue-700 active:scale-95">تحقق (الجائزة الآن: {Math.max(5, timeLeft)} نقطة)</button>
+            <button onClick={checkAnswer} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-md hover:bg-blue-700 active:scale-95">
+                تحقق (الجائزة الآن: {Math.max(5, timeLeft)} نقطة)
+            </button>
         </div>
     );
 }
@@ -459,20 +468,32 @@ function WordScrambleGame({ onComplete }: { onComplete: (points: number, isWin: 
 // ==========================================
 // 3️⃣ الخزنة السرية (Crack the Safe)
 // ==========================================
-function SafeCrackerGame({ onComplete }: { onComplete: (points: number, isWin: boolean) => void }) {
+function SafeCrackerGame({ onStart, onComplete }: { onStart: () => Promise<void>, onComplete: (points: number, isWin: boolean) => void }) {
     const [secretCode, setSecretCode] = useState('');
     const [guesses, setGuesses] = useState<{ guess: string, feedback: string[] }[]>([]);
     const [currentGuess, setCurrentGuess] = useState('');
+    const [isActive, setIsActive] = useState(false);
+    const [starting, setStarting] = useState(false);
     const MAX_GUESSES = 5;
 
-    useEffect(() => {
+    const startGame = async () => {
+        setStarting(true);
+        try {
+            await onStart(); // تسجيل المحاولة الفوري
+        } catch(e) {
+            setStarting(false);
+            return;
+        }
+
         let code = '';
         while(code.length < 3) {
-            const r = Math.floor(Math.random() * 9) + 1; // 1-9
+            const r = Math.floor(Math.random() * 9) + 1; 
             if(!code.includes(r.toString())) code += r;
         }
         setSecretCode(code);
-    }, []);
+        setIsActive(true);
+        setStarting(false);
+    };
 
     const submitGuess = () => {
         if (currentGuess.length !== 3) { toast.error('يجب إدخال 3 أرقام'); return; }
@@ -496,11 +517,24 @@ function SafeCrackerGame({ onComplete }: { onComplete: (points: number, isWin: b
         }
     };
 
+    if (!isActive) {
+        return (
+            <div className="text-center py-10">
+                <Lock className="w-16 h-16 text-emerald-500 mx-auto mb-4 animate-pulse"/>
+                <h3 className="text-2xl font-black text-gray-800 mb-2">الخزنة السرية!</h3>
+                <p className="text-sm font-bold text-gray-500 mb-6 max-w-sm mx-auto">خمن الرقم السري (3 أرقام مختلفة) في 5 محاولات فقط بناءً على تلميحات الألوان.</p>
+                <button onClick={startGame} disabled={starting} className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:bg-emerald-700 hover:scale-105 transition-all disabled:opacity-50">
+                    {starting ? 'جاري البدء...' : 'ابدأ المحاولة (خصم محاولة)'}
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="max-w-md mx-auto py-6 animate-in slide-in-from-bottom-4 text-center">
             <Lock className="w-12 h-12 text-emerald-500 mx-auto mb-2"/>
             <h3 className="text-xl font-black text-gray-800">اكسر الخزنة!</h3>
-            <p className="text-xs font-bold text-gray-500 mt-1 mb-4">خمن 3 أرقام مختلفة (من 1 لـ 9). <br/> 🟢 صح | 🟡 مكان خطأ | 🔴 غير موجود</p>
+            <p className="text-xs font-bold text-gray-500 mt-1 mb-4">🟢 صح | 🟡 مكان خطأ | 🔴 غير موجود</p>
             
             <div className="space-y-3 mb-8">
                 {guesses.map((g, i) => (
@@ -512,7 +546,6 @@ function SafeCrackerGame({ onComplete }: { onComplete: (points: number, isWin: b
                         ))}
                     </div>
                 ))}
-                {/* مربعات فارغة للمحاولات المتبقية */}
                 {[...Array(MAX_GUESSES - guesses.length)].map((_, i) => (
                     <div key={i} className="flex justify-center gap-2 opacity-30" dir="ltr">
                         {[1,2,3].map(n => <div key={n} className="w-12 h-12 bg-gray-200 rounded-xl"></div>)}
@@ -539,15 +572,23 @@ function SafeCrackerGame({ onComplete }: { onComplete: (points: number, isWin: b
 // ==========================================
 const CARDS_DATA = ['🚑', '💊', '💉', '🔬', '🩺', '🦷'];
 
-function MemoryMatchGame({ onComplete }: { onComplete: (points: number, isWin: boolean) => void }) {
+function MemoryMatchGame({ onStart, onComplete }: { onStart: () => Promise<void>, onComplete: (points: number, isWin: boolean) => void }) {
     const [cards, setCards] = useState<{ id: number, icon: string, isFlipped: boolean, isMatched: boolean }[]>([]);
     const [flippedIndices, setFlippedIndices] = useState<number[]>([]);
     const [matches, setMatches] = useState(0);
-    const [timeLeft, setTimeLeft] = useState(45); // 45 ثانية
+    const [timeLeft, setTimeLeft] = useState(45); 
     const [isActive, setIsActive] = useState(false);
+    const [starting, setStarting] = useState(false);
 
-    const startGame = () => {
-        // تجهيز 12 كارت (6 أزواج) ولخبطتهم
+    const startGame = async () => {
+        setStarting(true);
+        try {
+            await onStart(); // تسجيل المحاولة الفوري
+        } catch(e) {
+            setStarting(false);
+            return;
+        }
+
         const shuffled = [...CARDS_DATA, ...CARDS_DATA]
             .sort(() => 0.5 - Math.random())
             .map((icon, idx) => ({ id: idx, icon, isFlipped: false, isMatched: false }));
@@ -556,6 +597,7 @@ function MemoryMatchGame({ onComplete }: { onComplete: (points: number, isWin: b
         setFlippedIndices([]);
         setTimeLeft(45);
         setIsActive(true);
+        setStarting(false);
     };
 
     useEffect(() => {
@@ -564,7 +606,7 @@ function MemoryMatchGame({ onComplete }: { onComplete: (points: number, isWin: b
             timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
         } else if (isActive && timeLeft === 0) {
             setIsActive(false);
-            onComplete(0, false); // خلص الوقت
+            onComplete(0, false); 
         }
         return () => clearInterval(timer);
     }, [isActive, timeLeft, onComplete]);
@@ -582,7 +624,6 @@ function MemoryMatchGame({ onComplete }: { onComplete: (points: number, isWin: b
         if (newFlipped.length === 2) {
             const [first, second] = newFlipped;
             if (newCards[first].icon === newCards[second].icon) {
-                // تطابق!
                 setTimeout(() => {
                     const matchedCards = [...newCards];
                     matchedCards[first].isMatched = true;
@@ -593,13 +634,12 @@ function MemoryMatchGame({ onComplete }: { onComplete: (points: number, isWin: b
                         const newMatches = prev + 1;
                         if (newMatches === CARDS_DATA.length) {
                             setIsActive(false);
-                            setTimeout(() => onComplete(25, true), 500); // الفوز بـ 25 نقطة
+                            setTimeout(() => onComplete(25, true), 500); 
                         }
                         return newMatches;
                     });
                 }, 500);
             } else {
-                // لا يوجد تطابق
                 setTimeout(() => {
                     const resetCards = [...newCards];
                     resetCards[first].isFlipped = false;
@@ -611,13 +651,15 @@ function MemoryMatchGame({ onComplete }: { onComplete: (points: number, isWin: b
         }
     };
 
-    if (!isActive && timeLeft === 45) {
+    if (!isActive) {
         return (
             <div className="text-center py-10">
                 <Gamepad2 className="w-16 h-16 text-orange-500 mx-auto mb-4 animate-bounce"/>
                 <h3 className="text-2xl font-black text-gray-800 mb-2">تطابق الذاكرة</h3>
                 <p className="text-sm font-bold text-gray-500 mb-6 max-w-sm mx-auto">لديك 45 ثانية لتطابق جميع الأيقونات الطبية معاً.</p>
-                <button onClick={startGame} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:bg-orange-600 active:scale-95 transition-all">ابدأ اللعب</button>
+                <button onClick={startGame} disabled={starting} className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-black shadow-lg hover:bg-orange-600 active:scale-95 transition-all disabled:opacity-50">
+                    {starting ? 'جاري البدء...' : 'ابدأ اللعب (خصم محاولة)'}
+                </button>
             </div>
         );
     }
@@ -628,7 +670,6 @@ function MemoryMatchGame({ onComplete }: { onComplete: (points: number, isWin: b
                 <span className="bg-orange-50 text-orange-600 px-4 py-2 rounded-xl font-black text-lg">⏳ {timeLeft} ث</span>
                 <span className="text-sm font-bold text-gray-500">التطابق: {matches} / 6</span>
             </div>
-
             <div className="grid grid-cols-4 gap-2 md:gap-3" dir="ltr">
                 {cards.map((card, idx) => (
                     <div 
