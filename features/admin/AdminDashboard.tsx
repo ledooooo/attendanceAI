@@ -7,7 +7,7 @@ import {
     Users, Clock, CalendarRange, ClipboardList, 
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
-    Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, LayoutDashboard
+    Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, LayoutDashboard, UserCog
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
@@ -37,6 +37,9 @@ import { BookOpen } from 'lucide-react'; // ✅ أيقونة التدريب
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AssetsManager from './components/AssetsManager'; // 1. استيراد المكون
 
+// ✅ استيراد تبويب إدارة الموظف من مجلد staff
+import AdministrationTab from '../staff/components/AdministrationTab';
+
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
     const queryClient = useQueryClient();
@@ -57,6 +60,9 @@ export default function AdminDashboard() {
         },
         staleTime: 1000 * 60 * 5, // تحديث كل 5 دقائق لضمان دقة "آخر ظهور"
     });
+
+    // ✅ استخراج بيانات الموظف (المدير) الحالي لتمريرها لمكون AdministrationTab
+    const currentAdminEmployee = employees.find(e => e.id === user?.id) || ({} as Employee);
 
     // --- 2. جلب الإعدادات ---
     const { data: settings } = useQuery({
@@ -128,6 +134,7 @@ export default function AdminDashboard() {
     const menuItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
         { id: 'doctors', label: 'شئون الموظفين', icon: Users },
+        { id: 'staff_admin', label: 'إدارة الموظف', icon: UserCog }, // ✅ التبويب الجديد
         { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
         { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
         { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges?.messages || 0 },
@@ -141,10 +148,10 @@ export default function AdminDashboard() {
         { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
         { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
         { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
-        { id: 'assets', label: 'العهد والأجهزة', icon: Box }, // 2. إضافة للقائمة
+        { id: 'assets', label: 'العهد والأجهزة', icon: Box },
         { id: 'gamification', label: 'النقاط والجوائز', icon: Trophy },
         { id: 'vaccinations', label: 'التطعيمات (Virus B)', icon: Syringe },
-        { id: 'training', label: 'إدارة التدريب', icon: BookOpen }, // ✅ تمت الإضافة
+        { id: 'training', label: 'إدارة التدريب', icon: BookOpen },
         { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
         { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing },
         { id: 'settings', label: 'إعدادات النظام', icon: Settings },
@@ -270,6 +277,7 @@ export default function AdminDashboard() {
                         {/* تمرير employees بأمان تام */}
                         {activeTab === 'home' && <HomeTab employees={employees || []} setActiveTab={setActiveTab} />}
                         {activeTab === 'doctors' && <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />}
+                        {activeTab === 'staff_admin' && <AdministrationTab employee={currentAdminEmployee} />} {/* ✅ التبويب الجديد */}
                         {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
                         {activeTab === 'schedules' && <EveningSchedulesTab employees={employees || []} />}
                         {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
@@ -286,7 +294,7 @@ export default function AdminDashboard() {
                         )}
                         {activeTab === 'all_messages' && <AdminMessagesTab employees={employees || []} />}
                         {activeTab === 'quality' && <QualityDashboard />}
-                        {activeTab === 'assets' && <AssetsManager />} {/* 3. عرض المكون */}
+                        {activeTab === 'assets' && <AssetsManager />} 
                         {activeTab === 'training' && <TrainingManager />}
                         {activeTab === 'library-manager' && <AdminLibraryManager />} 
                         {activeTab === 'data-reports' && <AdminDataReports employees={employees || []} />}
@@ -294,15 +302,14 @@ export default function AdminDashboard() {
                         {activeTab === 'tasks' && <TasksManager employees={employees || []} />}
                         {activeTab === 'vaccinations' && <VaccinationsTab employees={employees || []} />}
                         {activeTab === 'gamification' && (
-    <div className="space-y-6">
-         <GamificationManager />
-         {/* يمكنك وضع EOMManager و BirthdayWidget هنا أيضاً لو أردت دمجهم */}
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-             <BirthdayWidget employees={employees || []} />
-             <EOMManager />
-         </div>
-    </div>
-)}
+                            <div className="space-y-6">
+                                 <GamificationManager />
+                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                     <BirthdayWidget employees={employees || []} />
+                                     <EOMManager />
+                                 </div>
+                            </div>
+                        )}
                         {/* واجهة اختبار التنبيهات */}
                         {activeTab === 'test_push' && (
                             <div className="max-w-md mx-auto bg-white p-8 rounded-[30px] shadow-sm border border-gray-100 text-center space-y-6 mt-10">
