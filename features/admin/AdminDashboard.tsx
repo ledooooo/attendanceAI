@@ -63,7 +63,15 @@ export default function AdminDashboard() {
 
     // ✅ استخراج بيانات الموظف (المدير) الحالي لتمريرها لمكون AdministrationTab
     const currentAdminEmployee = employees.find(e => e.id === user?.id) || ({} as Employee);
-
+// قراءة الرابط عند تشغيل التطبيق (لفتح التبويب من الإشعارات الخارجية)
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get('tab');
+        if (tabParam) {
+            setActiveTab(tabParam); 
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, []);
     // --- 2. جلب الإعدادات ---
     const { data: settings } = useQuery({
         queryKey: ['general_settings'],
