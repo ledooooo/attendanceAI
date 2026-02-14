@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Input, Select } from '../../../components/ui/FormElements'; // تأكد من وجود Select في FormElements أو استخدم select عادي
+import { Input, Select } from '../../../components/ui/FormElements'; 
 import { AttendanceRule } from '../../../types'; 
 import {
   Save, Building, Clock, MapPin, Calculator, Link as LinkIcon,
-  Plus, Trash2, Loader2, Locate, Settings2, Calendar, LayoutList, Globe, Palette
+  Plus, Trash2, Loader2, Locate, Settings2, Calendar, LayoutList, Globe, Palette, Sparkles, Info
 } from 'lucide-react';
 
 export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'general' | 'rules' | 'holidays' | 'links'>('general');
+  // ✅ تمت إضافة 'themes' هنا
+  const [activeTab, setActiveTab] = useState<'general' | 'rules' | 'holidays' | 'links' | 'themes'>('general');
 
   // 1. بيانات الإعدادات العامة
   const [formData, setFormData] = useState({
@@ -27,7 +28,8 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
     links_names: [] as string[],
     links_urls: [] as string[],
     holidays_name: [] as string[],
-    holidays_date: [] as string[]
+    holidays_date: [] as string[],
+    active_theme: 'default' // ✅ تمت إضافة حقل الثيم
   });
 
   // 2. بيانات قواعد الحضور
@@ -48,6 +50,14 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
     { value: 'blue', label: 'أزرق (مبكر)', bg: 'bg-blue-500' },
     { value: 'purple', label: 'بنفسجي (إضافي)', bg: 'bg-purple-500' },
     { value: 'gray', label: 'رمادي (محايد)', bg: 'bg-gray-500' },
+  ];
+
+  // خيارات الثيمات المتاحة
+  const themeOptions = [
+      { id: 'default', name: 'الوضع الافتراضي', icon: '🏢', desc: 'بدون زينة إضافية' },
+      { id: 'ramadan', name: 'شهر رمضان', icon: '🏮', desc: 'فوانيس وزينة رمضانية' },
+      { id: 'eid', name: 'الأعياد', icon: '🎉', desc: 'بالونات وزينة العيد' },
+      { id: 'christmas', name: 'رأس السنة', icon: '❄️', desc: 'تساقط الثلوج' }
   ];
 
   useEffect(() => {
@@ -73,7 +83,8 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
             links_names: data.links_names || [],
             links_urls: data.links_urls || [],
             holidays_name: data.holidays_name || [],
-            holidays_date: data.holidays_date || []
+            holidays_date: data.holidays_date || [],
+            active_theme: data.active_theme || 'default' // ✅ جلب الثيم المحفوظ
         });
       }
     } catch (err) {
@@ -197,11 +208,12 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                 { id: 'rules', label: 'قواعد الحضور', icon: Clock },
                 { id: 'holidays', label: 'العطلات', icon: Calendar },
                 { id: 'links', label: 'الروابط', icon: Globe },
+                { id: 'themes', label: 'المظهر والمناسبات', icon: Palette }, // ✅ تمت إضافة التبويب
             ].map((tab) => (
                 <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold transition-all text-sm ${
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold transition-all text-sm whitespace-nowrap ${
                         activeTab === tab.id 
                         ? 'bg-emerald-600 text-white shadow-md' 
                         : 'text-gray-500 hover:bg-gray-50'
@@ -446,6 +458,48 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                                 <p className="text-gray-400 font-bold">لا توجد روابط مضافة</p>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ✅ 5. Themes Tab */}
+            {activeTab === 'themes' && (
+                <div className="bg-white p-8 rounded-[30px] border border-gray-100 shadow-sm animate-in slide-in-from-bottom-2">
+                    <div className="mb-6">
+                        <h3 className="font-black text-xl text-gray-800 flex items-center gap-2 mb-2">
+                            <Sparkles className="w-6 h-6 text-amber-500"/> مظهر التطبيق والمناسبات
+                        </h3>
+                        <p className="text-gray-500 text-sm font-bold">
+                            اختر الثيم العام الذي سيظهر لجميع الموظفين في النظام.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                        {themeOptions.map((theme) => (
+                            <button
+                                key={theme.id}
+                                onClick={() => setFormData({ ...formData, active_theme: theme.id })}
+                                className={`flex flex-col items-center p-6 rounded-2xl border-2 transition-all ${
+                                    formData.active_theme === theme.id
+                                    ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-100'
+                                    : 'border-gray-100 bg-white hover:border-emerald-200 hover:bg-emerald-50/50'
+                                }`}
+                            >
+                                <span className="text-4xl mb-3 block">{theme.icon}</span>
+                                <h4 className="font-black text-gray-800 mb-1">{theme.name}</h4>
+                                <p className="text-[10px] text-gray-500 font-bold text-center">{theme.desc}</p>
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-start gap-3">
+                        <Info className="w-5 h-5 text-blue-500 mt-0.5 shrink-0"/>
+                        <div>
+                            <h4 className="font-bold text-blue-800 mb-1">ملاحظة حول ثيم أعياد الميلاد</h4>
+                            <p className="text-xs text-blue-600 font-medium leading-relaxed">
+                                ثيم عيد الميلاد يظهر تلقائياً للموظف في يوم ميلاده فقط (يتم حسابه من الرقم القومي)، ولا يتأثر باختيارك للثيم العام هنا.
+                            </p>
+                        </div>
                     </div>
                 </div>
             )}
