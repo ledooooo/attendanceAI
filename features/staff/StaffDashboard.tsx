@@ -201,6 +201,21 @@ export default function StaffDashboard({ employee }: Props) {
     setShowLeaderboardMenu(false);
   };
 
+  // ✅ استعلام عدد طلبات الجوائز المعلقة (التي لم تسلم بعد)
+  const { data: pendingRewardsCount = 0 } = useQuery({
+      queryKey: ['pending_rewards_count', employee.employee_id],
+      queryFn: async () => {
+          const { count } = await supabase
+              .from('rewards_redemptions')
+              .select('*', { count: 'exact', head: true })
+              .or(`employee_id.eq.${employee.employee_id},employee_id.eq.${employee.id}`) // استخدام كلا المعرفين لضمان الدقة
+              .in('status', ['pending', 'قيد الانتظار', 'معلق', 'new']); // جميع حالات الانتظار المحتملة
+
+          return count || 0;
+      },
+      refetchInterval: 30000, // تحديث كل 30 ثانية
+  });
+
   // استعلام العدادات
   const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0, training: 0 } } = useQuery({
       queryKey: ['staff_badges', employee.employee_id],
@@ -481,7 +496,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            {/* ✅ تم إزالة hidden md:block من الأزرار وتقليل المسافات ليظهروا جميعاً على الموبايل */}
             <div className="flex items-center gap-1 md:gap-2">
                 
                 {/* 1. تبديل المظهر (الثيم) */}
@@ -495,14 +509,20 @@ export default function StaffDashboard({ employee }: Props) {
                     </button>
                 </div>
 
-                {/* 2. متجر الجوائز السريع */}
+                {/* ✅ 2. متجر الجوائز السريع (مع تنبيه الطلبات المعلقة) */}
                 <div className="relative">
                     <button 
                         onClick={() => setActiveTab('store')} 
-                        className={`p-2 rounded-full transition-colors ${activeTab === 'store' ? 'bg-pink-100 text-pink-700' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
+                        className={`p-2 rounded-full transition-colors relative ${activeTab === 'store' ? 'bg-pink-100 text-pink-700' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
                         title="متجر الجوائز"
                     >
                         <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
+                        {/* إظهار نقطة حمراء نابضة برقم الطلبات إذا كان هناك طلب لم يسلم */}
+                        {pendingRewardsCount > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] md:text-[10px] font-bold w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border border-white animate-pulse">
+                                {pendingRewardsCount}
+                            </span>
+                        )}
                     </button>
                 </div>
 
