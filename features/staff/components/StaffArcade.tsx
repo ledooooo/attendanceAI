@@ -315,7 +315,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-fuchsia-100">
                                     <span className="text-xs bg-white text-fuchsia-700 px-3 py-1.5 rounded-lg font-black shadow-sm">حظ + ذكاء</span>
                                     <span className="text-xs text-fuchsia-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 10-50 نقطة
+                                        <Trophy className="w-3 h-3"/> 5-30 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -333,7 +333,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-blue-100">
                                     <span className="text-xs bg-white text-blue-700 px-3 py-1.5 rounded-lg font-black shadow-sm">سرعة بديهة</span>
                                     <span className="text-xs text-blue-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 5-20 نقطة
+                                        <Trophy className="w-3 h-3"/> 5-10 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -351,7 +351,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-emerald-100">
                                     <span className="text-xs bg-white text-emerald-700 px-3 py-1.5 rounded-lg font-black shadow-sm">ذكاء ومنطق</span>
                                     <span className="text-xs text-emerald-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 30 نقطة
+                                        <Trophy className="w-3 h-3"/> 25 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -411,7 +411,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-rose-100">
                                     <span className="text-xs bg-white text-rose-700 px-3 py-1.5 rounded-lg font-black shadow-sm">دقة حسابية</span>
                                     <span className="text-xs text-rose-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 40 نقطة
+                                        <Trophy className="w-3 h-3"/> 30 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -517,7 +517,7 @@ function SpinAndAnswerGame({ employee, onStart, onComplete }: { employee: Employ
         }
 
         setSpinning(true);
-        const options = [5, 10, 15, 20, 25];
+        const options = [5, 10, 15, 20, 30];
         const result = options[Math.floor(Math.random() * options.length)];
         
         setTimeout(() => {
@@ -661,7 +661,7 @@ function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void
     const checkAnswer = () => {
         if (input.trim() === wordObj.word) {
             setIsActive(false);
-            const points = Math.max(3, Math.floor(timeLeft / 2));  // من 10 لـ 3 نقاط
+            const points = Math.max(5, Math.floor(timeLeft));  // من 10 لـ 3 نقاط
             onComplete(points, true);
         } else {
             toast.error('كلمة خاطئة! حاول مرة أخرى', { icon: '❌' });
@@ -793,7 +793,7 @@ function SafeCrackerGame({ onStart, onComplete }: { onStart: () => Promise<void>
         if (currentGuess === secretCode) {
             setTimeout(() => {
                 toast.success('🎉 أحسنت! فتحت الخزنة!', { duration: 3000 });
-                onComplete(20, true);
+                onComplete(25, true);
             }, 800); 
         } else if (newGuesses.length >= MAX_GUESSES) {
             toast.error(`💔 الكود الصحيح كان: ${secretCode}`, { duration: 3000 });
@@ -975,7 +975,7 @@ function MemoryMatchGame({ onStart, onComplete }: { onStart: () => Promise<void>
                         if (newMatches === CARDS_DATA.length) {
                             setIsActive(false);
                             toast.success('🎉 مبروك! أنهيت اللعبة!');
-                            setTimeout(() => onComplete(15, true), 1000); 
+                            setTimeout(() => onComplete(25, true), 1000); 
                         }
                         return newMatches;
                     });
@@ -1114,8 +1114,8 @@ function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>
             } else {
                 setIsActive(false);
                 const finalScore = score + (isCorrect ? 1 : 0);
-const basePoints = finalScore * 3; // 3 نقاط لكل سؤال صحيح
-const timeBonus = Math.floor(timeLeft / 4); // نقطة إضافية لكل 4 ثواني
+const basePoints = finalScore * 5; // 5 نقاط لكل سؤال صحيح
+const timeBonus = Math.floor(timeLeft / 2); // نقطة إضافية لكل ثانيتين
                 const totalPoints = basePoints + timeBonus;
                 
                 if (finalScore >= 3) { // نجاح إذا أجاب على 3 أسئلة صحيحة على الأقل
@@ -1300,10 +1300,10 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
                 
                 if (finalScore === cases.length) {
                     toast.success('مثالي! جميع الحسابات صحيحة! 🏆');
-                    onComplete(20, true);
+                    onComplete(30, true);
                 } else if (finalScore >= 2) {
                     toast.success(`جيد! ${finalScore}/${cases.length} صحيحة 👍`);
-                    onComplete(10, true);
+                    onComplete(15, true);
                 } else {
                     toast.error('تحتاج لمزيد من التدريب 💪');
                     onComplete(0, false);
@@ -1334,7 +1334,7 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
                         </div>
                         <div className="bg-white p-3 rounded-xl shadow-sm flex items-center justify-between">
                             <span className="text-rose-600">💎 الجائزة</span>
-                            <span className="text-lg text-gray-800">40 نقطة</span>
+                            <span className="text-lg text-gray-800">30 نقطة</span>
                         </div>
                     </div>
                 </div>
