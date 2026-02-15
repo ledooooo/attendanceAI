@@ -263,14 +263,14 @@ export default function StaffArcade({ employee }: Props) {
                             {/* زر لوحة الشرف */}
                             <button
                                 onClick={() => setShowLeaderboard(true)}
-                                className="bg-white/20 backdrop-blur-sm hover:bg-white/30 px-4 py-3 rounded-2xl border border-white/30 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                className="bg-white bg-opacity-20 backdrop-blur-sm hover:bg-white bg-opacity-30 px-4 py-3 rounded-2xl border border-white border-opacity-30 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
                             >
                                 <Trophy className="w-5 h-5 text-yellow-300"/>
                                 <span className="hidden md:inline text-sm font-black">الأبطال</span>
                             </button>
                             
                             {/* رصيد النقاط */}
-                            <div className="hidden md:block bg-white/20 backdrop-blur-sm px-6 py-3 rounded-2xl border border-white/30">
+                            <div className="hidden md:block bg-white bg-opacity-20 backdrop-blur-sm px-6 py-3 rounded-2xl border border-white border-opacity-30">
                                 <p className="text-xs text-violet-200 mb-1">رصيدك الحالي</p>
                                 <p className="text-2xl font-black flex items-center gap-1">
                                     <Trophy className="w-5 h-5 text-yellow-300"/> {employee.total_points || 0}
@@ -358,7 +358,7 @@ export default function StaffArcade({ employee }: Props) {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                         {/* Game 1 - Enhanced */}
                         <button onClick={() => setActiveGame('spin')} className="group bg-gradient-to-br from-fuchsia-50 to-pink-50 border-2 border-fuchsia-100 hover:border-fuchsia-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col relative overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-12 h-12 bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 group-hover:rotate-12 transition-transform shadow-lg">
                                     <Dices className="w-7 h-7"/>
@@ -376,7 +376,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* Game 2 - Enhanced */}
                         <button onClick={() => setActiveGame('scramble')} className="group bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-100 hover:border-blue-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
                                     <Timer className="w-7 h-7"/>
@@ -394,7 +394,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* Game 3 - Enhanced */}
                         <button onClick={() => setActiveGame('safe')} className="group bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-100 hover:border-emerald-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
                                     <Lock className="w-7 h-7"/>
@@ -412,7 +412,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* Game 4 - Enhanced */}
                         <button onClick={() => setActiveGame('memory')} className="group bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-100 hover:border-orange-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
                                     <Gamepad2 className="w-7 h-7"/>
@@ -430,7 +430,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* 🆕 Game 5 - Medical Quiz Rush */}
                         <button onClick={() => setActiveGame('quiz')} className="group bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-100 hover:border-indigo-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
                                     <Brain className="w-7 h-7"/>
@@ -451,7 +451,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* 🆕 Game 6 - Dose Calculator Challenge */}
                         <button onClick={() => setActiveGame('dose')} className="group bg-gradient-to-br from-rose-50 to-red-50 border-2 border-rose-100 hover:border-rose-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
                                     <Calculator className="w-7 h-7"/>
@@ -472,7 +472,7 @@ export default function StaffArcade({ employee }: Props) {
                     </div>
                         {/* Game 1 - Enhanced */}
                         <button onClick={() => setActiveGame('spin')} className="group bg-gradient-to-br from-fuchsia-50 to-pink-50 border-2 border-fuchsia-100 hover:border-fuchsia-300 p-6 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col relative overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-16 h-16 bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 group-hover:rotate-12 transition-transform shadow-lg">
                                     <Dices className="w-9 h-9"/>
@@ -490,7 +490,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* Game 2 - Enhanced */}
                         <button onClick={() => setActiveGame('scramble')} className="group bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-100 hover:border-blue-300 p-6 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-600 text-white rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
                                     <Timer className="w-9 h-9"/>
@@ -508,7 +508,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* Game 3 - Enhanced */}
                         <button onClick={() => setActiveGame('safe')} className="group bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-100 hover:border-emerald-300 p-6 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
                                     <Lock className="w-9 h-9"/>
@@ -526,7 +526,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* Game 4 - Enhanced */}
                         <button onClick={() => setActiveGame('memory')} className="group bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-100 hover:border-orange-300 p-6 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
                                     <Gamepad2 className="w-9 h-9"/>
@@ -544,7 +544,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* 🆕 Game 5 - Medical Quiz Rush */}
                         <button onClick={() => setActiveGame('quiz')} className="group bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-100 hover:border-indigo-300 p-6 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
                                     <Brain className="w-9 h-9"/>
@@ -565,7 +565,7 @@ export default function StaffArcade({ employee }: Props) {
 
                         {/* 🆕 Game 6 - Dose Calculator Challenge */}
                         <button onClick={() => setActiveGame('dose')} className="group bg-gradient-to-br from-rose-50 to-red-50 border-2 border-rose-100 hover:border-rose-300 p-6 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-200 bg-opacity-20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
                             <div className="relative z-10">
                                 <div className="w-16 h-16 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
                                     <Calculator className="w-9 h-9"/>
@@ -589,7 +589,7 @@ export default function StaffArcade({ employee }: Props) {
 
             {/* 🏆 Modal لوحة الشرف */}
             {showLeaderboard && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLeaderboard(false)}>
+                <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLeaderboard(false)}>
                     <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-[2rem] border-2 border-amber-200 shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-6">
                             <h3 className="font-black text-2xl md:text-3xl text-gray-800 flex items-center gap-3">
