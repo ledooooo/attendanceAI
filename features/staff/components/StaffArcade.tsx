@@ -517,7 +517,7 @@ function SpinAndAnswerGame({ employee, onStart, onComplete }: { employee: Employ
         }
 
         setSpinning(true);
-        const options = [10, 20, 30, 40, 50];
+        const options = [5, 10, 15, 20, 25];
         const result = options[Math.floor(Math.random() * options.length)];
         
         setTimeout(() => {
@@ -661,7 +661,7 @@ function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void
     const checkAnswer = () => {
         if (input.trim() === wordObj.word) {
             setIsActive(false);
-            const points = Math.max(5, Math.floor(timeLeft)); 
+            const points = Math.max(3, Math.floor(timeLeft / 2));  // من 10 لـ 3 نقاط
             onComplete(points, true);
         } else {
             toast.error('كلمة خاطئة! حاول مرة أخرى', { icon: '❌' });
@@ -793,7 +793,7 @@ function SafeCrackerGame({ onStart, onComplete }: { onStart: () => Promise<void>
         if (currentGuess === secretCode) {
             setTimeout(() => {
                 toast.success('🎉 أحسنت! فتحت الخزنة!', { duration: 3000 });
-                onComplete(30, true);
+                onComplete(20, true);
             }, 800); 
         } else if (newGuesses.length >= MAX_GUESSES) {
             toast.error(`💔 الكود الصحيح كان: ${secretCode}`, { duration: 3000 });
@@ -975,7 +975,7 @@ function MemoryMatchGame({ onStart, onComplete }: { onStart: () => Promise<void>
                         if (newMatches === CARDS_DATA.length) {
                             setIsActive(false);
                             toast.success('🎉 مبروك! أنهيت اللعبة!');
-                            setTimeout(() => onComplete(25, true), 1000); 
+                            setTimeout(() => onComplete(15, true), 1000); 
                         }
                         return newMatches;
                     });
@@ -1114,8 +1114,8 @@ function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>
             } else {
                 setIsActive(false);
                 const finalScore = score + (isCorrect ? 1 : 0);
-                const basePoints = finalScore * 5; // 5 نقاط لكل سؤال صحيح
-                const timeBonus = Math.floor(timeLeft / 2); // نقطة إضافية لكل ثانيتين متبقيتين
+const basePoints = finalScore * 3; // 3 نقاط لكل سؤال صحيح
+const timeBonus = Math.floor(timeLeft / 4); // نقطة إضافية لكل 4 ثواني
                 const totalPoints = basePoints + timeBonus;
                 
                 if (finalScore >= 3) { // نجاح إذا أجاب على 3 أسئلة صحيحة على الأقل
@@ -1300,10 +1300,10 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
                 
                 if (finalScore === cases.length) {
                     toast.success('مثالي! جميع الحسابات صحيحة! 🏆');
-                    onComplete(40, true);
+                    onComplete(20, true);
                 } else if (finalScore >= 2) {
                     toast.success(`جيد! ${finalScore}/${cases.length} صحيحة 👍`);
-                    onComplete(25, true);
+                    onComplete(10, true);
                 } else {
                     toast.error('تحتاج لمزيد من التدريب 💪');
                     onComplete(0, false);
