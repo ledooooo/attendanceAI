@@ -86,7 +86,7 @@ export default function ThemeOverlay({ employee }: Props) {
                                     <img 
                                         src={isEven 
                                             ? "https://cdn-icons-png.flaticon.com/512/2386/2386822.png" // شكل الفانوس الأول
-                                            : "https://cdn-icons-png.flaticon.com/512/2386/2386822.png" // شكل الفانوس الثاني
+                                            : "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgpfQa1XgaeFkjvb2x98bHT_UWmk5CTyhkt5RE6qKQ2r3BCYW3aaY-Uz4qfJs6aztatxqKOUnxLszygoeQHUqxgcTjuviDt0wHRyg550vMCO7u9AMUtD7XO7SRT1ly5iVlgbRwoxe70X8CkAuOcozLBZ3U0oKD6QkuoGgX28qQPbOr22uLCMQHNIXQ4vbCR/s320/Ramadan.png" // شكل الفانوس الثاني
                                         } 
                                         alt="Ramadan Lantern" 
                                         className={`${lanternSize} object-contain drop-shadow-[0_15px_20px_rgba(250,204,21,0.6)]`}
