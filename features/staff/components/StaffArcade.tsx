@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Gamepad2, Lock, Timer, Trophy, Loader2, Dices, HelpCircle, Star, Zap, Calculator, Brain, Award, Target, Clock, CheckCircle, XCircle, AlertCircle, TrendingUp, User } from 'lucide-react';
+import { Gamepad2, Lock, Timer, Trophy, Loader2, Dices, HelpCircle, Star, Zap, Calculator, Brain, Award, Target, Clock, CheckCircle, XCircle, AlertCircle, TrendingUp, User, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -80,6 +80,7 @@ export default function StaffArcade({ employee }: Props) {
     const queryClient = useQueryClient();
     const [activeGame, setActiveGame] = useState<string | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
 
     // 1. جلب آخر محاولة لمعرفة هل هو في فترة الانتظار أم لا
     const { data: lastPlay, isLoading: loadingPlay } = useQuery({
@@ -96,35 +97,77 @@ export default function StaffArcade({ employee }: Props) {
         }
     });
 
-    // 2. جلب لوحة الشرف (Top 10)
-    const { data: leaderboard = [] } = useQuery({
+    // 2. جلب لوحة الشرف (Top 10) - يعمل حتى بدون Foreign Key
+    const { data: leaderboard = [], isLoading: loadingLeaderboard } = useQuery({
         queryKey: ['arcade_leaderboard'],
         queryFn: async () => {
-            const { data: scores } = await supabase
+            // جلب جميع النتائج الفائزة
+            const { data: scores, error: scoresError } = await supabase
                 .from('arcade_scores')
-                .select('employee_id, points_earned, is_win, employees(name, photo_url)')
+                .select('employee_id, points_earned, is_win')
                 .eq('is_win', true);
             
-            if (!scores) return [];
+            if (scoresError) {
+                console.error('Error fetching scores:', scoresError);
+                return [];
+            }
+            
+            if (!scores || scores.length === 0) {
+                console.log('No winning scores found');
+                return [];
+            }
 
             // تجميع النقاط لكل موظف
             const grouped: Record<string, any> = {};
-            scores.forEach(s => {
+            scores.forEach((s: any) => {
+                if (!s.employee_id) return;
+                
                 if (!grouped[s.employee_id]) {
                     grouped[s.employee_id] = { 
-                        id: s.employee_id, 
-                        name: s.employees?.name || 'مجهول', 
-                        photo: s.employees?.photo_url, 
+                        id: s.employee_id,
                         points: 0, 
                         wins: 0 
                     };
                 }
-                grouped[s.employee_id].points += s.points_earned;
+                grouped[s.employee_id].points += (s.points_earned || 0);
                 grouped[s.employee_id].wins += 1;
             });
 
-            return Object.values(grouped).sort((a, b) => b.points - a.points).slice(0, 10);
-        }
+            // جلب بيانات الموظفين
+            const employeeIds = Object.keys(grouped);
+            if (employeeIds.length === 0) return [];
+
+            const { data: employees, error: employeesError } = await supabase
+                .from('employees')
+                .select('employee_id, name, photo_url')
+                .in('employee_id', employeeIds);
+
+            if (employeesError) {
+                console.error('Error fetching employees:', employeesError);
+            }
+
+            // دمج البيانات
+            const leaderboardData = employeeIds.map(empId => {
+                const emp = employees?.find((e: any) => e.employee_id === empId);
+                return {
+                    id: empId,
+                    name: emp?.name || 'غير معروف',
+                    photo: emp?.photo_url || null,
+                    points: grouped[empId].points,
+                    wins: grouped[empId].wins
+                };
+            });
+
+            // ترتيب وأخذ أول 10
+            const sorted = leaderboardData
+                .filter((player: any) => player.points > 0)
+                .sort((a: any, b: any) => b.points - a.points)
+                .slice(0, 10);
+                
+            console.log('Leaderboard data:', sorted);
+            return sorted;
+        },
+        refetchInterval: 30000 // تحديث كل 30 ثانية
     });
 
     // حساب الوقت المتبقي
@@ -207,7 +250,7 @@ export default function StaffArcade({ employee }: Props) {
                 
                 <div className="relative z-10">
                     <div className="flex items-center justify-between">
-                        <div>
+                        <div className="flex-1">
                             <h2 className="text-3xl md:text-4xl font-black flex items-center gap-3 mb-2">
                                 <Gamepad2 className="w-10 h-10 text-fuchsia-300 animate-bounce"/> 
                                 صالة الألعاب
@@ -216,8 +259,18 @@ export default function StaffArcade({ employee }: Props) {
                                 <Clock className="w-4 h-4"/> محاولة واحدة كل 5 ساعات • اختبر مهاراتك واجمع النقاط!
                             </p>
                         </div>
-                        <div className="hidden md:block">
-                            <div className="bg-white/20 backdrop-blur-sm px-6 py-3 rounded-2xl border border-white/30">
+                        <div className="flex items-center gap-3">
+                            {/* زر لوحة الشرف */}
+                            <button
+                                onClick={() => setShowLeaderboard(true)}
+                                className="bg-white/20 backdrop-blur-sm hover:bg-white/30 px-4 py-3 rounded-2xl border border-white/30 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                            >
+                                <Trophy className="w-5 h-5 text-yellow-300"/>
+                                <span className="hidden md:inline text-sm font-black">الأبطال</span>
+                            </button>
+                            
+                            {/* رصيد النقاط */}
+                            <div className="hidden md:block bg-white/20 backdrop-blur-sm px-6 py-3 rounded-2xl border border-white/30">
                                 <p className="text-xs text-violet-200 mb-1">رصيدك الحالي</p>
                                 <p className="text-2xl font-black flex items-center gap-1">
                                     <Trophy className="w-5 h-5 text-yellow-300"/> {employee.total_points || 0}
@@ -302,7 +355,121 @@ export default function StaffArcade({ employee }: Props) {
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {/* Game 1 - Enhanced */}
+                        <button onClick={() => setActiveGame('spin')} className="group bg-gradient-to-br from-fuchsia-50 to-pink-50 border-2 border-fuchsia-100 hover:border-fuchsia-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col relative overflow-hidden hover:scale-105 active:scale-95">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10">
+                                <div className="w-12 h-12 bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 group-hover:rotate-12 transition-transform shadow-lg">
+                                    <Dices className="w-7 h-7"/>
+                                </div>
+                                <h3 className="font-black text-gray-900 text-base mb-1.5">عجلة الحظ المزدوجة</h3>
+                                <p className="text-[10px] text-gray-600 font-bold leading-relaxed mb-3 flex-1">لف العجلة لتحديد الجائزة، ثم أجب على سؤال طبي!</p>
+                                <div className="flex items-center justify-between mt-auto pt-3 border-t border-fuchsia-100">
+                                    <span className="text-[10px] bg-white text-fuchsia-700 px-2.5 py-1 rounded-lg font-black shadow-sm">حظ + ذكاء</span>
+                                    <span className="text-[10px] text-fuchsia-600 font-black flex items-center gap-1">
+                                        <Trophy className="w-3 h-3"/> 5-30 نقطة
+                                    </span>
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* Game 2 - Enhanced */}
+                        <button onClick={() => setActiveGame('scramble')} className="group bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-100 hover:border-blue-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10">
+                                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Timer className="w-7 h-7"/>
+                                </div>
+                                <h3 className="font-black text-gray-900 text-base mb-1.5">فك الشفرة</h3>
+                                <p className="text-[10px] text-gray-600 font-bold leading-relaxed mb-3 flex-1">حروف مبعثرة! رتبها بسرعة قبل نفاذ الوقت.</p>
+                                <div className="flex items-center justify-between mt-auto pt-3 border-t border-blue-100">
+                                    <span className="text-[10px] bg-white text-blue-700 px-2.5 py-1 rounded-lg font-black shadow-sm">سرعة بديهة</span>
+                                    <span className="text-[10px] text-blue-600 font-black flex items-center gap-1">
+                                        <Trophy className="w-3 h-3"/> 5-20 نقطة
+                                    </span>
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* Game 3 - Enhanced */}
+                        <button onClick={() => setActiveGame('safe')} className="group bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-100 hover:border-emerald-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10">
+                                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Lock className="w-7 h-7"/>
+                                </div>
+                                <h3 className="font-black text-gray-900 text-base mb-1.5">الخزنة السرية</h3>
+                                <p className="text-[10px] text-gray-600 font-bold leading-relaxed mb-3 flex-1">خمن الرقم السري بناءً على تلميحات الألوان.</p>
+                                <div className="flex items-center justify-between mt-auto pt-3 border-t border-emerald-100">
+                                    <span className="text-[10px] bg-white text-emerald-700 px-2.5 py-1 rounded-lg font-black shadow-sm">ذكاء ومنطق</span>
+                                    <span className="text-[10px] text-emerald-600 font-black flex items-center gap-1">
+                                        <Trophy className="w-3 h-3"/> 20 نقطة
+                                    </span>
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* Game 4 - Enhanced */}
+                        <button onClick={() => setActiveGame('memory')} className="group bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-100 hover:border-orange-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10">
+                                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Gamepad2 className="w-7 h-7"/>
+                                </div>
+                                <h3 className="font-black text-gray-900 text-base mb-1.5">تطابق الذاكرة</h3>
+                                <p className="text-[10px] text-gray-600 font-bold leading-relaxed mb-3 flex-1">اقلب الكروت وطابق الأيقونات الطبية معاً.</p>
+                                <div className="flex items-center justify-between mt-auto pt-3 border-t border-orange-100">
+                                    <span className="text-[10px] bg-white text-orange-700 px-2.5 py-1 rounded-lg font-black shadow-sm">قوة ذاكرة</span>
+                                    <span className="text-[10px] text-orange-600 font-black flex items-center gap-1">
+                                        <Trophy className="w-3 h-3"/> 20 نقطة
+                                    </span>
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* 🆕 Game 5 - Medical Quiz Rush */}
+                        <button onClick={() => setActiveGame('quiz')} className="group bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-100 hover:border-indigo-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10">
+                                <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Brain className="w-7 h-7"/>
+                                </div>
+                                <div className="absolute -top-1 -left-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md animate-pulse">
+                                    جديد
+                                </div>
+                                <h3 className="font-black text-gray-900 text-base mb-1.5">سباق المعرفة الطبية</h3>
+                                <p className="text-[10px] text-gray-600 font-bold leading-relaxed mb-3 flex-1">أجب على 5 أسئلة بأسرع وقت. السرعة = نقاط!</p>
+                                <div className="flex items-center justify-between mt-auto pt-3 border-t border-indigo-100">
+                                    <span className="text-[10px] bg-white text-indigo-700 px-2.5 py-1 rounded-lg font-black shadow-sm">معرفة + سرعة</span>
+                                    <span className="text-[10px] text-indigo-600 font-black flex items-center gap-1">
+                                        <Trophy className="w-3 h-3"/> 5-25 نقطة
+                                    </span>
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* 🆕 Game 6 - Dose Calculator Challenge */}
+                        <button onClick={() => setActiveGame('dose')} className="group bg-gradient-to-br from-rose-50 to-red-50 border-2 border-rose-100 hover:border-rose-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10">
+                                <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Calculator className="w-7 h-7"/>
+                                </div>
+                                <div className="absolute -top-1 -left-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md animate-pulse">
+                                    جديد
+                                </div>
+                                <h3 className="font-black text-gray-900 text-base mb-1.5">تحدي حساب الجرعات</h3>
+                                <p className="text-[10px] text-gray-600 font-bold leading-relaxed mb-3 flex-1">احسب الجرعات الدوائية بدقة عالية!</p>
+                                <div className="flex items-center justify-between mt-auto pt-3 border-t border-rose-100">
+                                    <span className="text-[10px] bg-white text-rose-700 px-2.5 py-1 rounded-lg font-black shadow-sm">دقة حسابية</span>
+                                    <span className="text-[10px] text-rose-600 font-black flex items-center gap-1">
+                                        <Trophy className="w-3 h-3"/> 10-30 نقطة
+                                    </span>
+                                </div>
+                            </div>
+                        </button>
+                    </div>
                         {/* Game 1 - Enhanced */}
                         <button onClick={() => setActiveGame('spin')} className="group bg-gradient-to-br from-fuchsia-50 to-pink-50 border-2 border-fuchsia-100 hover:border-fuchsia-300 p-6 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col relative overflow-hidden hover:scale-105 active:scale-95">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
@@ -333,7 +500,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-blue-100">
                                     <span className="text-xs bg-white text-blue-700 px-3 py-1.5 rounded-lg font-black shadow-sm">سرعة بديهة</span>
                                     <span className="text-xs text-blue-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 5-10 نقطة
+                                        <Trophy className="w-3 h-3"/> 5-20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -351,7 +518,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-emerald-100">
                                     <span className="text-xs bg-white text-emerald-700 px-3 py-1.5 rounded-lg font-black shadow-sm">ذكاء ومنطق</span>
                                     <span className="text-xs text-emerald-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 25 نقطة
+                                        <Trophy className="w-3 h-3"/> 20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -369,7 +536,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-orange-100">
                                     <span className="text-xs bg-white text-orange-700 px-3 py-1.5 rounded-lg font-black shadow-sm">قوة ذاكرة</span>
                                     <span className="text-xs text-orange-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 25 نقطة
+                                        <Trophy className="w-3 h-3"/> 20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -390,7 +557,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-indigo-100">
                                     <span className="text-xs bg-white text-indigo-700 px-3 py-1.5 rounded-lg font-black shadow-sm">معرفة + سرعة</span>
                                     <span className="text-xs text-indigo-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 15-35 نقطة
+                                        <Trophy className="w-3 h-3"/> 5-25 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -411,7 +578,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-rose-100">
                                     <span className="text-xs bg-white text-rose-700 px-3 py-1.5 rounded-lg font-black shadow-sm">دقة حسابية</span>
                                     <span className="text-xs text-rose-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 30 نقطة
+                                        <Trophy className="w-3 h-3"/> 10-30 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -420,66 +587,81 @@ export default function StaffArcade({ employee }: Props) {
                 </div>
             )}
 
-            {/* 🏆 لوحة الشرف المحسّنة */}
-            {activeGame === null && (
-                <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-[2rem] border-2 border-amber-200 shadow-xl p-8 mt-10">
-                    <div className="flex items-center justify-between mb-8">
-                        <h3 className="font-black text-2xl md:text-3xl text-gray-800 flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl flex items-center justify-center shadow-lg">
-                                <Trophy className="w-7 h-7 text-white"/>
-                            </div>
-                            أبطال الألعاب
-                        </h3>
-                        <div className="bg-white px-4 py-2 rounded-xl shadow-sm border border-amber-200">
-                            <p className="text-xs text-amber-600 font-black">Top 10</p>
-                        </div>
-                    </div>
-                    
-                    {leaderboard.length === 0 ? (
-                        <div className="text-center py-16 bg-white rounded-3xl border-2 border-dashed border-amber-200">
-                            <Award className="w-20 h-20 text-amber-300 mx-auto mb-4"/>
-                            <p className="text-xl font-black text-gray-400 mb-2">لا يوجد فائزين حتى الآن</p>
-                            <p className="text-sm text-gray-500 font-bold">كن أنت الأول! 🚀</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {leaderboard.map((user, idx) => (
-                                <div key={user.id} className={`flex items-center justify-between bg-white p-4 rounded-2xl border-2 transition-all hover:scale-105 hover:shadow-lg ${
-                                    idx === 0 ? 'border-yellow-400 shadow-lg shadow-yellow-200/50' : 
-                                    idx === 1 ? 'border-gray-300 shadow-md' : 
-                                    idx === 2 ? 'border-amber-300 shadow-md' : 
-                                    'border-gray-100'
-                                }`}>
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg text-white shadow-lg transform transition-transform hover:rotate-12 ${
-                                            idx === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' : 
-                                            idx === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500' : 
-                                            idx === 2 ? 'bg-gradient-to-br from-amber-400 to-amber-600' : 
-                                            'bg-gradient-to-br from-violet-400 to-violet-600'
-                                        }`}>
-                                            {idx === 0 ? '👑' : idx + 1}
-                                        </div>
-                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-white shadow-md overflow-hidden">
-                                            {user.photo ? 
-                                                <img src={user.photo} className="w-full h-full object-cover"/> : 
-                                                <User className="w-full h-full p-2.5 text-gray-400"/>
-                                            }
-                                        </div>
-                                        <div>
-                                            <h4 className="font-black text-base text-gray-900">{user.name}</h4>
-                                            <p className="text-xs text-gray-500 font-bold flex items-center gap-1">
-                                                <TrendingUp className="w-3 h-3"/> {user.wins} انتصارات
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="bg-gradient-to-br from-violet-500 to-fuchsia-600 px-5 py-2.5 rounded-xl shadow-lg border-2 border-white">
-                                        <p className="font-black text-white text-lg leading-none">{user.points}</p>
-                                        <p className="text-[10px] text-violet-100 font-bold">نقطة</p>
-                                    </div>
+            {/* 🏆 Modal لوحة الشرف */}
+            {showLeaderboard && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLeaderboard(false)}>
+                    <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-[2rem] border-2 border-amber-200 shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="font-black text-2xl md:text-3xl text-gray-800 flex items-center gap-3">
+                                <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl flex items-center justify-center shadow-lg">
+                                    <Trophy className="w-7 h-7 text-white"/>
                                 </div>
-                            ))}
+                                أبطال الألعاب
+                            </h3>
+                            <button 
+                                onClick={() => setShowLeaderboard(false)}
+                                className="w-10 h-10 bg-white hover:bg-gray-100 rounded-xl flex items-center justify-center shadow-md transition-all active:scale-95"
+                            >
+                                <XCircle className="w-5 h-5 text-gray-600"/>
+                            </button>
                         </div>
-                    )}
+                        
+                        {loadingLeaderboard ? (
+                            <div className="text-center py-16 bg-white rounded-3xl border-2 border-amber-200">
+                                <Loader2 className="w-12 h-12 animate-spin mx-auto text-amber-500 mb-4"/>
+                                <p className="text-lg font-bold text-gray-500">جاري تحميل لوحة الشرف...</p>
+                            </div>
+                        ) : leaderboard.length === 0 ? (
+                            <div className="text-center py-16 bg-white rounded-3xl border-2 border-dashed border-amber-200">
+                                <Award className="w-20 h-20 text-amber-300 mx-auto mb-4"/>
+                                <p className="text-xl font-black text-gray-400 mb-2">لا يوجد فائزين حتى الآن</p>
+                                <p className="text-sm text-gray-500 font-bold">كن أنت الأول! 🚀</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {leaderboard.map((user: any, idx: number) => {
+                                    // استخراج الاسم الأول فقط
+                                    const firstName = user.name ? user.name.split(' ')[0] : 'غير معروف';
+                                    
+                                    return (
+                                        <div key={user.id} className={`flex items-center justify-between bg-white p-4 rounded-2xl border-2 transition-all hover:scale-105 hover:shadow-lg ${
+                                            idx === 0 ? 'border-yellow-400 shadow-lg shadow-yellow-200/50' : 
+                                            idx === 1 ? 'border-gray-300 shadow-md' : 
+                                            idx === 2 ? 'border-amber-300 shadow-md' : 
+                                            'border-gray-100'
+                                        }`}>
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg text-white shadow-lg transform transition-transform hover:rotate-12 ${
+                                                    idx === 0 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' : 
+                                                    idx === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500' : 
+                                                    idx === 2 ? 'bg-gradient-to-br from-amber-400 to-amber-600' : 
+                                                    'bg-gradient-to-br from-violet-400 to-violet-600'
+                                                }`}>
+                                                    {idx === 0 ? '👑' : idx + 1}
+                                                </div>
+                                                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-white shadow-md overflow-hidden">
+                                                    {user.photo ? 
+                                                        <img src={user.photo} alt={firstName} className="w-full h-full object-cover"/> : 
+                                                        <User className="w-full h-full p-2.5 text-gray-400"/>
+                                                    }
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-black text-base text-gray-900">{firstName}</h4>
+                                                    <p className="text-xs text-gray-500 font-bold flex items-center gap-1">
+                                                        <TrendingUp className="w-3 h-3"/> {user.wins} انتصارات
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-violet-500 to-fuchsia-600 px-4 py-2 rounded-xl shadow-lg border-2 border-white">
+                                                <p className="font-black text-white text-lg leading-none">{user.points}</p>
+                                                <p className="text-[10px] text-violet-100 font-bold text-center">نقطة</p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -517,7 +699,7 @@ function SpinAndAnswerGame({ employee, onStart, onComplete }: { employee: Employ
         }
 
         setSpinning(true);
-        const options = [5, 10, 15, 20, 30];
+        const options = [5, 10, 15, 20, 25, 30];
         const result = options[Math.floor(Math.random() * options.length)];
         
         setTimeout(() => {
@@ -661,7 +843,7 @@ function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void
     const checkAnswer = () => {
         if (input.trim() === wordObj.word) {
             setIsActive(false);
-            const points = Math.max(5, Math.floor(timeLeft));  // من 10 لـ 3 نقاط
+            const points = Math.max(5, Math.floor(timeLeft)); 
             onComplete(points, true);
         } else {
             toast.error('كلمة خاطئة! حاول مرة أخرى', { icon: '❌' });
@@ -793,7 +975,7 @@ function SafeCrackerGame({ onStart, onComplete }: { onStart: () => Promise<void>
         if (currentGuess === secretCode) {
             setTimeout(() => {
                 toast.success('🎉 أحسنت! فتحت الخزنة!', { duration: 3000 });
-                onComplete(25, true);
+                onComplete(20, true);
             }, 800); 
         } else if (newGuesses.length >= MAX_GUESSES) {
             toast.error(`💔 الكود الصحيح كان: ${secretCode}`, { duration: 3000 });
@@ -975,7 +1157,7 @@ function MemoryMatchGame({ onStart, onComplete }: { onStart: () => Promise<void>
                         if (newMatches === CARDS_DATA.length) {
                             setIsActive(false);
                             toast.success('🎉 مبروك! أنهيت اللعبة!');
-                            setTimeout(() => onComplete(25, true), 1000); 
+                            setTimeout(() => onComplete(20, true), 1000); 
                         }
                         return newMatches;
                     });
@@ -1114,8 +1296,8 @@ function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>
             } else {
                 setIsActive(false);
                 const finalScore = score + (isCorrect ? 1 : 0);
-const basePoints = finalScore * 5; // 5 نقاط لكل سؤال صحيح
-const timeBonus = Math.floor(timeLeft / 2); // نقطة إضافية لكل ثانيتين
+                const basePoints = finalScore * 3; // 3 نقاط لكل سؤال صحيح
+                const timeBonus = Math.floor(timeLeft / 3); // نقطة إضافية لكل 3 ثواني متبقية
                 const totalPoints = basePoints + timeBonus;
                 
                 if (finalScore >= 3) { // نجاح إذا أجاب على 3 أسئلة صحيحة على الأقل
@@ -1303,7 +1485,7 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
                     onComplete(30, true);
                 } else if (finalScore >= 2) {
                     toast.success(`جيد! ${finalScore}/${cases.length} صحيحة 👍`);
-                    onComplete(15, true);
+                    onComplete(10, true);
                 } else {
                     toast.error('تحتاج لمزيد من التدريب 💪');
                     onComplete(0, false);
