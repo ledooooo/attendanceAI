@@ -625,7 +625,7 @@ export default function StaffArcade({ employee }: Props) {
                                     
                                     return (
                                         <div key={user.id} className={`flex items-center justify-between bg-white p-4 rounded-2xl border-2 transition-all hover:scale-105 hover:shadow-lg ${
-                                            idx === 0 ? 'border-yellow-400 shadow-lg shadow-yellow-200/50' : 
+                                            idx === 0 ? 'border-yellow-400 shadow-lg shadow-yellow-200 shadow-opacity-50' : 
                                             idx === 1 ? 'border-gray-300 shadow-md' : 
                                             idx === 2 ? 'border-amber-300 shadow-md' : 
                                             'border-gray-100'
