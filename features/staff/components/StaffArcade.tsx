@@ -368,7 +368,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-3 border-t border-fuchsia-100">
                                     <span className="text-[10px] bg-white text-fuchsia-700 px-2.5 py-1 rounded-lg font-black shadow-sm">حظ + ذكاء</span>
                                     <span className="text-[10px] text-fuchsia-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 5-30 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}5-30 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -386,7 +386,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-3 border-t border-blue-100">
                                     <span className="text-[10px] bg-white text-blue-700 px-2.5 py-1 rounded-lg font-black shadow-sm">سرعة بديهة</span>
                                     <span className="text-[10px] text-blue-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 5-20 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}5-20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -404,7 +404,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-3 border-t border-emerald-100">
                                     <span className="text-[10px] bg-white text-emerald-700 px-2.5 py-1 rounded-lg font-black shadow-sm">ذكاء ومنطق</span>
                                     <span className="text-[10px] text-emerald-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 20 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -422,7 +422,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-3 border-t border-orange-100">
                                     <span className="text-[10px] bg-white text-orange-700 px-2.5 py-1 rounded-lg font-black shadow-sm">قوة ذاكرة</span>
                                     <span className="text-[10px] text-orange-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 20 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -443,7 +443,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-3 border-t border-indigo-100">
                                     <span className="text-[10px] bg-white text-indigo-700 px-2.5 py-1 rounded-lg font-black shadow-sm">معرفة + سرعة</span>
                                     <span className="text-[10px] text-indigo-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 5-25 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}5-25 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -464,7 +464,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-3 border-t border-rose-100">
                                     <span className="text-[10px] bg-white text-rose-700 px-2.5 py-1 rounded-lg font-black shadow-sm">دقة حسابية</span>
                                     <span className="text-[10px] text-rose-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 10-30 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}10-30 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -482,7 +482,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-fuchsia-100">
                                     <span className="text-xs bg-white text-fuchsia-700 px-3 py-1.5 rounded-lg font-black shadow-sm">حظ + ذكاء</span>
                                     <span className="text-xs text-fuchsia-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 5-30 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}5-30 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -500,7 +500,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-blue-100">
                                     <span className="text-xs bg-white text-blue-700 px-3 py-1.5 rounded-lg font-black shadow-sm">سرعة بديهة</span>
                                     <span className="text-xs text-blue-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 5-20 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}5-20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -518,7 +518,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-emerald-100">
                                     <span className="text-xs bg-white text-emerald-700 px-3 py-1.5 rounded-lg font-black shadow-sm">ذكاء ومنطق</span>
                                     <span className="text-xs text-emerald-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 20 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -536,7 +536,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-orange-100">
                                     <span className="text-xs bg-white text-orange-700 px-3 py-1.5 rounded-lg font-black shadow-sm">قوة ذاكرة</span>
                                     <span className="text-xs text-orange-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 20 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}20 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -557,7 +557,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-indigo-100">
                                     <span className="text-xs bg-white text-indigo-700 px-3 py-1.5 rounded-lg font-black shadow-sm">معرفة + سرعة</span>
                                     <span className="text-xs text-indigo-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 5-25 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}5-25 نقطة
                                     </span>
                                 </div>
                             </div>
@@ -578,7 +578,7 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-rose-100">
                                     <span className="text-xs bg-white text-rose-700 px-3 py-1.5 rounded-lg font-black shadow-sm">دقة حسابية</span>
                                     <span className="text-xs text-rose-600 font-black flex items-center gap-1">
-                                        <Trophy className="w-3 h-3"/> 10-30 نقطة
+                                        <Trophy className="w-3 h-3"/>{" "}10-30 نقطة
                                     </span>
                                 </div>
                             </div>
