@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
@@ -177,7 +177,7 @@ export default function StaffDashboard({ employee }: Props) {
     staleTime: 1000 * 60 * 5 
   });
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     const { data } = await supabase
       .from('notifications')
       .select('*')
@@ -185,9 +185,9 @@ export default function StaffDashboard({ employee }: Props) {
       .order('created_at', { ascending: false })
       .limit(20);
     if (data) setNotifications(data);
-  };
+  }, [employee.employee_id]);
 
-  const markNotifsAsRead = async () => {
+  const markNotifsAsRead = useCallback(async () => {
     if (notifications.some(n => !n.is_read)) {
       await supabase
         .from('notifications')
@@ -200,53 +200,50 @@ export default function StaffDashboard({ employee }: Props) {
     setShowNotifMenu(!showNotifMenu);
     setShowLevelMenu(false);
     setShowLeaderboardMenu(false);
-  };
+  }, [notifications, employee.employee_id, showNotifMenu, fetchNotifications, queryClient]);
 
-  // ✅ استعلام عدد طلبات الجوائز المعلقة (التي لم تسلم بعد)
+  // ✅ استعلام عدد طلبات الجوائز المعلقة (محسّن)
   const { data: pendingRewardsCount = 0 } = useQuery({
       queryKey: ['pending_rewards_count', employee.employee_id],
       queryFn: async () => {
           const { count } = await supabase
               .from('rewards_redemptions')
               .select('*', { count: 'exact', head: true })
-              .or(`employee_id.eq.${employee.employee_id},employee_id.eq.${employee.id}`) // استخدام كلا المعرفين لضمان الدقة
-              .in('status', ['pending', 'قيد الانتظار', 'معلق', 'new']); // جميع حالات الانتظار المحتملة
+              .eq('employee_id', employee.employee_id)
+              .in('status', ['pending', 'قيد الانتظار', 'معلق', 'new']);
 
           return count || 0;
       },
-      refetchInterval: 30000, // تحديث كل 30 ثانية
+      staleTime: 1000 * 45, // 45 ثانية
+      refetchInterval: 45000, // كل 45 ثانية بدل 30
+      refetchOnWindowFocus: false,
   });
 
-  // استعلام العدادات
+  // استعلام العدادات المحسّن
   const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0, training: 0 } } = useQuery({
       queryKey: ['staff_badges', employee.employee_id],
       queryFn: async () => {
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
 
-          const [msg, tasks, swaps, news, ovrReplies] = await Promise.all([
+          // استخدام Promise.all للسرعة
+          const [msg, tasks, swaps, news, ovrReplies, availableTrainings, myCompleted] = await Promise.all([
               supabase.from('messages').select('*', { count: 'exact', head: true }).eq('to_user', employee.employee_id).eq('is_read', false),
               supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('employee_id', employee.employee_id).eq('status', 'pending'),
               supabase.from('shift_swap_requests').select('*', { count: 'exact', head: true }).eq('target_employee_id', employee.employee_id).eq('status', 'pending_target'),
               supabase.from('news').select('*', { count: 'exact', head: true }).gte('created_at', yesterday.toISOString()),
-              supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('user_id', employee.employee_id).eq('type', 'ovr_reply').eq('is_read', false)
+              supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('user_id', employee.employee_id).eq('type', 'ovr_reply').eq('is_read', false),
+              supabase.from('trainings').select('id, target_specialties'),
+              supabase.from('employee_trainings').select('training_id').eq('employee_id', employee.employee_id).eq('status', 'completed')
           ]);
 
-          const { data: availableTrainings } = await supabase.from('trainings').select('id, target_specialties');
-          
-          const targetedTrainings = availableTrainings?.filter(t => 
+          const targetedTrainings = availableTrainings.data?.filter(t => 
              !t.target_specialties || 
              t.target_specialties.length === 0 || 
              t.target_specialties.includes(employee.specialty)
           ) || [];
 
-          const { data: myCompleted } = await supabase
-              .from('employee_trainings')
-              .select('training_id')
-              .eq('employee_id', employee.employee_id)
-              .eq('status', 'completed');
-          
-          const completedIds = myCompleted?.map(c => c.training_id) || [];
+          const completedIds = myCompleted.data?.map(c => c.training_id) || [];
           const pendingTrainingsCount = targetedTrainings.filter(t => !completedIds.includes(t.id)).length;
 
           return {
@@ -258,7 +255,9 @@ export default function StaffDashboard({ employee }: Props) {
               training: pendingTrainingsCount 
           };
       },
-      refetchInterval: 20000,
+      staleTime: 1000 * 30, // 30 ثانية بدل 20 ثانية
+      refetchInterval: 30000, // كل 30 ثانية
+      refetchOnWindowFocus: false, // تقليل الطلبات غير الضرورية
   });
 
   const fetchAllData = async () => {
@@ -332,8 +331,8 @@ export default function StaffDashboard({ employee }: Props) {
   };
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  // ✅ ترتيب القائمة وتعيين البادجات
-  const menuItems = [
+  // ✅ ترتيب القائمة وتعيين البادجات (محسّن بـ useMemo)
+  const menuItems = useMemo(() => [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     ...(hasAdminAccess ? [{ id: 'admin', label: 'لوحة الإدارة', icon: Settings }] : []),
@@ -345,7 +344,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
-      { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, isNew: true },
+    { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, isNew: true },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     { id: 'store', label: 'متجر الجوائز', icon: ShoppingBag },
     ...(employee.role === 'head_of_dept' ? [{ id: 'dept-requests', label: 'إدارة القسم', icon: FileText }] : []),
@@ -355,9 +354,12 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
-  ];
+  ], [staffBadges, hasAdminAccess, employee.role, ovrCount]);
 
-  const unreadNotifsCount = notifications.filter(n => !n.is_read).length;
+  const unreadNotifsCount = useMemo(() => 
+    notifications.filter(n => !n.is_read).length, 
+    [notifications]
+  );
 
   return (
     <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
@@ -498,9 +500,9 @@ export default function StaffDashboard({ employee }: Props) {
 
       {/* --- المحتوى الرئيسي --- */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
-        <header className="h-16 bg-white border-b flex items-center justify-between px-3 md:px-6 sticky top-0 z-30 shadow-sm shrink-0">
+        <header className="h-16 bg-white border-b flex items-center justify-between px-3 md:px-6 sticky top-0 z-30 shadow-sm shrink-0 backdrop-blur-sm bg-white/95">
             <div className="flex items-center gap-2 md:gap-3">
-                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors active:scale-95">
+                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl hover:from-gray-100 hover:to-gray-200 transition-all active:scale-95 shadow-sm">
                     <Menu className="w-5 h-5 text-gray-700"/>
                 </button>
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
@@ -508,97 +510,119 @@ export default function StaffDashboard({ employee }: Props) {
 
             <div className="flex items-center gap-1 md:gap-2">
                 
-                {/* 1. تبديل المظهر (الثيم) */}
-                <div className="relative">
+                {/* 1. تبديل المظهر (الثيم) - محسّن */}
+                <div className="relative group">
                     <button 
                         onClick={() => setIsThemeEnabled(!isThemeEnabled)} 
-                        className={`p-2 rounded-full transition-colors ${isThemeEnabled ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                        className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${isThemeEnabled ? 'bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700 shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
                         title={isThemeEnabled ? "إيقاف المظهر الحالي" : "تشغيل المظهر"}
                     >
-                        <Sparkles className="w-4 h-4 md:w-5 md:h-5" />
+                        <Sparkles className={`w-4 h-4 md:w-5 md:h-5 ${isThemeEnabled ? 'animate-pulse' : ''}`} />
                     </button>
+                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        {isThemeEnabled ? "إيقاف المظهر" : "تشغيل المظهر"}
+                    </span>
                 </div>
 
-                {/* ✅ 2. متجر الجوائز السريع (مع تنبيه الطلبات المعلقة) */}
-                <div className="relative">
+                {/* ✅ 2. متجر الجوائز السريع (مع تنبيه الطلبات المعلقة) - محسّن */}
+                <div className="relative group">
                     <button 
                         onClick={() => setActiveTab('store')} 
-                        className={`p-2 rounded-full transition-colors relative ${activeTab === 'store' ? 'bg-pink-100 text-pink-700' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
+                        className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'store' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
                         title="متجر الجوائز"
                     >
                         <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
-                        {/* إظهار نقطة حمراء نابضة برقم الطلبات إذا كان هناك طلب لم يسلم */}
+                        {/* إظهار نقطة حمراء نابضة برقم الطلبات */}
                         {pendingRewardsCount > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] md:text-[10px] font-bold w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border border-white animate-pulse">
+                            <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">
                                 {pendingRewardsCount}
                             </span>
                         )}
                     </button>
+                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        متجر الجوائز
+                    </span>
                 </div>
 
-                {/* 3. المستوى */}
-                <div className="relative">
+                {/* 3. المستوى - محسّن */}
+                <div className="relative group">
                     <button 
                         onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
-                        className={`p-2 rounded-full transition-colors ${showLevelMenu ? 'bg-indigo-100 text-indigo-700' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                        className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLevelMenu ? 'bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 shadow-sm' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                     >
-                        <Star className="w-4 h-4 md:w-5 md:h-5" />
+                        <Star className={`w-4 h-4 md:w-5 md:h-5 ${showLevelMenu ? 'animate-spin' : ''}`} style={{ animationDuration: '2s' }} />
                     </button>
+                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        مستواك
+                    </span>
                     {showLevelMenu && (
                         <>
-                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowLevelMenu(false)}>
-                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-1 overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200" onClick={() => setShowLevelMenu(false)}>
+                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-1 overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                                     <LevelProgressBar employee={employee} />
                                 </div>
                             </div>
-                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
+                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200 overflow-hidden">
                                 <LevelProgressBar employee={employee} />
                             </div>
                         </>
                     )}
                 </div>
 
-                {/* 4. لوحة الشرف */}
-                <div className="relative">
+                {/* 4. لوحة الشرف - محسّن */}
+                <div className="relative group">
                     <button 
                         onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
-                        className={`p-2 rounded-full transition-colors ${showLeaderboardMenu ? 'bg-yellow-100 text-yellow-700' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
+                        className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
                     >
-                        <Trophy className="w-4 h-4 md:w-5 md:h-5" />
+                        <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
                     </button>
+                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        لوحة الشرف
+                    </span>
                     {showLeaderboardMenu && (
                         <>
-                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
-                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200" onClick={() => setShowLeaderboardMenu(false)}>
+                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                                     <LeaderboardWidget />
                                 </div>
                             </div>
-                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
+                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200 overflow-hidden">
                                 <LeaderboardWidget />
                             </div>
                         </>
                     )}
                 </div>
 
-                {/* 5. الإشعارات */}
-                <div className="relative">
-                    <button onClick={markNotifsAsRead} className={`p-2 rounded-full transition-colors relative ${showNotifMenu ? 'bg-gray-200 text-gray-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
-                        <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600' : 'text-gray-600'}`} />
+                {/* 5. الإشعارات - محسّن */}
+                <div className="relative group">
+                    <button onClick={markNotifsAsRead} className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                        <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : 'text-gray-600'}`} />
                         {unreadNotifsCount > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] md:text-[10px] font-bold w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border border-white animate-bounce">{unreadNotifsCount}</span>
+                            <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">{unreadNotifsCount}</span>
                         )}
                     </button>
+                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                        الإشعارات
+                    </span>
                     {showNotifMenu && (
                         <>
-                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in" onClick={() => setShowNotifMenu(false)}>
-                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                                    <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
-                                        <span>آخر التنبيهات</span>
-                                        <button onClick={() => setShowNotifMenu(false)} className="text-gray-400"><X size={16}/></button>
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
+                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                                    <div className="p-3 border-b bg-gradient-to-r from-gray-50 to-white font-black text-sm text-gray-800 flex justify-between items-center">
+                                        <span className="flex items-center gap-2">
+                                            <Bell className="w-4 h-4 text-emerald-600"/> آخر التنبيهات
+                                        </span>
+                                        <button onClick={() => setShowNotifMenu(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
+                                            <X size={16}/>
+                                        </button>
                                     </div>
                                     <div className="flex-1 overflow-y-auto custom-scrollbar">
                                         {notifications.length === 0 ? (
-                                            <p className="p-8 text-center text-gray-400 text-xs">لا توجد إشعارات حالياً</p>
+                                            <div className="p-12 text-center">
+                                                <Bell className="w-16 h-16 mx-auto text-gray-300 mb-3"/>
+                                                <p className="text-gray-400 text-sm font-bold">لا توجد إشعارات حالياً</p>
+                                            </div>
                                         ) : (
                                             notifications.map(n => (
                                                 <div 
@@ -617,14 +641,14 @@ export default function StaffDashboard({ employee }: Props) {
     
     setShowNotifMenu(false);
 }}
-                                                    className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
+                                                    className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-emerald-50/30 cursor-pointer transition-colors ${!n.is_read ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''}`}
                                                 >
-                                                    <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
+                                                    <div className={`w-9 h-9 rounded-full ${!n.is_read ? 'bg-emerald-100' : 'bg-gray-100'} flex items-center justify-center ${!n.is_read ? 'text-emerald-600' : 'text-gray-500'} shrink-0 font-bold uppercase text-xs`}>
                                                         {n.type === 'task' ? <ListTodo size={16}/> : n.type === 'training' ? <BookOpen size={16}/> : <Bell size={16}/>}
                                                     </div>
-                                                    <div className="space-y-0.5">
+                                                    <div className="space-y-0.5 flex-1">
                                                         <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
-                                                        <p className="text-xs text-gray-500 leading-relaxed truncate max-w-[200px]">{n.message}</p>
+                                                        <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{n.message}</p>
                                                         <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
                                                     </div>
                                                 </div>
@@ -634,14 +658,21 @@ export default function StaffDashboard({ employee }: Props) {
                                 </div>
                             </div>
 
-                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in zoom-in-95 overflow-hidden">
-                                <div className="p-3 border-b bg-gray-50/50 font-black text-sm text-gray-800 flex justify-between">
-                                    <span>آخر التنبيهات</span>
-                                    <button onClick={() => setShowNotifMenu(false)} className="text-gray-400"><X size={16}/></button>
+                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200 overflow-hidden">
+                                <div className="p-3 border-b bg-gradient-to-r from-gray-50 to-white font-black text-sm text-gray-800 flex justify-between items-center">
+                                    <span className="flex items-center gap-2">
+                                        <Bell className="w-4 h-4 text-emerald-600"/> آخر التنبيهات
+                                    </span>
+                                    <button onClick={() => setShowNotifMenu(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
+                                        <X size={16}/>
+                                    </button>
                                 </div>
                                 <div className="max-h-80 overflow-y-auto custom-scrollbar">
                                     {notifications.length === 0 ? (
-                                        <p className="p-8 text-center text-gray-400 text-xs">لا توجد إشعارات حالياً</p>
+                                        <div className="p-12 text-center">
+                                            <Bell className="w-16 h-16 mx-auto text-gray-300 mb-3"/>
+                                            <p className="text-gray-400 text-sm font-bold">لا توجد إشعارات حالياً</p>
+                                        </div>
                                     ) : (
                                         notifications.map(n => (
                                             <div 
