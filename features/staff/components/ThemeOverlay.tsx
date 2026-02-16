@@ -150,9 +150,12 @@ export default function ThemeOverlay({ employee }: Props) {
                             ))}
                         </div>
 
-                        {/* هلال رمضان */}
-                        <div className="absolute top-8 right-8 md:top-12 md:right-16 animate-float-slow">
-                            <Moon className="w-12 h-12 md:w-16 md:h-16 text-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.8)]" />
+                        {/* هلال رمضان مع رسالة رمضان كريم */}
+                        <div className="absolute top-6 md:top-10 right-6 md:right-12 flex items-center gap-3 animate-float-slow">
+                            <Moon className="w-10 h-10 md:w-12 md:h-12 text-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.8)]" />
+                            <span className="text-sm md:text-base font-black bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent drop-shadow-lg">
+                                رمضان كريم
+                            </span>
                         </div>
 
                         {/* الفوانيس المحسّنة */}
@@ -184,15 +187,6 @@ export default function ThemeOverlay({ employee }: Props) {
                                     </div>
                                 );
                             })}
-                        </div>
-
-                        {/* رسالة رمضان كريم */}
-                        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 animate-float">
-                            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-8 py-3 rounded-full font-black text-lg md:text-xl shadow-2xl border-2 border-purple-300 shimmer-bg">
-                                <span className="flex items-center gap-2">
-                                    <Sparkles className="w-5 h-5"/> رمضان كريم <Sparkles className="w-5 h-5"/>
-                                </span>
-                            </div>
                         </div>
                     </>
                 )}
