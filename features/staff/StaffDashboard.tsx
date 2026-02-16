@@ -362,7 +362,7 @@ export default function StaffDashboard({ employee }: Props) {
   );
 
   return (
-    <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
+<div {...swipeHandlers} className="min-h-screen w-full bg-gray-50 flex overflow-visible font-sans text-right" dir="rtl">
       
       {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
