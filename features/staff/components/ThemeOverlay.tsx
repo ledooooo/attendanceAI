@@ -85,7 +85,7 @@ export default function ThemeOverlay({ employee }: Props) {
                                     {/* 2. صورة الفانوس مع تأثير التوهج الذهبي */}
                                     <img 
                                         src={isEven 
-                                            ? "https://cdn-icons-png.flaticon.com/512/2386/2386822.png" // شكل الفانوس الأول
+                                            ? "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjfI9u7voEn02bukifDWCgR1S4pMUd58kSKsVAz8HPMgBRXZpQM2BeYZWy1Rf_vVLWWbRERdkpggQQKvtVR7hDtAiYvzJnN-52i2OvDD5eYxOiYjkPr8HYMy9ReOTpU-IX-pmWSvIpGM8X9s7rZpMPsoBqlOhhXrWBXCa1A0dGAb_6lqzhEkyAr6Vqdq2uK/s320/Ramadan%20%281%29.png" // شكل الفانوس الأول
                                             : "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjfI9u7voEn02bukifDWCgR1S4pMUd58kSKsVAz8HPMgBRXZpQM2BeYZWy1Rf_vVLWWbRERdkpggQQKvtVR7hDtAiYvzJnN-52i2OvDD5eYxOiYjkPr8HYMy9ReOTpU-IX-pmWSvIpGM8X9s7rZpMPsoBqlOhhXrWBXCa1A0dGAb_6lqzhEkyAr6Vqdq2uK/s320/Ramadan%20%281%29.png" // شكل الفانوس الثاني
                                         } 
                                         alt="Ramadan Lantern" 
