@@ -55,12 +55,12 @@ export default function ThemeOverlay({ employee }: Props) {
     // --- التأثيرات الحركية المحسّنة ---
     const animations = `
         @keyframes swing {
-            0%, 100% { transform: rotate(-8deg); }
-            50% { transform: rotate(8deg); }
+            0%, 100% { transform: rotate(-6deg); }
+            50% { transform: rotate(6deg); }
         }
         @keyframes swingHard {
-            0%, 100% { transform: rotate(-15deg) scale(1); }
-            50% { transform: rotate(15deg) scale(1.05); }
+            0%, 100% { transform: rotate(-11deg) scale(1); }
+            50% { transform: rotate(11deg) scale(1.05); }
         }
         @keyframes fall {
             0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
@@ -162,8 +162,10 @@ export default function ThemeOverlay({ employee }: Props) {
                         <div className="flex justify-around px-2 md:px-10 w-full absolute top-0">
                             {[1, 2, 3, 4, 5, 6].map((i) => {
                                 const isEven = i % 2 === 0;
-                                const ropeHeight = isEven ? 'h-16 md:h-24' : 'h-24 md:h-32';
-                                const lanternSize = isEven ? 'w-12 md:w-16' : 'w-14 md:w-20';
+                                // تصغير الحبل بمقدار الربع (من h-16/h-24 إلى h-12/h-18)
+                                const ropeHeight = isEven ? 'h-12 md:h-18' : 'h-18 md:h-24';
+                                // تصغير الفانوس بمقدار الثلث تقريباً (من w-12/w-16 إلى w-8/w-11)
+                                const lanternSize = isEven ? 'w-8 md:w-11' : 'w-9 md:w-13';
                                 
                                 return (
                                     <div 
