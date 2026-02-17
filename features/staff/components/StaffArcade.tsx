@@ -513,7 +513,10 @@ function SpinAndAnswerGame({ employee, diffProfile, onStart, onComplete }: { emp
         queryFn: async () => {
             const { data } = await supabase.from('quiz_questions').select('*');
             if (!data) return [];
-            return data.filter((q: any) => q.specialty.includes('all') || q.specialty.includes(employee.specialty));
+            // فلترة بالعربي: الكل أو تخصص الموظف
+            return data.filter((q: any) => 
+                q.specialty?.includes('الكل') || q.specialty?.includes(employee.specialty)
+            );
         }
     });
 
@@ -618,11 +621,15 @@ function WordScrambleGame({ employee, diffProfile, onStart, onComplete }: { empl
     const [starting, setStarting] = useState(false);
 
     const { data: words = [], isLoading: loadingWords } = useQuery({
-        queryKey: ['arcade_scramble_words'],
+        queryKey: ['arcade_scramble_words', employee.specialty],
         queryFn: async () => {
-            const { data, error } = await supabase.from('arcade_scramble_words').select('id, word, hint, difficulty').eq('is_active', true);
+            const { data, error } = await supabase.from('arcade_scramble_words').select('id, word, hint, difficulty, specialty').eq('is_active', true);
             if (error) throw error;
-            return (data || []) as ScrambleWord[];
+            // فلترة حسب التخصص بالعربي: الكل أو تخصص الموظف
+            const filtered = (data || []).filter((w: any) => 
+                !w.specialty || w.specialty.includes('الكل') || w.specialty.includes(employee.specialty)
+            );
+            return filtered as ScrambleWord[];
         },
         staleTime: 1000 * 60 * 10,
     });
@@ -951,13 +958,17 @@ function MedicalQuizRush({ employee, diffProfile, onStart, onComplete }: { emplo
     const [questions, setQuestions] = useState<QuizQuestion[]>([]);
 
     const { data: allQuestions = [], isLoading: loadingQuestions } = useQuery({
-        queryKey: ['arcade_quiz_questions'],
+        queryKey: ['arcade_quiz_questions', employee.specialty],
         queryFn: async () => {
             const { data, error } = await supabase.from('arcade_quiz_questions')
-                .select('id, question, option_a, option_b, option_c, option_d, correct_index, difficulty')
+                .select('id, question, option_a, option_b, option_c, option_d, correct_index, difficulty, specialty')
                 .eq('is_active', true);
             if (error) throw error;
-            return (data || []) as QuizQuestion[];
+            // فلترة حسب التخصص بالعربي
+            const filtered = (data || []).filter((q: any) => 
+                !q.specialty || q.specialty.includes('الكل') || q.specialty.includes(employee.specialty)
+            );
+            return filtered as QuizQuestion[];
         },
         staleTime: 1000 * 60 * 10,
     });
@@ -1119,13 +1130,17 @@ function DoseCalculatorChallenge({ employee, diffProfile, onStart, onComplete }:
     const [cases, setCases] = useState<DoseScenario[]>([]);
 
     const { data: allScenarios = [], isLoading: loadingScenarios } = useQuery({
-        queryKey: ['arcade_dose_scenarios'],
+        queryKey: ['arcade_dose_scenarios', employee.specialty],
         queryFn: async () => {
             const { data, error } = await supabase.from('arcade_dose_scenarios')
-                .select('id, scenario, question, option_a, option_b, option_c, option_d, correct_index, explanation, difficulty')
+                .select('id, scenario, question, option_a, option_b, option_c, option_d, correct_index, explanation, difficulty, specialty')
                 .eq('is_active', true);
             if (error) throw error;
-            return (data || []) as DoseScenario[];
+            // فلترة حسب التخصص بالعربي
+            const filtered = (data || []).filter((s: any) => 
+                !s.specialty || s.specialty.includes('الكل') || s.specialty.includes(employee.specialty)
+            );
+            return filtered as DoseScenario[];
         },
         staleTime: 1000 * 60 * 10,
     });
