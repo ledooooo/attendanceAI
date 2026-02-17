@@ -24,9 +24,7 @@ import StaffMessages from '../../staff/components/StaffMessages';
 
 const DAYS_OPTIONS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
 
-// ... (الاستيرادات كما هي)
-
-// ✅ تم إضافة صلاحية "إدارة العهد والأصول" هنا
+// ✅ تم إضافة صلاحية "إحصائيات العمل" هنا
 const AVAILABLE_PERMISSIONS = [
     { id: 'vaccinations', label: 'إدارة التطعيمات' },
     { id: 'attendance', label: 'إدارة البصمة والحضور' },
@@ -35,7 +33,8 @@ const AVAILABLE_PERMISSIONS = [
     { id: 'absence', label: 'تقارير الغياب' },
     { id: 'quality', label: 'إدارة الجودة (OVR)' },
     { id: 'training_manager', label: 'مسؤول التدريب والتعليم المستمر' },
-    { id: 'assets_manager', label: 'مسؤول العهد والأصول' } // 🆕 صلاحية جديدة
+    { id: 'assets_manager', label: 'مسؤول العهد والأصول' },
+    { id: 'statistics_manager', label: 'مدخل إحصائيات العمل' } // 🆕 صلاحية جديدة للإحصائيات
 ];
 
 const formatLastSeen = (dateString: string | null) => {
@@ -85,6 +84,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         part_time_start_date: '', part_time_end_date: '',
         address: '', qualification: '', marital_status: '', penalties: '',
         permissions: [], 
+        can_manage_statistics: false, // 🆕 الحقل الجديد للإحصائيات 
         hep_b_dose1: '', hep_b_dose2: '', hep_b_dose3: '', hep_b_notes: '', hep_b_location: ''
     };
     const [formData, setFormData] = useState(initialFormState);
@@ -154,6 +154,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
     const saveMutation = useMutation({
         mutationFn: async (data: any) => {
+            // التحقق من تفعيل صلاحية الإحصائيات إذا تم اختيارها من المصفوفة
+            const hasStatsPermission = (data.permissions || []).includes('statistics_manager');
+
             const payload = {
                 ...data,
                 center_id: centerId,
@@ -167,7 +170,8 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 hep_b_dose1: data.hep_b_dose1 || null,
                 hep_b_dose2: data.hep_b_dose2 || null,
                 hep_b_dose3: data.hep_b_dose3 || null,
-                permissions: data.permissions || [] 
+                permissions: data.permissions || [], 
+                can_manage_statistics: hasStatsPermission // 🆕 ربط الحقل بصلاحية المصفوفة
             };
 
             if (editMode && data.id) {
@@ -250,12 +254,18 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     };
 
     const handleOpenEdit = (emp: Employee) => {
+        // إذا كان يمتلك صلاحية الإحصائيات ولم تكن مضافة للمصفوفة، أضفها ليظهر الصندوق مفعل
+        let currentPermissions = emp.permissions || [];
+        if (emp.can_manage_statistics && !currentPermissions.includes('statistics_manager')) {
+            currentPermissions = [...currentPermissions, 'statistics_manager'];
+        }
+
         setFormData({
             ...initialFormState, 
             ...emp,
             work_days: typeof emp.work_days === 'string' ? JSON.parse(emp.work_days) : emp.work_days || [],
             maternity: String(emp.maternity),
-            permissions: emp.permissions || [] 
+            permissions: currentPermissions 
         });
         setEditMode(true);
         setIsPartTimeEnabled(!!emp.part_time_start_date || !!emp.part_time_end_date);
