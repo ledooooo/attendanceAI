@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Employee } from '../../../types';
 import { 
     Syringe, Fingerprint, FileText, ChevronRight, LayoutDashboard, 
-    Users, FileSignature, ArrowRight, ShieldAlert, BookOpen, FileX, Box // ✅ استيراد أيقونة Box
+    Users, FileSignature, ArrowRight, ShieldAlert, BookOpen, FileX, Box, BarChart3
 } from 'lucide-react';
 
 // استيراد المكونات السبعة
@@ -14,13 +14,14 @@ import StaffOVRManager from './admin_tools/StaffOVRManager';
 import TrainingManager from './admin_tools/TrainingManager';
 import StaffAbsenceManager from './admin_tools/StaffAbsenceManager'; 
 
-// ✅ استيراد مكون إدارة العهد (تأكد من المسار الصحيح)
+// استيراد المكونات الإضافية من مجلد الإدارة
 import AssetsManager from '../../admin/components/AssetsManager'; 
+import StatisticsManager from '../../admin/components/StatisticsManager'; // ✅ استيراد صفحة الإحصائيات
 
 export default function AdministrationTab({ employee }: { employee: Employee }) {
     const [activeTool, setActiveTool] = useState<string | null>(null);
 
-    // ✅ خريطة الصلاحيات الكاملة (تمت إضافة assets_manager)
+    // ✅ خريطة الصلاحيات الكاملة (تمت إضافة statistics_manager)
     const TOOLS_CONFIG: any = {
         'reports': { 
             id: 'reports',
@@ -71,17 +72,28 @@ export default function AdministrationTab({ employee }: { employee: Employee }) 
             color: 'bg-rose-50 border-rose-100',
             component: <StaffAbsenceManager />
         },
-        // ✅ إضافة إدارة العهد
         'assets_manager': {
             id: 'assets_manager',
             label: 'إدارة العهد والأصول',
             icon: <Box className="w-8 h-8 text-cyan-600"/>,
             color: 'bg-cyan-50 border-cyan-100',
             component: <AssetsManager />
+        },
+        // ✅ إضافة تبويب إحصائيات العمل
+        'statistics_manager': {
+            id: 'statistics_manager',
+            label: 'إدخال إحصائيات العمل',
+            icon: <BarChart3 className="w-8 h-8 text-pink-600"/>,
+            color: 'bg-pink-50 border-pink-100',
+            component: <StatisticsManager />
         }
     };
 
-    const userPermissions = employee.permissions || [];
+    // إضافة 'statistics_manager' كصلاحية صريحة إذا كانت can_manage_statistics = true
+    const userPermissions = [...(employee.permissions || [])];
+    if (employee.can_manage_statistics && !userPermissions.includes('statistics_manager')) {
+        userPermissions.push('statistics_manager');
+    }
     
     // إذا كان Admin يرى كل شيء، وإلا يرى فقط الصلاحيات الممنوحة له
     const allowedTools = employee.role === 'admin' 
