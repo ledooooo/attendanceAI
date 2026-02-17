@@ -7,7 +7,7 @@ import {
     Users, Clock, CalendarRange, ClipboardList, 
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
-    Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, LayoutDashboard, UserCog, ShieldCheck
+    Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, LayoutDashboard, UserCog, ShieldCheck, BarChart3
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
@@ -32,14 +32,16 @@ import AbsenceReportTab from './components/AbsenceReportTab';
 import TasksManager from './components/TasksManager';
 import VaccinationsTab from './components/VaccinationsTab';
 import GamificationManager from './components/GamificationManager';
-import TrainingManager from './components/TrainingManager'; // ✅ استيراد المكون الجديد
-import { BookOpen } from 'lucide-react'; // ✅ أيقونة التدريب
+import TrainingManager from './components/TrainingManager';
+import { BookOpen } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import AssetsManager from './components/AssetsManager'; // 1. استيراد المكون
+import AssetsManager from './components/AssetsManager'; 
 
-// ✅ استيراد تبويب إدارة الموظف وإدارة المشرفين
 import AdministrationTab from '../staff/components/AdministrationTab';
 import SupervisorsManager from './components/SupervisorsManager';
+
+// ✅ استيراد تبويب إحصائيات العمل
+import StatisticsManager from './components/StatisticsManager';
 
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
@@ -54,15 +56,14 @@ export default function AdminDashboard() {
     const { data: employees = [], isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
         queryKey: ['admin_employees'],
         queryFn: async () => {
-            // ✅ select('*') يضمن جلب last_seen وأي أعمدة جديدة
             const { data, error } = await supabase.from('employees').select('*').order('name');
             if (error) throw error;
             return data as Employee[] || [];
         },
-        staleTime: 1000 * 60 * 5, // تحديث كل 5 دقائق لضمان دقة "آخر ظهور"
+        staleTime: 1000 * 60 * 5, 
     });
 
-    // ✅ استخراج بيانات الموظف (المدير) الحالي لتمريرها لمكون AdministrationTab
+    // استخراج بيانات الموظف (المدير) الحالي لتمريرها لمكون AdministrationTab
     const currentAdminEmployee = employees.find(e => e.id === user?.id) || ({} as Employee);
 
     // قراءة الرابط عند تشغيل التطبيق (لفتح التبويب من الإشعارات الخارجية)
@@ -95,14 +96,14 @@ export default function AdminDashboard() {
                     supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'قيد الانتظار'),
                     supabase.from('ovr_reports').select('*', { count: 'exact', head: true }).eq('status', 'new'),
                     supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('type', 'task_update').eq('is_read', false),
-                    supabase.from('supervisors').select('*', { count: 'exact', head: true }).eq('status', 'pending') // ✅ الاستعلام عن المشرفين
+                    supabase.from('supervisors').select('*', { count: 'exact', head: true }).eq('status', 'pending') 
                 ]);
                 return {
                     messages: msg.count || 0,
                     leaves: leaves.count || 0,
                     ovr: ovr.count || 0,
                     tasks: taskUpdates.count || 0,
-                    supervisors: pendingSupervisors.count || 0 // ✅ إضافة العداد
+                    supervisors: pendingSupervisors.count || 0 
                 };
             } catch (err) {
                 console.error("Error fetching badges:", err);
@@ -147,7 +148,7 @@ export default function AdminDashboard() {
     const menuItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
         { id: 'doctors', label: 'شئون الموظفين', icon: Users },
-        { id: 'supervisors', label: 'إدارة المشرفين', icon: ShieldCheck, badge: badges?.supervisors || 0 }, // ✅ تبويب إدارة المشرفين
+        { id: 'supervisors', label: 'إدارة المشرفين', icon: ShieldCheck, badge: badges?.supervisors || 0 }, 
         { id: 'staff_admin', label: 'إدارة الموظف', icon: UserCog },
         { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
         { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
@@ -158,6 +159,7 @@ export default function AdminDashboard() {
         { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
         { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
         { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
+        { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 }, // ✅ التبويب الجديد
         { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
         { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
         { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
@@ -291,7 +293,7 @@ export default function AdminDashboard() {
                         {/* تمرير employees بأمان تام */}
                         {activeTab === 'home' && <HomeTab employees={employees || []} setActiveTab={setActiveTab} />}
                         {activeTab === 'doctors' && <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />}
-                        {activeTab === 'supervisors' && <SupervisorsManager />} {/* ✅ التبويب الجديد معروض هنا */}
+                        {activeTab === 'supervisors' && <SupervisorsManager />} 
                         {activeTab === 'staff_admin' && <AdministrationTab employee={currentAdminEmployee} />} 
                         {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
                         {activeTab === 'schedules' && <EveningSchedulesTab employees={employees || []} />}
@@ -299,6 +301,7 @@ export default function AdminDashboard() {
                         {activeTab === 'evaluations' && <EvaluationsTab employees={employees || []} />}
                         {activeTab === 'settings' && <SettingsTab onUpdateName={() => queryClient.invalidateQueries({ queryKey: ['general_settings'] })} />}
                         {activeTab === 'reports' && <ReportsTab />}
+                        {activeTab === 'statistics' && <StatisticsManager />} {/* ✅ عرض التبويب الجديد */}
                         {activeTab === 'send_reports' && <SendReportsTab />}
                         {activeTab === 'news' && <NewsManagementTab />}
                         {activeTab === 'motivation' && (
