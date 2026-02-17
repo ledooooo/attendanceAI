@@ -4,42 +4,60 @@ import { NotificationProvider } from './context/NotificationContext';
 import LoginPage from './features/auth/LoginPage';
 import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
+
+// ✅ 1. استيراد واجهة المشرف الجديدة
+import SupervisorDashboard from './features/supervisor/SupervisorDashboard'; 
+
 import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications';
 import { Toaster } from 'react-hot-toast';
 
-// 1. ✅ استيراد مكتبات React Query والـ Persister
-import { QueryClient } from '@tanstack/react-query';
+// 2. استيراد مكتبات React Query والـ Persister
+import { QueryClient, useQuery } from '@tanstack/react-query'; // ✅ تأكد من إضافة useQuery هنا
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
-// 2. ✅ استيراد المكونات الإضافية
+// 3. استيراد المكونات الإضافية
 import OfflineBanner from './components/ui/OfflineBanner';
 import OnlineTracker from './components/OnlineTracker';
-import MandatoryTrainingGuard from './components/MandatoryTrainingGuard'; // ✅ استيراد حارس التدريب
+import MandatoryTrainingGuard from './components/MandatoryTrainingGuard';
 
-// 3. ✅ إعداد عميل التخزين والـ Persister
+// 4. إعداد عميل التخزين والـ Persister
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 دقائق
-      gcTime: 1000 * 60 * 60 * 24, // 24 ساعة (عشان البيانات تفضل محفوظة لليوم التالي)
+      staleTime: 1000 * 60 * 5, 
+      gcTime: 1000 * 60 * 60 * 24, 
       refetchOnWindowFocus: false,
       retry: 1,
-      // مهم جداً للأوفلاين: لا تحاول الاتصال بالشبكة إذا كنت أوفلاين
       networkMode: 'offlineFirst' 
     },
   },
 });
 
-// إنشاء Persister باستخدام localStorage
 const persister = createSyncStoragePersister({
   storage: window.localStorage,
 });
 
 const AppContent = () => {
   const { user, employeeProfile, loading, isAdmin } = useAuth();
+
+  // ✅ استعلام للتحقق مما إذا كان المستخدم يمتلك حساب مشرف (يُنفذ فقط إذا لم يكن موظفاً)
+  const { data: supervisorData, isLoading: loadingSup } = useQuery({
+      queryKey: ['check_supervisor_status', user?.id],
+      queryFn: async () => {
+          if (!user?.id) return null;
+          const { data } = await supabase
+              .from('supervisors')
+              .select('*')
+              .eq('id', user.id)
+              .maybeSingle();
+          return data;
+      },
+      // لا نشغل هذا الاستعلام إلا لو كان مسجلاً وليس لديه ملف موظف (لتوفير الموارد)
+      enabled: !!user && !employeeProfile 
+  });
 
   // تسجيل Service Worker
   useEffect(() => {
@@ -74,7 +92,8 @@ const AppContent = () => {
   }, [loading]);
 
 
-  if (loading) {
+  // شاشة التحميل (أثناء جلب بيانات الموظف أو المشرف)
+  if (loading || loadingSup) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-4 border-emerald-600 border-t-transparent"></div>
@@ -86,27 +105,71 @@ const AppContent = () => {
     );
   }
 
+  // إذا لم يكن مسجلاً للدخول من الأساس
   if (!user) return <LoginPage />;
 
+  // ==========================================
+  // ✅ مسار المشرفين (Supervisors Routing)
+  // ==========================================
+  if (supervisorData) {
+      if (supervisorData.status === 'pending') {
+          return (
+              <div className="h-screen flex flex-col items-center justify-center text-center p-6 bg-white" dir="rtl">
+                  <div className="w-20 h-20 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center text-3xl mb-4">⏳</div>
+                  <h2 className="text-xl font-black text-gray-800 mb-2">حسابك قيد المراجعة</h2>
+                  <p className="text-gray-500 mb-6 text-sm leading-relaxed max-w-sm">
+                      مرحباً بك {supervisorData.name}، طلبك حالياً قيد انتظار موافقة إدارة المركز. يرجى المحاولة لاحقاً بعد التواصل مع الإدارة.
+                  </p>
+                  <button onClick={() => supabase.auth.signOut()} className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold text-sm">تسجيل خروج</button>
+              </div>
+          );
+      }
+      
+      if (supervisorData.status === 'rejected') {
+          return (
+              <div className="h-screen flex flex-col items-center justify-center text-center p-6 bg-white" dir="rtl">
+                  <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center text-3xl mb-4">❌</div>
+                  <h2 className="text-xl font-black text-gray-800 mb-2">عذراً، تم رفض الطلب</h2>
+                  <p className="text-gray-500 mb-6 text-sm">تم رفض طلب انضمامك بصفة ({supervisorData.role_title}) من قِبل الإدارة.</p>
+                  <button onClick={() => supabase.auth.signOut()} className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold text-sm">تسجيل خروج</button>
+              </div>
+          );
+      }
+
+      // إذا كان معتمداً (approved) يفتح شاشة المشرف
+      return (
+          <>
+            <OnlineTracker />
+            <OfflineBanner />
+            <SupervisorDashboard />
+          </>
+      );
+  }
+
+  // ==========================================
+  // مسار الرفض العام (إذا لم يكن موظفاً ولا مشرفاً)
+  // ==========================================
   if (!employeeProfile) {
     return (
       <div className="h-screen flex flex-col items-center justify-center text-center p-6 bg-white" dir="rtl">
-        <h2 className="text-xl font-bold text-gray-800 mb-2">جاري التحقق من بيانات الموظف...</h2>
-        <p className="text-gray-500 mb-6 text-sm">إيميلك ({user.email}) غير مرتبط بملف موظف.</p>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">حساب غير مصرح به</h2>
+        <p className="text-gray-500 mb-6 text-sm">إيميلك ({user.email}) غير مرتبط بملف موظف أو حساب مشرف في النظام.</p>
         <button onClick={() => supabase.auth.signOut()} className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold text-sm">تسجيل خروج</button>
       </div>
     );
   }
 
+  // ==========================================
+  // مسار الموظفين والمديرين العادي (Employees Routing)
+  // ==========================================
   return (
     <>
-      <OnlineTracker /> {/* ✅ يعمل في الخلفية لتتبع التواجد */}
-      <OfflineBanner /> {/* ✅ ظهور البنر هنا */}
+      <OnlineTracker /> 
+      <OfflineBanner /> 
       
       {isAdmin ? (
         <AdminDashboard />
       ) : (
-        // ✅ حماية لوحة الموظف بالتدريب الإجباري
         <MandatoryTrainingGuard employeeId={employeeProfile.employee_id}>
             <StaffDashboard employee={employeeProfile} />
         </MandatoryTrainingGuard>
@@ -119,7 +182,6 @@ export default function App() {
   return (
     <AuthProvider>
       <NotificationProvider>
-        {/* 4. ✅ استخدام PersistQueryClientProvider بدلاً من QueryClientProvider العادي */}
         <PersistQueryClientProvider 
           client={queryClient} 
           persistOptions={{ persister }}
