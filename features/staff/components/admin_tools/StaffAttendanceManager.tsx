@@ -132,7 +132,7 @@ export default function StaffAttendanceManager() {
 
                 if (!hasPunch) {
                     if (leaveRecord) {
-                        statsStatus = 'إجازة';
+                        statsStatus = 'إجازة'; // سيتم تفصيلها لاحقاً في الـ stats
                         let typeText = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة');
                         leaveType = leaveRecord.type || ''; // حفظ النوع الفعلي للإحصائيات
                         displayIn = typeText.replace('اجازة ', '').replace('إجازة ', ''); 
@@ -188,15 +188,16 @@ export default function StaffAttendanceManager() {
     const stats = useMemo(() => {
         const bySpecialty: any = {};
         
-        // عدادات تفصيلية للإجازات
+        // عدادات تفصيلية للإجازات والمهام
+        let totalNormalLeaves = 0; // عارضة + اعتيادية فقط
         let totalMissions = 0; // مأموريات
         let totalItineraries = 0; // خطوط سير
-        let totalNormalLeaves = 0; // باقي الإجازات (اعتيادية، عارضة، مرضي، الخ)
+        let totalOtherLeaves = 0; // باقي أنواع الإجازات (مرضي، تدريب، بدل راحة...)
         
         processedData.forEach(d => {
             if (!bySpecialty[d.specialty]) {
                 bySpecialty[d.specialty] = { 
-                    total: 0, present: 0, absent: 0, leave: 0, 
+                    total: 0, present: 0, absent: 0, leave: 0, // leave هنا تعني (عارضة + اعتيادي) للجدول
                     evening: 0, markedAbsence: 0, partTimeOff: 0 
                 };
             }
@@ -204,34 +205,46 @@ export default function StaffAttendanceManager() {
             const s = bySpecialty[d.specialty];
             s.total++;
 
-            if (d.statsStatus === 'متواجد') s.present++;
-            else if (d.statsStatus === 'مسائي' || d.statsStatus === 'مبيت') s.evening++;
-            else if (d.statsStatus === 'غياب') s.markedAbsence++; // الغياب المحدد يدوياً
-            else if (d.statsStatus === 'غير متواجد') s.absent++; // الغياب التلقائي
-            else if (d.statsStatus === 'إجازة') {
-                s.leave++;
-                // تفصيل الإجازات
-                if (d.leaveType === 'مأمورية') totalMissions++;
-                else if (d.leaveType === 'خط سير') totalItineraries++;
-                else totalNormalLeaves++; // يشمل عارضة، اعتيادية، مرضي
+            if (d.statsStatus === 'متواجد') {
+                s.present++;
+            } else if (d.statsStatus === 'مسائي' || d.statsStatus === 'مبيت') {
+                s.evening++;
+            } else if (d.statsStatus === 'غياب') {
+                s.markedAbsence++; // الغياب المحدد يدوياً
+            } else if (d.statsStatus === 'غير متواجد') {
+                s.absent++; // الغياب التلقائي
+            } else if (d.statsStatus === 'إجازة') {
+                // تفصيل أنواع الطلبات المقبولة
+                const type = d.leaveType || '';
+                if (type.includes('اعتيادية') || type.includes('عارضة')) {
+                    s.leave++; // إضافة للإجازات المحددة في الجدول حسب التخصص
+                    totalNormalLeaves++; // إضافة للإجمالي العام للإجازات
+                } else if (type.includes('مأمورية')) {
+                    totalMissions++;
+                } else if (type.includes('خط سير')) {
+                    totalItineraries++;
+                } else {
+                    totalOtherLeaves++; // أي نوع آخر مثل مرضي، بدل راحة، إلخ
+                }
+            } else if (d.statsStatus === 'جزء وقت') {
+                s.partTimeOff++;
             }
-            else if (d.statsStatus === 'جزء وقت') s.partTimeOff++;
         });
 
-        // Totals for top bar
+        // Totals for top bar and print summary
         const total = processedData.length;
         const present = processedData.filter(d => d.statsStatus === 'متواجد' || d.statsStatus === 'مسائي' || d.statsStatus === 'مبيت').length;
         // تجميع كل حالات الغياب (تلقائي + يدوي) تحت بند واحد "غياب"
         const absent = processedData.filter(d => d.statsStatus === 'غير متواجد' || d.statsStatus === 'غياب').length;
-        const leave = processedData.filter(d => d.statsStatus === 'إجازة').length;
         const partTime = processedData.filter(d => d.statsStatus === 'جزء وقت').length;
         
-        const effectiveTotal = total - leave - partTime;
-        const percent = effectiveTotal > 0 ? Math.round((present / effectiveTotal) * 100) : 0;
+        const effectiveTotal = total - partTime; // القوة الفعالة مطروحاً منها من هم خارج أيام عملهم (جزء الوقت)
+        // حساب نسبة الحضور (حضور + مأموريات + خطوط سير) من القوة الفعالة
+        const percent = effectiveTotal > 0 ? Math.round(((present + totalMissions + totalItineraries) / effectiveTotal) * 100) : 0;
 
         return { 
-            total, present, absent, leave, partTime, percent, bySpecialty,
-            totalMissions, totalItineraries, totalNormalLeaves 
+            total, present, absent, partTime, percent, bySpecialty,
+            totalNormalLeaves, totalMissions, totalItineraries, totalOtherLeaves 
         };
     }, [processedData]);
 
@@ -446,9 +459,10 @@ export default function StaffAttendanceManager() {
                             <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center md:justify-between mb-2 bg-gray-100 print:bg-transparent border border-gray-300 print:border-black p-1.5 rounded-lg shadow-sm print:shadow-none">
                                 <span className="text-gray-800">إجمالي القوة: <span className="text-black">{stats.total}</span></span>
                                 <span className="text-green-700">حضور: <span className="text-black">{stats.present}</span></span>
-                                <span className="text-orange-600">إجازات: <span className="text-black">{stats.totalNormalLeaves}</span></span>
+                                <span className="text-orange-600">إجازات (اعتيادي/عارضة): <span className="text-black">{stats.totalNormalLeaves}</span></span>
                                 <span className="text-indigo-600">مأموريات: <span className="text-black">{stats.totalMissions}</span></span>
                                 <span className="text-teal-600">خطوط سير: <span className="text-black">{stats.totalItineraries}</span></span>
+                                {stats.totalOtherLeaves > 0 && <span className="text-purple-600">إجازات أخرى: <span className="text-black">{stats.totalOtherLeaves}</span></span>}
                                 <span className="text-red-600">غياب: <span className="text-black">{stats.absent}</span></span>
                                 <span className="text-gray-500">جزء وقت: <span className="text-black">{stats.partTime}</span></span>
                                 <span className="text-blue-700">نسبة الحضور: <span className="text-black">{stats.percent}%</span></span>
@@ -643,7 +657,7 @@ const AbsenceTable = ({data}: {data:any[]}) => (
             </tr>
         </thead>
         <tbody>
-            {data.filter(d => d.statsStatus === 'غير متواجد').map(emp => (
+            {data.filter(d => d.statsStatus === 'غير متواجد' || d.statsStatus === 'غياب').map(emp => (
                 <tr key={emp.id} className="border-b border-gray-300">
                     <td className="p-1 border border-gray-300 text-center">{emp.employee_id}</td>
                     <td className="p-1 border border-gray-300 font-bold">{emp.name}</td>
