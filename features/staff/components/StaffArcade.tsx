@@ -12,69 +12,12 @@ interface Props {
 const COOLDOWN_HOURS = 5;
 
 // كلمات لعبة فك الشفرة
-const SCRAMBLE_WORDS = [
-    { word: 'باراسيتامول', hint: 'مسكن وخافض للحرارة شهير' },
-    { word: 'ميكروسكوب', hint: 'جهاز لتكبير الأشياء الدقيقة' },
-    { word: 'أدرينالين', hint: 'هرمون يفرز في حالات الخوف والتوتر' },
-    { word: 'أكسجين', hint: 'غاز ضروري للتنفس' },
-    { word: 'مضادحيوي', hint: 'دواء لقتل البكتيريا' },
-    { word: 'إستقبال', hint: 'أول مكان يدخله المريض' },
-    { word: 'تعقيم', hint: 'قتل جميع الميكروبات' },
-    { word: 'تخدير', hint: 'فقدان الإحساس بالألم' },
-];
-
-// بنك أسئلة Medical Quiz Rush
-const QUIZ_BANK = [
-    { q: 'ما هو المعدل الطبيعي لضربات القلب للبالغين؟', options: ['60-100 نبضة/دقيقة', '40-60 نبضة/دقيقة', '100-120 نبضة/دقيقة', '120-140 نبضة/دقيقة'], correct: 0 },
-    { q: 'ما هي الجرعة القصوى للباراسيتامول للبالغين يومياً؟', options: ['2 جرام', '4 جرام', '6 جرام', '8 جرام'], correct: 1 },
-    { q: 'كم عدد عظام جسم الإنسان البالغ؟', options: ['186', '206', '226', '246'], correct: 1 },
-    { q: 'ما هو الضغط الطبيعي للدم؟', options: ['100/60', '120/80', '140/90', '160/100'], correct: 1 },
-    { q: 'كم تبلغ نسبة الماء في جسم الإنسان البالغ؟', options: ['50%', '60%', '70%', '80%'], correct: 1 },
-    { q: 'ما هو العضو المسؤول عن إنتاج الأنسولين؟', options: ['الكبد', 'البنكرياس', 'الكلى', 'الطحال'], correct: 1 },
-    { q: 'كم عدد حجرات القلب؟', options: ['2', '3', '4', '5'], correct: 2 },
-    { q: 'ما هي مدة الحمل الطبيعية؟', options: ['36 أسبوع', '38 أسبوع', '40 أسبوع', '42 أسبوع'], correct: 2 },
-    { q: 'ما هو الفيتامين الذي يساعد على تجلط الدم؟', options: ['فيتامين A', 'فيتامين C', 'فيتامين D', 'فيتامين K'], correct: 3 },
-    { q: 'كم لتر من الدم يضخ القلب يومياً؟', options: ['3000 لتر', '5000 لتر', '7000 لتر', '9000 لتر'], correct: 2 },
-];
-
-// بنك حالات Dose Calculator
-const DOSE_SCENARIOS = [
-    { 
-        scenario: 'طفل وزنه 20 كجم، الجرعة الموصى بها: 10 ملجم/كجم',
-        question: 'ما هي الجرعة الكلية المطلوبة؟',
-        options: ['150 ملجم', '200 ملجم', '250 ملجم', '300 ملجم'],
-        correct: 1,
-        explanation: '20 كجم × 10 ملجم = 200 ملجم'
-    },
-    { 
-        scenario: 'مريض وزنه 70 كجم، الجرعة: 5 ملجم/كجم مرتين يومياً',
-        question: 'ما هي الجرعة اليومية الكلية؟',
-        options: ['350 ملجم', '500 ملجم', '700 ملجم', '1000 ملجم'],
-        correct: 2,
-        explanation: '70 × 5 = 350 ملجم للمرة الواحدة × 2 = 700 ملجم يومياً'
-    },
-    { 
-        scenario: 'دواء متوفر بتركيز 250 ملجم/5 مل، المطلوب: 500 ملجم',
-        question: 'كم مل يجب إعطاؤها للمريض؟',
-        options: ['5 مل', '10 مل', '15 مل', '20 مل'],
-        correct: 1,
-        explanation: '500 ملجم ÷ 250 ملجم = 2 × 5 مل = 10 مل'
-    },
-    { 
-        scenario: 'طفل عمره 6 أشهر وزنه 7 كجم، باراسيتامول 15 ملجم/كجم',
-        question: 'ما هي الجرعة الواحدة؟',
-        options: ['85 ملجم', '105 ملجم', '125 ملجم', '145 ملجم'],
-        correct: 1,
-        explanation: '7 كجم × 15 ملجم = 105 ملجم'
-    },
-    { 
-        scenario: 'محلول ملحي 0.9% - 1000 مل يُعطى على 8 ساعات',
-        question: 'ما هو معدل التنقيط بالمل/ساعة؟',
-        options: ['100 مل/ساعة', '125 مل/ساعة', '150 مل/ساعة', '175 مل/ساعة'],
-        correct: 1,
-        explanation: '1000 مل ÷ 8 ساعات = 125 مل/ساعة'
-    },
-];
+// ================================================
+// 📦 Types من Supabase
+// ================================================
+interface ScrambleWord  { id: string; word: string; hint: string; }
+interface QuizQuestion  { id: string; question: string; option_a: string; option_b: string; option_c: string; option_d: string; correct_index: number; }
+interface DoseScenario  { id: string; scenario: string; question: string; option_a: string; option_b: string; option_c: string; option_d: string; correct_index: number; explanation: string; }
 
 export default function StaffArcade({ employee }: Props) {
     const queryClient = useQueryClient();
@@ -643,14 +586,32 @@ function SpinAndAnswerGame({ employee, onStart, onComplete }: { employee: Employ
 // 2️⃣ فك الشفرة (Word Scramble) - محسّنة
 // ==========================================
 function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void>, onComplete: (points: number, isWin: boolean) => void }) {
-    const [wordObj, setWordObj] = useState(SCRAMBLE_WORDS[0]);
+    const [wordObj, setWordObj] = useState<ScrambleWord | null>(null);
     const [scrambledArray, setScrambledArray] = useState<string[]>([]);
     const [input, setInput] = useState('');
     const [timeLeft, setTimeLeft] = useState(20); 
     const [isActive, setIsActive] = useState(false);
     const [starting, setStarting] = useState(false);
 
+    // جلب الكلمات من Supabase
+    const { data: words = [], isLoading: loadingWords } = useQuery({
+        queryKey: ['arcade_scramble_words'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('arcade_scramble_words')
+                .select('id, word, hint')
+                .eq('is_active', true);
+            if (error) throw error;
+            return (data || []) as ScrambleWord[];
+        },
+        staleTime: 1000 * 60 * 10, // كاش 10 دقائق
+    });
+
     const startGame = async () => {
+        if (words.length === 0) {
+            toast.error('لا توجد كلمات متاحة حالياً');
+            return;
+        }
         setStarting(true);
         try {
             await onStart();
@@ -659,7 +620,7 @@ function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void
             return;
         }
 
-        const randomWord = SCRAMBLE_WORDS[Math.floor(Math.random() * SCRAMBLE_WORDS.length)];
+        const randomWord = words[Math.floor(Math.random() * words.length)];
         setWordObj(randomWord);
         setScrambledArray(randomWord.word.split('').sort(() => 0.5 - Math.random()));
         setTimeLeft(20);
@@ -680,9 +641,10 @@ function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void
     }, [isActive, timeLeft, onComplete]);
 
     const checkAnswer = () => {
+        if (!wordObj) return;
         if (input.trim() === wordObj.word) {
             setIsActive(false);
-            const points = Math.max(5, Math.floor(timeLeft));  // من 10 لـ 3 نقاط
+            const points = Math.max(5, Math.floor(timeLeft));
             onComplete(points, true);
         } else {
             toast.error('كلمة خاطئة! حاول مرة أخرى', { icon: '❌' });
@@ -700,9 +662,14 @@ function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void
                 <p className="text-base font-bold text-gray-600 mb-8 max-w-md mx-auto">
                     النقاط تتناقص كل ثانية! رتب الحروف المبعثرة واكتب الكلمة بأسرع ما يمكن.
                 </p>
+                {loadingWords ? (
+                    <p className="text-gray-400 font-bold mb-4">⏳ جاري تحميل الكلمات...</p>
+                ) : words.length === 0 ? (
+                    <p className="text-red-400 font-bold mb-4">⚠️ لا توجد كلمات متاحة حالياً</p>
+                ) : null}
                 <button 
                     onClick={startGame} 
-                    disabled={starting} 
+                    disabled={starting || loadingWords || words.length === 0} 
                     className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-10 py-4 rounded-2xl font-black shadow-2xl hover:scale-105 transition-all disabled:opacity-50 text-lg"
                 >
                     {starting ? '⏳ جاري البدء...' : '🚀 ابدأ التحدي'}
@@ -728,7 +695,7 @@ function WordScrambleGame({ onStart, onComplete }: { onStart: () => Promise<void
             
             <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-4 rounded-3xl mb-3 border-2 border-blue-200">
                 <p className="text-sm font-bold text-blue-700 mb-2">💡 تلميح:</p>
-                <p className="text-base font-black text-gray-800">{wordObj.hint}</p>
+                <p className="text-base font-black text-gray-800">{wordObj?.hint}</p>
             </div>
             
             <div className="flex flex-wrap justify-center gap-3 mb-12 p-6 bg-white rounded-3xl shadow-xl border-2 border-gray-100" dir="ltr">
@@ -1077,14 +1044,32 @@ function MemoryMatchGame({ onStart, onComplete }: { onStart: () => Promise<void>
 function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>, onComplete: (points: number, isWin: boolean) => void }) {
     const [currentQuestion, setCurrentQuestion] = useState(0);
     const [score, setScore] = useState(0);
-    const [timeLeft, setTimeLeft] = useState(60); // دقيقة واحدة لـ 5 أسئلة
+    const [timeLeft, setTimeLeft] = useState(60);
     const [isActive, setIsActive] = useState(false);
     const [starting, setStarting] = useState(false);
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
     const [showFeedback, setShowFeedback] = useState(false);
-    const [questions, setQuestions] = useState<typeof QUIZ_BANK>([]);
+    const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+
+    // جلب الأسئلة من Supabase
+    const { data: allQuestions = [], isLoading: loadingQuestions } = useQuery({
+        queryKey: ['arcade_quiz_questions'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('arcade_quiz_questions')
+                .select('id, question, option_a, option_b, option_c, option_d, correct_index')
+                .eq('is_active', true);
+            if (error) throw error;
+            return (data || []) as QuizQuestion[];
+        },
+        staleTime: 1000 * 60 * 10,
+    });
 
     const startGame = async () => {
+        if (allQuestions.length < 5) {
+            toast.error('لا توجد أسئلة كافية حالياً');
+            return;
+        }
         setStarting(true);
         try {
             await onStart();
@@ -1092,9 +1077,8 @@ function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>
             setStarting(false);
             return;
         }
-
-        // اختيار 5 أسئلة عشوائية
-        const shuffled = [...QUIZ_BANK].sort(() => 0.5 - Math.random()).slice(0, 5);
+        // اختيار 5 أسئلة عشوائية من DB
+        const shuffled = [...allQuestions].sort(() => 0.5 - Math.random()).slice(0, 5);
         setQuestions(shuffled);
         setCurrentQuestion(0);
         setScore(0);
@@ -1122,7 +1106,7 @@ function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>
         setSelectedAnswer(answerIndex);
         setShowFeedback(true);
         
-        const isCorrect = answerIndex === questions[currentQuestion].correct;
+        const isCorrect = answerIndex === questions[currentQuestion].correct_index;
         if (isCorrect) {
             setScore(prev => prev + 1);
         }
@@ -1178,16 +1162,17 @@ function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>
                 </div>
                 <button 
                     onClick={startGame} 
-                    disabled={starting} 
+                    disabled={starting || loadingQuestions || allQuestions.length < 5} 
                     className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-10 py-4 rounded-2xl font-black shadow-2xl hover:scale-105 transition-all disabled:opacity-50 text-lg"
                 >
-                    {starting ? '⏳ جاري البدء...' : '🚀 ابدأ السباق'}
+                    {loadingQuestions ? '⏳ جاري التحميل...' : starting ? '⏳ جاري البدء...' : '🚀 ابدأ السباق'}
                 </button>
             </div>
         );
     }
 
     const currentQ = questions[currentQuestion];
+    const currentOptions = [currentQ.option_a, currentQ.option_b, currentQ.option_c, currentQ.option_d];
 
     return (
         <div className="max-w-3xl mx-auto py-8 animate-in zoom-in-95">
@@ -1221,17 +1206,17 @@ function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>
                     <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-black text-xl flex-shrink-0 shadow-lg">
                         {currentQuestion + 1}
                     </div>
-                    <h3 className="text-xl md:text-2xl font-black text-gray-900 leading-relaxed">{currentQ.q}</h3>
+                    <h3 className="text-xl md:text-2xl font-black text-gray-900 leading-relaxed">{currentQ.question}</h3>
                 </div>
             </div>
 
             {/* Options */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {currentQ.options.map((option, idx) => {
+                {currentOptions.map((option, idx) => {
                     let buttonClass = "bg-white border-3 border-gray-200 hover:border-indigo-400 hover:bg-indigo-50";
                     
                     if (showFeedback) {
-                        if (idx === currentQ.correct) {
+                        if (idx === currentQ.correct_index) {
                             buttonClass = "bg-gradient-to-br from-emerald-400 to-emerald-600 border-emerald-600 text-white";
                         } else if (idx === selectedAnswer) {
                             buttonClass = "bg-gradient-to-br from-red-400 to-red-600 border-red-600 text-white";
@@ -1248,15 +1233,15 @@ function MedicalQuizRush({ onStart, onComplete }: { onStart: () => Promise<void>
                             className={`${buttonClass} p-5 rounded-2xl font-bold text-lg transition-all hover:scale-105 active:scale-95 shadow-md hover:shadow-xl disabled:cursor-not-allowed text-right flex items-center gap-3`}
                         >
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${
-                                showFeedback && idx === currentQ.correct ? 'bg-white text-emerald-600' :
+                                showFeedback && idx === currentQ.correct_index ? 'bg-white text-emerald-600' :
                                 showFeedback && idx === selectedAnswer ? 'bg-white text-red-600' :
                                 'bg-indigo-100 text-indigo-600'
                             }`}>
                                 {String.fromCharCode(65 + idx)}
                             </div>
                             <span className="flex-1">{option}</span>
-                            {showFeedback && idx === currentQ.correct && <CheckCircle className="w-6 h-6 flex-shrink-0"/>}
-                            {showFeedback && idx === selectedAnswer && idx !== currentQ.correct && <XCircle className="w-6 h-6 flex-shrink-0"/>}
+                            {showFeedback && idx === currentQ.correct_index && <CheckCircle className="w-6 h-6 flex-shrink-0"/>}
+                            {showFeedback && idx === selectedAnswer && idx !== currentQ.correct_index && <XCircle className="w-6 h-6 flex-shrink-0"/>}
                         </button>
                     );
                 })}
@@ -1275,9 +1260,27 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
     const [starting, setStarting] = useState(false);
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
     const [showFeedback, setShowFeedback] = useState(false);
-    const [cases, setCases] = useState<typeof DOSE_SCENARIOS>([]);
+    const [cases, setCases] = useState<DoseScenario[]>([]);
+
+    // جلب السيناريوهات من Supabase
+    const { data: allScenarios = [], isLoading: loadingScenarios } = useQuery({
+        queryKey: ['arcade_dose_scenarios'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('arcade_dose_scenarios')
+                .select('id, scenario, question, option_a, option_b, option_c, option_d, correct_index, explanation')
+                .eq('is_active', true);
+            if (error) throw error;
+            return (data || []) as DoseScenario[];
+        },
+        staleTime: 1000 * 60 * 10,
+    });
 
     const startGame = async () => {
+        if (allScenarios.length < 3) {
+            toast.error('لا توجد سيناريوهات كافية حالياً');
+            return;
+        }
         setStarting(true);
         try {
             await onStart();
@@ -1285,8 +1288,7 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
             setStarting(false);
             return;
         }
-
-        const shuffled = [...DOSE_SCENARIOS].sort(() => 0.5 - Math.random()).slice(0, 3);
+        const shuffled = [...allScenarios].sort(() => 0.5 - Math.random()).slice(0, 3);
         setCases(shuffled);
         setCurrentCase(0);
         setScore(0);
@@ -1298,11 +1300,9 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
 
     const handleAnswer = (answerIndex: number) => {
         if (showFeedback) return;
-        
         setSelectedAnswer(answerIndex);
         setShowFeedback(true);
-        
-        const isCorrect = answerIndex === cases[currentCase].correct;
+        const isCorrect = answerIndex === cases[currentCase].correct_index;
         if (isCorrect) {
             setScore(prev => prev + 1);
             toast.success('إجابة صحيحة! 🎯', { duration: 1500 });
@@ -1318,7 +1318,6 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
             } else {
                 setIsActive(false);
                 const finalScore = score + (isCorrect ? 1 : 0);
-                
                 if (finalScore === cases.length) {
                     toast.success('مثالي! جميع الحسابات صحيحة! 🏆');
                     onComplete(30, true);
@@ -1330,47 +1329,37 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
                     onComplete(0, false);
                 }
             }
-        }, 3000); // وقت أطول لقراءة التفسير
+        }, 3000);
     };
 
     if (!isActive) {
         return (
             <div className="text-center py-12">
                 <div className="w-24 h-24 bg-gradient-to-br from-rose-500 to-red-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
-                    <Calculator className="w-14 h-14 text-white animate-pulse"/>
+                    <Calculator className="w-14 h-14 text-white"/>
                 </div>
-                <h3 className="text-3xl font-black text-gray-800 mb-3">تحدي حساب الجرعات! 💊</h3>
-                <p className="text-base font-bold text-gray-600 mb-6 max-w-lg mx-auto">
-                    اختبر مهاراتك في حساب الجرعات الدوائية. دقة حسابية عالية مطلوبة!
+                <h3 className="text-3xl font-black text-gray-800 mb-3">تحدي حساب الجرعات 💊</h3>
+                <p className="text-base font-bold text-gray-600 mb-8 max-w-md mx-auto">
+                    3 حالات طبية واقعية. احسب الجرعة الصحيحة واثبت كفاءتك!
                 </p>
-                <div className="bg-gradient-to-br from-rose-50 to-red-50 p-4 rounded-3xl max-w-md mx-auto mb-8 border-2 border-rose-200">
-                    <div className="space-y-3 text-sm font-bold">
-                        <div className="bg-white p-3 rounded-xl shadow-sm flex items-center justify-between">
-                            <span className="text-rose-600">📝 عدد الحالات</span>
-                            <span className="text-2xl text-gray-800">3 حالات</span>
-                        </div>
-                        <div className="bg-white p-3 rounded-xl shadow-sm flex items-center justify-between">
-                            <span className="text-rose-600">🎯 للفوز الكامل</span>
-                            <span className="text-lg text-gray-800">3/3 صحيحة</span>
-                        </div>
-                        <div className="bg-white p-3 rounded-xl shadow-sm flex items-center justify-between">
-                            <span className="text-rose-600">💎 الجائزة</span>
-                            <span className="text-lg text-gray-800">30 نقطة</span>
-                        </div>
-                    </div>
-                </div>
-                <button 
-                    onClick={startGame} 
-                    disabled={starting} 
+                {loadingScenarios ? (
+                    <p className="text-gray-400 font-bold mb-4">⏳ جاري تحميل الحالات...</p>
+                ) : allScenarios.length < 3 ? (
+                    <p className="text-red-400 font-bold mb-4">⚠️ لا توجد حالات كافية حالياً</p>
+                ) : null}
+                <button
+                    onClick={startGame}
+                    disabled={starting || loadingScenarios || allScenarios.length < 3}
                     className="bg-gradient-to-r from-rose-600 to-red-600 text-white px-10 py-4 rounded-2xl font-black shadow-2xl hover:scale-105 transition-all disabled:opacity-50 text-lg"
                 >
-                    {starting ? '⏳ جاري البدء...' : '🧮 ابدأ التحدي'}
+                    {loadingScenarios ? '⏳ جاري التحميل...' : starting ? '⏳ جاري البدء...' : '🚀 ابدأ التحدي'}
                 </button>
             </div>
         );
     }
 
     const currentScenario = cases[currentCase];
+    const currentOptions = [currentScenario.option_a, currentScenario.option_b, currentScenario.option_c, currentScenario.option_d];
 
     return (
         <div className="max-w-3xl mx-auto py-8 animate-in zoom-in-95">
@@ -1387,7 +1376,7 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
 
             {/* Progress */}
             <div className="w-full bg-gray-200 h-3 rounded-full mb-8 overflow-hidden shadow-inner">
-                <div 
+                <div
                     className="h-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-300 rounded-full"
                     style={{ width: `${((currentCase + 1) / cases.length) * 100}%` }}
                 ></div>
@@ -1412,11 +1401,10 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
 
             {/* Options */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                {currentScenario.options.map((option, idx) => {
+                {currentOptions.map((option, idx) => {
                     let buttonClass = "bg-white border-3 border-gray-200 hover:border-rose-400 hover:bg-rose-50";
-                    
                     if (showFeedback) {
-                        if (idx === currentScenario.correct) {
+                        if (idx === currentScenario.correct_index) {
                             buttonClass = "bg-gradient-to-br from-emerald-400 to-emerald-600 border-emerald-600 text-white";
                         } else if (idx === selectedAnswer) {
                             buttonClass = "bg-gradient-to-br from-red-400 to-red-600 border-red-600 text-white";
@@ -1424,7 +1412,6 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
                             buttonClass = "bg-gray-100 border-gray-200 text-gray-400";
                         }
                     }
-
                     return (
                         <button
                             key={idx}
@@ -1434,8 +1421,8 @@ function DoseCalculatorChallenge({ onStart, onComplete }: { onStart: () => Promi
                         >
                             <div className="flex items-center justify-center gap-3">
                                 <span>{option}</span>
-                                {showFeedback && idx === currentScenario.correct && <CheckCircle className="w-7 h-7"/>}
-                                {showFeedback && idx === selectedAnswer && idx !== currentScenario.correct && <XCircle className="w-7 h-7"/>}
+                                {showFeedback && idx === currentScenario.correct_index && <CheckCircle className="w-7 h-7"/>}
+                                {showFeedback && idx === selectedAnswer && idx !== currentScenario.correct_index && <XCircle className="w-7 h-7"/>}
                             </div>
                         </button>
                     );
