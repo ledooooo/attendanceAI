@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { supabase } from '../../../../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { useReactToPrint } from 'react-to-print';
 import { Loader2, Printer, CalendarRange } from 'lucide-react';
