@@ -98,6 +98,7 @@ export default function StaffAttendanceManager() {
             let displayIn = '-';  
             let displayOut = '-'; 
             let statsStatus = 'غير متواجد'; 
+            let leaveType = ''; // متغير جديد لتخزين نوع الإجازة الفعلي للإحصائيات
 
             // 1. التحقق من التعديلات اليدوية المؤقتة
             if (printOverrides[emp.employee_id]) {
@@ -133,6 +134,7 @@ export default function StaffAttendanceManager() {
                     if (leaveRecord) {
                         statsStatus = 'إجازة';
                         let typeText = leaveRecord.type || (leaveRecord.notes ? leaveRecord.notes.split('-')[0] : 'إجازة');
+                        leaveType = leaveRecord.type || ''; // حفظ النوع الفعلي للإحصائيات
                         displayIn = typeText.replace('اجازة ', '').replace('إجازة ', ''); 
                         displayOut = '';
                     } 
@@ -156,7 +158,7 @@ export default function StaffAttendanceManager() {
                 }
             }
 
-            return { ...emp, displayIn, displayOut, statsStatus };
+            return { ...emp, displayIn, displayOut, statsStatus, leaveType };
         });
 
         // Filter
@@ -182,9 +184,14 @@ export default function StaffAttendanceManager() {
         return data;
     }, [employees, attendance, leaves, searchTerm, filterSpecialty, filterStatus, date, sortConfig, printOverrides]);
 
-    // --- 3. Statistics (Updated for new columns) ---
+    // --- 3. Statistics (Updated for detailed leave types) ---
     const stats = useMemo(() => {
         const bySpecialty: any = {};
+        
+        // عدادات تفصيلية للإجازات
+        let totalMissions = 0; // مأموريات
+        let totalItineraries = 0; // خطوط سير
+        let totalNormalLeaves = 0; // باقي الإجازات (اعتيادية، عارضة، مرضي، الخ)
         
         processedData.forEach(d => {
             if (!bySpecialty[d.specialty]) {
@@ -201,20 +208,31 @@ export default function StaffAttendanceManager() {
             else if (d.statsStatus === 'مسائي' || d.statsStatus === 'مبيت') s.evening++;
             else if (d.statsStatus === 'غياب') s.markedAbsence++; // الغياب المحدد يدوياً
             else if (d.statsStatus === 'غير متواجد') s.absent++; // الغياب التلقائي
-            else if (d.statsStatus === 'إجازة') s.leave++;
+            else if (d.statsStatus === 'إجازة') {
+                s.leave++;
+                // تفصيل الإجازات
+                if (d.leaveType === 'مأمورية') totalMissions++;
+                else if (d.leaveType === 'خط سير') totalItineraries++;
+                else totalNormalLeaves++; // يشمل عارضة، اعتيادية، مرضي
+            }
             else if (d.statsStatus === 'جزء وقت') s.partTimeOff++;
         });
 
         // Totals for top bar
         const total = processedData.length;
         const present = processedData.filter(d => d.statsStatus === 'متواجد' || d.statsStatus === 'مسائي' || d.statsStatus === 'مبيت').length;
+        // تجميع كل حالات الغياب (تلقائي + يدوي) تحت بند واحد "غياب"
         const absent = processedData.filter(d => d.statsStatus === 'غير متواجد' || d.statsStatus === 'غياب').length;
         const leave = processedData.filter(d => d.statsStatus === 'إجازة').length;
         const partTime = processedData.filter(d => d.statsStatus === 'جزء وقت').length;
+        
         const effectiveTotal = total - leave - partTime;
         const percent = effectiveTotal > 0 ? Math.round((present / effectiveTotal) * 100) : 0;
 
-        return { total, present, absent, leave, partTime, percent, bySpecialty };
+        return { 
+            total, present, absent, leave, partTime, percent, bySpecialty,
+            totalMissions, totalItineraries, totalNormalLeaves 
+        };
     }, [processedData]);
 
     // --- Mutations ---
@@ -282,7 +300,6 @@ export default function StaffAttendanceManager() {
             setPrintOverrides(prev => ({ ...prev, [empId]: 'مبيت' }));
             toast('تم التعيين: مبيت', { icon: '🛌' });
         } else if (action === 'absence') {
-            // ✅ إضافة خيار غياب للطباعة
             setPrintOverrides(prev => ({ ...prev, [empId]: 'غياب' }));
             toast('تم التعيين: غياب (للطباعة)', { icon: '❌' });
         }
@@ -423,16 +440,20 @@ export default function StaffAttendanceManager() {
                                 <DailyTable data={leftColumnData} startIndex={halfIndex} onQuickAction={handleQuickAction} />
                             </div>
                         </div>
-                        <div className="mt-4 pt-2 border-t border-black text-[10px] print:text-[9px] font-bold">
-                            <div className="flex justify-between mb-1 bg-gray-100 print:bg-transparent p-1 rounded">
-                                <span>إجمالي القوة: {stats.total}</span>
-                                <span>متواجد: {stats.present}</span>
-                                <span>غير متواجد: {stats.absent}</span>
-                                <span>إجازات: {stats.leave}</span>
-                                <span>جزء وقت: {stats.partTime}</span>
-                                <span>نسبة الحضور: {stats.percent}%</span>
+                        
+                        {/* ✅ الشريط السفلي المفصل للطباعة */}
+                        <div className="mt-4 pt-2 border-t border-black text-[10px] print:text-[10px] font-bold">
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center md:justify-between mb-2 bg-gray-100 print:bg-transparent border border-gray-300 print:border-black p-1.5 rounded-lg shadow-sm print:shadow-none">
+                                <span className="text-gray-800">إجمالي القوة: <span className="text-black">{stats.total}</span></span>
+                                <span className="text-green-700">حضور: <span className="text-black">{stats.present}</span></span>
+                                <span className="text-orange-600">إجازات: <span className="text-black">{stats.totalNormalLeaves}</span></span>
+                                <span className="text-indigo-600">مأموريات: <span className="text-black">{stats.totalMissions}</span></span>
+                                <span className="text-teal-600">خطوط سير: <span className="text-black">{stats.totalItineraries}</span></span>
+                                <span className="text-red-600">غياب: <span className="text-black">{stats.absent}</span></span>
+                                <span className="text-gray-500">جزء وقت: <span className="text-black">{stats.partTime}</span></span>
+                                <span className="text-blue-700">نسبة الحضور: <span className="text-black">{stats.percent}%</span></span>
                             </div>
-                            <div className="flex flex-wrap gap-x-2 gap-y-1">
+                            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-[9px] print:text-[8px]">
                                 {Object.entries(stats.bySpecialty).map(([spec, s]: any) => (
                                     <span key={spec} className="print:border-l pl-2 ml-1 border-gray-400">
                                         {spec}: {s.present}/{s.total}
