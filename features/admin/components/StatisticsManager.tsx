@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { supabase } from '../../../supabaseClient';
+import React, { useState, useRef } from 'react';
+import { supabase } from '../../../../supabaseClient'; // تأكد من مسار الاستيراد
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, Calendar, Loader2, BarChart3 } from 'lucide-react';
+import { Save, Calendar, Loader2, BarChart3, Download, Upload, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from '../../../context/AuthContext';
+import { useAuth } from '../../../../context/AuthContext'; // تأكد من مسار الاستيراد
+import * as XLSX from 'xlsx';
+import { useReactToPrint } from 'react-to-print';
 
 // ترتيب الحقول في مجموعات لسهولة الإدخال
 const CATEGORIES = [
@@ -124,6 +126,18 @@ export default function StatisticsManager() {
     const queryClient = useQueryClient();
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [formData, setFormData] = useState<Record<string, number | string>>({});
+    const [isUploading, setIsUploading] = useState(false);
+    
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const printRef = useRef<HTMLDivElement>(null);
+
+    // خريطة لربط العناوين العربية (Label) بالحقول البرمجية (Key) للاستيراد
+    const labelToKeyMap = CATEGORIES.reduce((acc, cat) => {
+        cat.fields.forEach(f => {
+            acc[f.label] = { key: f.key, isDecimal: f.isDecimal };
+        });
+        return acc;
+    }, {} as Record<string, { key: string, isDecimal?: boolean }>);
 
     // 1. جلب بيانات اليوم المحدد
     const { isLoading, isFetching } = useQuery({
@@ -149,7 +163,7 @@ export default function StatisticsManager() {
         },
     });
 
-    // 2. دالة الحفظ
+    // 2. دالة الحفظ (تعمل كـ Upsert لتحديث البيانات بدون تكرار السجل لليوم الواحد)
     const saveMutation = useMutation({
         mutationFn: async () => {
             if (!user) throw new Error("غير مصرح");
@@ -160,7 +174,7 @@ export default function StatisticsManager() {
                 ...formData
             };
             
-            // حذف المعرف إذا كان موجوداً لتجنب مشاكل التحديث
+            // حذف المعرفات لتجنب مشاكل التحديث
             delete payload.id;
             delete payload.created_at;
 
@@ -185,10 +199,74 @@ export default function StatisticsManager() {
         }));
     };
 
+    // --- دوال الإكسيل والطباعة ---
+
+    // تحميل ملف عينة
+    const handleDownloadSample = () => {
+        const sampleData: Record<string, number> = {};
+        CATEGORIES.forEach(cat => cat.fields.forEach(f => {
+            sampleData[f.label] = 0; // جميع الأعمدة تبدأ بـ 0
+        }));
+
+        const ws = XLSX.utils.json_to_sheet([sampleData]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "احصائيات_اليوم");
+        XLSX.writeFile(wb, `نموذج_إحصائيات_المركز.xlsx`);
+    };
+
+    // رفع وقراءة الإكسيل
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsUploading(true);
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const json = XLSX.utils.sheet_to_json(worksheet);
+
+                if (json.length > 0) {
+                    const row: any = json[0]; // نأخذ أول صف فقط
+                    const newFormData = { ...formData };
+                    
+                    // تحديث القيم بناءً على العناوين
+                    Object.keys(row).forEach(label => {
+                        const fieldConfig = labelToKeyMap[label];
+                        if (fieldConfig) {
+                            const val = fieldConfig.isDecimal ? parseFloat(row[label]) : parseInt(row[label], 10);
+                            newFormData[fieldConfig.key] = isNaN(val) ? 0 : val;
+                        }
+                    });
+
+                    setFormData(newFormData);
+                    toast.success('تم قراءة الملف بنجاح! اضغط حفظ لتأكيد الإدخال.');
+                } else {
+                    toast.error('الملف فارغ أو غير صالح.');
+                }
+            } catch (err) {
+                toast.error('حدث خطأ أثناء قراءة الملف.');
+            } finally {
+                setIsUploading(false);
+                if (fileInputRef.current) fileInputRef.current.value = ''; // تصفير الـ input
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    // الطباعة A4
+    const handlePrint = useReactToPrint({
+        content: () => printRef.current,
+        documentTitle: `إحصائيات_مركز_غرب_المطار_${date}`,
+    });
+
     return (
         <div className="space-y-6 animate-in fade-in pb-10">
-            {/* Header */}
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
+            {/* Header Controls (لا يظهر في الطباعة) */}
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col lg:flex-row justify-between items-center gap-4 no-print">
                 <div>
                     <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
                         <BarChart3 className="w-6 h-6 text-blue-600"/> إحصائيات العمل
@@ -196,7 +274,9 @@ export default function StatisticsManager() {
                     <p className="text-gray-500 text-sm mt-1 font-bold">إدخال الإحصائيات اليومية والشهرية للمركز</p>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                    
+                    {/* اختيار التاريخ */}
                     <div className="relative bg-gray-50 rounded-xl border flex items-center px-3 py-2">
                         <Calendar className="w-5 h-5 text-gray-500 ml-2"/>
                         <input 
@@ -206,6 +286,30 @@ export default function StatisticsManager() {
                             className="bg-transparent outline-none font-bold text-gray-700"
                         />
                     </div>
+
+                    <div className="h-6 w-px bg-gray-200 mx-2 hidden md:block"></div>
+
+                    {/* أدوات الإكسيل والطباعة */}
+                    <button onClick={handleDownloadSample} className="bg-gray-100 text-gray-700 px-3 py-2.5 rounded-xl font-bold hover:bg-gray-200 flex items-center gap-2 transition-all text-xs">
+                        <Download className="w-4 h-4"/> نموذج
+                    </button>
+
+                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls" className="hidden" />
+                    <button 
+                        onClick={() => fileInputRef.current?.click()} 
+                        disabled={isUploading}
+                        className="bg-orange-50 text-orange-600 border border-orange-200 px-3 py-2.5 rounded-xl font-bold hover:bg-orange-100 flex items-center gap-2 transition-all text-xs"
+                    >
+                        {isUploading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4"/>} رفع بيانات
+                    </button>
+
+                    <button onClick={handlePrint} className="bg-gray-800 text-white px-3 py-2.5 rounded-xl font-bold hover:bg-gray-900 flex items-center gap-2 shadow-lg transition-all text-xs">
+                        <Printer className="w-4 h-4"/> طباعة التقرير
+                    </button>
+
+                    <div className="h-6 w-px bg-gray-200 mx-2 hidden md:block"></div>
+
+                    {/* زر الحفظ الأساسي */}
                     <button 
                         onClick={() => saveMutation.mutate()}
                         disabled={saveMutation.isPending || isFetching}
@@ -219,31 +323,56 @@ export default function StatisticsManager() {
             {isLoading || isFetching ? (
                 <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-blue-600"/></div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {CATEGORIES.map((category, idx) => (
-                        <div key={idx} className={`bg-white rounded-3xl border p-5 shadow-sm`}>
-                            <h3 className={`text-sm font-black mb-4 p-2 rounded-xl border text-center ${category.color}`}>
-                                {category.title}
-                            </h3>
-                            <div className="space-y-3">
-                                {category.fields.map(field => (
-                                    <div key={field.key} className="flex justify-between items-center bg-gray-50 p-2 rounded-xl border border-transparent hover:border-gray-200 transition-colors">
-                                        <label className="text-xs font-bold text-gray-700 flex-1">{field.label}</label>
-                                        <input 
-                                            type="number"
-                                            min="0"
-                                            step={field.isDecimal ? "0.01" : "1"}
-                                            value={formData[field.key] === 0 ? '' : formData[field.key]} 
-                                            onChange={(e) => handleChange(field.key, e.target.value, field.isDecimal)}
-                                            placeholder="0"
-                                            className="w-24 text-center p-1.5 border rounded-lg outline-none focus:border-blue-500 font-mono font-bold text-blue-700"
-                                            dir="ltr"
-                                        />
-                                    </div>
-                                ))}
+                /* منطقة المحتوى القابلة للطباعة */
+                <div ref={printRef} className="print:p-6 print:bg-white print:text-black">
+                    
+                    {/* ترويسة الطباعة (تظهر في الطباعة فقط) */}
+                    <div className="hidden print:block text-center border-b-2 border-gray-800 pb-4 mb-6">
+                        <h1 className="text-2xl font-black mb-1">بيان إحصائيات العمل اليومية</h1>
+                        <h2 className="text-xl font-bold text-gray-700">إدارة شمال الجيزة - مركز غرب المطار</h2>
+                        <p className="text-lg font-bold mt-2">عن يوم: {new Date(date).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    </div>
+
+                    {/* شبكة الحقول (متجاوبة على الشاشة ومناسبة للورق) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 print:grid-cols-2 gap-4 print:gap-x-8 print:gap-y-6">
+                        {CATEGORIES.map((category, idx) => (
+                            <div key={idx} className={`bg-white rounded-3xl border print:border-gray-400 p-4 shadow-sm print:shadow-none print:break-inside-avoid`}>
+                                <h3 className={`text-sm font-black mb-3 p-2 rounded-xl border text-center print:bg-gray-100 print:text-black print:border-gray-500 ${category.color}`}>
+                                    {category.title}
+                                </h3>
+                                <div className="space-y-2">
+                                    {category.fields.map(field => (
+                                        <div key={field.key} className="flex justify-between items-center bg-gray-50 print:bg-transparent p-1.5 rounded-xl border border-transparent print:border-b-gray-300 print:rounded-none">
+                                            <label className="text-[13px] font-bold text-gray-700 print:text-black flex-1">{field.label}</label>
+                                            <input 
+                                                type="number"
+                                                min="0"
+                                                step={field.isDecimal ? "0.01" : "1"}
+                                                value={formData[field.key] === 0 ? '' : formData[field.key]} 
+                                                onChange={(e) => handleChange(field.key, e.target.value, field.isDecimal)}
+                                                placeholder="0"
+                                                className="w-20 text-center p-1 border rounded-lg outline-none focus:border-blue-500 font-mono font-bold text-blue-700 print:text-black print:border-none print:bg-transparent"
+                                                dir="ltr"
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
+                        ))}
+                    </div>
+
+                    {/* توقيعات الطباعة (تظهر في الطباعة فقط) */}
+                    <div className="hidden print:flex justify-between items-center mt-16 pt-8 px-10">
+                        <div className="text-center font-bold">
+                            <p>مسؤول الإحصاء</p>
+                            <p className="mt-8">.......................</p>
                         </div>
-                    ))}
+                        <div className="text-center font-bold">
+                            <p>مدير المركز</p>
+                            <p className="mt-8">.......................</p>
+                        </div>
+                    </div>
+
                 </div>
             )}
         </div>
