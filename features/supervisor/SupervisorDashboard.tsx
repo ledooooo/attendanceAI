@@ -21,7 +21,7 @@ import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
 import ThemeOverlay from '../staff/components/ThemeOverlay';
 
-// --- ✅ استيراد المكونات الأربعة المخصصة للمشرف ---
+// --- استيراد المكونات المخصصة للمشرف ---
 import SupervisorForce from './components/SupervisorForce';
 import SupervisorSchedules from './components/SupervisorSchedules';
 import SupervisorStatistics from './components/SupervisorStatistics';
@@ -121,7 +121,7 @@ export default function SupervisorDashboard() {
         } catch (err) {} 
     };
 
-    // --- ✅ القوائم المحدثة بالصفحات الجديدة ---
+    // القوائم الجانبية
     const menuItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
         { id: 'force', label: 'القوة الفعلية', icon: Users },
@@ -169,6 +169,7 @@ export default function SupervisorDashboard() {
                 </div>
 
                 <nav className="flex-1 overflow-y-auto p-4 space-y-1.5 custom-scrollbar pb-24 md:pb-4">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-2 px-2">لوحة المتابعة الإشرافية</p>
                     {menuItems.map(item => {
                         const isActive = activeTab === item.id;
                         return (
@@ -184,22 +185,21 @@ export default function SupervisorDashboard() {
                             </button>
                         );
                     })}
-
-                    <div className="my-4 border-t pt-4">
-                        <button onClick={handleShareApp} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold transition-all text-gray-600 hover:bg-purple-50 hover:text-purple-600 group">
-                            <Share2 className="w-5 h-5 text-gray-400 group-hover:text-purple-600"/>
-                            <span className="text-sm">مشاركة التطبيق</span>
-                        </button>
-                        <button onClick={() => setShowAboutModal(true)} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold transition-all text-gray-600 hover:bg-purple-50 hover:text-purple-600 group">
-                            <Info className="w-5 h-5 text-gray-400 group-hover:text-purple-600"/>
-                            <span className="text-sm">عن التطبيق</span>
-                        </button>
-                    </div>
                 </nav>
 
-                <div className="p-4 border-t bg-gray-50 pb-safe shrink-0">
-                    <button onClick={signOut} className="w-full py-3 rounded-xl text-red-500 font-bold hover:bg-red-50 border border-transparent hover:border-red-100 transition-colors flex items-center justify-center gap-2">
-                        <LogOut className="w-5 h-5"/> تسجيل الخروج
+                {/* ✅ أزرار المشاركة، حول التطبيق، الخروج مرتبة جنباً إلى جنب */}
+                <div className="p-4 border-t bg-gray-50 flex items-center justify-around shrink-0 pb-safe">
+                    <button onClick={handleShareApp} className="p-3 rounded-2xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
+                        <Share2 className="w-5 h-5" />
+                        <span className="text-[9px] font-bold">مشاركة</span>
+                    </button>
+                    <button onClick={() => setShowAboutModal(true)} className="p-3 rounded-2xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors flex flex-col items-center gap-1">
+                        <Info className="w-5 h-5" />
+                        <span className="text-[9px] font-bold">حول</span>
+                    </button>
+                    <button onClick={signOut} className="p-3 rounded-2xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
+                        <LogOut className="w-5 h-5" />
+                        <span className="text-[9px] font-bold">خروج</span>
                     </button>
                 </div>
             </aside>
@@ -207,15 +207,14 @@ export default function SupervisorDashboard() {
             {/* --- المحتوى الرئيسي --- */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
                 
-                {/* ✅ الشريط العلوي (تم ضبط المقاسات للموبايل) */}
+                {/* الشريط العلوي (تم ضبط المقاسات للموبايل) */}
                 <header className="h-16 md:h-20 bg-white border-b flex items-center justify-between px-2 md:px-6 sticky top-0 z-30 shadow-sm bg-white/95 backdrop-blur-sm gap-1">
                     
-                    {/* القائمة والثيم */}
                     <div className="flex items-center gap-1 md:gap-3 shrink-0">
                         <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-1.5 md:p-2 bg-gray-50 rounded-xl hover:bg-gray-100 border">
                             <Menu className="w-5 h-5 text-gray-700"/>
                         </button>
-                        <span className="font-black text-gray-800 hidden lg:block">لوحة المتابعة الإشرافية</span>
+                        <span className="font-black text-gray-800 hidden lg:block">المتابعة الإشرافية</span>
                         
                         <div className="relative group hidden md:block">
                             <button 
@@ -227,10 +226,7 @@ export default function SupervisorDashboard() {
                         </div>
                     </div>
 
-                    {/* البادجات (مصغرة للموبايل) */}
                     <div className="flex items-center gap-1.5 md:gap-3">
-                        
-                        {/* أبطال النقاط */}
                         <div className="relative group">
                             <button 
                                 onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); }} 
@@ -253,7 +249,6 @@ export default function SupervisorDashboard() {
                             )}
                         </div>
 
-                        {/* متجر الجوائز السريع */}
                         <button onClick={() => setActiveTab('rewards')} className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'rewards' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}>
                             <ShoppingBag className="w-4 h-4 md:w-5 md:h-5" />
                             {pendingRewardsCount > 0 && (
@@ -263,7 +258,6 @@ export default function SupervisorDashboard() {
                             )}
                         </button>
 
-                        {/* المستوى */}
                         <div className="relative group">
                             <button 
                                 onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); }} 
@@ -287,7 +281,6 @@ export default function SupervisorDashboard() {
                             )}
                         </div>
 
-                        {/* النقاط */}
                         <div className="flex items-center gap-1 bg-yellow-50 px-2 md:px-3 py-1.5 rounded-xl border border-yellow-200">
                             <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-yellow-500"/>
                             <span className="text-[10px] md:text-sm font-black text-yellow-700">{supervisor?.total_points || 0}</span>
@@ -316,14 +309,11 @@ export default function SupervisorDashboard() {
                             </>
                         )}
 
-                        {/* ✅ عرض المكونات (تم وضع المكونات الأربعة الجديدة وحذف القديمة) */}
                         {activeTab === 'home' && <StaffNewsFeed employee={mockEmployee} />}
-                        
                         {activeTab === 'force' && <SupervisorForce />}
                         {activeTab === 'tasks' && <SupervisorTasks />}
                         {activeTab === 'schedule' && <SupervisorSchedules />}
                         {activeTab === 'statistics' && <SupervisorStatistics />}
-                        
                         {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
                         {activeTab === 'library' && <StaffLibrary employee={mockEmployee} />}
                         {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
