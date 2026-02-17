@@ -16,7 +16,7 @@ export interface Employee {
   nursing_start_date?: string;
   nursing_end_date?: string;
   nursing_time?: 'morning' | 'evening' | null;
-
+can_manage_statistics?: boolean;
   
   // --- حقول المصادقة ---
   email?: string;        // البريد الإلكتروني
