@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { supabase } from '../../../../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '../../../../context/AuthContext';
+import { useAuth } from '../../../context/AuthContext';
 import { CheckSquare, Plus, Loader2, Clock, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -26,13 +26,12 @@ export default function SupervisorTasks() {
             if (!title) throw new Error("يجب كتابة عنوان التكليف");
             const { error } = await supabase.from('tasks').insert({
                 title, description, due_date: dueDate || null, 
-                assigned_to: 'admin', // نرسل التكليف للمدير
+                assigned_to: 'admin',
                 created_by: user?.id,
                 status: 'pending'
             });
             if (error) throw error;
             
-            // إشعار للمدير
             await supabase.from('notifications').insert({
                 type: 'task_update', title: 'تكليف إشرافي جديد', message: `تم تكليفك بـ: ${title}`, to_user: 'admin'
             });
@@ -47,7 +46,6 @@ export default function SupervisorTasks() {
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in">
-            {/* إنشاء تكليف */}
             <div className="bg-white p-6 rounded-3xl shadow-sm border h-fit">
                 <h3 className="font-black text-lg flex items-center gap-2 mb-4"><Plus className="w-5 h-5 text-emerald-600"/> إصدار تكليف جديد</h3>
                 <div className="space-y-4">
@@ -55,12 +53,11 @@ export default function SupervisorTasks() {
                     <textarea placeholder="التفاصيل (اختياري)..." value={description} onChange={e => setDescription(e.target.value)} className="w-full p-3 rounded-xl border bg-gray-50 focus:border-emerald-500 outline-none text-sm resize-none h-24" />
                     <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full p-3 rounded-xl border bg-gray-50 outline-none text-sm font-bold text-gray-500" />
                     <button onClick={() => addTaskMutation.mutate()} disabled={addTaskMutation.isPending || !title} className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-700 flex justify-center items-center gap-2 disabled:opacity-50">
-                        {addTaskMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : 'إرسال التكليف للمركز'}
+                        {addTaskMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : 'إرسال التكليف'}
                     </button>
                 </div>
             </div>
 
-            {/* قائمة التكليفات */}
             <div className="lg:col-span-2 space-y-4">
                 <h3 className="font-black text-lg flex items-center gap-2 text-gray-800"><CheckSquare className="w-5 h-5 text-emerald-600"/> سجل التكليفات الصادرة</h3>
                 {isLoading ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-emerald-600"/></div> : 
