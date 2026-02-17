@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../../../../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Save, Calendar, Loader2, BarChart3 } from 'lucide-react';
 import toast from 'react-hot-toast';
