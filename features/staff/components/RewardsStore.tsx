@@ -4,13 +4,21 @@ import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
     Gift, Clock, Award, Coffee, ShoppingBag, 
-    Loader2, Tag, Image as ImageIcon, CheckCircle, XCircle, AlertCircle, History, Ticket
+    Loader2, Tag, Image as ImageIcon, CheckCircle, XCircle, AlertCircle, History, Ticket, Percent
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function RewardsStore({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
     const [filter, setFilter] = useState<'all' | 'my' | 'promo'>('all');
+
+    // --- حالة نافذة الشراء والكوبون ---
+    const [buyModal, setBuyModal] = useState<{
+        isOpen: boolean;
+        reward: any | null;
+        promoInput: string;
+        appliedPromo: any | null;
+    }>({ isOpen: false, reward: null, promoInput: '', appliedPromo: null });
 
     // 1. جلب الجوائز المتاحة
     const { data: rewards = [], isLoading } = useQuery({
@@ -25,7 +33,7 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
         }
     });
 
-    // 2. جلب الكوبونات الفعالة (الجديد ✅)
+    // 2. جلب الكوبونات الفعالة
     const { data: promoCodes = [], isLoading: isLoadingPromo } = useQuery({
         queryKey: ['active_promo_codes'],
         queryFn: async () => {
@@ -34,17 +42,16 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                 .from('promo_codes')
                 .select('*')
                 .eq('is_active', true)
-                .gte('valid_until', today) // جلب الكوبونات غير المنتهية فقط
+                .gte('valid_until', today)
                 .order('discount_value', { ascending: false });
             return data || [];
         }
     });
 
-    // 3. جلب طلباتي السابقة (تم إصلاح المشكلة هنا ✅)
+    // 3. جلب طلباتي السابقة
     const { data: myRedemptions = [], isLoading: loadingRedemptions } = useQuery({
         queryKey: ['my_redemptions', employee.employee_id, employee.id],
         queryFn: async () => {
-            // استخدام .or للبحث بالرقم الوظيفي أو المعرف الفريد لتجنب أي فقدان للبيانات
             const { data: requests, error } = await supabase.from('rewards_redemptions')
                 .select('*')
                 .or(`employee_id.eq.${employee.employee_id},employee_id.eq.${employee.id}`)
@@ -56,7 +63,6 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
             }
             if (!requests || requests.length === 0) return [];
 
-            // جلب أسماء الجوائز يدوياً (لضمان تخطي مشاكل العلاقات)
             const rewardIds = [...new Set(requests.map(r => r.reward_id))].filter(Boolean);
             const { data: rews } = await supabase.from('rewards_catalog').select('id, title').in('id', rewardIds);
 
@@ -69,44 +75,65 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
 
     // --- دالة مساعدة لحساب السعر الفعلي ومعرفة وجود خصم ---
     const getRewardPricing = (reward: any) => {
+        if (!reward) return { hasDiscount: false, actualCost: 0 };
         const hasDiscount = reward.discount_points && reward.discount_end_date && new Date(reward.discount_end_date) >= new Date();
         const actualCost = hasDiscount ? reward.discount_points : reward.cost;
         return { hasDiscount, actualCost };
     };
 
-    // 4. عملية الشراء
-    const buyMutation = useMutation({
-        mutationFn: async (reward: any) => {
-            const { actualCost } = getRewardPricing(reward);
+    // --- تفعيل الكوبون داخل النافذة ---
+    const handleApplyPromo = () => {
+        if (!buyModal.promoInput.trim()) return;
+        
+        const promo = promoCodes.find(p => p.code.toLowerCase() === buyModal.promoInput.trim().toLowerCase());
+        
+        if (promo) {
+            setBuyModal(prev => ({ ...prev, appliedPromo: promo }));
+            toast.success(`تم تفعيل الخصم: ${promo.discount_value} نقطة! 🎉`);
+        } else {
+            setBuyModal(prev => ({ ...prev, appliedPromo: null }));
+            toast.error('كوبون غير صحيح أو منتهي الصلاحية');
+        }
+    };
 
-            // أ) التحقق من الرصيد والكمية
-            if ((employee.total_points || 0) < actualCost) throw new Error("رصيدك غير كافٍ!");
+    // 4. عملية الشراء النهائية
+    const buyMutation = useMutation({
+        mutationFn: async ({ reward, finalCost, appliedPromoCode }: { reward: any, finalCost: number, appliedPromoCode: string | null }) => {
+            
+            if ((employee.total_points || 0) < finalCost) throw new Error("رصيدك غير كافٍ!");
             if (reward.stock <= 0) throw new Error("عذراً، نفذت كمية هذه الجائزة!");
 
-            // ب) خصم النقاط
-            const { error: deductErr } = await supabase.rpc('increment_points', { 
-                emp_id: employee.employee_id, 
-                amount: -actualCost 
-            });
-            if (deductErr) throw deductErr;
+            // أ) خصم النقاط (إذا كان السعر النهائي أكبر من 0)
+            if (finalCost > 0) {
+                const { error: deductErr } = await supabase.rpc('increment_points', { 
+                    emp_id: employee.employee_id, 
+                    amount: -finalCost 
+                });
+                if (deductErr) throw deductErr;
+            }
 
-            // ج) تسجيل عملية الشراء
+            // ب) تسجيل عملية الشراء
             const { error: logErr } = await supabase.from('rewards_redemptions').insert({
-                employee_id: employee.employee_id, // تأكد أن هذا يطابق عمودك في الداتابيز
+                employee_id: employee.employee_id,
                 reward_id: reward.id,
-                cost: actualCost,
+                cost: finalCost, // نسجل السعر النهائي بعد الكوبون
                 status: 'pending'
             });
             if (logErr) throw logErr;
 
-            // د) تسجيل في سجل النقاط
-            await supabase.from('points_ledger').insert({
-                employee_id: employee.employee_id,
-                points: -actualCost,
-                reason: `طلب جائزة: ${reward.title}`
-            });
+            // ج) تسجيل في سجل النقاط
+            let ledgerReason = `طلب جائزة: ${reward.title}`;
+            if (appliedPromoCode) ledgerReason += ` (تم استخدام كوبون: ${appliedPromoCode})`;
+            
+            if (finalCost > 0) {
+                await supabase.from('points_ledger').insert({
+                    employee_id: employee.employee_id,
+                    points: -finalCost,
+                    reason: ledgerReason
+                });
+            }
 
-            // هـ) خصم 1 من الكمية المتاحة في المتجر
+            // د) خصم 1 من الكمية المتاحة في المتجر
             await supabase.from('rewards_catalog').update({ stock: reward.stock - 1 }).eq('id', reward.id);
         },
         onSuccess: () => {
@@ -114,6 +141,7 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] }); 
             queryClient.invalidateQueries({ queryKey: ['my_redemptions'] });
             queryClient.invalidateQueries({ queryKey: ['rewards_catalog'] });
+            setBuyModal({ isOpen: false, reward: null, promoInput: '', appliedPromo: null });
         },
         onError: (err: any) => toast.error(err.message)
     });
@@ -137,7 +165,6 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
             <div className="flex gap-2 border-b border-gray-100 pb-2 overflow-x-auto no-scrollbar">
                 <button onClick={() => setFilter('all')} className={`whitespace-nowrap px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all ${filter === 'all' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>الجوائز المتاحة</button>
                 <button onClick={() => setFilter('my')} className={`whitespace-nowrap px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all ${filter === 'my' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>طلباتي السابقة</button>
-                {/* التبويب الجديد ✅ */}
                 <button onClick={() => setFilter('promo')} className={`whitespace-nowrap px-4 py-2 rounded-xl font-bold text-xs md:text-sm transition-all ${filter === 'promo' ? 'bg-purple-100 text-purple-700 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}>
                     <span className="flex items-center gap-1"><Ticket className="w-4 h-4"/> كوبونات الخصم</span>
                 </button>
@@ -164,7 +191,7 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                                         <Gift className="w-8 h-8 text-gray-300" />
                                     )}
                                     
-                                    {/* شريط الخصم */}
+                                    {/* شريط الخصم الأساسي */}
                                     {hasDiscount && !isOutOfStock && (
                                         <div className="absolute top-0 right-0 bg-red-500 text-white text-[9px] md:text-[10px] font-black px-2 py-1 rounded-bl-lg shadow-sm flex items-center gap-1">
                                             <Tag className="w-3 h-3"/> عرض!
@@ -183,7 +210,7 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                                 <div className="p-3 flex-1 flex flex-col justify-between">
                                     <div>
                                         <h3 className="font-bold text-gray-800 text-xs md:text-sm line-clamp-2 leading-tight mb-1">{reward.title}</h3>
-                                        <p className="text-[9px] text-gray-400 font-bold mb-2">الكمية: <span className={isOutOfStock ? 'text-red-500' : 'text-gray-700'}>{reward.stock}</span></p>
+                                        <p className="text-[9px] text-gray-400 font-bold mb-2">الكمية المتاحة: <span className={isOutOfStock ? 'text-red-500' : 'text-gray-700'}>{reward.stock}</span></p>
                                     </div>
                                     
                                     <div className="mt-auto">
@@ -199,21 +226,15 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                                         </div>
                                         
                                         <button 
-                                            onClick={() => {
-                                                if(confirm(`تأكيد شراء "${reward.title}" مقابل ${actualCost} نقطة؟`)) {
-                                                    buyMutation.mutate(reward);
-                                                }
-                                            }}
-                                            disabled={!canAfford || isOutOfStock || buyMutation.isPending}
+                                            onClick={() => setBuyModal({ isOpen: true, reward, promoInput: '', appliedPromo: null })}
+                                            disabled={!canAfford || isOutOfStock}
                                             className={`w-full py-2 rounded-xl font-bold text-[10px] md:text-xs flex items-center justify-center gap-1 transition-all
                                                 ${canAfford && !isOutOfStock 
                                                     ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md active:scale-95' 
                                                     : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                 }`}
                                         >
-                                            {buyMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin"/> : 
-                                             isOutOfStock ? 'نفذت الكمية' :
-                                             canAfford ? 'شراء' : 'نقاط غير كافية'}
+                                             {isOutOfStock ? 'نفذت الكمية' : canAfford ? 'شراء الآن' : 'نقاط غير كافية'}
                                         </button>
                                     </div>
                                 </div>
@@ -261,7 +282,7 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                     )))}
                 </div>
             ) : (
-                /* --- التبويب الجديد للكوبونات --- */
+                /* --- التبويب للكوبونات --- */
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {isLoadingPromo ? <div className="col-span-full text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-teal-600"/></div> : 
                      promoCodes.length === 0 ? (
@@ -285,6 +306,101 @@ export default function RewardsStore({ employee }: { employee: Employee }) {
                             </div>
                         </div>
                     )))}
+                </div>
+            )}
+
+            {/* ✅ Modal الشراء والكوبونات */}
+            {buyModal.isOpen && buyModal.reward && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95">
+                        
+                        {/* صورة الجائزة في رأس النافذة */}
+                        <div className="h-32 bg-gray-50 flex items-center justify-center relative border-b">
+                             {buyModal.reward.image_url ? (
+                                <img src={buyModal.reward.image_url} alt={buyModal.reward.title} className="w-full h-full object-cover opacity-60" />
+                             ) : (
+                                <Gift className="w-12 h-12 text-gray-300" />
+                             )}
+                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                             <h3 className="absolute bottom-4 right-4 left-4 text-white font-black text-lg line-clamp-1 drop-shadow-md">{buyModal.reward.title}</h3>
+                        </div>
+
+                        <div className="p-6">
+                            {/* إدخال الكوبون */}
+                            <div className="mb-6">
+                                <label className="text-xs font-bold text-gray-500 mb-2 block">هل لديك كود خصم؟</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text"
+                                        placeholder="أدخل الكوبون هنا..."
+                                        value={buyModal.promoInput}
+                                        onChange={e => setBuyModal(prev => ({...prev, promoInput: e.target.value.toUpperCase()}))}
+                                        className="flex-1 border-2 border-gray-100 bg-gray-50 rounded-xl px-4 py-2 font-black text-center uppercase outline-none focus:border-purple-300 transition-colors"
+                                    />
+                                    <button 
+                                        onClick={handleApplyPromo}
+                                        className="bg-purple-100 text-purple-700 px-4 py-2 rounded-xl font-bold hover:bg-purple-200 transition-colors"
+                                    >
+                                        تطبيق
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* حساب السعر */}
+                            <div className="bg-gray-50 rounded-2xl p-4 space-y-2 border border-gray-100 text-sm font-bold">
+                                <div className="flex justify-between text-gray-600">
+                                    <span>سعر الجائزة:</span>
+                                    <span>{getRewardPricing(buyModal.reward).actualCost} نقطة</span>
+                                </div>
+                                
+                                {buyModal.appliedPromo && (
+                                    <div className="flex justify-between text-emerald-600 animate-in slide-in-from-top-2">
+                                        <span className="flex items-center gap-1"><Percent className="w-3 h-3"/> خصم الكوبون:</span>
+                                        <span dir="ltr">-{buyModal.appliedPromo.discount_value} نقطة</span>
+                                    </div>
+                                )}
+                                
+                                <div className="border-t border-gray-200 pt-2 flex justify-between text-lg font-black text-indigo-700 mt-2">
+                                    <span>الإجمالي المطلوب:</span>
+                                    <span>{Math.max(0, getRewardPricing(buyModal.reward).actualCost - (buyModal.appliedPromo?.discount_value || 0))} نقطة</span>
+                                </div>
+                            </div>
+
+                            {/* التنبيه بالرصيد */}
+                            {(employee.total_points || 0) < Math.max(0, getRewardPricing(buyModal.reward).actualCost - (buyModal.appliedPromo?.discount_value || 0)) && (
+                                <div className="flex items-center gap-1.5 text-xs font-bold text-red-500 bg-red-50 p-2 rounded-lg mt-4 justify-center">
+                                    <AlertCircle className="w-4 h-4"/> نقاطك الحالية لا تكفي لإتمام الطلب
+                                </div>
+                            )}
+
+                            {/* أزرار الإجراءات */}
+                            <div className="grid grid-cols-2 gap-3 mt-6">
+                                <button 
+                                    onClick={() => setBuyModal({ isOpen: false, reward: null, promoInput: '', appliedPromo: null })}
+                                    className="py-3 rounded-xl font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                                >
+                                    إلغاء
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        const finalCost = Math.max(0, getRewardPricing(buyModal.reward).actualCost - (buyModal.appliedPromo?.discount_value || 0));
+                                        buyMutation.mutate({ 
+                                            reward: buyModal.reward, 
+                                            finalCost, 
+                                            appliedPromoCode: buyModal.appliedPromo?.code || null 
+                                        });
+                                    }}
+                                    disabled={
+                                        buyMutation.isPending || 
+                                        (employee.total_points || 0) < Math.max(0, getRewardPricing(buyModal.reward).actualCost - (buyModal.appliedPromo?.discount_value || 0))
+                                    }
+                                    className="py-3 rounded-xl font-black text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {buyMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : 'تأكيد الشراء'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
