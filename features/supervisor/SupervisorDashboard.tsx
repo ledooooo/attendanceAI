@@ -1,66 +1,72 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
 import { useSwipeable } from 'react-swipeable';
-import { 
-    LogOut, Menu, X, Home, BookOpen, Library as LibraryIcon, 
-    Gamepad2, CalendarRange, Gift, BarChart3, Loader2, Sparkles, 
-    Award, ShieldCheck, Palette, Bell
-} from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { requestNotificationPermission } from '../../utils/pushNotifications';
 import toast from 'react-hot-toast';
 
-// --- الاستيرادات الصحيحة ---
-import StaffNewsFeed from '../staff/components/StaffNewsFeed';
-import StaffTrainingCenter from '../staff/components/StaffTrainingCenter';
-import StaffLibrary from '../staff/components/StaffLibrary';
-import StaffArcade from '../staff/components/StaffArcade';
-import EmployeeEveningSchedule from '../staff/components/EmployeeEveningSchedule';
-import RewardsStore from '../staff/components/RewardsStore'; 
-import StatisticsManager from '../admin/components/StatisticsManager'; 
+import { 
+    LogOut, User, Clock, Printer, FilePlus, 
+    List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
+    Share2, Info, Moon, FileText, ListTodo, 
+    Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
+    Calendar, Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Gamepad2, Sparkles, Palette
+} from 'lucide-react';
+
+// استيراد المكونات الفرعية
+import StaffProfile from './components/StaffProfile';
+import StaffAttendance from './components/StaffAttendance';
+import StaffNewRequest from './components/StaffNewRequest';
+import StaffTemplatesTab from './components/StaffTemplatesTab';
+import StaffRequestsHistory from './components/StaffRequestsHistory';
+import StaffEvaluations from './components/StaffEvaluations';
+import StaffMessages from './components/StaffMessages';
+import StaffStats from './components/StaffStats';
+import StaffNewsFeed from './components/StaffNewsFeed';
+import EOMVotingCard from './components/EOMVotingCard';
+import EmployeeEveningSchedule from './components/EmployeeEveningSchedule';
+import DepartmentRequests from './components/DepartmentRequests';
+import StaffLinksTab from './components/StaffLinksTab';
+import StaffOVR from './components/StaffOVR';
+import ShiftRequestsTab from './components/ShiftRequestsTab';
+import QualityDashboard from '../admin/components/QualityDashboard';
+import StaffLibrary from './components/StaffLibrary';
+import StaffTasks from './components/StaffTasks';
+import AdministrationTab from './components/AdministrationTab';
+import RewardsStore from './components/RewardsStore';
+import StaffTrainingCenter from './components/StaffTrainingCenter';
+import ThemeOverlay from './components/ThemeOverlay';
+import StaffArcade from './components/StaffArcade';
+
+// استيراد مكونات التحفيز
+import DailyQuizModal from '../../components/gamification/DailyQuizModal';
+import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
+import LevelProgressBar from '../../components/gamification/LevelProgressBar';
 import NotificationBell from '../../components/ui/NotificationBell';
 
 // --- الثيمات (الألوان) ---
 const THEMES = [
-    { id: 'purple', name: 'بنفسجي', bg: 'bg-purple-600', text: 'text-purple-600', light: 'bg-purple-50', gradient: 'from-purple-600 to-indigo-600' },
-    { id: 'blue', name: 'أزرق', bg: 'bg-blue-600', text: 'text-blue-600', light: 'bg-blue-50', gradient: 'from-blue-600 to-cyan-600' },
     { id: 'emerald', name: 'زمردي', bg: 'bg-emerald-600', text: 'text-emerald-600', light: 'bg-emerald-50', gradient: 'from-emerald-600 to-teal-600' },
+    { id: 'blue', name: 'أزرق', bg: 'bg-blue-600', text: 'text-blue-600', light: 'bg-blue-50', gradient: 'from-blue-600 to-cyan-600' },
+    { id: 'purple', name: 'بنفسجي', bg: 'bg-purple-600', text: 'text-purple-600', light: 'bg-purple-50', gradient: 'from-purple-600 to-indigo-600' },
     { id: 'rose', name: 'وردي', bg: 'bg-rose-600', text: 'text-rose-600', light: 'bg-rose-50', gradient: 'from-rose-600 to-pink-600' },
     { id: 'amber', name: 'كهرماني', bg: 'bg-amber-500', text: 'text-amber-600', light: 'bg-amber-50', gradient: 'from-amber-500 to-orange-500' },
 ];
 
-export default function SupervisorDashboard() {
-    const { user, signOut } = useAuth();
+export default function StaffDashboard({ employee }: { employee: Employee }) {
+    const { signOut } = useAuth();
     const queryClient = useQueryClient();
-    
+
     // States
     const [activeTab, setActiveTab] = useState('home');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [activeTheme, setActiveTheme] = useState(THEMES[0]);
     const [showThemeSelector, setShowThemeSelector] = useState(false);
-    
-    // Modal الاستكمال
-    const [showCompletionModal, setShowCompletionModal] = useState(false);
-    const [formData, setFormData] = useState({
-        national_id: '', start_date: '', qualification: '', specialty: '', training_courses: '', notes: ''
-    });
 
-    // 1. جلب بيانات المشرف
-    const { data: supervisor, isLoading } = useQuery({
-        queryKey: ['current_supervisor', user?.id],
-        queryFn: async () => {
-            if (!user?.id) return null;
-            const { data, error } = await supabase.from('supervisors').select('*').eq('id', user.id).single();
-            if (error) throw error;
-            return data;
-        },
-        enabled: !!user?.id
-    });
-
-    // إظهار نافذة الاستكمال
-    useEffect(() => {
-        if (supervisor && !supervisor.profile_completed) setShowCompletionModal(true);
-    }, [supervisor]);
+    // حساب المستوى (Level) بناءً على النقاط
+    const level = Math.floor((employee?.total_points || 0) / 100) + 1;
 
     // قراءة التبويب من الرابط (للإشعارات)
     useEffect(() => {
@@ -72,100 +78,95 @@ export default function SupervisorDashboard() {
         }
     }, []);
 
-    // 2. تحديث بيانات المشرف وإضافة النقاط
-    const completeProfileMutation = useMutation({
-        mutationFn: async (data: typeof formData) => {
-            if (!user?.id) throw new Error("User not found");
-            const newPoints = (supervisor?.total_points || 0) + 150;
-
-            const { error } = await supabase.from('supervisors').update({
-                ...data, profile_completed: true, total_points: newPoints
-            }).eq('id', user.id);
-            if (error) throw error;
-
-            await supabase.from('points_ledger').insert({
-                employee_id: user.id, points: 150, reason: 'هدية ترحيبية + استكمال الملف الشخصي 🎉'
-            });
-        },
-        onSuccess: () => {
-            toast.success('تم استكمال الملف بنجاح! حصلت على 150 نقطة 🎁', { duration: 5000 });
-            setShowCompletionModal(false);
-            queryClient.invalidateQueries({ queryKey: ['current_supervisor'] });
-        },
-        onError: (err: any) => toast.error(err.message)
-    });
-
-    // --- الحيلة الذكية: Data Adapter ---
-    const mockEmployee = useMemo(() => {
-        if (!supervisor) return null;
-        return {
-            id: supervisor.id,
-            employee_id: supervisor.id,
-            name: supervisor.name,
-            specialty: supervisor.role_title,
-            photo_url: '', 
-            total_points: supervisor.total_points || 0, // ✅ تأمين القيمة بصفر لو كانت غير موجودة
-            role: 'supervisor'
-        } as any;
-    }, [supervisor]);
-
-    // حساب المستوى (Level)
-    const level = Math.floor((supervisor?.total_points || 0) / 100) + 1;
-
     const swipeHandlers = useSwipeable({
         onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
         onSwipedRight: () => setIsSidebarOpen(false),
         trackMouse: true, delta: 50,
     });
 
-    // --- القوائم (الجانبية والسفلية) ---
+    const handleShare = async () => {
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'تطبيق موظفي مركز غرب المطار',
+                    text: 'حمل التطبيق الآن لمتابعة حضورك وإجازاتك وتقييماتك!',
+                    url: window.location.origin,
+                });
+            } catch (error) {
+                console.log('Error sharing', error);
+            }
+        } else {
+            toast.success('ميزة المشاركة غير مدعومة في هذا المتصفح');
+        }
+    };
+
+    const handleAbout = () => {
+        toast((t) => (
+            <div className="text-center space-y-2">
+                <div className="bg-emerald-100 p-3 rounded-full inline-block mb-2">
+                    <Info className="w-8 h-8 text-emerald-600"/>
+                </div>
+                <h3 className="font-black text-lg">تطبيق موظفي مركز غرب المطار</h3>
+                <p className="text-sm text-gray-500">الإصدار 2.5</p>
+                <p className="text-xs text-gray-400 mt-2 border-t pt-2">تم التطوير بواسطة إدارة الجودة والنظم</p>
+                <button onClick={() => toast.dismiss(t.id)} className="w-full mt-3 bg-gray-100 py-2 rounded-lg font-bold text-gray-700 hover:bg-gray-200">إغلاق</button>
+            </div>
+        ), { duration: Infinity });
+    };
+
+    // القائمة الجانبية (Sidebar)
     const menuItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
+        { id: 'profile', label: 'ملفي الشخصي', icon: User },
+        { id: 'attendance', label: 'سجل البصمة', icon: Clock },
+        { id: 'new-request', label: 'طلب جديد', icon: FilePlus },
+        { id: 'requests-history', label: 'متابعة طلباتي', icon: List },
+        { id: 'evaluations', label: 'تقييماتي', icon: Award },
+        { id: 'messages', label: 'الرسائل الداخلية', icon: Inbox },
+        { id: 'stats', label: 'إحصائياتي', icon: BarChart },
+        { id: 'evening-schedule', label: 'النوبتجيات', icon: Moon },
+        { id: 'department-requests', label: 'طلبات قسمي', icon: ListTodo, hidden: employee.role !== 'head_of_dept' && employee.role !== 'admin' },
+        { id: 'templates', label: 'النماذج المتاحة', icon: Printer },
         { id: 'training', label: 'مركز التدريب', icon: BookOpen },
-        { id: 'library', label: 'السياسات والأدلة', icon: LibraryIcon },
-        { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
-        { id: 'schedule', label: 'النوبتجيات', icon: CalendarRange },
-        { id: 'rewards', label: 'متجر الجوائز', icon: Gift },
-        { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
-    ];
+        { id: 'library', label: 'المكتبة والسياسات', icon: LibraryIcon },
+        { id: 'ovr', label: 'نظام OVR', icon: AlertTriangle },
+        { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight },
+        { id: 'tasks', label: 'تكليفاتي', icon: Check },
+        { id: 'links', label: 'روابط هامة', icon: LinkIcon },
+        { id: 'administration', label: 'أدوات الإدارة', icon: LayoutDashboard, hidden: !employee.permissions || employee.permissions.length === 0 },
+    ].filter(item => !item.hidden);
 
+    // الشريط السفلي (Bottom Nav)
     const bottomNavItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
-        { id: 'training', label: 'التدريب', icon: BookOpen },
-        { id: 'arcade', label: 'الألعاب', icon: Gamepad2 },
-        { id: 'rewards', label: 'الجوائز', icon: Gift },
-        { id: 'statistics', label: 'إحصائيات', icon: BarChart3 },
+        { id: 'attendance', label: 'البصمة', icon: Clock },
+        { id: 'new-request', label: 'طلب إجازة', icon: FilePlus },
+        { id: 'evaluations', label: 'التقييم', icon: Award },
     ];
-
-    if (isLoading || !mockEmployee) {
-        return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Loader2 className="w-10 h-10 animate-spin text-purple-600"/></div>;
-    }
 
     return (
         <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
-            
-            {/* --- القائمة الجانبية (Desktop) --- */}
+            <ThemeOverlay /> 
+
+            {/* --- القائمة الجانبية --- */}
             {isSidebarOpen && <div className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />}
             <aside className={`fixed inset-y-0 right-0 z-[70] w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 md:translate-x-0 md:static flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                 
                 <div className={`h-24 flex items-center justify-between px-6 border-b text-white bg-gradient-to-r ${activeTheme.gradient}`}>
                     <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-2xl border border-white/30 shadow-inner">
-                            {supervisor?.avatar_url || "👨‍💼"}
+                        <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-2xl border border-white/30 shadow-inner overflow-hidden">
+                            {employee?.photo_url ? <img src={employee.photo_url} alt="" className="w-full h-full object-cover"/> : <User className="w-6 h-6"/>}
                         </div>
                         <div>
-                            <h1 className="font-black text-sm drop-shadow-md line-clamp-1">{supervisor?.name}</h1>
-                            <p className="text-[10px] font-bold opacity-90">{supervisor?.role_title}</p>
-                            <p className="text-[9px] opacity-75">{supervisor?.organization}</p>
+                            <h1 className="font-black text-sm drop-shadow-md line-clamp-1">{employee?.name}</h1>
+                            <p className="text-[10px] font-bold opacity-90">{employee?.specialty}</p>
+                            <p className="text-[9px] opacity-75 font-mono">{employee?.employee_id}</p>
                         </div>
                     </div>
                     <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 bg-black/10 rounded-full"><X className="w-5 h-5"/></button>
                 </div>
 
-                <nav className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar pb-24 md:pb-4">
-                    <div className="mb-4 px-2">
-                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">القائمة الإشرافية</p>
-                    </div>
+                <nav className="flex-1 overflow-y-auto p-4 space-y-1 custom-scrollbar pb-24 md:pb-4">
                     {menuItems.map(item => {
                         const isActive = activeTab === item.id;
                         return (
@@ -173,7 +174,7 @@ export default function SupervisorDashboard() {
                                 key={item.id} 
                                 onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }} 
                                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold transition-all group
-                                    ${isActive ? `${activeTheme.bg} text-white shadow-lg translate-x-[-5px]` : `text-gray-600 hover:${activeTheme.light} hover:${activeTheme.text}`}
+                                    ${isActive ? `${activeTheme.bg} text-white shadow-md translate-x-[-5px]` : `text-gray-600 hover:${activeTheme.light} hover:${activeTheme.text}`}
                                 `}
                             >
                                 <item.icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:'+activeTheme.text}`}/> 
@@ -181,6 +182,17 @@ export default function SupervisorDashboard() {
                             </button>
                         );
                     })}
+
+                    <div className="my-4 border-t pt-4">
+                        <button onClick={handleShare} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold transition-all text-gray-600 hover:${activeTheme.light} hover:${activeTheme.text} group`}>
+                            <Share2 className={`w-5 h-5 text-gray-400 group-hover:${activeTheme.text}`}/>
+                            <span className="text-sm">مشاركة التطبيق</span>
+                        </button>
+                        <button onClick={handleAbout} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold transition-all text-gray-600 hover:${activeTheme.light} hover:${activeTheme.text} group`}>
+                            <Info className={`w-5 h-5 text-gray-400 group-hover:${activeTheme.text}`}/>
+                            <span className="text-sm">عن التطبيق</span>
+                        </button>
+                    </div>
                 </nav>
 
                 <div className="p-4 border-t bg-gray-50 pb-safe shrink-0">
@@ -194,12 +206,12 @@ export default function SupervisorDashboard() {
             <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
                 
                 {/* الشريط العلوي (Top Bar) */}
-                <header className="h-20 bg-white border-b flex items-center justify-between px-4 md:px-6 shrink-0 shadow-sm z-30">
-                    <div className="flex items-center gap-3">
+                <header className="h-16 md:h-20 bg-white border-b flex items-center justify-between px-3 md:px-6 shrink-0 shadow-sm z-30">
+                    <div className="flex items-center gap-2 md:gap-3">
                         <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-xl hover:bg-gray-100 border"><Menu className="w-6 h-6 text-gray-700"/></button>
                         
                         {/* محدد الثيمات */}
-                        <div className="relative">
+                        <div className="relative hidden md:block">
                             <button onClick={() => setShowThemeSelector(!showThemeSelector)} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100 border text-gray-600">
                                 <Palette className="w-5 h-5"/>
                             </button>
@@ -217,45 +229,75 @@ export default function SupervisorDashboard() {
                     </div>
 
                     {/* بادجات النقاط والمستوى والإشعارات */}
-                    <div className="flex items-center gap-2 md:gap-4">
+                    <div className="flex items-center gap-1.5 md:gap-3">
+                        {/* أبطال النقاط */}
+                        <button onClick={() => setActiveTab('leaderboard')} className="p-2 bg-orange-50 text-orange-600 rounded-xl border border-orange-100 hover:bg-orange-100 transition-colors" title="أبطال النقاط">
+                            <Trophy className="w-5 h-5"/>
+                        </button>
+                        
+                        {/* متجر الجوائز */}
+                        <button onClick={() => setActiveTab('store')} className="p-2 bg-purple-50 text-purple-600 rounded-xl border border-purple-100 hover:bg-purple-100 transition-colors relative" title="متجر الجوائز">
+                            <ShoppingBag className="w-5 h-5"/>
+                        </button>
+
                         <div className="hidden md:flex items-center gap-1 bg-gray-100 px-3 py-1.5 rounded-xl border">
-                            <ShieldCheck className="w-4 h-4 text-gray-500"/>
-                            <span className="text-xs font-bold text-gray-700">مستوى المشرف: {level}</span>
+                            <Star className="w-4 h-4 text-gray-500 fill-current"/>
+                            <span className="text-xs font-bold text-gray-700">مستوى: {level}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 bg-yellow-50 px-3 py-1.5 rounded-xl border border-yellow-200">
+                        <div className="flex items-center gap-1.5 bg-yellow-50 px-2.5 md:px-3 py-1.5 rounded-xl border border-yellow-200">
                             <Sparkles className="w-4 h-4 text-yellow-500"/>
-                            <span className="text-xs md:text-sm font-black text-yellow-700">{supervisor?.total_points || 0}</span>
+                            <span className="text-xs md:text-sm font-black text-yellow-700">{employee?.total_points || 0}</span>
                         </div>
                         <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
                     </div>
                 </header>
 
                 {/* منطقة العرض */}
-                <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 custom-scrollbar pb-24 md:pb-6">
+                <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 custom-scrollbar pb-24 md:pb-6 relative">
+                    
+                    {/* شريط التقدم (يظهر فقط في الرئيسية) */}
+                    {activeTab === 'home' && (
+                        <div className="max-w-7xl mx-auto mb-6">
+                            <LevelProgressBar totalPoints={employee?.total_points || 0} />
+                        </div>
+                    )}
+
                     <div className="max-w-7xl mx-auto space-y-6">
                         
-                        {/* رسالة الترحيب في الصفحة الرئيسية */}
                         {activeTab === 'home' && (
-                            <div className={`bg-gradient-to-r ${activeTheme.gradient} rounded-[2rem] p-6 md:p-8 text-white shadow-lg relative overflow-hidden mb-6`}>
-                                <div className="relative z-10">
-                                    <h2 className="text-2xl md:text-3xl font-black mb-2 flex items-center gap-2">
-                                        مرحباً بك، {supervisor?.name} 👋
-                                    </h2>
-                                    <p className="text-white/80 font-bold text-sm md:text-base">تصفح أحدث الأخبار والأنشطة الإشرافية في المركز.</p>
+                            <>
+                                <DailyQuizModal employeeId={employee.employee_id} />
+                                <StaffNewsFeed employee={employee} />
+                                <div className="mt-8">
+                                    <EOMVotingCard currentEmployeeId={employee.employee_id} />
                                 </div>
-                                <ShieldCheck className="absolute -left-6 -bottom-6 w-40 h-40 text-white opacity-10 transform -rotate-12" />
+                            </>
+                        )}
+                        {activeTab === 'profile' && <StaffProfile employee={employee} />}
+                        {activeTab === 'attendance' && <StaffAttendance employee={employee} />}
+                        {activeTab === 'new-request' && <StaffNewRequest employee={employee} />}
+                        {activeTab === 'requests-history' && <StaffRequestsHistory employee={employee} />}
+                        {activeTab === 'evaluations' && <StaffEvaluations employee={employee} />}
+                        {activeTab === 'messages' && <StaffMessages employee={employee} currentUserId={employee.employee_id} />}
+                        {activeTab === 'stats' && <StaffStats employee={employee} />}
+                        {activeTab === 'evening-schedule' && <EmployeeEveningSchedule employee={employee} />}
+                        {activeTab === 'templates' && <StaffTemplatesTab />}
+                        {activeTab === 'department-requests' && <DepartmentRequests employee={employee} />}
+                        {activeTab === 'links' && <StaffLinksTab />}
+                        {activeTab === 'ovr' && <StaffOVR employee={employee} />}
+                        {activeTab === 'shift-requests' && <ShiftRequestsTab employee={employee} />}
+                        {activeTab === 'library' && <StaffLibrary employee={employee} />}
+                        {activeTab === 'tasks' && <StaffTasks employee={employee} />}
+                        {activeTab === 'administration' && <AdministrationTab employee={employee} />}
+                        {activeTab === 'store' && <RewardsStore employee={employee} />}
+                        {activeTab === 'training' && <StaffTrainingCenter employee={employee} />}
+                        {activeTab === 'arcade' && <StaffArcade employee={employee} />}
+                        {activeTab === 'leaderboard' && (
+                            <div className="bg-white rounded-3xl p-6 shadow-sm border border-orange-100">
+                                <h2 className="text-xl font-black text-gray-800 flex items-center gap-2 mb-6"><Trophy className="text-orange-500"/> لوحة الشرف وأبطال النقاط</h2>
+                                <LeaderboardWidget currentUserId={employee.employee_id} />
                             </div>
                         )}
-
-                        {/* ✅ الحل هنا: تمرير mockEmployee لجميع المكونات التي تتوقعه! */}
-                        {activeTab === 'home' && <StaffNewsFeed employee={mockEmployee} />}
-                        {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
-                        {activeTab === 'library' && <StaffLibrary employee={mockEmployee} />}
-                        {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
-                        {activeTab === 'schedule' && <EmployeeEveningSchedule employee={mockEmployee} />}
-                        {activeTab === 'rewards' && <RewardsStore employee={mockEmployee} />}
-                        {activeTab === 'statistics' && <StatisticsManager />}
-                        
                     </div>
                 </main>
 
@@ -283,70 +325,6 @@ export default function SupervisorDashboard() {
                 </div>
 
             </div>
-
-            {/* --- نافذة استكمال البيانات (Modal) --- */}
-            {showCompletionModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in">
-                    <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl p-6 md:p-8 animate-in zoom-in-95 border-t-8 border-purple-500 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -z-10"></div>
-                        
-                        <div className="text-center mb-6 relative z-10">
-                            <div className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200">
-                                <Award className="w-10 h-10"/>
-                            </div>
-                            <h2 className="text-2xl font-black text-gray-800">خطوة واحدة للبدء!</h2>
-                            <p className="text-sm text-gray-500 mt-2 font-bold leading-relaxed bg-gray-50 p-3 rounded-xl border">
-                                أكمل بياناتك الأساسية الآن واحصل على <span className="text-purple-600 font-black text-lg">150 نقطة</span> ترحيبية كهدية مجانية في متجر الجوائز! 🎁
-                            </p>
-                        </div>
-
-                        <div className="space-y-4 max-h-[45vh] overflow-y-auto custom-scrollbar p-2 relative z-10">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-600 mb-1">الرقم القومي (اختياري)</label>
-                                <input type="text" maxLength={14} value={formData.national_id} onChange={e => setFormData({...formData, national_id: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-mono text-left focus:border-purple-500 outline-none transition-colors" dir="ltr" placeholder="14 رقم"/>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-600 mb-1">تاريخ استلام العمل بالجهة</label>
-                                <input type="date" value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-purple-500 outline-none transition-colors"/>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-600 mb-1">المؤهل الدراسي</label>
-                                    <input type="text" value={formData.qualification} onChange={e => setFormData({...formData, qualification: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-purple-500 outline-none transition-colors"/>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-600 mb-1">التخصص الدقيق</label>
-                                    <input type="text" value={formData.specialty} onChange={e => setFormData({...formData, specialty: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-purple-500 outline-none transition-colors"/>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-600 mb-1">دورات تدريبية حاصل عليها</label>
-                                <input type="text" value={formData.training_courses} onChange={e => setFormData({...formData, training_courses: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-purple-500 outline-none transition-colors" placeholder="مثال: دورة مكافحة العدوى، جودة..."/>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-600 mb-1">ملاحظات أخرى</label>
-                                <textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl resize-none h-20 focus:border-purple-500 outline-none transition-colors"></textarea>
-                            </div>
-                        </div>
-
-                        <div className="mt-6 flex gap-3 relative z-10">
-                            <button 
-                                onClick={() => setShowCompletionModal(false)}
-                                className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl font-bold hover:bg-gray-200 transition-colors"
-                            >
-                                تخطي مؤقتاً
-                            </button>
-                            <button 
-                                onClick={() => completeProfileMutation.mutate(formData)}
-                                disabled={completeProfileMutation.isPending}
-                                className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-black shadow-lg shadow-purple-200 hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-50"
-                            >
-                                {completeProfileMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : 'حفظ واستلام الهدية 🎁'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
