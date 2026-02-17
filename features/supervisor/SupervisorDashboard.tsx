@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// --- الاستيرادات الصحيحة المتطابقة مع مشروعك ✅ ---
+// --- الاستيرادات الصحيحة ---
 import StaffNewsFeed from '../staff/components/StaffNewsFeed';
 import StaffTrainingCenter from '../staff/components/StaffTrainingCenter';
 import StaffLibrary from '../staff/components/StaffLibrary';
@@ -104,7 +104,7 @@ export default function SupervisorDashboard() {
             name: supervisor.name,
             specialty: supervisor.role_title,
             photo_url: '', 
-            total_points: supervisor.total_points,
+            total_points: supervisor.total_points || 0, // ✅ تأمين القيمة بصفر لو كانت غير موجودة
             role: 'supervisor'
         } as any;
     }, [supervisor]);
@@ -247,12 +247,12 @@ export default function SupervisorDashboard() {
                             </div>
                         )}
 
-                        {/* استدعاء المكونات (مررنا mockEmployee كأنه الموظف) ✅ */}
-                        {activeTab === 'home' && <StaffNewsFeed />}
+                        {/* ✅ الحل هنا: تمرير mockEmployee لجميع المكونات التي تتوقعه! */}
+                        {activeTab === 'home' && <StaffNewsFeed employee={mockEmployee} />}
                         {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
-                        {activeTab === 'library' && <StaffLibrary />}
+                        {activeTab === 'library' && <StaffLibrary employee={mockEmployee} />}
                         {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
-                        {activeTab === 'schedule' && <EmployeeEveningSchedule />}
+                        {activeTab === 'schedule' && <EmployeeEveningSchedule employee={mockEmployee} />}
                         {activeTab === 'rewards' && <RewardsStore employee={mockEmployee} />}
                         {activeTab === 'statistics' && <StatisticsManager />}
                         
