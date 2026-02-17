@@ -10,14 +10,14 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// --- استيراد المكونات المطلوبة من شاشة الموظف والمدير ---
-import StaffNews from '../staff/components/StaffNews';
-import TrainingCenter from '../staff/components/TrainingCenter';
+// --- الاستيرادات الصحيحة المتطابقة مع مشروعك ✅ ---
+import StaffNewsFeed from '../staff/components/StaffNewsFeed';
+import StaffTrainingCenter from '../staff/components/StaffTrainingCenter';
 import StaffLibrary from '../staff/components/StaffLibrary';
 import StaffArcade from '../staff/components/StaffArcade';
-import StaffSchedule from '../staff/components/StaffSchedule';
-import RewardsStore from '../admin/components/RewardsStore'; // المتجر
-import StatisticsManager from '../admin/components/StatisticsManager'; // الإحصائيات
+import EmployeeEveningSchedule from '../staff/components/EmployeeEveningSchedule';
+import RewardsStore from '../staff/components/RewardsStore'; 
+import StatisticsManager from '../admin/components/StatisticsManager'; 
 import NotificationBell from '../../components/ui/NotificationBell';
 
 // --- الثيمات (الألوان) ---
@@ -96,15 +96,14 @@ export default function SupervisorDashboard() {
     });
 
     // --- الحيلة الذكية: Data Adapter ---
-    // نقوم بتكييف بيانات المشرف لتبدو كأنها بيانات موظف لكي تعمل المكونات المستوردة بدون أخطاء
     const mockEmployee = useMemo(() => {
         if (!supervisor) return null;
         return {
             id: supervisor.id,
-            employee_id: supervisor.id, // نستخدم الـ ID كـ كود وظيفي مؤقت
+            employee_id: supervisor.id,
             name: supervisor.name,
-            specialty: supervisor.role_title, // نعرض الوظيفة مكان التخصص
-            photo_url: '', // الأفاتار نص وليس رابط صورة في حالتنا
+            specialty: supervisor.role_title,
+            photo_url: '', 
             total_points: supervisor.total_points,
             role: 'supervisor'
         } as any;
@@ -248,15 +247,13 @@ export default function SupervisorDashboard() {
                             </div>
                         )}
 
-                        {/* استدعاء المكونات (مررنا mockEmployee كأنه الموظف) */}
-                        {activeTab === 'home' && <StaffNews />}
-                        {activeTab === 'training' && <TrainingCenter employee={mockEmployee} />}
+                        {/* استدعاء المكونات (مررنا mockEmployee كأنه الموظف) ✅ */}
+                        {activeTab === 'home' && <StaffNewsFeed />}
+                        {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
                         {activeTab === 'library' && <StaffLibrary />}
                         {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
-                        {activeTab === 'schedule' && <StaffSchedule employee={mockEmployee} />}
+                        {activeTab === 'schedule' && <EmployeeEveningSchedule />}
                         {activeTab === 'rewards' && <RewardsStore employee={mockEmployee} />}
-                        
-                        {/* مكون الإحصائيات (متوافق مع المشرف) */}
                         {activeTab === 'statistics' && <StatisticsManager />}
                         
                     </div>
