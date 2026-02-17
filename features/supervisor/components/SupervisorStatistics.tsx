@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { supabase } from '../../../../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 import { useQuery } from '@tanstack/react-query';
 import { Calendar, Loader2, BarChart3, Info } from 'lucide-react';
 
-// استيراد نفس الفئات من ملف الإحصائيات
 const CATEGORIES = [
     { title: "العيادات والتردد", fields: [{ key: 'outpatient_clinics', label: 'عيادات خارجية' }, { key: 'family_planning', label: 'تنمية الاسرة' }, { key: 'dental_clinic', label: 'عيادة الاسنان' }, { key: 'ophthalmology_clinic', label: 'عيادة الرمد' }, { key: 'emergency', label: 'الطوارئ' }, { key: 'physiotherapy_total', label: 'العلاج الطبيعي' }, { key: 'family_medicine_clinic', label: 'طب اسرة' }, { key: 'evening_shift', label: 'مسائى' }] },
     { title: "المعمل والتحاليل", fields: [{ key: 'blood_endemic_lab_total', label: 'اجمالى معمل الدم' }, { key: 'urine_test', label: 'بول' }, { key: 'stool_test', label: 'براز' }, { key: 'blood_pregnancy_test', label: 'حمل بالدم' }, { key: 'cbc_test', label: 'صورة دم كاملة' }, { key: 'anemia_test', label: 'انيميا' }, { key: 'thyroid_test', label: 'تحليل الغدة' }] },
