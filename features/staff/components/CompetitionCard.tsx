@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Trophy, Swords, Clock, Users, Play, X, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Trophy, Swords, Clock, Users, Play, X, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react'; // ✅ تمت إضافة Loader2 هنا
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 
