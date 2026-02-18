@@ -60,7 +60,31 @@ export interface AttendanceRecord {
   times: string; // "08:00 14:00"
 }
 // src/types.ts
+export interface Competition {
+  id: string;
+  player1_id: string;
+  player2_id: string;
+  player1_score: number;
+  player2_score: number;
+  current_turn: string; // ID اللاعب الذي عليه الدور
+  status: 'active' | 'completed';
+  winner_id?: string;
+  reward_points: number;
+  created_at: string;
+  // علاقات (Joins)
+  player1?: { name: string; photo_url: string };
+  player2?: { name: string; photo_url: string };
+}
 
+export interface Question {
+  id: string;
+  question_text: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  correct_option: string;
+  assigned_to: string;
+}
 export interface ShiftSwapRequest {
   id: string;
   requester_id: string;
