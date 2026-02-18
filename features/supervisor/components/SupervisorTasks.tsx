@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
-import { CheckSquare, Plus, Loader2, Clock, CheckCircle, User, Users, Shield, Edit3 } from 'lucide-react';
+import { CheckSquare, Plus, Loader2, Clock, CheckCircle, User, Users, Briefcase } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function SupervisorTasks() {
@@ -14,83 +14,91 @@ export default function SupervisorTasks() {
     const [description, setDescription] = useState('');
     const [dueDate, setDueDate] = useState('');
     
-    // حالات اختيار المكلف
-    const [assigneeType, setAssigneeType] = useState('system'); // 'system' or 'manual'
-    const [selectedSystemUser, setSelectedSystemUser] = useState('');
-    const [manualName, setManualName] = useState('');
+    // حالات اختيار المكلف (مسؤول أو موظف عادي)
+    const [assigneeType, setAssigneeType] = useState<'manager' | 'staff'>('manager'); 
+    const [selectedUser, setSelectedUser] = useState('');
 
-    // 1. جلب قائمة المسؤولين (مدير، جودة، رؤساء أقسام)
-    const { data: managers = [], isLoading: loadingManagers } = useQuery({
-        queryKey: ['available_managers'],
+    // 1. جلب كل الموظفين النشطين
+    const { data: allEmployees = [], isLoading: loadingEmployees } = useQuery({
+        queryKey: ['all_active_employees'],
         queryFn: async () => {
             const { data } = await supabase
                 .from('employees')
-                .select('id, name, role, specialty, admin_tasks') // جلبنا admin_tasks لعرض الوصف الوظيفي
-                .in('role', ['admin', 'quality_manager', 'head_of_dept'])
+                .select('id, name, role, specialty, admin_tasks')
                 .eq('status', 'نشط');
             return data || [];
         }
     });
 
-    // 2. جلب التكليفات الصادرة
+    // 2. تقسيم الموظفين إلى مجموعتين (مسؤولين - وموظفين)
+    const { managersList, staffList } = useMemo(() => {
+        const managers = [];
+        const staff = [];
+        
+        for (const emp of allEmployees) {
+            if (['admin', 'quality_manager', 'head_of_dept'].includes(emp.role)) {
+                managers.push(emp);
+            } else {
+                staff.push(emp);
+            }
+        }
+        return { managersList: managers, staffList: staff };
+    }, [allEmployees]);
+
+    // 3. جلب التكليفات الصادرة
     const { data: tasks = [], isLoading } = useQuery({
         queryKey: ['supervisor_tasks', user?.id],
         queryFn: async () => {
             const { data } = await supabase
                 .from('tasks')
                 .select('*')
-                .eq('created_by', user?.id)
+                .eq('created_by', user?.id) // أو manager_id حسب تسمية عمودك
                 .order('created_at', { ascending: false });
             return data || [];
         },
         enabled: !!user?.id
     });
 
-    // 3. دالة الإرسال
+    // 4. دالة الإرسال
     const addTaskMutation = useMutation({
         mutationFn: async () => {
             if (!title) throw new Error("يجب كتابة عنوان التكليف");
+            if (!selectedUser) throw new Error("يرجى اختيار الموظف المكلف");
             
-            let targetId = null;
-            let targetNameText = '';
-
-            // تحديد بيانات المكلف
-            if (assigneeType === 'system') {
-                if (!selectedSystemUser) throw new Error("يرجى اختيار الموظف من القائمة");
-                const emp = managers.find((m: any) => m.id === selectedSystemUser);
-                targetId = emp.id;
-                targetNameText = emp.name;
-            } else {
-                if (!manualName) throw new Error("يرجى كتابة اسم الموظف");
-                targetNameText = manualName;
-            }
+            // البحث عن بيانات الموظف المختار
+            const targetEmp = allEmployees.find((e: any) => e.id === selectedUser);
+            if (!targetEmp) throw new Error("الموظف غير موجود");
 
             // الإدراج في قاعدة البيانات
             const { error } = await supabase.from('tasks').insert({
                 title, 
                 description, 
                 due_date: dueDate || null, 
-                employee_id: targetId, 
-                target_name: targetNameText, 
+                
+                // ✅ الربط الصحيح لتجنب الأخطاء
+                employee_id: targetEmp.id, 
+                target_name: targetEmp.name, 
+                
+                // ✅ إصلاح خطأ manager_id (إرسال رقم المشرف الحالي)
+                manager_id: user?.id, 
                 created_by: user?.id,
+                
                 status: 'pending'
             });
 
             if (error) throw error;
             
-            // إرسال إشعار فقط إذا كان مستخدم نظام
-            if (targetId) {
-                await supabase.from('notifications').insert({
-                    type: 'task_update', 
-                    title: 'تكليف إشرافي جديد', 
-                    message: `قام المشرف بتكليفك بـ: ${title}`, 
-                    user_id: targetId 
-                });
-            }
+            // إرسال إشعار للموظف
+            await supabase.from('notifications').insert({
+                type: 'task_update', 
+                title: 'تكليف إشرافي جديد', 
+                message: `قام المشرف بتكليفك بـ: ${title}`, 
+                user_id: targetEmp.id 
+            });
         },
         onSuccess: () => {
             toast.success('تم إرسال التكليف بنجاح ✅');
-            setTitle(''); setDescription(''); setDueDate(''); setManualName(''); setSelectedSystemUser('');
+            setTitle(''); setDescription(''); setDueDate(''); setSelectedUser('');
             queryClient.invalidateQueries({ queryKey: ['supervisor_tasks'] });
         },
         onError: (err: any) => toast.error(err.message)
@@ -103,52 +111,51 @@ export default function SupervisorTasks() {
                 <h3 className="font-black text-lg flex items-center gap-2 mb-4"><Plus className="w-5 h-5 text-emerald-600"/> إصدار تكليف جديد</h3>
                 
                 <div className="space-y-4">
-                    {/* اختيار نوع التكليف */}
+                    {/* أزرار التبديل بين المسؤولين والموظفين */}
                     <div className="flex bg-gray-100 p-1 rounded-xl">
                         <button 
-                            onClick={() => setAssigneeType('system')}
-                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${assigneeType === 'system' ? 'bg-white shadow text-emerald-600' : 'text-gray-500'}`}
+                            onClick={() => { setAssigneeType('manager'); setSelectedUser(''); }}
+                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${assigneeType === 'manager' ? 'bg-white shadow text-emerald-600' : 'text-gray-500'}`}
                         >
-                            مسؤول بالنظام
+                            <Shield size={14}/> القيادات والإشراف
                         </button>
                         <button 
-                            onClick={() => setAssigneeType('manual')}
-                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${assigneeType === 'manual' ? 'bg-white shadow text-emerald-600' : 'text-gray-500'}`}
+                            onClick={() => { setAssigneeType('staff'); setSelectedUser(''); }}
+                            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1 ${assigneeType === 'staff' ? 'bg-white shadow text-emerald-600' : 'text-gray-500'}`}
                         >
-                            كتابة اسم يدوي
+                            <Users size={14}/> باقي الموظفين
                         </button>
                     </div>
 
-                    {/* حقل اختيار المسؤول */}
-                    {assigneeType === 'system' ? (
-                        <div className="relative">
-                            <select 
-                                value={selectedSystemUser}
-                                onChange={(e) => setSelectedSystemUser(e.target.value)}
-                                className="w-full p-3 rounded-xl border bg-gray-50 focus:border-emerald-500 outline-none font-bold text-xs appearance-none"
-                            >
-                                <option value="">اختر المسؤول...</option>
-                                {managers.map((m: any) => (
+                    {/* القائمة المنسدلة (تتغير حسب الاختيار) */}
+                    <div className="relative">
+                        <select 
+                            value={selectedUser}
+                            onChange={(e) => setSelectedUser(e.target.value)}
+                            className="w-full p-3 rounded-xl border bg-gray-50 focus:border-emerald-500 outline-none font-bold text-xs appearance-none"
+                        >
+                            <option value="">
+                                {assigneeType === 'manager' ? 'اختر المسؤول...' : 'اختر الموظف...'}
+                            </option>
+                            
+                            {assigneeType === 'manager' ? (
+                                managersList.map((m: any) => (
                                     <option key={m.id} value={m.id}>
-                                        {/* التعديل هنا: عرض الاسم والمهام */}
-                                        {m.name} - ({m.role === 'admin' ? 'مدير المركز' : m.role === 'quality_manager' ? 'مسؤول الجودة' : m.admin_tasks || 'رئيس قسم'})
+                                        {m.name} - ({m.role === 'admin' ? 'مدير' : m.admin_tasks || 'رئيس قسم'})
                                     </option>
-                                ))}
-                            </select>
-                            <div className="absolute left-3 top-3 pointer-events-none text-gray-400"><User size={16}/></div>
+                                ))
+                            ) : (
+                                staffList.map((s: any) => (
+                                    <option key={s.id} value={s.id}>
+                                        {s.name} - ({s.specialty})
+                                    </option>
+                                ))
+                            )}
+                        </select>
+                        <div className="absolute left-3 top-3 pointer-events-none text-gray-400">
+                            {assigneeType === 'manager' ? <Shield size={16}/> : <Briefcase size={16}/>}
                         </div>
-                    ) : (
-                        <div className="relative">
-                            <input 
-                                type="text" 
-                                placeholder="اكتب اسم الموظف هنا..." 
-                                value={manualName} 
-                                onChange={(e) => setManualName(e.target.value)} 
-                                className="w-full p-3 rounded-xl border bg-gray-50 focus:border-emerald-500 outline-none font-bold text-sm" 
-                            />
-                            <div className="absolute left-3 top-3 pointer-events-none text-gray-400"><Edit3 size={16}/></div>
-                        </div>
-                    )}
+                    </div>
 
                     <input type="text" placeholder="عنوان التكليف..." value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 rounded-xl border bg-gray-50 focus:border-emerald-500 outline-none font-bold text-sm" />
                     <textarea placeholder="التفاصيل (اختياري)..." value={description} onChange={e => setDescription(e.target.value)} className="w-full p-3 rounded-xl border bg-gray-50 focus:border-emerald-500 outline-none text-sm resize-none h-20" />
