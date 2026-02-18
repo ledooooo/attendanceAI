@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Trophy, Swords, Clock, Users, Play, X, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { Trophy, Swords, Clock, Users, Play, X, AlertTriangle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import confetti from 'canvas-confetti'; // تأكد من تثبيت هذه المكتبة: npm install canvas-confetti
+import confetti from 'canvas-confetti';
 
 interface Props {
     comp: any;
@@ -42,9 +42,24 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
         fetchNames();
     }, [comp.team1_ids, comp.team2_ids]);
 
-    // 4. فتح المودال وجلب السؤال
-    const openPlayModal = async () => {
-        if (!isMyTeamTurn) return;
+    // 4. فتح المودال (التعامل مع الضغط على الكارت)
+    const handleCardClick = async () => {
+        // إذا المسابقة منتهية
+        if (comp.status === 'completed') {
+            return toast('هذه المسابقة انتهت وتم إعلان الفائز 🏆', { icon: '🏁' });
+        }
+
+        // إذا أنا لست مشاركاً (متفرج)
+        if (myTeamNumber === 0) {
+            return toast('أنت تشاهد هذه المباراة كجمهور 👀', { icon: '🍿' });
+        }
+
+        // إذا لم يكن دوري
+        if (!isMyTeamTurn) {
+            return toast('انتظر دور الفريق الآخر للعب ⏳', { icon: '✋' });
+        }
+
+        // فتح اللعبة
         setLoading(true);
         setIsPlayModalOpen(true);
 
@@ -68,7 +83,6 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
 
         const isCorrect = selectedOption === currentQuestion.correct_option;
         
-        // تحديث حالة السؤال
         await supabase.from('competition_questions').update({ is_answered: true }).eq('id', currentQuestion.id);
 
         const updates: any = {};
@@ -82,10 +96,8 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
             toast.error('إجابة خاطئة 😞', { icon: '❌' });
         }
 
-        // تبديل الدور
         const nextTeamTurn = myTeamNumber === 1 ? 2 : 1;
         
-        // فحص النهاية
         const { count } = await supabase.from('competition_questions')
             .select('*', { count: 'exact', head: true })
             .eq('competition_id', comp.id)
@@ -95,20 +107,13 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
             updates.status = 'completed';
             updates.current_turn_team = null;
             
-            // تحديد الفائز
             const finalScore1 = myTeamNumber === 1 && isCorrect ? (comp.player1_score || 0) + 1 : (comp.player1_score || 0);
             const finalScore2 = myTeamNumber === 2 && isCorrect ? (comp.player2_score || 0) + 1 : (comp.player2_score || 0);
 
             let winningTeamIds: string[] = [];
-            if (finalScore1 > finalScore2) {
-                updates.winner_id = comp.team1_ids[0]; // مجازاً نضع القائد، لكن الجوائز للكل
-                winningTeamIds = comp.team1_ids;
-            } else if (finalScore2 > finalScore1) {
-                updates.winner_id = comp.team2_ids[0];
-                winningTeamIds = comp.team2_ids;
-            }
+            if (finalScore1 > finalScore2) winningTeamIds = comp.team1_ids;
+            else if (finalScore2 > finalScore1) winningTeamIds = comp.team2_ids;
 
-            // توزيع النقاط
             if (winningTeamIds.length > 0) {
                 for (const memberId of winningTeamIds) {
                     await supabase.rpc('increment_points', { emp_id: memberId, amount: comp.reward_points });
@@ -121,18 +126,32 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
         await supabase.from('competitions').update(updates).eq('id', comp.id);
         
         setLoading(false);
-        setIsPlayModalOpen(false); // إغلاق المودال
+        setIsPlayModalOpen(false);
         setCurrentQuestion(null);
     };
 
     return (
         <>
-            {/* الكارت الظاهر في الصفحة */}
-            <div className="bg-white rounded-3xl shadow-md border border-purple-100 overflow-hidden mb-4 relative transform transition-all hover:scale-[1.01]">
-                
+            {/* الكارت الظاهر في الصفحة - قابل للضغط بالكامل */}
+            <div 
+                onClick={handleCardClick}
+                className={`
+                    bg-white rounded-3xl shadow-md border border-purple-100 overflow-hidden mb-4 relative 
+                    transform transition-all duration-200 
+                    ${isMyTeamTurn ? 'cursor-pointer hover:scale-[1.02] ring-2 ring-yellow-400 ring-offset-2' : ''}
+                `}
+            >
+                {/* شارة "دورك" العائمة */}
+                {isMyTeamTurn && (
+                    <div className="absolute top-2 right-2 z-20 bg-yellow-400 text-black text-[10px] font-black px-3 py-1 rounded-full animate-bounce shadow-sm">
+                        دورك الآن! اضغط للعب 🎮
+                    </div>
+                )}
+
                 {/* Header */}
                 <div className="bg-gradient-to-r from-red-600 via-purple-600 to-blue-600 p-4 text-white flex justify-between items-start relative overflow-hidden">
-                    <div className="absolute inset-0 bg-white/5 pattern-dots opacity-30"></div>
+                    {/* خلفية زخرفية */}
+                    <div className="absolute inset-0 bg-white/5 opacity-30"></div>
                     
                     {/* الفريق الأول */}
                     <div className="flex flex-col items-center w-1/3 z-10">
@@ -156,12 +175,9 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
                         {comp.status === 'completed' ? (
                             <span className="mt-2 bg-gray-900/50 px-3 py-1 rounded-full text-[10px] font-bold border border-white/20">انتهت 🏁</span>
                         ) : isMyTeamTurn ? (
-                            <button 
-                                onClick={openPlayModal}
-                                className="mt-3 bg-yellow-400 text-yellow-900 px-4 py-2 rounded-xl text-xs font-black shadow-lg hover:bg-yellow-300 hover:scale-105 transition-all flex items-center gap-1 animate-bounce"
-                            >
-                                <Play size={12} fill="currentColor"/> العب الآن
-                            </button>
+                            <div className="mt-3 bg-white/20 backdrop-blur-sm rounded-full p-2 hover:bg-white/30 transition-colors">
+                                <Play size={20} fill="currentColor" className="text-white"/>
+                            </div>
                         ) : (
                             <span className="mt-2 bg-black/30 px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1">
                                 <Clock size={10}/> انتظر دورك
@@ -188,14 +204,14 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
                 {/* Footer الكارت */}
                 <div className="p-3 bg-gray-50 flex justify-between items-center text-[10px] text-gray-500 font-bold">
                     <span>🏆 الجائزة: {comp.reward_points} نقطة</span>
-                    <span>📅 {new Date(comp.created_at).toLocaleDateString('ar-EG')}</span>
+                    <span className="text-xs">{comp.status === 'active' ? 'مستمرة...' : 'انتهت'}</span>
                 </div>
             </div>
 
             {/* --- نافذة اللعب (Modal) --- */}
             {isPlayModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden relative animate-in zoom-in-95">
+                    <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden relative animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
                         <div className="absolute top-0 right-0 left-0 h-32 bg-gradient-to-br from-purple-600 to-indigo-600 -z-0"></div>
                         <button onClick={() => setIsPlayModalOpen(false)} className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 text-white p-2 rounded-full z-10 transition-colors"><X size={20}/></button>
                         
@@ -206,6 +222,7 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
 
                             {loading ? (
                                 <div className="text-center py-10">
+                                    <Loader2 className="w-10 h-10 animate-spin text-purple-600 mx-auto mb-4"/>
                                     <p className="font-bold text-gray-500 animate-pulse">جاري تحضير السؤال...</p>
                                 </div>
                             ) : currentQuestion ? (
@@ -235,9 +252,10 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
                                 </div>
                             ) : (
                                 <div className="text-center py-10">
-                                    <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-2"/>
-                                    <p className="font-bold text-gray-500">عذراً، لم يتم العثور على السؤال!</p>
-                                    <button onClick={() => setIsPlayModalOpen(false)} className="mt-4 text-blue-600 font-bold underline">إغلاق</button>
+                                    <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4"/>
+                                    <h3 className="text-xl font-black text-gray-800">أحسنت!</h3>
+                                    <p className="font-bold text-gray-500 mt-2">لا توجد أسئلة متبقية لفريقك في هذا الدور.</p>
+                                    <button onClick={() => setIsPlayModalOpen(false)} className="mt-6 bg-gray-100 px-6 py-2 rounded-xl font-bold text-gray-600">إغلاق</button>
                                 </div>
                             )}
                         </div>
