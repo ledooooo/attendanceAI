@@ -14,7 +14,14 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
     const [team1Members, setTeam1Members] = useState<string[]>([]);
     const [team2Members, setTeam2Members] = useState<string[]>([]);
 
-    // 1. تحديد فريقي (1 أو 2 أو 0 إذا متفرج)
+    // ✅ دالة لتنسيق الاسم (أول اسمين فقط)
+    const formatName = (fullName: string) => {
+        if (!fullName) return '';
+        const parts = fullName.trim().split(/\s+/); // تقسيم النص بناءً على المسافات
+        return parts.slice(0, 2).join(' '); // أخذ أول جزئين ودمجهم
+    };
+
+    // 1. تحديد فريقي
     const myTeamNumber = comp.team1_ids?.includes(currentUserId) ? 1 
                        : comp.team2_ids?.includes(currentUserId) ? 2 
                        : 0;
@@ -22,16 +29,18 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
     // 2. هل دور فريقي الآن؟
     const isMyTeamTurn = comp.status === 'active' && comp.current_turn_team === myTeamNumber;
 
-    // 3. جلب أسماء الأعضاء (للعرض)
+    // 3. جلب أسماء الأعضاء وتنسيقها
     useEffect(() => {
         const fetchNames = async () => {
             if(comp.team1_ids?.length) {
                 const { data } = await supabase.from('employees').select('name').in('id', comp.team1_ids);
-                setTeam1Members(data?.map(e => e.name) || []);
+                // تطبيق دالة formatName هنا
+                setTeam1Members(data?.map(e => formatName(e.name)) || []);
             }
             if(comp.team2_ids?.length) {
                 const { data } = await supabase.from('employees').select('name').in('id', comp.team2_ids);
-                setTeam2Members(data?.map(e => e.name) || []);
+                // تطبيق دالة formatName هنا
+                setTeam2Members(data?.map(e => formatName(e.name)) || []);
             }
         };
         fetchNames();
@@ -45,7 +54,7 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
                     .from('competition_questions')
                     .select('*')
                     .eq('competition_id', comp.id)
-                    .eq('assigned_to_team', myTeamNumber) // الأسئلة المخصصة لفريقي
+                    .eq('assigned_to_team', myTeamNumber)
                     .eq('is_answered', false)
                     .order('order_index', { ascending: true })
                     .limit(1)
@@ -63,10 +72,8 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
 
         const isCorrect = selectedOption === currentQuestion.correct_option;
         
-        // أ) تحديث السؤال كـ مُجاب
         await supabase.from('competition_questions').update({ is_answered: true }).eq('id', currentQuestion.id);
 
-        // ب) تحديث السكور
         const updates: any = {};
         if (isCorrect) {
             if (myTeamNumber === 1) updates.player1_score = (comp.player1_score || 0) + 1;
@@ -76,10 +83,8 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
             toast.error('إجابة خاطئة 😢');
         }
 
-        // ج) تبديل الدور للفريق الآخر
         const nextTeamTurn = myTeamNumber === 1 ? 2 : 1;
         
-        // د) هل انتهت المباراة؟ (لا توجد أسئلة متبقية لأي فريق)
         const { count } = await supabase.from('competition_questions')
             .select('*', { count: 'exact', head: true })
             .eq('competition_id', comp.id)
@@ -89,17 +94,14 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
             updates.status = 'completed';
             updates.current_turn_team = null;
             
-            // تحديد الفريق الفائز وتوزيع الجوائز
             const finalScore1 = myTeamNumber === 1 && isCorrect ? (comp.player1_score || 0) + 1 : (comp.player1_score || 0);
             const finalScore2 = myTeamNumber === 2 && isCorrect ? (comp.player2_score || 0) + 1 : (comp.player2_score || 0);
 
-            // توزيع النقاط على كل أعضاء الفريق الفائز
             let winningTeamIds: string[] = [];
             if (finalScore1 > finalScore2) winningTeamIds = comp.team1_ids;
             else if (finalScore2 > finalScore1) winningTeamIds = comp.team2_ids;
 
             if (winningTeamIds.length > 0) {
-                // إضافة نقاط لكل عضو
                 for (const memberId of winningTeamIds) {
                     await supabase.rpc('increment_points', { emp_id: memberId, amount: comp.reward_points });
                 }
@@ -121,17 +123,21 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
                 
                 {/* الفريق الأول */}
                 <div className="flex flex-col items-center w-1/3">
-                    <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center text-lg mb-1 border-2 border-white shadow-md relative">
+                    <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center text-lg mb-2 border-2 border-white shadow-md relative">
                         <Users size={18}/>
                         <span className="absolute -top-1 -right-1 w-4 h-4 bg-white text-red-600 rounded-full text-[9px] font-black flex items-center justify-center">
                             {team1Members.length}
                         </span>
                     </div>
-                    <div className="text-center">
-                        <p className="text-[10px] font-bold opacity-90">الفريق الأحمر</p>
-                        <p className="text-[8px] opacity-75 truncate w-20">{team1Members.join(', ')}</p>
+                    {/* ✅ تحسين عرض الأسماء */}
+                    <div className="flex flex-wrap justify-center gap-1 w-full">
+                        {team1Members.map((name, idx) => (
+                            <span key={idx} className="text-[8px] font-bold bg-white/20 px-1.5 py-0.5 rounded-md backdrop-blur-sm truncate max-w-[80px]">
+                                {name}
+                            </span>
+                        ))}
                     </div>
-                    <span className="text-2xl font-black mt-1">{comp.player1_score || 0}</span>
+                    <span className="text-2xl font-black mt-2">{comp.player1_score || 0}</span>
                 </div>
 
                 {/* الحالة في المنتصف */}
@@ -144,17 +150,21 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
 
                 {/* الفريق الثاني */}
                 <div className="flex flex-col items-center w-1/3">
-                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-lg mb-1 border-2 border-white shadow-md relative">
+                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-lg mb-2 border-2 border-white shadow-md relative">
                         <Users size={18}/>
                         <span className="absolute -top-1 -right-1 w-4 h-4 bg-white text-blue-600 rounded-full text-[9px] font-black flex items-center justify-center">
                             {team2Members.length}
                         </span>
                     </div>
-                    <div className="text-center">
-                        <p className="text-[10px] font-bold opacity-90">الفريق الأزرق</p>
-                        <p className="text-[8px] opacity-75 truncate w-20">{team2Members.join(', ')}</p>
+                    {/* ✅ تحسين عرض الأسماء */}
+                    <div className="flex flex-wrap justify-center gap-1 w-full">
+                        {team2Members.map((name, idx) => (
+                            <span key={idx} className="text-[8px] font-bold bg-white/20 px-1.5 py-0.5 rounded-md backdrop-blur-sm truncate max-w-[80px]">
+                                {name}
+                            </span>
+                        ))}
                     </div>
-                    <span className="text-2xl font-black mt-1">{comp.player2_score || 0}</span>
+                    <span className="text-2xl font-black mt-2">{comp.player2_score || 0}</span>
                 </div>
             </div>
 
