@@ -1,30 +1,29 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Bell, Smartphone, X, Clock, CheckCircle } from 'lucide-react';
-import { useNotifications } from '../../context/NotificationContext';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Bell, Smartphone, X, Clock, ListTodo, BookOpen, CheckCircle } from 'lucide-react';
 import { useNotifications as usePush } from '../../hooks/useNotifications';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../supabaseClient'; // ✅ تأكد من استيراد Supabase
+import { supabase } from '../../supabaseClient';
 
 interface Props {
   onNavigate?: (tabId: string) => void;
 }
 
 export default function NotificationBell({ onNavigate }: Props) {
-  const { notifications, unreadCount, markAsRead } = useNotifications();
   const { user } = useAuth();
   const { requestPermission, permission } = usePush(user?.id || '');
   const [isOpen, setIsOpen] = useState(false);
+  
+  // استخدام حالة محلية لضمان التحديث الفوري
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [userCreatedAt, setUserCreatedAt] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // 1. ✅ جلب تاريخ إنشاء حساب المستخدم لفلترة الإشعارات القديمة
+  // 1. جلب تاريخ إنشاء الحساب (مرة واحدة)
   useEffect(() => {
     const fetchUserDate = async () => {
       if (!user?.id) return;
-      
-      // محاولة جلب التاريخ من جدول الموظفين أولاً
+      // محاولة جلب التاريخ من الموظفين أو المشرفين
       let { data: empData } = await supabase.from('employees').select('created_at').eq('id', user.id).maybeSingle();
-      
-      // إذا لم يكن موظفاً، نجرب جدول المشرفين
       if (!empData) {
         let { data: supData } = await supabase.from('supervisors').select('created_at').eq('id', user.id).maybeSingle();
         if (supData) setUserCreatedAt(supData.created_at);
@@ -33,62 +32,94 @@ export default function NotificationBell({ onNavigate }: Props) {
       }
     };
     fetchUserDate();
+    
+    // تحضير صوت التنبيه
+    audioRef.current = new Audio('/notification.mp3');
   }, [user?.id]);
 
-  // 2. ✅ فلترة الإشعارات: عرض فقط ما هو أحدث من تاريخ إنشاء الحساب
+  // 2. دالة جلب الإشعارات
+  const fetchNotifications = async () => {
+    if (!user?.id) return;
+    
+    let query = supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+    // فلترة بالتاريخ إذا وجد (لزيادة الأمان، رغم أن الفلترة بالذاكرة أدناه أسرع للعرض)
+    if (userCreatedAt) {
+        query = query.gte('created_at', userCreatedAt);
+    }
+
+    const { data } = await query;
+    if (data) setNotifications(data);
+  };
+
+  // 3. الاشتراك في التحديثات اللحظية (Realtime) - الحل الجذري لوصول الإشعار
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // جلب أولي
+    fetchNotifications();
+
+    // اشتراك
+    const channel = supabase.channel(`notifs_${user.id}`)
+        .on('postgres_changes', 
+            { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, 
+            (payload) => {
+                // عند وصول إشعار جديد
+                setNotifications(prev => [payload.new, ...prev]);
+                // تشغيل الصوت
+                audioRef.current?.play().catch(() => {});
+            }
+        )
+        .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, userCreatedAt]);
+
+  // 4. الفلترة النهائية (لضمان عدم عرض القديم جداً)
   const filteredNotifications = useMemo(() => {
     if (!userCreatedAt) return notifications;
     const userJoinDate = new Date(userCreatedAt).getTime();
-    
-    return notifications.filter(n => {
-      const notifDate = new Date(n.created_at).getTime();
-      return notifDate >= userJoinDate;
-    });
+    return notifications.filter(n => new Date(n.created_at).getTime() >= userJoinDate);
   }, [notifications, userCreatedAt]);
 
-  const handleToggle = () => {
-    if (!isOpen && unreadCount > 0) markAsRead();
+  const unreadCount = useMemo(() => filteredNotifications.filter(n => !n.is_read).length, [filteredNotifications]);
+
+  // 5. تحديث القراءة
+  const handleToggle = async () => {
+    if (!isOpen && unreadCount > 0) {
+        await supabase.from('notifications').update({ is_read: true }).eq('user_id', user?.id).eq('is_read', false);
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    }
     setIsOpen(!isOpen);
   };
 
   const handlePushActivate = async () => {
     const success = await requestPermission();
-    if (success) alert('تم ربط جهازك بنجاح! ستصلك التنبيهات حتى والموقع مغلق.');
+    if (success) alert('تم ربط جهازك بنجاح!');
   };
 
+  // 6. التوجيه الذكي (بما فيه المسابقات)
   const handleNotificationClick = (notif: any) => {
     setIsOpen(false);
     const isAdmin = window.location.pathname.includes('admin');
     let targetTab = '';
+    const type = notif.type || '';
 
-    switch (notif.type) {
-      case 'leave_request':
-      case 'leave_update':
-        targetTab = isAdmin ? 'leaves' : 'requests-history';
-        break;
-      case 'message':
-        targetTab = isAdmin ? 'all_messages' : 'messages';
-        break;
-      case 'ovr_report':
-        targetTab = isAdmin ? 'quality' : 'quality-manager-tab'; 
-        break;
-      case 'ovr_reply':
-        targetTab = 'ovr';
-        break;
-      case 'task':
-      case 'task_update':
-        targetTab = 'tasks';
-        break;
-      case 'training':
-        targetTab = 'training';
-        break;
-      case 'reward_update':
-         targetTab = 'store';
-         break;
-      default:
-        targetTab = isAdmin ? 'home' : 'news';
-        break;
-    }
+    if (type.includes('task')) targetTab = 'tasks';
+    else if (type.includes('message')) targetTab = isAdmin ? 'all_messages' : 'messages';
+    else if (type.includes('ovr_report')) targetTab = isAdmin ? 'quality' : 'quality-manager-tab';
+    else if (type.includes('ovr_reply')) targetTab = 'ovr';
+    else if (type.includes('training')) targetTab = 'training';
+    else if (type.includes('reward')) targetTab = 'store';
+    else if (type.includes('leave')) targetTab = isAdmin ? 'leaves' : 'requests-history';
+    // ✅ إضافة توجيه المسابقة
+    else if (type.includes('competition')) targetTab = isAdmin ? 'competitions' : 'news'; 
+    else targetTab = isAdmin ? 'home' : 'news';
 
     if (onNavigate && targetTab) {
         onNavigate(targetTab);
@@ -110,10 +141,8 @@ export default function NotificationBell({ onNavigate }: Props) {
 
       {isOpen && (
         <>
-            {/* خلفية معتمة للموبايل فقط لإغلاق القائمة */}
             <div className="fixed inset-0 z-[90] bg-black/20 backdrop-blur-[2px] md:hidden" onClick={() => setIsOpen(false)} />
             
-            {/* ✅ الحاوية: fixed في الموبايل (منتصف الشاشة)، absolute في الديسك توب (تحت الزر) */}
             <div className={`
                 fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm 
                 md:absolute md:top-full md:left-0 md:translate-x-0 md:translate-y-2 md:w-80
@@ -124,14 +153,13 @@ export default function NotificationBell({ onNavigate }: Props) {
                         <Bell className="w-4 h-4 text-orange-500"/> التنبيهات
                     </h3>
                     <button 
-                    onClick={handlePushActivate}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all ${
-                        permission === 'granted' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-600 text-white shadow-sm'
-                    }`}
+                        onClick={handlePushActivate}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black transition-all ${
+                            permission === 'granted' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-600 text-white shadow-sm'
+                        }`}
                     >
-                    <Smartphone size={12}/> {permission === 'granted' ? 'مفعل' : 'تفعيل'}
+                        <Smartphone size={12}/> {permission === 'granted' ? 'مفعل' : 'تفعيل'}
                     </button>
-                    {/* زر إغلاق للموبايل */}
                     <button onClick={() => setIsOpen(false)} className="md:hidden p-1 bg-white rounded-full text-gray-400">
                         <X size={16}/>
                     </button>
@@ -168,7 +196,6 @@ export default function NotificationBell({ onNavigate }: Props) {
         </>
       )}
       
-      {/* غطاء لإغلاق القائمة في الديسك توب */}
       {isOpen && <div className="hidden md:block fixed inset-0 z-[80]" onClick={() => setIsOpen(false)}/>}
     </div>
   );
