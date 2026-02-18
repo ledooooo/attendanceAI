@@ -7,7 +7,8 @@ import {
     Users, Clock, CalendarRange, ClipboardList, 
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
-    Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, LayoutDashboard, UserCog, ShieldCheck, BarChart3
+    Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
+    LayoutDashboard, UserCog, ShieldCheck, BarChart3, Swords // ✅ استيراد أيقونة Swords
 } from 'lucide-react';
 
 // استيراد التبويبات والمكونات
@@ -39,9 +40,10 @@ import AssetsManager from './components/AssetsManager';
 
 import AdministrationTab from '../staff/components/AdministrationTab';
 import SupervisorsManager from './components/SupervisorsManager';
-
-// ✅ استيراد تبويب إحصائيات العمل
 import StatisticsManager from './components/StatisticsManager';
+
+// ✅ استيراد مدير المسابقات الجديد
+import CompetitionsManager from './components/gamification/CompetitionsManager';
 
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
@@ -52,7 +54,7 @@ export default function AdminDashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [testResult, setTestResult] = useState('');
 
-    // --- 1. جلب الموظفين (شامل last_seen بفضل select *) ---
+    // --- 1. جلب الموظفين ---
     const { data: employees = [], isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
         queryKey: ['admin_employees'],
         queryFn: async () => {
@@ -63,10 +65,8 @@ export default function AdminDashboard() {
         staleTime: 1000 * 60 * 5, 
     });
 
-    // استخراج بيانات الموظف (المدير) الحالي لتمريرها لمكون AdministrationTab
     const currentAdminEmployee = employees.find(e => e.id === user?.id) || ({} as Employee);
 
-    // قراءة الرابط عند تشغيل التطبيق (لفتح التبويب من الإشعارات الخارجية)
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const tabParam = params.get('tab');
@@ -76,7 +76,6 @@ export default function AdminDashboard() {
         }
     }, []);
 
-    // --- 2. جلب الإعدادات ---
     const { data: settings } = useQuery({
         queryKey: ['general_settings'],
         queryFn: async () => {
@@ -86,7 +85,6 @@ export default function AdminDashboard() {
         staleTime: Infinity,
     });
 
-    // --- 3. جلب العدادات (مع حماية ضد الأخطاء) ---
     const { data: badges = { messages: 0, leaves: 0, ovr: 0, tasks: 0, supervisors: 0 } } = useQuery({
         queryKey: ['admin_badges'],
         queryFn: async () => {
@@ -113,7 +111,6 @@ export default function AdminDashboard() {
         refetchInterval: 60000, 
     });
 
-    // تصفير إشعارات المهام عند فتح التبويب
     useEffect(() => {
         if (activeTab === 'tasks' && badges.tasks > 0) {
             const markTasksAsRead = async () => {
@@ -124,7 +121,6 @@ export default function AdminDashboard() {
         }
     }, [activeTab, badges.tasks, queryClient]);
 
-    // --- Mutations ---
     const testPushMutation = useMutation({
         mutationFn: async () => {
             if (!user) throw new Error("User not found");
@@ -138,7 +134,6 @@ export default function AdminDashboard() {
         onError: (err: any) => setTestResult(`❌ فشل الإرسال: ${err.message}`)
     });
 
-    // --- Swipe & Menu ---
     const swipeHandlers = useSwipeable({
         onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
         onSwipedRight: () => setIsSidebarOpen(false),
@@ -151,6 +146,7 @@ export default function AdminDashboard() {
         { id: 'supervisors', label: 'إدارة المشرفين', icon: ShieldCheck, badge: badges?.supervisors || 0 }, 
         { id: 'staff_admin', label: 'إدارة الموظف', icon: UserCog },
         { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
+        { id: 'competitions', label: 'المسابقات والتحديات', icon: Swords }, // ✅ التبويب الجديد
         { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
         { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges?.messages || 0 },
         { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: badges?.leaves || 0 },
@@ -159,7 +155,7 @@ export default function AdminDashboard() {
         { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
         { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
         { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
-        { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 }, // ✅ التبويب الجديد
+        { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
         { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
         { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
         { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
@@ -171,10 +167,8 @@ export default function AdminDashboard() {
         { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
         { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing },
         { id: 'settings', label: 'إعدادات النظام', icon: Settings },
-        
     ];
 
-    // ✅ شاشة تحميل
     if (isLoadingEmployees) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
@@ -187,7 +181,6 @@ export default function AdminDashboard() {
     return (
         <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
             
-            {/* الخلفية المظللة للموبايل */}
             {isSidebarOpen && (
                 <div 
                     className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" 
@@ -195,14 +188,12 @@ export default function AdminDashboard() {
                 />
             )}
 
-            {/* --- القائمة الجانبية (Sidebar) --- */}
             <aside className={`
                 fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl 
                 transform transition-transform duration-300 ease-in-out flex flex-col 
                 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
                 md:translate-x-0 md:static md:w-72 md:shadow-none h-[100dvh]
             `}>
-                {/* Header القائمة */}
                 <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-gradient-to-r from-blue-50 to-white">
                     <div className="flex items-center gap-3">
                         <div className="bg-white p-1.5 rounded-xl shadow-sm border border-blue-100">
@@ -218,7 +209,6 @@ export default function AdminDashboard() {
                     </button>
                 </div>
 
-                {/* عناصر القائمة (Scrollable) */}
                 <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
                     {menuItems.map((item) => {
                         const Icon = item.icon;
@@ -237,8 +227,6 @@ export default function AdminDashboard() {
                             >
                                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-blue-600'}`} />
                                 <span className="text-sm">{item.label}</span>
-                                
-                                {/* Badge */}
                                 {item.badge && item.badge > 0 && (
                                     <span className="absolute left-4 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm border border-white">
                                         {item.badge}
@@ -247,10 +235,9 @@ export default function AdminDashboard() {
                             </button>
                         );
                     })}
-                    <div className="h-4 md:h-0"></div> {/* مسافة أمان */}
+                    <div className="h-4 md:h-0"></div>
                 </nav>
 
-                {/* Footer القائمة */}
                 <div className="p-4 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold border-2 border-white shadow-sm">
@@ -267,10 +254,8 @@ export default function AdminDashboard() {
                 </div>
             </aside>
 
-            {/* --- المحتوى الرئيسي --- */}
             <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
                 
-                {/* Navbar (الشريط العلوي) */}
                 <header className="h-20 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
                     <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2.5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors active:scale-95 border border-gray-200">
@@ -287,10 +272,8 @@ export default function AdminDashboard() {
                     </div>
                 </header>
 
-                {/* منطقة المحتوى */}
                 <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24">
                     <div className="max-w-7xl mx-auto space-y-6">
-                        {/* تمرير employees بأمان تام */}
                         {activeTab === 'home' && <HomeTab employees={employees || []} setActiveTab={setActiveTab} />}
                         {activeTab === 'doctors' && <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />}
                         {activeTab === 'supervisors' && <SupervisorsManager />} 
@@ -301,9 +284,10 @@ export default function AdminDashboard() {
                         {activeTab === 'evaluations' && <EvaluationsTab employees={employees || []} />}
                         {activeTab === 'settings' && <SettingsTab onUpdateName={() => queryClient.invalidateQueries({ queryKey: ['general_settings'] })} />}
                         {activeTab === 'reports' && <ReportsTab />}
-                        {activeTab === 'statistics' && <StatisticsManager />} {/* ✅ عرض التبويب الجديد */}
+                        {activeTab === 'statistics' && <StatisticsManager />} 
                         {activeTab === 'send_reports' && <SendReportsTab />}
                         {activeTab === 'news' && <NewsManagementTab />}
+                        {activeTab === 'competitions' && <CompetitionsManager />} {/* ✅ عرض صفحة المسابقات */}
                         {activeTab === 'motivation' && (
                             <div className="space-y-6">
                                 <BirthdayWidget employees={employees || []} />
@@ -328,7 +312,6 @@ export default function AdminDashboard() {
                                  </div>
                             </div>
                         )}
-                        {/* واجهة اختبار التنبيهات */}
                         {activeTab === 'test_push' && (
                             <div className="max-w-md mx-auto bg-white p-8 rounded-[30px] shadow-sm border border-gray-100 text-center space-y-6 mt-10">
                                 <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto text-blue-600 shadow-inner">
@@ -379,7 +362,6 @@ export default function AdminDashboard() {
                         <span className="text-[10px] font-bold">الموظفين</span>
                     </button>
 
-                    {/* زر عائم مميز للتقارير */}
                     <button 
                         onClick={() => setActiveTab('reports')}
                         className="relative -top-6 bg-blue-600 text-white p-4 rounded-full shadow-xl shadow-blue-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform"
