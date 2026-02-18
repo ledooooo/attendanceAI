@@ -36,9 +36,11 @@ export default function SupervisorDashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isThemeEnabled, setIsThemeEnabled] = useState(true);
 
+    // حالات القوائم العلوية
     const [showLevelMenu, setShowLevelMenu] = useState(false);
     const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
 
+    // Modals
     const [showCompletionModal, setShowCompletionModal] = useState(false);
     const [showAboutModal, setShowAboutModal] = useState(false);
     const [formData, setFormData] = useState({
@@ -187,17 +189,24 @@ export default function SupervisorDashboard() {
                     })}
                 </nav>
 
-                {/* ✅ أزرار المشاركة، حول التطبيق، الخروج مرتبة جنباً إلى جنب */}
-                <div className="p-4 border-t bg-gray-50 flex items-center justify-around shrink-0 pb-safe">
-                    <button onClick={handleShareApp} className="p-3 rounded-2xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
+                {/* ✅ الفوتر: يحتوي على (مشاركة - حول - الثيم - خروج) */}
+                <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe gap-1">
+                    <button onClick={handleShareApp} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
                         <Share2 className="w-5 h-5" />
                         <span className="text-[9px] font-bold">مشاركة</span>
                     </button>
-                    <button onClick={() => setShowAboutModal(true)} className="p-3 rounded-2xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors flex flex-col items-center gap-1">
+                    <button onClick={() => setShowAboutModal(true)} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors flex flex-col items-center gap-1">
                         <Info className="w-5 h-5" />
                         <span className="text-[9px] font-bold">حول</span>
                     </button>
-                    <button onClick={signOut} className="p-3 rounded-2xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
+                    
+                    {/* ✅ زر الثيم في الأسفل */}
+                    <button onClick={() => setIsThemeEnabled(!isThemeEnabled)} className={`flex-1 p-2 rounded-xl transition-colors flex flex-col items-center gap-1 ${isThemeEnabled ? 'text-purple-600 bg-purple-50' : 'text-gray-500 hover:bg-gray-100'}`}>
+                        <Sparkles className="w-5 h-5" />
+                        <span className="text-[9px] font-bold">الثيم</span>
+                    </button>
+
+                    <button onClick={signOut} className="flex-1 p-2 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
                         <LogOut className="w-5 h-5" />
                         <span className="text-[9px] font-bold">خروج</span>
                     </button>
@@ -207,26 +216,18 @@ export default function SupervisorDashboard() {
             {/* --- المحتوى الرئيسي --- */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
                 
-                {/* الشريط العلوي (تم ضبط المقاسات للموبايل) */}
+                {/* الشريط العلوي */}
                 <header className="h-16 md:h-20 bg-white border-b flex items-center justify-between px-2 md:px-6 sticky top-0 z-30 shadow-sm bg-white/95 backdrop-blur-sm gap-1">
                     
                     <div className="flex items-center gap-1 md:gap-3 shrink-0">
                         <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-1.5 md:p-2 bg-gray-50 rounded-xl hover:bg-gray-100 border">
                             <Menu className="w-5 h-5 text-gray-700"/>
                         </button>
-                        <span className="font-black text-gray-800 hidden lg:block">المتابعة الإشرافية</span>
-                        
-                        <div className="relative group hidden md:block">
-                            <button 
-                                onClick={() => setIsThemeEnabled(!isThemeEnabled)} 
-                                className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${isThemeEnabled ? 'bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700 shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                            >
-                                <Sparkles className={`w-4 h-4 md:w-5 md:h-5 ${isThemeEnabled ? 'animate-pulse' : ''}`} />
-                            </button>
-                        </div>
+                        <span className="font-black text-gray-800 lg:block">المتابعة الإشرافية</span>
                     </div>
 
                     <div className="flex items-center gap-1.5 md:gap-3">
+                        {/* 1. أبطال النقاط */}
                         <div className="relative group">
                             <button 
                                 onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); }} 
@@ -234,21 +235,25 @@ export default function SupervisorDashboard() {
                             >
                                 <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
                             </button>
+                            {/* نافذة أبطال النقاط المتجاوبة */}
                             {showLeaderboardMenu && (
                                 <>
-                                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200" onClick={() => setShowLeaderboardMenu(false)}>
-                                        <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                                            <div className="p-2 border-b flex justify-between items-center"><span className="font-bold">لوحة الشرف</span><button onClick={()=>setShowLeaderboardMenu(false)}><X className="w-5 h-5"/></button></div>
-                                            <div className="overflow-y-auto custom-scrollbar p-2 flex-1"><LeaderboardWidget currentUserId={supervisor?.id} /></div>
+                                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
+                                        <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                                            <div className="p-4 border-b flex justify-between items-center bg-yellow-50">
+                                                <h3 className="font-black text-gray-800 flex items-center gap-2"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
+                                                <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500"><X className="w-5 h-5"/></button>
+                                            </div>
+                                            <div className="overflow-y-auto custom-scrollbar p-2 flex-1">
+                                                <LeaderboardWidget currentUserId={supervisor?.id} />
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in slide-in-from-top-2 max-h-[80vh] overflow-y-auto">
-                                        <LeaderboardWidget currentUserId={supervisor?.id} />
                                     </div>
                                 </>
                             )}
                         </div>
 
+                        {/* 2. متجر الجوائز */}
                         <button onClick={() => setActiveTab('rewards')} className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'rewards' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}>
                             <ShoppingBag className="w-4 h-4 md:w-5 md:h-5" />
                             {pendingRewardsCount > 0 && (
@@ -258,6 +263,7 @@ export default function SupervisorDashboard() {
                             )}
                         </button>
 
+                        {/* 3. المستوى (تم تعديل النافذة للموبايل) */}
                         <div className="relative group">
                             <button 
                                 onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); }} 
@@ -269,23 +275,26 @@ export default function SupervisorDashboard() {
                             </button>
                             {showLevelMenu && (
                                 <>
-                                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200" onClick={() => setShowLevelMenu(false)}>
-                                        <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-2 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setShowLevelMenu(false)}>
+                                        <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                                            <div className="flex justify-between items-center mb-4">
+                                                <h3 className="font-black text-gray-800">مستواك الحالي</h3>
+                                                <button onClick={()=>setShowLevelMenu(false)} className="p-1 bg-gray-100 rounded-full"><X className="w-5 h-5"/></button>
+                                            </div>
                                             <LevelProgressBar employee={mockEmployee} />
                                         </div>
-                                    </div>
-                                    <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in slide-in-from-top-2 p-2">
-                                        <LevelProgressBar employee={mockEmployee} />
                                     </div>
                                 </>
                             )}
                         </div>
 
+                        {/* 4. النقاط */}
                         <div className="flex items-center gap-1 bg-yellow-50 px-2 md:px-3 py-1.5 rounded-xl border border-yellow-200">
                             <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-yellow-500"/>
                             <span className="text-[10px] md:text-sm font-black text-yellow-700">{supervisor?.total_points || 0}</span>
                         </div>
 
+                        {/* 5. الإشعارات */}
                         <div className="scale-90 md:scale-100 origin-left">
                             <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
                         </div>
@@ -298,7 +307,7 @@ export default function SupervisorDashboard() {
                         
                         {activeTab === 'home' && (
                             <>
-                                <div className="md:hidden mb-4"><LevelProgressBar employee={mockEmployee} /></div>
+                                {/* ✅ تم حذف كارت المستوى من هنا للموبايل */}
                                 <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-[2rem] p-6 md:p-8 text-white shadow-lg relative overflow-hidden mb-6">
                                     <div className="relative z-10">
                                         <h2 className="text-xl md:text-3xl font-black mb-2 flex items-center gap-2">مرحباً بك، {supervisor?.name} 👋</h2>
@@ -349,8 +358,8 @@ export default function SupervisorDashboard() {
 
             {/* --- نافذة عن التطبيق (About) --- */}
             {showAboutModal && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm text-center relative animate-in zoom-in-95">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95">
                         <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100"><X size={16}/></button>
                         <div className="w-16 h-16 bg-purple-100 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-purple-200">
                             <img src="/pwa-192x192.png" className="w-12 h-12 rounded-xl" alt="Logo" />
