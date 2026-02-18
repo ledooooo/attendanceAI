@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../../../../supabaseClient'; // تم تعديل المسار (4 مستويات)
+import { supabase } from '../../../supabaseClient'; // تم تعديل المسار (4 مستويات)
 import { useQuery } from '@tanstack/react-query';
 import { X, Loader2, Users, Trash2, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
