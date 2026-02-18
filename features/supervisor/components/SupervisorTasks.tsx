@@ -25,7 +25,7 @@ export default function SupervisorTasks() {
         queryFn: async () => {
             const { data } = await supabase
                 .from('employees')
-                .select('id, name, role, specialty')
+                .select('id, name, role, specialty, admin_tasks') // جلبنا admin_tasks لعرض الوصف الوظيفي
                 .in('role', ['admin', 'quality_manager', 'head_of_dept'])
                 .eq('status', 'نشط');
             return data || [];
@@ -70,8 +70,8 @@ export default function SupervisorTasks() {
                 title, 
                 description, 
                 due_date: dueDate || null, 
-                employee_id: targetId, // ✅ تم تصحيح اسم العمود من assigned_to
-                target_name: targetNameText, // ✅ العمود الجديد للاسم
+                employee_id: targetId, 
+                target_name: targetNameText, 
                 created_by: user?.id,
                 status: 'pending'
             });
@@ -84,7 +84,7 @@ export default function SupervisorTasks() {
                     type: 'task_update', 
                     title: 'تكليف إشرافي جديد', 
                     message: `قام المشرف بتكليفك بـ: ${title}`, 
-                    user_id: targetId // ✅ تم تصحيح العمود لـ user_id
+                    user_id: targetId 
                 });
             }
         },
@@ -125,12 +125,13 @@ export default function SupervisorTasks() {
                             <select 
                                 value={selectedSystemUser}
                                 onChange={(e) => setSelectedSystemUser(e.target.value)}
-                                className="w-full p-3 rounded-xl border bg-gray-50 focus:border-emerald-500 outline-none font-bold text-sm appearance-none"
+                                className="w-full p-3 rounded-xl border bg-gray-50 focus:border-emerald-500 outline-none font-bold text-xs appearance-none"
                             >
                                 <option value="">اختر المسؤول...</option>
                                 {managers.map((m: any) => (
                                     <option key={m.id} value={m.id}>
-                                        {m.role === 'admin' ? '👑 المدير العام' : m.role === 'quality_manager' ? '🛡️ مسؤول الجودة' : '👨‍⚕️ ' + m.name}
+                                        {/* التعديل هنا: عرض الاسم والمهام */}
+                                        {m.name} - ({m.role === 'admin' ? 'مدير المركز' : m.role === 'quality_manager' ? 'مسؤول الجودة' : m.admin_tasks || 'رئيس قسم'})
                                     </option>
                                 ))}
                             </select>
