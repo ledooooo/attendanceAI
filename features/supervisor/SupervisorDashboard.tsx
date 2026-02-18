@@ -6,7 +6,7 @@ import { useSwipeable } from 'react-swipeable';
 import { 
     LogOut, Menu, X, Home, BookOpen, Library as LibraryIcon, 
     Gamepad2, CalendarRange, Gift, BarChart3, Loader2, Sparkles, 
-    Award, ShieldCheck, Bell, ShoppingBag, Trophy, Share2, Info, Users, CheckSquare
+    Award, ShieldCheck, Bell, ShoppingBag, Trophy, Share2, Info, Users, CheckSquare, Swords // ✅ استيراد Swords
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -26,6 +26,9 @@ import SupervisorForce from './components/SupervisorForce';
 import SupervisorSchedules from './components/SupervisorSchedules';
 import SupervisorStatistics from './components/SupervisorStatistics';
 import SupervisorTasks from './components/SupervisorTasks';
+
+// ✅ استيراد مدير المسابقات (نستخدم نفس المكون الموجود عند المدير)
+import CompetitionsManager from '../admin/components/CompetitionsManager'; 
 
 export default function SupervisorDashboard() {
     const { user, signOut } = useAuth();
@@ -103,7 +106,7 @@ export default function SupervisorDashboard() {
             id: supervisor.id, employee_id: supervisor.id, name: supervisor.name,
             specialty: supervisor.role_title, photo_url: supervisor.avatar_url || '', 
             total_points: supervisor.total_points || 0, role: 'supervisor',
-            created_at: supervisor.created_at // مهم للإشعارات
+            created_at: supervisor.created_at
         } as any;
     }, [supervisor]);
 
@@ -129,6 +132,7 @@ export default function SupervisorDashboard() {
         { id: 'tasks', label: 'التكليفات الصادرة', icon: CheckSquare },
         { id: 'schedule', label: 'النوبتجيات', icon: CalendarRange },
         { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
+        { id: 'competitions', label: 'المسابقات', icon: Swords }, // ✅ إضافة المسابقات
         { id: 'training', label: 'مركز التدريب', icon: BookOpen },
         { id: 'library', label: 'السياسات والأدلة', icon: LibraryIcon },
         { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
@@ -221,7 +225,6 @@ export default function SupervisorDashboard() {
                     </div>
 
                     <div className="flex items-center gap-1.5 md:gap-3">
-                        {/* أبطال النقاط */}
                         <button 
                             onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); }} 
                             className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
@@ -229,7 +232,6 @@ export default function SupervisorDashboard() {
                             <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
                         </button>
 
-                        {/* متجر الجوائز */}
                         <button onClick={() => setActiveTab('rewards')} className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'rewards' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}>
                             <ShoppingBag className="w-4 h-4 md:w-5 md:h-5" />
                             {pendingRewardsCount > 0 && (
@@ -239,7 +241,6 @@ export default function SupervisorDashboard() {
                             )}
                         </button>
 
-                        {/* المستوى (بدون نافذة منبثقة للموبايل، فقط أيقونة ورقم) */}
                         <div className="relative group">
                             <button 
                                 onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); }} 
@@ -251,7 +252,6 @@ export default function SupervisorDashboard() {
                             </button>
                         </div>
 
-                        {/* النقاط */}
                         <div className="flex items-center gap-1 bg-yellow-50 px-2 md:px-3 py-1.5 rounded-xl border border-yellow-200">
                             <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-yellow-500"/>
                             <span className="text-[10px] md:text-sm font-black text-yellow-700">{supervisor?.total_points || 0}</span>
@@ -282,6 +282,7 @@ export default function SupervisorDashboard() {
                         {activeTab === 'tasks' && <SupervisorTasks />}
                         {activeTab === 'schedule' && <SupervisorSchedules />}
                         {activeTab === 'statistics' && <SupervisorStatistics />}
+                        {activeTab === 'competitions' && <CompetitionsManager />} {/* ✅ عرض صفحة المسابقات */}
                         {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
                         {activeTab === 'library' && <StaffLibrary employee={mockEmployee} />}
                         {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
@@ -315,9 +316,8 @@ export default function SupervisorDashboard() {
 
             </div>
 
-            {/* ========== GLOBAL MODALS (خارج حدود الهيدر لتجنب مشاكل القص في الموبايل) ========== */}
+            {/* ========== GLOBAL MODALS ========== */}
 
-            {/* 1. نافذة لوحة الشرف */}
             {showLeaderboardMenu && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLeaderboardMenu(false)}>
                     <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
@@ -332,7 +332,6 @@ export default function SupervisorDashboard() {
                 </div>
             )}
 
-            {/* 2. نافذة المستوى */}
             {showLevelMenu && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLevelMenu(false)}>
                     <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
@@ -345,7 +344,6 @@ export default function SupervisorDashboard() {
                 </div>
             )}
 
-            {/* 3. نافذة حول التطبيق */}
             {showAboutModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95 shadow-2xl">
@@ -363,7 +361,6 @@ export default function SupervisorDashboard() {
                 </div>
             )}
 
-            {/* 4. نافذة استكمال البيانات */}
             {showCompletionModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in">
                     <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl p-6 md:p-8 animate-in zoom-in-95 border-t-8 border-purple-500 relative overflow-hidden flex flex-col max-h-[90vh]">
