@@ -36,11 +36,9 @@ export default function SupervisorDashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isThemeEnabled, setIsThemeEnabled] = useState(true);
 
-    // حالات القوائم العلوية
     const [showLevelMenu, setShowLevelMenu] = useState(false);
     const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
 
-    // Modals
     const [showCompletionModal, setShowCompletionModal] = useState(false);
     const [showAboutModal, setShowAboutModal] = useState(false);
     const [formData, setFormData] = useState({
@@ -104,7 +102,8 @@ export default function SupervisorDashboard() {
         return {
             id: supervisor.id, employee_id: supervisor.id, name: supervisor.name,
             specialty: supervisor.role_title, photo_url: supervisor.avatar_url || '', 
-            total_points: supervisor.total_points || 0, role: 'supervisor'
+            total_points: supervisor.total_points || 0, role: 'supervisor',
+            created_at: supervisor.created_at // مهم للإشعارات
         } as any;
     }, [supervisor]);
 
@@ -189,7 +188,6 @@ export default function SupervisorDashboard() {
                     })}
                 </nav>
 
-                {/* ✅ الفوتر: يحتوي على (مشاركة - حول - الثيم - خروج) */}
                 <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe gap-1">
                     <button onClick={handleShareApp} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
                         <Share2 className="w-5 h-5" />
@@ -199,13 +197,10 @@ export default function SupervisorDashboard() {
                         <Info className="w-5 h-5" />
                         <span className="text-[9px] font-bold">حول</span>
                     </button>
-                    
-                    {/* ✅ زر الثيم في الأسفل */}
                     <button onClick={() => setIsThemeEnabled(!isThemeEnabled)} className={`flex-1 p-2 rounded-xl transition-colors flex flex-col items-center gap-1 ${isThemeEnabled ? 'text-purple-600 bg-purple-50' : 'text-gray-500 hover:bg-gray-100'}`}>
                         <Sparkles className="w-5 h-5" />
                         <span className="text-[9px] font-bold">الثيم</span>
                     </button>
-
                     <button onClick={signOut} className="flex-1 p-2 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
                         <LogOut className="w-5 h-5" />
                         <span className="text-[9px] font-bold">خروج</span>
@@ -218,7 +213,6 @@ export default function SupervisorDashboard() {
                 
                 {/* الشريط العلوي */}
                 <header className="h-16 md:h-20 bg-white border-b flex items-center justify-between px-2 md:px-6 sticky top-0 z-30 shadow-sm bg-white/95 backdrop-blur-sm gap-1">
-                    
                     <div className="flex items-center gap-1 md:gap-3 shrink-0">
                         <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-1.5 md:p-2 bg-gray-50 rounded-xl hover:bg-gray-100 border">
                             <Menu className="w-5 h-5 text-gray-700"/>
@@ -227,33 +221,15 @@ export default function SupervisorDashboard() {
                     </div>
 
                     <div className="flex items-center gap-1.5 md:gap-3">
-                        {/* 1. أبطال النقاط */}
-                        <div className="relative group">
-                            <button 
-                                onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); }} 
-                                className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
-                            >
-                                <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
-                            </button>
-                            {/* نافذة أبطال النقاط المتجاوبة */}
-                            {showLeaderboardMenu && (
-                                <>
-                                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
-                                        <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
-                                            <div className="p-4 border-b flex justify-between items-center bg-yellow-50">
-                                                <h3 className="font-black text-gray-800 flex items-center gap-2"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
-                                                <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500"><X className="w-5 h-5"/></button>
-                                            </div>
-                                            <div className="overflow-y-auto custom-scrollbar p-2 flex-1">
-                                                <LeaderboardWidget currentUserId={supervisor?.id} />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                        {/* أبطال النقاط */}
+                        <button 
+                            onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); }} 
+                            className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
+                        >
+                            <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
+                        </button>
 
-                        {/* 2. متجر الجوائز */}
+                        {/* متجر الجوائز */}
                         <button onClick={() => setActiveTab('rewards')} className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'rewards' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}>
                             <ShoppingBag className="w-4 h-4 md:w-5 md:h-5" />
                             {pendingRewardsCount > 0 && (
@@ -263,7 +239,7 @@ export default function SupervisorDashboard() {
                             )}
                         </button>
 
-                        {/* 3. المستوى (تم تعديل النافذة للموبايل) */}
+                        {/* المستوى (بدون نافذة منبثقة للموبايل، فقط أيقونة ورقم) */}
                         <div className="relative group">
                             <button 
                                 onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); }} 
@@ -273,28 +249,14 @@ export default function SupervisorDashboard() {
                                 <span className="text-[10px] md:text-xs font-bold hidden sm:block">مستوى: {level}</span>
                                 <span className="text-[10px] font-bold sm:hidden">{level}</span>
                             </button>
-                            {showLevelMenu && (
-                                <>
-                                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setShowLevelMenu(false)}>
-                                        <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                                            <div className="flex justify-between items-center mb-4">
-                                                <h3 className="font-black text-gray-800">مستواك الحالي</h3>
-                                                <button onClick={()=>setShowLevelMenu(false)} className="p-1 bg-gray-100 rounded-full"><X className="w-5 h-5"/></button>
-                                            </div>
-                                            <LevelProgressBar employee={mockEmployee} />
-                                        </div>
-                                    </div>
-                                </>
-                            )}
                         </div>
 
-                        {/* 4. النقاط */}
+                        {/* النقاط */}
                         <div className="flex items-center gap-1 bg-yellow-50 px-2 md:px-3 py-1.5 rounded-xl border border-yellow-200">
                             <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-yellow-500"/>
                             <span className="text-[10px] md:text-sm font-black text-yellow-700">{supervisor?.total_points || 0}</span>
                         </div>
 
-                        {/* 5. الإشعارات */}
                         <div className="scale-90 md:scale-100 origin-left">
                             <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
                         </div>
@@ -306,16 +268,13 @@ export default function SupervisorDashboard() {
                     <div className="max-w-7xl mx-auto space-y-6">
                         
                         {activeTab === 'home' && (
-                            <>
-                                {/* ✅ تم حذف كارت المستوى من هنا للموبايل */}
-                                <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-[2rem] p-6 md:p-8 text-white shadow-lg relative overflow-hidden mb-6">
-                                    <div className="relative z-10">
-                                        <h2 className="text-xl md:text-3xl font-black mb-2 flex items-center gap-2">مرحباً بك، {supervisor?.name} 👋</h2>
-                                        <p className="text-white/80 font-bold text-xs md:text-base">تصفح أحدث الأخبار والأنشطة الإشرافية في المركز.</p>
-                                    </div>
-                                    <ShieldCheck className="absolute -left-6 -bottom-6 w-40 h-40 text-white opacity-10 transform -rotate-12" />
+                            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-[2rem] p-6 md:p-8 text-white shadow-lg relative overflow-hidden mb-6">
+                                <div className="relative z-10">
+                                    <h2 className="text-xl md:text-3xl font-black mb-2 flex items-center gap-2">مرحباً بك، {supervisor?.name} 👋</h2>
+                                    <p className="text-white/80 font-bold text-xs md:text-base">تصفح أحدث الأخبار والأنشطة الإشرافية في المركز.</p>
                                 </div>
-                            </>
+                                <ShieldCheck className="absolute -left-6 -bottom-6 w-40 h-40 text-white opacity-10 transform -rotate-12" />
+                            </div>
                         )}
 
                         {activeTab === 'home' && <StaffNewsFeed employee={mockEmployee} />}
@@ -331,7 +290,7 @@ export default function SupervisorDashboard() {
                     </div>
                 </main>
 
-                {/* --- الشريط السفلي (Mobile Bottom Nav) --- */}
+                {/* --- الشريط السفلي --- */}
                 <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t px-2 py-2 flex justify-between items-center z-50 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)]">
                     {bottomNavItems.map(item => {
                         const isActive = activeTab === item.id;
@@ -356,30 +315,60 @@ export default function SupervisorDashboard() {
 
             </div>
 
-            {/* --- نافذة عن التطبيق (About) --- */}
-            {showAboutModal && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95">
-                        <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100"><X size={16}/></button>
-                        <div className="w-16 h-16 bg-purple-100 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-purple-200">
-                            <img src="/pwa-192x192.png" className="w-12 h-12 rounded-xl" alt="Logo" />
+            {/* ========== GLOBAL MODALS (خارج حدود الهيدر لتجنب مشاكل القص في الموبايل) ========== */}
+
+            {/* 1. نافذة لوحة الشرف */}
+            {showLeaderboardMenu && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLeaderboardMenu(false)}>
+                    <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b flex justify-between items-center bg-yellow-50">
+                            <h3 className="font-black text-gray-800 flex items-center gap-2"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
+                            <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500"><X className="w-5 h-5"/></button>
                         </div>
-                        <h2 className="text-lg font-black text-gray-800">غرب المطار</h2>
-                        <p className="text-xs text-gray-500 font-bold mb-4">بوابة المتابعة الإشرافية</p>
-                        <div className="space-y-2 text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border">
-                            <div className="flex justify-between"><span>الإصدار:</span><span className="font-bold">2.5.0</span></div>
-                            <div className="flex justify-between"><span>التطوير:</span><span className="font-bold">IT Department</span></div>
+                        <div className="overflow-y-auto custom-scrollbar p-2 flex-1">
+                            <LeaderboardWidget currentUserId={supervisor?.id} />
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* --- نافذة استكمال البيانات (Modal) --- */}
+            {/* 2. نافذة المستوى */}
+            {showLevelMenu && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLevelMenu(false)}>
+                    <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-black text-gray-800 flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-indigo-600"/> مستواك الحالي</h3>
+                            <button onClick={()=>setShowLevelMenu(false)} className="p-1 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500"><X className="w-5 h-5"/></button>
+                        </div>
+                        <LevelProgressBar employee={mockEmployee} />
+                    </div>
+                </div>
+            )}
+
+            {/* 3. نافذة حول التطبيق */}
+            {showAboutModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95 shadow-2xl">
+                        <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100"><X size={16}/></button>
+                        <div className="w-20 h-20 bg-purple-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-purple-200 rotate-3 hover:rotate-0 transition-transform">
+                            <img src="/pwa-192x192.png" className="w-14 h-14 rounded-xl" alt="Logo" />
+                        </div>
+                        <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
+                        <p className="text-xs text-gray-500 font-bold mb-6 tracking-widest uppercase">بوابة المتابعة الإشرافية</p>
+                        <div className="space-y-3 text-xs text-gray-600 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                            <div className="flex justify-between border-b border-gray-200 pb-2"><span>الإصدار:</span><span className="font-black text-gray-800">2.5.0</span></div>
+                            <div className="flex justify-between pt-1"><span>التطوير:</span><span className="font-black text-purple-600">IT Department</span></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 4. نافذة استكمال البيانات */}
             {showCompletionModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in">
-                    <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl p-6 md:p-8 animate-in zoom-in-95 border-t-8 border-purple-500 relative overflow-hidden">
+                    <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl p-6 md:p-8 animate-in zoom-in-95 border-t-8 border-purple-500 relative overflow-hidden flex flex-col max-h-[90vh]">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -z-10"></div>
-                        <div className="text-center mb-6 relative z-10">
+                        <div className="text-center mb-6 relative z-10 shrink-0">
                             <div className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200">
                                 <Award className="w-10 h-10"/>
                             </div>
@@ -388,7 +377,8 @@ export default function SupervisorDashboard() {
                                 أكمل بياناتك الأساسية الآن واحصل على <span className="text-purple-600 font-black text-lg">150 نقطة</span> ترحيبية كهدية مجانية في متجر الجوائز! 🎁
                             </p>
                         </div>
-                        <div className="space-y-4 max-h-[45vh] overflow-y-auto custom-scrollbar p-2 relative z-10">
+                        
+                        <div className="space-y-4 overflow-y-auto custom-scrollbar p-2 flex-1 relative z-10">
                             <div><label className="block text-xs font-bold text-gray-600 mb-1">الرقم القومي (اختياري)</label><input type="text" maxLength={14} value={formData.national_id} onChange={e => setFormData({...formData, national_id: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl font-mono text-left outline-none" dir="ltr" placeholder="14 رقم"/></div>
                             <div><label className="block text-xs font-bold text-gray-600 mb-1">تاريخ استلام العمل بالجهة</label><input type="date" value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none"/></div>
                             <div className="grid grid-cols-2 gap-4">
@@ -398,7 +388,8 @@ export default function SupervisorDashboard() {
                             <div><label className="block text-xs font-bold text-gray-600 mb-1">دورات تدريبية حاصل عليها</label><input type="text" value={formData.training_courses} onChange={e => setFormData({...formData, training_courses: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none" placeholder="مثال: دورة مكافحة العدوى، جودة..."/></div>
                             <div><label className="block text-xs font-bold text-gray-600 mb-1">ملاحظات أخرى</label><textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl resize-none h-20 outline-none"></textarea></div>
                         </div>
-                        <div className="mt-6 flex gap-3 relative z-10">
+
+                        <div className="mt-6 flex gap-3 relative z-10 shrink-0">
                             <button onClick={() => setShowCompletionModal(false)} className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl font-bold hover:bg-gray-200 transition-colors">تخطي مؤقتاً</button>
                             <button onClick={() => completeProfileMutation.mutate(formData)} disabled={completeProfileMutation.isPending} className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-black shadow-lg hover:shadow-xl active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-50">
                                 {completeProfileMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : 'حفظ واستلام الهدية 🎁'}
