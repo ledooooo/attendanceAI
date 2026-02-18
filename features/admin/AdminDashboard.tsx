@@ -1,68 +1,71 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Employee } from '../../types';
 import { useSwipeable } from 'react-swipeable';
 import { 
-    LogOut, Menu, X, Home, BookOpen, Library as LibraryIcon, 
-    Gamepad2, CalendarRange, Gift, BarChart3, Loader2, Sparkles, 
-    Award, ShieldCheck, Bell, ShoppingBag, Trophy, Share2, Info, Users, CheckSquare, Swords // ✅ استيراد Swords
+    Users, Clock, CalendarRange, ClipboardList, 
+    Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
+    Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
+    Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
+    LayoutDashboard, UserCog, ShieldCheck, BarChart3, Swords // ✅ استيراد أيقونة Swords
 } from 'lucide-react';
-import toast from 'react-hot-toast';
 
-// --- استيراد مكونات الموظف المشتركة ---
-import StaffNewsFeed from '../staff/components/StaffNewsFeed';
-import StaffTrainingCenter from '../staff/components/StaffTrainingCenter';
-import StaffLibrary from '../staff/components/StaffLibrary';
-import StaffArcade from '../staff/components/StaffArcade';
-import RewardsStore from '../staff/components/RewardsStore'; 
+// استيراد التبويبات والمكونات
+import HomeTab from './components/HomeTab';
+import DoctorsTab from './components/DoctorsTab';
+import AttendanceTab from './components/AttendanceTab';
+import EveningSchedulesTab from './components/EveningSchedulesTab';
+import LeavesTab from './components/LeavesTab';
+import EvaluationsTab from './components/EvaluationsTab';
+import SettingsTab from './components/SettingsTab';
+import ReportsTab from './components/ReportsTab';
+import SendReportsTab from './components/SendReportsTab';
+import NewsManagementTab from './components/NewsManagementTab';
+import BirthdayWidget from './components/BirthdayWidget';
+import EOMManager from './components/EOMManager';
 import NotificationBell from '../../components/ui/NotificationBell';
-import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
-import LevelProgressBar from '../../components/gamification/LevelProgressBar';
-import ThemeOverlay from '../staff/components/ThemeOverlay';
+import AdminMessagesTab from './components/AdminMessagesTab';
+import QualityDashboard from './components/QualityDashboard'; 
+import AdminLibraryManager from './components/AdminLibraryManager'; 
+import AdminDataReports from './components/AdminDataReports'; 
+import AbsenceReportTab from './components/AbsenceReportTab';
+import TasksManager from './components/TasksManager';
+import VaccinationsTab from './components/VaccinationsTab';
+import GamificationManager from './components/GamificationManager';
+import TrainingManager from './components/TrainingManager';
+import { BookOpen } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import AssetsManager from './components/AssetsManager'; 
 
-// --- استيراد المكونات المخصصة للمشرف ---
-import SupervisorForce from './components/SupervisorForce';
-import SupervisorSchedules from './components/SupervisorSchedules';
-import SupervisorStatistics from './components/SupervisorStatistics';
-import SupervisorTasks from './components/SupervisorTasks';
+import AdministrationTab from '../staff/components/AdministrationTab';
+import SupervisorsManager from './components/SupervisorsManager';
+import StatisticsManager from './components/StatisticsManager';
 
-// ✅ استيراد مدير المسابقات (نستخدم نفس المكون الموجود عند المدير)
-import CompetitionsManager from '../admin/components/CompetitionsManager'; 
+// ✅ استيراد مدير المسابقات الجديد
+import CompetitionsManager from './components/CompetitionsManager';
 
-export default function SupervisorDashboard() {
-    const { user, signOut } = useAuth();
+export default function AdminDashboard() {
+    const { signOut, user } = useAuth();
     const queryClient = useQueryClient();
     
-    // States
+    // UI State
     const [activeTab, setActiveTab] = useState('home');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [isThemeEnabled, setIsThemeEnabled] = useState(true);
+    const [testResult, setTestResult] = useState('');
 
-    const [showLevelMenu, setShowLevelMenu] = useState(false);
-    const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
-
-    const [showCompletionModal, setShowCompletionModal] = useState(false);
-    const [showAboutModal, setShowAboutModal] = useState(false);
-    const [formData, setFormData] = useState({
-        national_id: '', start_date: '', qualification: '', specialty: '', training_courses: '', notes: ''
-    });
-
-    // 1. جلب بيانات المشرف
-    const { data: supervisor, isLoading } = useQuery({
-        queryKey: ['current_supervisor', user?.id],
+    // --- 1. جلب الموظفين ---
+    const { data: employees = [], isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
+        queryKey: ['admin_employees'],
         queryFn: async () => {
-            if (!user?.id) return null;
-            const { data, error } = await supabase.from('supervisors').select('*').eq('id', user.id).single();
+            const { data, error } = await supabase.from('employees').select('*').order('name');
             if (error) throw error;
-            return data;
+            return data as Employee[] || [];
         },
-        enabled: !!user?.id
+        staleTime: 1000 * 60 * 5, 
     });
 
-    useEffect(() => {
-        if (supervisor && !supervisor.profile_completed) setShowCompletionModal(true);
-    }, [supervisor]);
+    const currentAdminEmployee = employees.find(e => e.id === user?.id) || ({} as Employee);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -73,328 +76,322 @@ export default function SupervisorDashboard() {
         }
     }, []);
 
-    const completeProfileMutation = useMutation({
-        mutationFn: async (data: typeof formData) => {
-            if (!user?.id) throw new Error("User not found");
-            const newPoints = (supervisor?.total_points || 0) + 150;
-            const { error } = await supabase.from('supervisors').update({
-                ...data, profile_completed: true, total_points: newPoints
-            }).eq('id', user.id);
-            if (error) throw error;
-            await supabase.from('points_ledger').insert({ employee_id: user.id, points: 150, reason: 'هدية الاستكمال' });
-        },
-        onSuccess: () => {
-            toast.success('تم استكمال الملف بنجاح! 🎁');
-            setShowCompletionModal(false);
-            queryClient.invalidateQueries({ queryKey: ['current_supervisor'] });
-        }
-    });
-
-    const { data: pendingRewardsCount = 0 } = useQuery({
-        queryKey: ['pending_rewards_count', user?.id],
+    const { data: settings } = useQuery({
+        queryKey: ['general_settings'],
         queryFn: async () => {
-            if (!user?.id) return 0;
-            const { count } = await supabase.from('rewards_redemptions').select('*', { count: 'exact', head: true }).eq('employee_id', user.id).in('status', ['pending', 'قيد الانتظار', 'معلق', 'new']);
-            return count || 0;
-        }
+            const { data } = await supabase.from('general_settings').select('center_name, id').maybeSingle();
+            return data || { center_name: 'المركز الطبي', id: '' };
+        },
+        staleTime: Infinity,
     });
 
-    // --- Data Adapter ---
-    const mockEmployee = useMemo(() => {
-        if (!supervisor) return null;
-        return {
-            id: supervisor.id, employee_id: supervisor.id, name: supervisor.name,
-            specialty: supervisor.role_title, photo_url: supervisor.avatar_url || '', 
-            total_points: supervisor.total_points || 0, role: 'supervisor',
-            created_at: supervisor.created_at
-        } as any;
-    }, [supervisor]);
+    const { data: badges = { messages: 0, leaves: 0, ovr: 0, tasks: 0, supervisors: 0 } } = useQuery({
+        queryKey: ['admin_badges'],
+        queryFn: async () => {
+            try {
+                const [msg, leaves, ovr, taskUpdates, pendingSupervisors] = await Promise.all([
+                    supabase.from('messages').select('*', { count: 'exact', head: true }).eq('to_user', 'admin').eq('is_read', false),
+                    supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'قيد الانتظار'),
+                    supabase.from('ovr_reports').select('*', { count: 'exact', head: true }).eq('status', 'new'),
+                    supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('type', 'task_update').eq('is_read', false),
+                    supabase.from('supervisors').select('*', { count: 'exact', head: true }).eq('status', 'pending') 
+                ]);
+                return {
+                    messages: msg.count || 0,
+                    leaves: leaves.count || 0,
+                    ovr: ovr.count || 0,
+                    tasks: taskUpdates.count || 0,
+                    supervisors: pendingSupervisors.count || 0 
+                };
+            } catch (err) {
+                console.error("Error fetching badges:", err);
+                return { messages: 0, leaves: 0, ovr: 0, tasks: 0, supervisors: 0 };
+            }
+        },
+        refetchInterval: 60000, 
+    });
 
-    const level = Math.floor((supervisor?.total_points || 0) / 100) + 1;
+    useEffect(() => {
+        if (activeTab === 'tasks' && badges.tasks > 0) {
+            const markTasksAsRead = async () => {
+                await supabase.from('notifications').update({ is_read: true }).eq('type', 'task_update').eq('is_read', false);
+                queryClient.invalidateQueries({ queryKey: ['admin_badges'] });
+            };
+            markTasksAsRead();
+        }
+    }, [activeTab, badges.tasks, queryClient]);
+
+    const testPushMutation = useMutation({
+        mutationFn: async () => {
+            if (!user) throw new Error("User not found");
+            const { data, error } = await supabase.functions.invoke('send-push-notification', {
+                body: { userId: user.id, title: '🔔 تنبيه تجريبي', body: `تم إرسال هذا التنبيه في: ${new Date().toLocaleTimeString('ar-EG')}`, url: '/admin' }
+            });
+            if (error) throw error;
+            return data;
+        },
+        onSuccess: () => setTestResult('✅ تم الإرسال بنجاح! راقب هاتفك الآن.'),
+        onError: (err: any) => setTestResult(`❌ فشل الإرسال: ${err.message}`)
+    });
 
     const swipeHandlers = useSwipeable({
-        onSwipedLeft: (e) => { if (e.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
+        onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
         onSwipedRight: () => setIsSidebarOpen(false),
         trackMouse: true, delta: 50,
     });
 
-    const handleShareApp = async () => { 
-        try { 
-            if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); 
-            else { navigator.clipboard.writeText(window.location.origin); toast.success('تم نسخ الرابط'); } 
-        } catch (err) {} 
-    };
-
-    // القوائم الجانبية
     const menuItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
-        { id: 'force', label: 'القوة الفعلية', icon: Users },
-        { id: 'tasks', label: 'التكليفات الصادرة', icon: CheckSquare },
-        { id: 'schedule', label: 'النوبتجيات', icon: CalendarRange },
+        { id: 'doctors', label: 'شئون الموظفين', icon: Users },
+        { id: 'supervisors', label: 'إدارة المشرفين', icon: ShieldCheck, badge: badges?.supervisors || 0 }, 
+        { id: 'staff_admin', label: 'إدارة الموظف', icon: UserCog },
+        { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
+        { id: 'competitions', label: 'المسابقات والتحديات', icon: Swords }, // ✅ التبويب الجديد
+        { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
+        { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges?.messages || 0 },
+        { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: badges?.leaves || 0 },
+        { id: 'quality', label: 'إدارة الجودة (OVR)', icon: AlertTriangle, badge: badges?.ovr || 0 },
+        { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare, badge: badges?.tasks || 0 }, 
+        { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
+        { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
+        { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
         { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
-        { id: 'competitions', label: 'المسابقات', icon: Swords }, // ✅ إضافة المسابقات
-        { id: 'training', label: 'مركز التدريب', icon: BookOpen },
-        { id: 'library', label: 'السياسات والأدلة', icon: LibraryIcon },
-        { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
-        { id: 'rewards', label: 'متجر الجوائز', icon: Gift },
+        { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
+        { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
+        { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
+        { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
+        { id: 'assets', label: 'العهد والأجهزة', icon: Box },
+        { id: 'gamification', label: 'النقاط والجوائز', icon: Trophy },
+        { id: 'vaccinations', label: 'التطعيمات (Virus B)', icon: Syringe },
+        { id: 'training', label: 'إدارة التدريب', icon: BookOpen },
+        { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
+        { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing },
+        { id: 'settings', label: 'إعدادات النظام', icon: Settings },
     ];
 
-    const bottomNavItems = [
-        { id: 'home', label: 'الرئيسية', icon: Home },
-        { id: 'force', label: 'القوة الفعلية', icon: Users },
-        { id: 'tasks', label: 'التكليفات', icon: CheckSquare },
-        { id: 'statistics', label: 'الإحصائيات', icon: BarChart3 },
-    ];
-
-    if (isLoading || !mockEmployee) {
-        return <div className="min-h-screen flex items-center justify-center bg-gray-50"><Loader2 className="w-10 h-10 animate-spin text-purple-600"/></div>;
+    if (isLoadingEmployees) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
+                <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+                <p className="text-gray-500 font-bold">جاري تحميل لوحة التحكم...</p>
+            </div>
+        );
     }
 
     return (
         <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
             
-            {isThemeEnabled && <ThemeOverlay employee={mockEmployee} />}
+            {isSidebarOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" 
+                    onClick={() => setIsSidebarOpen(false)} 
+                />
+            )}
 
-            {/* Sidebar */}
-            {isSidebarOpen && <div className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />}
-            <aside className={`fixed inset-y-0 right-0 z-[70] w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 md:translate-x-0 md:static flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-                
-                <div className="h-24 flex items-center justify-between px-6 border-b text-white bg-gradient-to-r from-purple-600 to-indigo-600">
+            <aside className={`
+                fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl 
+                transform transition-transform duration-300 ease-in-out flex flex-col 
+                ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
+                md:translate-x-0 md:static md:w-72 md:shadow-none h-[100dvh]
+            `}>
+                <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-gradient-to-r from-blue-50 to-white">
                     <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-2xl border border-white/30 shadow-inner">
-                            {supervisor?.avatar_url || "👨‍💼"}
+                        <div className="bg-white p-1.5 rounded-xl shadow-sm border border-blue-100">
+                            <img src="/pwa-192x192.png" className="w-8 h-8 rounded-lg" alt="Logo" />
                         </div>
                         <div>
-                            <h1 className="font-black text-sm drop-shadow-md line-clamp-1">{supervisor?.name}</h1>
-                            <p className="text-[10px] font-bold opacity-90">{supervisor?.role_title}</p>
-                            <p className="text-[9px] opacity-75">{supervisor?.organization}</p>
+                            <h1 className="font-black text-gray-800 text-base">لوحة الإدارة</h1>
+                            <p className="text-[10px] text-gray-500 font-bold">مركز غرب المطار</p>
                         </div>
                     </div>
-                    <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 bg-black/10 rounded-full"><X className="w-5 h-5"/></button>
+                    <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                        <X className="w-6 h-6"/>
+                    </button>
                 </div>
 
-                <nav className="flex-1 overflow-y-auto p-4 space-y-1.5 custom-scrollbar pb-24 md:pb-4">
-                    <p className="text-xs font-bold text-gray-400 uppercase mb-2 px-2">لوحة المتابعة الإشرافية</p>
-                    {menuItems.map(item => {
+                <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
+                    {menuItems.map((item) => {
+                        const Icon = item.icon;
                         const isActive = activeTab === item.id;
                         return (
-                            <button 
-                                key={item.id} 
-                                onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }} 
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold transition-all group
-                                    ${isActive ? 'bg-purple-600 text-white shadow-md translate-x-[-5px]' : 'text-gray-600 hover:bg-purple-50 hover:text-purple-600'}
+                            <button
+                                key={item.id}
+                                onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
+                                className={`
+                                    w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group relative
+                                    ${isActive 
+                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 font-bold translate-x-[-5px]' 
+                                        : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700 font-medium'
+                                    }
                                 `}
                             >
-                                <item.icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-purple-600'}`}/> 
+                                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-blue-600'}`} />
                                 <span className="text-sm">{item.label}</span>
+                                {item.badge && item.badge > 0 && (
+                                    <span className="absolute left-4 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm border border-white">
+                                        {item.badge}
+                                    </span>
+                                )}
                             </button>
                         );
                     })}
+                    <div className="h-4 md:h-0"></div>
                 </nav>
 
-                <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe gap-1">
-                    <button onClick={handleShareApp} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
-                        <Share2 className="w-5 h-5" />
-                        <span className="text-[9px] font-bold">مشاركة</span>
-                    </button>
-                    <button onClick={() => setShowAboutModal(true)} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors flex flex-col items-center gap-1">
-                        <Info className="w-5 h-5" />
-                        <span className="text-[9px] font-bold">حول</span>
-                    </button>
-                    <button onClick={() => setIsThemeEnabled(!isThemeEnabled)} className={`flex-1 p-2 rounded-xl transition-colors flex flex-col items-center gap-1 ${isThemeEnabled ? 'text-purple-600 bg-purple-50' : 'text-gray-500 hover:bg-gray-100'}`}>
-                        <Sparkles className="w-5 h-5" />
-                        <span className="text-[9px] font-bold">الثيم</span>
-                    </button>
-                    <button onClick={signOut} className="flex-1 p-2 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
+                <div className="p-4 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold border-2 border-white shadow-sm">
+                            AD
+                        </div>
+                        <div className="text-right">
+                            <p className="text-xs font-bold text-gray-800">Admin User</p>
+                            <p className="text-[10px] text-gray-500">System Administrator</p>
+                        </div>
+                    </div>
+                    <button onClick={signOut} className="p-2.5 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors bg-white shadow-sm border border-gray-100">
                         <LogOut className="w-5 h-5" />
-                        <span className="text-[9px] font-bold">خروج</span>
                     </button>
                 </div>
             </aside>
 
-            {/* --- المحتوى الرئيسي --- */}
-            <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+            <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
                 
-                {/* الشريط العلوي */}
-                <header className="h-16 md:h-20 bg-white border-b flex items-center justify-between px-2 md:px-6 sticky top-0 z-30 shadow-sm bg-white/95 backdrop-blur-sm gap-1">
-                    <div className="flex items-center gap-1 md:gap-3 shrink-0">
-                        <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-1.5 md:p-2 bg-gray-50 rounded-xl hover:bg-gray-100 border">
-                            <Menu className="w-5 h-5 text-gray-700"/>
+                <header className="h-20 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
+                    <div className="flex items-center gap-3">
+                        <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2.5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors active:scale-95 border border-gray-200">
+                            <Menu className="w-6 h-6 text-gray-700"/>
                         </button>
-                        <span className="font-black text-gray-800 lg:block">المتابعة الإشرافية</span>
+                        <div>
+                            <h2 className="text-lg font-black text-gray-800 hidden md:block">لوحة التحكم المركزية</h2>
+                            <h2 className="text-lg font-black text-gray-800 md:hidden">{settings?.center_name}</h2>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 md:gap-3">
-                        <button 
-                            onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); }} 
-                            className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
-                        >
-                            <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
-                        </button>
-
-                        <button onClick={() => setActiveTab('rewards')} className={`p-1.5 md:p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'rewards' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}>
-                            <ShoppingBag className="w-4 h-4 md:w-5 md:h-5" />
-                            {pendingRewardsCount > 0 && (
-                                <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">
-                                    {pendingRewardsCount}
-                                </span>
-                            )}
-                        </button>
-
-                        <div className="relative group">
-                            <button 
-                                onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); }} 
-                                className={`flex items-center gap-1 px-2 md:px-3 py-1.5 rounded-xl border transition-all ${showLevelMenu ? 'bg-indigo-100 border-indigo-200 text-indigo-700' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}
-                            >
-                                <ShieldCheck className="w-4 h-4"/>
-                                <span className="text-[10px] md:text-xs font-bold hidden sm:block">مستوى: {level}</span>
-                                <span className="text-[10px] font-bold sm:hidden">{level}</span>
-                            </button>
-                        </div>
-
-                        <div className="flex items-center gap-1 bg-yellow-50 px-2 md:px-3 py-1.5 rounded-xl border border-yellow-200">
-                            <Sparkles className="w-3 h-3 md:w-4 md:h-4 text-yellow-500"/>
-                            <span className="text-[10px] md:text-sm font-black text-yellow-700">{supervisor?.total_points || 0}</span>
-                        </div>
-
-                        <div className="scale-90 md:scale-100 origin-left">
-                            <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
-                        </div>
+                    <div className="flex items-center gap-4">
+                        <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
                     </div>
                 </header>
 
-                {/* منطقة العرض */}
-                <main className="flex-1 overflow-y-auto p-3 md:p-6 bg-gray-50/50 custom-scrollbar pb-24 md:pb-6 relative z-10">
+                <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24">
                     <div className="max-w-7xl mx-auto space-y-6">
-                        
-                        {activeTab === 'home' && (
-                            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-[2rem] p-6 md:p-8 text-white shadow-lg relative overflow-hidden mb-6">
-                                <div className="relative z-10">
-                                    <h2 className="text-xl md:text-3xl font-black mb-2 flex items-center gap-2">مرحباً بك، {supervisor?.name} 👋</h2>
-                                    <p className="text-white/80 font-bold text-xs md:text-base">تصفح أحدث الأخبار والأنشطة الإشرافية في المركز.</p>
-                                </div>
-                                <ShieldCheck className="absolute -left-6 -bottom-6 w-40 h-40 text-white opacity-10 transform -rotate-12" />
+                        {activeTab === 'home' && <HomeTab employees={employees || []} setActiveTab={setActiveTab} />}
+                        {activeTab === 'doctors' && <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />}
+                        {activeTab === 'supervisors' && <SupervisorsManager />} 
+                        {activeTab === 'staff_admin' && <AdministrationTab employee={currentAdminEmployee} />} 
+                        {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
+                        {activeTab === 'schedules' && <EveningSchedulesTab employees={employees || []} />}
+                        {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
+                        {activeTab === 'evaluations' && <EvaluationsTab employees={employees || []} />}
+                        {activeTab === 'settings' && <SettingsTab onUpdateName={() => queryClient.invalidateQueries({ queryKey: ['general_settings'] })} />}
+                        {activeTab === 'reports' && <ReportsTab />}
+                        {activeTab === 'statistics' && <StatisticsManager />} 
+                        {activeTab === 'send_reports' && <SendReportsTab />}
+                        {activeTab === 'news' && <NewsManagementTab />}
+                        {activeTab === 'competitions' && <CompetitionsManager />} {/* ✅ عرض صفحة المسابقات */}
+                        {activeTab === 'motivation' && (
+                            <div className="space-y-6">
+                                <BirthdayWidget employees={employees || []} />
+                                <EOMManager />
                             </div>
                         )}
-
-                        {activeTab === 'home' && <StaffNewsFeed employee={mockEmployee} />}
-                        {activeTab === 'force' && <SupervisorForce />}
-                        {activeTab === 'tasks' && <SupervisorTasks />}
-                        {activeTab === 'schedule' && <SupervisorSchedules />}
-                        {activeTab === 'statistics' && <SupervisorStatistics />}
-                        {activeTab === 'competitions' && <CompetitionsManager />} {/* ✅ عرض صفحة المسابقات */}
-                        {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
-                        {activeTab === 'library' && <StaffLibrary employee={mockEmployee} />}
-                        {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
-                        {activeTab === 'rewards' && <RewardsStore employee={mockEmployee} />}
-                        
+                        {activeTab === 'all_messages' && <AdminMessagesTab employees={employees || []} />}
+                        {activeTab === 'quality' && <QualityDashboard />}
+                        {activeTab === 'assets' && <AssetsManager />} 
+                        {activeTab === 'training' && <TrainingManager />}
+                        {activeTab === 'library-manager' && <AdminLibraryManager />} 
+                        {activeTab === 'data-reports' && <AdminDataReports employees={employees || []} />}
+                        {activeTab === 'absence-report' && <AbsenceReportTab />}      
+                        {activeTab === 'tasks' && <TasksManager employees={employees || []} />}
+                        {activeTab === 'vaccinations' && <VaccinationsTab employees={employees || []} />}
+                        {activeTab === 'gamification' && (
+                            <div className="space-y-6">
+                                 <GamificationManager />
+                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                     <BirthdayWidget employees={employees || []} />
+                                     <EOMManager />
+                                 </div>
+                            </div>
+                        )}
+                        {activeTab === 'test_push' && (
+                            <div className="max-w-md mx-auto bg-white p-8 rounded-[30px] shadow-sm border border-gray-100 text-center space-y-6 mt-10">
+                                <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto text-blue-600 shadow-inner">
+                                    <Smartphone className="w-10 h-10" />
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-black text-gray-800">اختبار الإشعارات</h2>
+                                    <p className="text-gray-500 mt-2 text-sm leading-relaxed">
+                                        إرسال إشعار تجريبي فوري لجميع الأجهزة المتصلة بحسابك للتحقق من الخدمة.
+                                    </p>
+                                </div>
+                                <button 
+                                    onClick={() => { setTestResult(''); testPushMutation.mutate(); }} 
+                                    disabled={testPushMutation.isPending}
+                                    className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-200 hover:shadow-xl active:scale-95 transition-all disabled:opacity-50 flex justify-center items-center gap-2"
+                                >
+                                    {testPushMutation.isPending ? <><Loader2 className="animate-spin w-5 h-5"/> جاري الإرسال...</> : '🚀 إرسال الآن'}
+                                </button>
+                                {testResult && (
+                                    <div className={`p-4 rounded-xl text-sm font-bold animate-in fade-in zoom-in ${testResult.includes('نجح') ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                                        {testResult}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </main>
 
-                {/* --- الشريط السفلي --- */}
-                <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t px-2 py-2 flex justify-between items-center z-50 pb-safe shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)]">
-                    {bottomNavItems.map(item => {
-                        const isActive = activeTab === item.id;
-                        return (
-                            <button 
-                                key={item.id}
-                                onClick={() => setActiveTab(item.id)}
-                                className={`flex flex-col items-center gap-1 w-16 transition-colors ${isActive ? 'text-purple-600' : 'text-gray-400 hover:text-gray-600'}`}
-                            >
-                                <div className={`p-1.5 rounded-xl transition-all ${isActive ? 'bg-purple-50' : 'bg-transparent'}`}>
-                                    <item.icon className={`w-5 h-5 ${isActive ? 'fill-current opacity-20' : ''}`} />
-                                </div>
-                                <span className="text-[9px] font-black truncate w-full text-center">{item.label}</span>
-                            </button>
-                        );
-                    })}
-                    <button onClick={() => setIsSidebarOpen(true)} className="flex flex-col items-center gap-1 w-16 text-gray-400 hover:text-gray-600">
-                        <div className="p-1.5"><Menu className="w-5 h-5" /></div>
-                        <span className="text-[9px] font-black">المزيد</span>
+                {/* ✅ Bottom Navbar (للموبايل فقط) */}
+                <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2 flex justify-between items-center z-50 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                    <button 
+                        onClick={() => setActiveTab('home')}
+                        className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'home' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+                    >
+                        <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'home' ? 'bg-blue-50' : ''}`}>
+                            <LayoutDashboard className={`w-6 h-6 ${activeTab === 'home' ? 'fill-current' : ''}`} />
+                        </div>
+                        <span className="text-[10px] font-bold">الرئيسية</span>
+                    </button>
+
+                    <button 
+                        onClick={() => setActiveTab('doctors')}
+                        className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'doctors' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+                    >
+                        <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'doctors' ? 'bg-blue-50' : ''}`}>
+                            <Users className="w-6 h-6" />
+                        </div>
+                        <span className="text-[10px] font-bold">الموظفين</span>
+                    </button>
+
+                    <button 
+                        onClick={() => setActiveTab('reports')}
+                        className="relative -top-6 bg-blue-600 text-white p-4 rounded-full shadow-xl shadow-blue-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform"
+                    >
+                        <FileBarChart className="w-6 h-6" />
+                    </button>
+
+                    <button 
+                        onClick={() => setActiveTab('leaves')}
+                        className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'leaves' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+                    >
+                        <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'leaves' ? 'bg-blue-50' : ''} relative`}>
+                            <ClipboardList className="w-6 h-6" />
+                            {badges?.leaves > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
+                        </div>
+                        <span className="text-[10px] font-bold">الطلبات</span>
+                    </button>
+
+                    <button 
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600"
+                    >
+                        <div className="p-1.5">
+                            <Menu className="w-6 h-6" />
+                        </div>
+                        <span className="text-[10px] font-bold">المزيد</span>
                     </button>
                 </div>
 
             </div>
-
-            {/* ========== GLOBAL MODALS ========== */}
-
-            {showLeaderboardMenu && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLeaderboardMenu(false)}>
-                    <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                        <div className="p-4 border-b flex justify-between items-center bg-yellow-50">
-                            <h3 className="font-black text-gray-800 flex items-center gap-2"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
-                            <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500"><X className="w-5 h-5"/></button>
-                        </div>
-                        <div className="overflow-y-auto custom-scrollbar p-2 flex-1">
-                            <LeaderboardWidget currentUserId={supervisor?.id} />
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showLevelMenu && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLevelMenu(false)}>
-                    <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-black text-gray-800 flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-indigo-600"/> مستواك الحالي</h3>
-                            <button onClick={()=>setShowLevelMenu(false)} className="p-1 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500"><X className="w-5 h-5"/></button>
-                        </div>
-                        <LevelProgressBar employee={mockEmployee} />
-                    </div>
-                </div>
-            )}
-
-            {showAboutModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95 shadow-2xl">
-                        <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100"><X size={16}/></button>
-                        <div className="w-20 h-20 bg-purple-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-purple-200 rotate-3 hover:rotate-0 transition-transform">
-                            <img src="/pwa-192x192.png" className="w-14 h-14 rounded-xl" alt="Logo" />
-                        </div>
-                        <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
-                        <p className="text-xs text-gray-500 font-bold mb-6 tracking-widest uppercase">بوابة المتابعة الإشرافية</p>
-                        <div className="space-y-3 text-xs text-gray-600 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                            <div className="flex justify-between border-b border-gray-200 pb-2"><span>الإصدار:</span><span className="font-black text-gray-800">2.5.0</span></div>
-                            <div className="flex justify-between pt-1"><span>التطوير:</span><span className="font-black text-purple-600">IT Department</span></div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {showCompletionModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in">
-                    <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl p-6 md:p-8 animate-in zoom-in-95 border-t-8 border-purple-500 relative overflow-hidden flex flex-col max-h-[90vh]">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -z-10"></div>
-                        <div className="text-center mb-6 relative z-10 shrink-0">
-                            <div className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200">
-                                <Award className="w-10 h-10"/>
-                            </div>
-                            <h2 className="text-2xl font-black text-gray-800">خطوة واحدة للبدء!</h2>
-                            <p className="text-sm text-gray-500 mt-2 font-bold leading-relaxed bg-gray-50 p-3 rounded-xl border">
-                                أكمل بياناتك الأساسية الآن واحصل على <span className="text-purple-600 font-black text-lg">150 نقطة</span> ترحيبية كهدية مجانية في متجر الجوائز! 🎁
-                            </p>
-                        </div>
-                        
-                        <div className="space-y-4 overflow-y-auto custom-scrollbar p-2 flex-1 relative z-10">
-                            <div><label className="block text-xs font-bold text-gray-600 mb-1">الرقم القومي (اختياري)</label><input type="text" maxLength={14} value={formData.national_id} onChange={e => setFormData({...formData, national_id: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl font-mono text-left outline-none" dir="ltr" placeholder="14 رقم"/></div>
-                            <div><label className="block text-xs font-bold text-gray-600 mb-1">تاريخ استلام العمل بالجهة</label><input type="date" value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none"/></div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div><label className="block text-xs font-bold text-gray-600 mb-1">المؤهل الدراسي</label><input type="text" value={formData.qualification} onChange={e => setFormData({...formData, qualification: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none"/></div>
-                                <div><label className="block text-xs font-bold text-gray-600 mb-1">التخصص الدقيق</label><input type="text" value={formData.specialty} onChange={e => setFormData({...formData, specialty: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none"/></div>
-                            </div>
-                            <div><label className="block text-xs font-bold text-gray-600 mb-1">دورات تدريبية حاصل عليها</label><input type="text" value={formData.training_courses} onChange={e => setFormData({...formData, training_courses: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none" placeholder="مثال: دورة مكافحة العدوى، جودة..."/></div>
-                            <div><label className="block text-xs font-bold text-gray-600 mb-1">ملاحظات أخرى</label><textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl resize-none h-20 outline-none"></textarea></div>
-                        </div>
-
-                        <div className="mt-6 flex gap-3 relative z-10 shrink-0">
-                            <button onClick={() => setShowCompletionModal(false)} className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl font-bold hover:bg-gray-200 transition-colors">تخطي مؤقتاً</button>
-                            <button onClick={() => completeProfileMutation.mutate(formData)} disabled={completeProfileMutation.isPending} className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-black shadow-lg hover:shadow-xl active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-50">
-                                {completeProfileMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : 'حفظ واستلام الهدية 🎁'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
