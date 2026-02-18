@@ -4,11 +4,11 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, 
-    Reply, Calendar, Sparkles, Loader2, Star, Trophy 
+    Reply, Calendar, Sparkles, Loader2, Star, Trophy, X 
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-// ✅ استيراد كارت المسابقة الجديد
+// ✅ استيراد كارت المسابقة
 import CompetitionCard from './CompetitionCard';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
@@ -51,14 +51,9 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             ]);
 
             // ب) جلب المسابقات (مع بيانات اللاعبين)
-            // ملاحظة: نستخدم player1:employees!player1_id لعمل Join وجلب الاسم
             const { data: compsData } = await supabase
                 .from('competitions')
-                .select(`
-                    *,
-                    player1:employees!player1_id(name),
-                    player2:employees!player2_id(name)
-                `)
+                .select('*') // نجلب كل الأعمدة بما فيها team1_ids
                 .order('created_at', { ascending: false });
 
             if (postsRes.error) throw postsRes.error;
@@ -73,7 +68,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 const postComments = commentsData.filter(c => c.post_id === p.id);
                 return {
                     ...p,
-                    type: 'post', // علامة لتمييز النوع
+                    type: 'post', 
                     reactions: pReactions.filter(r => r.post_id === p.id),
                     mainComments: postComments.filter(c => !c.parent_id).map(mc => ({
                         ...mc,
@@ -89,7 +84,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             // د) معالجة المسابقات
             const processedComps = (compsData || []).map(c => ({
                 ...c,
-                type: 'competition' // علامة لتمييز النوع
+                type: 'competition'
             }));
 
             // هـ) دمج القائمتين وترتيبهم حسب التاريخ
@@ -100,8 +95,8 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             // وضع "المثبت" في الأول دائماً
             return combinedFeed.sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0));
         },
-        staleTime: 1000 * 60 * 1,
-        refetchInterval: 10000, // تحديث كل 10 ثواني لمتابعة المسابقات
+        staleTime: 1000 * 30,
+        refetchInterval: 10000, 
     });
 
     // ------------------------------------------------------------------
@@ -242,7 +237,8 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                             <CompetitionCard 
                                 key={item.id} 
                                 comp={item} 
-                                currentUserId={employee.employee_id} 
+                                // ✅✅ التعديل هنا: تمرير id بدلاً من employee_id ✅✅
+                                currentUserId={employee.id} 
                             />
                         );
                     }
