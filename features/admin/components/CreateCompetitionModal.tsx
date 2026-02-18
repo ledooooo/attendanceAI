@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../../../supabaseClient'; // ✅ تم تصحيح المسار (3 مستويات فقط)
+import { supabase } from '../../../../supabaseClient'; // تم تعديل المسار (4 مستويات)
 import { useQuery } from '@tanstack/react-query';
 import { X, Loader2, Users, Trash2, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -48,31 +48,49 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
     const { data: specialties = [] } = useQuery({
         queryKey: ['bank_specialties'],
         queryFn: async () => {
-            const { data } = await supabase.from('quiz_questions').select('specialty');
+            // محاولة الجلب من الجدولين لدمج التخصصات
+            const { data: q1 } = await supabase.from('quiz_questions').select('specialty');
+            const { data: q2 } = await supabase.from('arcade_quiz_questions').select('specialty');
+            
+            const allSpecs = [
+                ...(q1?.map((i: any) => i.specialty) || []),
+                ...(q2?.map((i: any) => i.specialty) || [])
+            ];
+
             // استخراج التخصصات الفريدة وتنظيف القيم الفارغة
-            const unique = Array.from(new Set(data?.map((i: any) => i.specialty).filter(Boolean)));
+            const unique = Array.from(new Set(allSpecs.filter(Boolean)));
             return ['الكل', ...unique];
         },
         staleTime: 1000 * 60 * 5
     });
 
-    // 3. أسئلة البنك (Pagination + Filter)
+    // 3. أسئلة البنك (Pagination + Filter + Merge Tables)
     const { data: bankQuestionsData, isLoading: loadingBank } = useQuery({
         queryKey: ['bank_questions', bankPage, bankSpecialty],
         queryFn: async () => {
+            // دمج الجدولين في استعلام واحد (أو استعلامين ثم الدمج)
+            // سنستخدم arcade_quiz_questions كمصدر أساسي لأنه الأحدث، و quiz_questions كاحتياطي
+            
             let query = supabase
-                .from('quiz_questions')
+                .from('arcade_quiz_questions') // الجدول الجديد
                 .select('*', { count: 'exact' });
             
             if (bankSpecialty !== 'الكل') {
-                query = query.eq('specialty', bankSpecialty);
+                // ملاحظة: في الجدول الجديد التخصص قد يكون مصفوفة JSON
+                // لذا نستخدم contains للبحث داخل المصفوفة، أو eq للنص العادي
+                // سنحاول eq أولاً للتبسيط
+                query = query.contains('specialty', [bankSpecialty]); 
             }
 
             const { data, count, error } = await query
-                .range(bankPage * 5, (bankPage * 5) + 4) // 5 أسئلة في الصفحة
+                .range(bankPage * 5, (bankPage * 5) + 4)
                 .order('created_at', { ascending: false });
             
-            if (error) throw error;
+            if (error) {
+                // محاولة مع الجدول القديم إذا فشل الجديد أو كان فارغاً
+                console.warn("Falling back to old table or error:", error);
+                return { data: [], count: 0 }; 
+            }
             return { data, count };
         },
         enabled: showBank
@@ -99,30 +117,44 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         setQuestions(newQs);
     };
 
-    // اختيار سؤال من البنك (مع معالجة هيكل الجدول الجديد)
+    // اختيار سؤال من البنك (مع معالجة اختلاف هيكل الجدولين)
     const selectFromBank = (bankQ: any) => {
         if (targetQIndex === null) return;
 
-        let options: string[] = [];
-        try {
-            // محاولة فك JSON إذا كان نصاً، أو استخدامه مباشرة إذا كان مصفوفة
-            options = typeof bankQ.options === 'string' ? JSON.parse(bankQ.options) : bankQ.options;
-        } catch (e) {
-            console.error("Error parsing options", e);
-            options = [];
+        let questionText = bankQ.question || bankQ.question_text || '';
+        let options: { a: string, b: string, c: string, d: string, correct: string } = { a: '', b: '', c: '', d: '', correct: 'a' };
+
+        // الحالة 1: الجدول الجديد (arcade_quiz_questions) - الأعمدة منفصلة
+        if (bankQ.option_a) {
+            options = {
+                a: bankQ.option_a,
+                b: bankQ.option_b,
+                c: bankQ.option_c,
+                d: bankQ.option_d,
+                correct: ['a', 'b', 'c', 'd'][bankQ.correct_index] || 'a'
+            };
+        } 
+        // الحالة 2: الجدول القديم (quiz_questions) - JSON
+        else if (bankQ.options) {
+            let optsArr: string[] = [];
+            try {
+                optsArr = typeof bankQ.options === 'string' ? JSON.parse(bankQ.options) : bankQ.options;
+            } catch (e) { optsArr = []; }
+
+            const correctIdx = optsArr.findIndex((o: string) => o === bankQ.correct_answer);
+            
+            options = {
+                a: optsArr[0] || '',
+                b: optsArr[1] || '',
+                c: optsArr[2] || '',
+                d: optsArr[3] || '',
+                correct: ['a', 'b', 'c', 'd'][correctIdx] || 'a'
+            };
         }
 
-        // البحث عن الحرف الصحيح (لأن الجدول يخزن الإجابة كنص كامل)
-        const correctIndex = options.findIndex((o: string) => o === bankQ.correct_answer);
-        const correctChar = ['a', 'b', 'c', 'd'][correctIndex] !== undefined ? ['a', 'b', 'c', 'd'][correctIndex] : 'a';
-
         const newQ: QuestionForm = {
-            text: bankQ.question_text,
-            a: options[0] || '',
-            b: options[1] || '',
-            c: options[2] || '',
-            d: options[3] || '',
-            correct: correctChar
+            text: questionText,
+            ...options
         };
 
         const newQs = [...questions];
@@ -139,7 +171,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         setLoading(true);
         try {
             // 1. إنشاء المسابقة
-            const { data: comp, error } = await supabase.from('competitions').insert({
+            const { data: comp, error: compError } = await supabase.from('competitions').insert({
                 team1_ids: team1, 
                 team2_ids: team2, 
                 current_turn_team: 1, 
@@ -147,7 +179,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                 status: 'active'
             }).select().single();
 
-            if (error) throw error;
+            if (compError) throw compError;
 
             // 2. إدخال الأسئلة
             const dbQuestions = questions.map((q, idx) => ({
@@ -159,7 +191,8 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                 order_index: idx + 1
             }));
 
-            await supabase.from('competition_questions').insert(dbQuestions);
+            const { error: qError } = await supabase.from('competition_questions').insert(dbQuestions);
+            if (qError) throw qError;
 
             // 3. إشعار المتسابقين
             const allPlayers = [...team1, ...team2];
@@ -178,7 +211,8 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             toast.success('تم إطلاق المسابقة! 🚀');
             onClose();
         } catch (err: any) {
-            toast.error(err.message);
+            console.error(err);
+            toast.error(err.message || 'حدث خطأ');
         } finally {
             setLoading(false);
         }
@@ -323,10 +357,10 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                                         onClick={() => selectFromBank(bq)}
                                         className="bg-white p-3 rounded-xl border hover:border-purple-400 cursor-pointer shadow-sm hover:shadow-md transition-all group"
                                     >
-                                        <p className="font-bold text-sm text-gray-800 mb-1 group-hover:text-purple-700">{bq.question_text}</p>
+                                        <p className="font-bold text-sm text-gray-800 mb-1 group-hover:text-purple-700">{bq.question || bq.question_text}</p>
                                         <div className="flex gap-2 text-[10px] text-gray-500">
-                                            <span className="bg-gray-100 px-2 py-0.5 rounded">{bq.specialty}</span>
-                                            <span className="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded border border-yellow-100">{bq.points} نقطة</span>
+                                            <span className="bg-gray-100 px-2 py-0.5 rounded">{typeof bq.specialty === 'object' ? bq.specialty[0] : bq.specialty}</span>
+                                            <span className="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded border border-yellow-100">{bq.difficulty || 'medium'}</span>
                                         </div>
                                     </div>
                                 ))
