@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
@@ -8,10 +8,9 @@ import {
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
-    LayoutDashboard, UserCog, ShieldCheck, BarChart3, Swords // ✅ استيراد أيقونة Swords
+    LayoutDashboard, UserCog, ShieldCheck, BarChart3, Swords 
 } from 'lucide-react';
 
-// استيراد التبويبات والمكونات
 import HomeTab from './components/HomeTab';
 import DoctorsTab from './components/DoctorsTab';
 import AttendanceTab from './components/AttendanceTab';
@@ -41,8 +40,6 @@ import AssetsManager from './components/AssetsManager';
 import AdministrationTab from '../staff/components/AdministrationTab';
 import SupervisorsManager from './components/SupervisorsManager';
 import StatisticsManager from './components/StatisticsManager';
-
-// ✅ استيراد مدير المسابقات الجديد
 import CompetitionsManager from './components/CompetitionsManager';
 
 export default function AdminDashboard() {
@@ -62,8 +59,39 @@ export default function AdminDashboard() {
             if (error) throw error;
             return data as Employee[] || [];
         },
-        staleTime: 1000 * 60 * 5, 
+        staleTime: 1000 * 60 * 2, 
     });
+
+    // --- 2. جلب المشرفين (للدمج مع المتصلين) ---
+    const { data: supervisors = [] } = useQuery({
+        queryKey: ['active_supervisors'],
+        queryFn: async () => {
+            const { data } = await supabase.from('supervisors').select('*');
+            return data || [];
+        },
+        staleTime: 1000 * 60 * 5
+    });
+
+    // --- 3. دمج القائمة (لإرسالها لـ HomeTab) ---
+    // هذه القائمة تحتوي على الموظفين والمشرفين مرتبين حسب آخر ظهور
+    const allActiveUsers = useMemo(() => {
+        // تحويل المشرفين لنفس هيكل الموظفين للعرض الموحد
+        const formattedSupervisors = supervisors.map((s: any) => ({
+            ...s,
+            role: 'supervisor', // تمييزهم
+            specialty: s.role_title || 'مشرف' // عرض المسمى الوظيفي
+        }));
+
+        // دمج المصفوفتين
+        const combined = [...employees, ...formattedSupervisors];
+
+        // الترتيب حسب last_seen من الأحدث للأقدم
+        return combined.sort((a, b) => {
+            const timeA = new Date(a.last_seen || 0).getTime();
+            const timeB = new Date(b.last_seen || 0).getTime();
+            return timeB - timeA;
+        });
+    }, [employees, supervisors]);
 
     const currentAdminEmployee = employees.find(e => e.id === user?.id) || ({} as Employee);
 
@@ -146,7 +174,7 @@ export default function AdminDashboard() {
         { id: 'supervisors', label: 'إدارة المشرفين', icon: ShieldCheck, badge: badges?.supervisors || 0 }, 
         { id: 'staff_admin', label: 'إدارة الموظف', icon: UserCog },
         { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
-        { id: 'competitions', label: 'المسابقات والتحديات', icon: Swords }, // ✅ التبويب الجديد
+        { id: 'competitions', label: 'المسابقات والتحديات', icon: Swords }, 
         { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
         { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges?.messages || 0 },
         { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: badges?.leaves || 0 },
@@ -274,7 +302,8 @@ export default function AdminDashboard() {
 
                 <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24">
                     <div className="max-w-7xl mx-auto space-y-6">
-                        {activeTab === 'home' && <HomeTab employees={employees || []} setActiveTab={setActiveTab} />}
+                        {/* ✅ هنا نمرر allActiveUsers بدلاً من employees فقط ليشمل المشرفين */}
+                        {activeTab === 'home' && <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />}
                         {activeTab === 'doctors' && <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />}
                         {activeTab === 'supervisors' && <SupervisorsManager />} 
                         {activeTab === 'staff_admin' && <AdministrationTab employee={currentAdminEmployee} />} 
@@ -287,7 +316,7 @@ export default function AdminDashboard() {
                         {activeTab === 'statistics' && <StatisticsManager />} 
                         {activeTab === 'send_reports' && <SendReportsTab />}
                         {activeTab === 'news' && <NewsManagementTab />}
-                        {activeTab === 'competitions' && <CompetitionsManager />} {/* ✅ عرض صفحة المسابقات */}
+                        {activeTab === 'competitions' && <CompetitionsManager />} 
                         {activeTab === 'motivation' && (
                             <div className="space-y-6">
                                 <BirthdayWidget employees={employees || []} />
