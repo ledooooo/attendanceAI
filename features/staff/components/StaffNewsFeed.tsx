@@ -4,9 +4,12 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, 
-    Reply, X, Calendar, Sparkles, Loader2, Star, Trophy // ✅ تم إضافة Star و Trophy
+    Reply, Calendar, Sparkles, Loader2, Star, Trophy 
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// ✅ استيراد كارت المسابقة الجديد
+import CompetitionCard from './CompetitionCard';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
@@ -19,14 +22,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const [showCommentReactions, setShowCommentReactions] = useState<string | null>(null);
 
     const REACTION_OPTIONS = [
-        { e: '❤️', l: 'حب' },
-        { e: '😊', l: 'سمايل' },
-        { e: '😂', l: 'ضحك' },
-        { e: '👏', l: 'تصفيق' },
-        { e: '👍', l: 'تمام' }
+        { e: '❤️', l: 'حب' }, { e: '😊', l: 'سمايل' }, { e: '😂', l: 'ضحك' }, { e: '👏', l: 'تصفيق' }, { e: '👍', l: 'تمام' }
     ];
 
-    // ✅ حساب المستوى الحالي محلياً للعرض المصغر
+    // حساب المستوى الحالي
     const points = employee.total_points || 0;
     const levels = [
         { name: 'مبتدئ', min: 0, max: 100, color: 'text-gray-500' },
@@ -38,11 +37,12 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const currentLevel = levels.find(l => points >= l.min && points < l.max) || levels[levels.length - 1];
 
     // ------------------------------------------------------------------
-    // 1. 📥 جلب البيانات (Query)
+    // 1. 📥 جلب البيانات (أخبار + مسابقات)
     // ------------------------------------------------------------------
-    const { data: posts = [], isLoading } = useQuery({
-        queryKey: ['news_feed'],
+    const { data: feedItems = [], isLoading } = useQuery({
+        queryKey: ['news_feed_mixed'],
         queryFn: async () => {
+            // أ) جلب الأخبار والتعليقات
             const [postsRes, commentsRes, pReactRes, cReactRes] = await Promise.all([
                 supabase.from('news_posts').select('*').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
                 supabase.from('news_comments').select('*').order('created_at', { ascending: true }),
@@ -50,17 +50,30 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 supabase.from('comment_reactions').select('*')
             ]);
 
+            // ب) جلب المسابقات (مع بيانات اللاعبين)
+            // ملاحظة: نستخدم player1:employees!player1_id لعمل Join وجلب الاسم
+            const { data: compsData } = await supabase
+                .from('competitions')
+                .select(`
+                    *,
+                    player1:employees!player1_id(name),
+                    player2:employees!player2_id(name)
+                `)
+                .order('created_at', { ascending: false });
+
             if (postsRes.error) throw postsRes.error;
 
+            // ج) معالجة الأخبار
             const postsData = postsRes.data || [];
             const commentsData = commentsRes.data || [];
             const pReactions = pReactRes.data || [];
             const cReactions = cReactRes.data || [];
 
-            return postsData.map(p => {
+            const processedPosts = postsData.map(p => {
                 const postComments = commentsData.filter(c => c.post_id === p.id);
                 return {
                     ...p,
+                    type: 'post', // علامة لتمييز النوع
                     reactions: pReactions.filter(r => r.post_id === p.id),
                     mainComments: postComments.filter(c => !c.parent_id).map(mc => ({
                         ...mc,
@@ -72,12 +85,27 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                     }))
                 };
             });
+
+            // د) معالجة المسابقات
+            const processedComps = (compsData || []).map(c => ({
+                ...c,
+                type: 'competition' // علامة لتمييز النوع
+            }));
+
+            // هـ) دمج القائمتين وترتيبهم حسب التاريخ
+            const combinedFeed = [...processedPosts, ...processedComps].sort((a, b) => 
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+            
+            // وضع "المثبت" في الأول دائماً
+            return combinedFeed.sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0));
         },
         staleTime: 1000 * 60 * 1,
+        refetchInterval: 10000, // تحديث كل 10 ثواني لمتابعة المسابقات
     });
 
     // ------------------------------------------------------------------
-    // 2. 🛠️ العمليات (Mutations)
+    // 2. 🛠️ العمليات (Mutations للأخبار)
     // ------------------------------------------------------------------
 
     const sendNotification = async (recipientId: string, type: string, postId: string, message: string) => {
@@ -105,9 +133,8 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             }
         },
         onSuccess: (data) => {
-            queryClient.invalidateQueries({ queryKey: ['news_feed'] });
+            queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] });
             if (data.action === 'added') toast.success(`تم التفاعل ${data.emoji}`, { duration: 1000 });
-            else toast('تم إزالة التفاعل', { icon: '↩️', duration: 1000 });
             setShowPostReactions(null);
             setShowCommentReactions(null);
         },
@@ -133,14 +160,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             if (replyTo) sendNotification(replyTo.userId, 'reply', data.postId, `ردَّ ${employee.name} على تعليقك`);
             setCommentText(prev => ({ ...prev, [data.postId]: '' }));
             setReplyTo(null);
-            queryClient.invalidateQueries({ queryKey: ['news_feed'] });
+            queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] });
         },
         onError: () => toast.error('فشل نشر التعليق')
     });
-
-    // ------------------------------------------------------------------
-    // 3. 🎨 واجهة المستخدم
-    // ------------------------------------------------------------------
 
     const formatDateTime = (dateStr: string) => {
         const date = new Date(dateStr);
@@ -161,7 +184,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         });
     };
 
-    if (isLoading) return <div className="p-10 text-center text-gray-400 font-black animate-pulse px-4 flex flex-col items-center gap-2"><Loader2 className="animate-spin w-8 h-8 text-emerald-500"/> جاري تحميل الأخبار...</div>;
+    if (isLoading) return <div className="p-10 text-center text-gray-400 font-black animate-pulse px-4 flex flex-col items-center gap-2"><Loader2 className="animate-spin w-8 h-8 text-emerald-500"/> جاري تحميل الأحداث...</div>;
 
     return (
         <div className="max-w-4xl mx-auto pb-20 text-right space-y-4 px-1" dir="rtl">
@@ -184,10 +207,8 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 </div>
             </div>
 
-            {/* ✅ 2. الكروت المصغرة (Level & Leaderboard) - بجانب بعض وحجم صغير */}
+            {/* الكروت المصغرة (Level & Leaderboard) */}
             <div className="grid grid-cols-2 gap-3">
-                
-                {/* كارت المستوى المصغر */}
                 <div className="bg-white border border-indigo-100 rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative">
                     <div className="absolute right-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
                     <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
@@ -199,7 +220,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                     </div>
                 </div>
 
-                {/* كارت لوحة الشرف المصغر */}
                 <div className="bg-white border border-yellow-100 rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative">
                     <div className="absolute right-0 top-0 bottom-0 w-1 bg-yellow-400"></div>
                     <div className="w-8 h-8 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600 shrink-0">
@@ -212,14 +232,28 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 </div>
             </div>
 
+            {/* 🔥 الـ Feed المدمج (مسابقات + أخبار) 🔥 */}
             <div className="space-y-4">
-                {posts.map((post: any) => {
-                    const postTime = formatDateTime(post.created_at);
+                {feedItems.map((item: any) => {
+                    
+                    // --- الحالة الأولى: عرض كارت المسابقة ---
+                    if (item.type === 'competition') {
+                        return (
+                            <CompetitionCard 
+                                key={item.id} 
+                                comp={item} 
+                                currentUserId={employee.employee_id} 
+                            />
+                        );
+                    }
+
+                    // --- الحالة الثانية: عرض كارت الخبر العادي ---
+                    const postTime = formatDateTime(item.created_at);
                     return (
-                        <div key={post.id} className={`bg-white rounded-3xl border transition-all duration-300 ${post.is_pinned ? 'border-emerald-200 ring-2 ring-emerald-50' : 'border-gray-100 shadow-sm'}`}>
-                            {post.image_url && (
+                        <div key={item.id} className={`bg-white rounded-3xl border transition-all duration-300 ${item.is_pinned ? 'border-emerald-200 ring-2 ring-emerald-50' : 'border-gray-100 shadow-sm'}`}>
+                            {item.image_url && (
                                 <div className="w-full h-48 overflow-hidden bg-gray-100 relative rounded-t-3xl">
-                                    <img src={post.image_url} alt="" className="w-full h-full object-cover" />
+                                    <img src={item.image_url} alt="" className="w-full h-full object-cover" />
                                 </div>
                             )}
 
@@ -232,47 +266,47 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                         <Clock size={12} />
                                         <span>{postTime.time}</span>
                                     </div>
-                                    {post.is_pinned && <Pin size={16} className="text-emerald-500 fill-emerald-500" />}
+                                    {item.is_pinned && <Pin size={16} className="text-emerald-500 fill-emerald-500" />}
                                 </div>
-                                <h3 className="text-base font-black text-gray-800 mb-1">{post.title}</h3>
-                                <p className="text-xs text-gray-600 leading-relaxed mb-4 whitespace-pre-wrap">{post.content}</p>
+                                <h3 className="text-base font-black text-gray-800 mb-1">{item.title}</h3>
+                                <p className="text-xs text-gray-600 leading-relaxed mb-4 whitespace-pre-wrap">{item.content}</p>
                                 
                                 <div className="flex items-center gap-3 border-t border-gray-50 pt-3 relative">
                                     <div className="relative">
                                         <button 
-                                            onClick={() => setShowPostReactions(showPostReactions === post.id ? null : post.id)}
+                                            onClick={() => setShowPostReactions(showPostReactions === item.id ? null : item.id)}
                                             className="flex items-center gap-1.5 px-4 py-2 bg-gray-50 rounded-xl hover:bg-pink-50 text-gray-700 font-bold text-xs transition-all"
                                         >
-                                            <Heart size={14} className={post.reactions?.some((r:any)=>r.user_id === employee.employee_id) ? "fill-pink-500 text-pink-500" : ""} />
+                                            <Heart size={14} className={item.reactions?.some((r:any)=>r.user_id === employee.employee_id) ? "fill-pink-500 text-pink-500" : ""} />
                                             <span>تفاعل</span>
                                         </button>
-                                        {showPostReactions === post.id && (
+                                        {showPostReactions === item.id && (
                                             <div className="absolute bottom-full mb-2 right-0 bg-white shadow-xl border border-gray-100 rounded-full p-1.5 flex gap-2 animate-in fade-in slide-in-from-bottom-2 z-50">
-                                                {REACTION_OPTIONS.map(item => (
-                                                    <button key={item.e} onClick={() => reactionMutation.mutate({ id: post.id, emoji: item.e, type: 'post', targetUserId: post.created_by })} className="text-lg hover:scale-125 transition-transform active:scale-90">{item.e}</button>
+                                                {REACTION_OPTIONS.map(opt => (
+                                                    <button key={opt.e} onClick={() => reactionMutation.mutate({ id: item.id, emoji: opt.e, type: 'post', targetUserId: item.created_by })} className="text-lg hover:scale-125 transition-transform active:scale-90">{opt.e}</button>
                                                 ))}
                                             </div>
                                         )}
                                     </div>
                                     <div className="flex -space-x-1 space-x-reverse">
-                                        {Array.from(new Set(post.reactions?.map((r: any) => r.emoji))).map((emoji: any) => (
+                                        {Array.from(new Set(item.reactions?.map((r: any) => r.emoji))).map((emoji: any) => (
                                             <div key={emoji} className="bg-white px-1.5 py-0.5 rounded-full text-[10px] font-black border border-gray-100 shadow-sm">
-                                                {emoji} <span className="text-indigo-600 text-[9px]">{post.reactions.filter((r: any) => r.emoji === emoji).length}</span>
+                                                {emoji} <span className="text-indigo-600 text-[9px]">{item.reactions.filter((r: any) => r.emoji === emoji).length}</span>
                                             </div>
                                         ))}
                                     </div>
-                                    <button onClick={() => setExpandedPost(expandedPost === post.id ? null : post.id)} className="mr-auto text-xs font-bold text-gray-400 flex items-center gap-1.5 hover:text-emerald-600 transition-colors">
+                                    <button onClick={() => setExpandedPost(expandedPost === item.id ? null : item.id)} className="mr-auto text-xs font-bold text-gray-400 flex items-center gap-1.5 hover:text-emerald-600 transition-colors">
                                         <MessageCircle size={16} />
-                                        <span>{post.mainComments?.length || 0} تعليق</span>
+                                        <span>{item.mainComments?.length || 0} تعليق</span>
                                     </button>
                                 </div>
                             </div>
 
                             {/* قسم التعليقات */}
-                            {expandedPost === post.id && (
+                            {expandedPost === item.id && (
                                 <div className="bg-gray-50/50 p-4 border-t border-gray-50 rounded-b-3xl animate-in slide-in-from-top-2">
                                     <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pl-1">
-                                        {post.mainComments.map((comment: any) => {
+                                        {item.mainComments.map((comment: any) => {
                                             const commentTime = formatDateTime(comment.created_at);
                                             return (
                                                 <div key={comment.id} className="space-y-2">
@@ -287,25 +321,18 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                                     <span className="text-[8px] text-gray-400 font-bold flex items-center gap-1"><Clock size={9}/> {commentTime.time}</span>
                                                                 </div>
                                                                 <p className="text-xs text-gray-600 leading-relaxed mb-2">{comment.comment_text}</p>
-                                                                
                                                                 <div className="flex items-center gap-4 pt-2 border-t border-gray-50">
-                                                                    <button 
-                                                                        onClick={() => setReplyTo({postId: post.id, commentId: comment.id, name: comment.user_name, userId: comment.user_id})} 
-                                                                        className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-                                                                    >
+                                                                    <button onClick={() => setReplyTo({postId: item.id, commentId: comment.id, name: comment.user_name, userId: comment.user_id})} className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
                                                                         <Reply size={12}/> رد
                                                                     </button>
                                                                     <div className="relative">
-                                                                        <button 
-                                                                            onClick={() => setShowCommentReactions(showCommentReactions === comment.id ? null : comment.id)}
-                                                                            className="text-[10px] font-black text-gray-400 hover:text-pink-600 flex items-center gap-1"
-                                                                        >
+                                                                        <button onClick={() => setShowCommentReactions(showCommentReactions === comment.id ? null : comment.id)} className="text-[10px] font-black text-gray-400 hover:text-pink-600 flex items-center gap-1">
                                                                             <Heart size={12} className={comment.reactions?.some((r:any)=>r.user_id === employee.employee_id) ? "fill-pink-500 text-pink-500" : ""} /> تفاعل
                                                                         </button>
                                                                         {showCommentReactions === comment.id && (
                                                                             <div className="absolute bottom-full mb-1 right-0 bg-white shadow-lg border border-gray-100 rounded-full p-1.5 flex gap-2 z-50">
-                                                                                {REACTION_OPTIONS.map(item => (
-                                                                                    <button key={item.e} onClick={() => reactionMutation.mutate({ id: comment.id, emoji: item.e, type: 'comment', targetUserId: comment.user_id })} className="text-sm hover:scale-125 transition-transform">{item.e}</button>
+                                                                                {REACTION_OPTIONS.map(opt => (
+                                                                                    <button key={opt.e} onClick={() => reactionMutation.mutate({ id: comment.id, emoji: opt.e, type: 'comment', targetUserId: comment.user_id })} className="text-sm hover:scale-125 transition-transform">{opt.e}</button>
                                                                                 ))}
                                                                             </div>
                                                                         )}
@@ -319,7 +346,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                                             </div>
                                                         </div>
                                                     </div>
-
                                                     {comment.replies?.map((rep: any) => {
                                                         const repTime = formatDateTime(rep.created_at);
                                                         return (
@@ -353,10 +379,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                                             <input 
                                                 type="text" placeholder={replyTo ? "اكتب ردك هنا..." : "اكتب تعليقاً..."}
                                                 className="flex-1 bg-white border border-gray-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-emerald-500 transition-all shadow-sm focus:ring-1 focus:ring-emerald-100"
-                                                value={commentText[post.id] || ''}
-                                                onChange={(e) => setCommentText({...commentText, [post.id]: e.target.value})}
+                                                value={commentText[item.id] || ''}
+                                                onChange={(e) => setCommentText({...commentText, [item.id]: e.target.value})}
                                             />
-                                            <button onClick={() => handleCommentSubmit(post.id)} disabled={commentMutation.isPending} className="bg-emerald-600 text-white p-3 rounded-xl shadow-md shadow-emerald-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
+                                            <button onClick={() => handleCommentSubmit(item.id)} disabled={commentMutation.isPending} className="bg-emerald-600 text-white p-3 rounded-xl shadow-md shadow-emerald-100 hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
                                                 {commentMutation.isPending ? <Loader2 className="animate-spin w-4 h-4"/> : <Send size={16}/>}
                                             </button>
                                         </div>
