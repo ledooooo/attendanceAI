@@ -43,7 +43,7 @@ import SupervisorsManager from './components/SupervisorsManager';
 import StatisticsManager from './components/StatisticsManager';
 
 // ✅ استيراد مدير المسابقات الجديد
-import CompetitionsManager from './components/gamification/CompetitionsManager';
+import CompetitionsManager from './components/CompetitionsManager';
 
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
