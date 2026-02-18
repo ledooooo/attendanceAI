@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee, AttendanceRecord, LeaveRequest, Evaluation } from '../../types';
@@ -12,7 +12,7 @@ import {
     List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-    Calendar, Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Gamepad2, Sparkles 
+    Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Gamepad2, Sparkles 
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -437,7 +437,6 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
 
         {/* عناصر القائمة (Scrollable) */}
-{/* عناصر القائمة (Scrollable) */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
           {menuItems.map((item: any) => {
             const Icon = item.icon;
@@ -482,16 +481,21 @@ export default function StaffDashboard({ employee }: Props) {
         </nav>
 
         {/* Footer القائمة */}
-        <div className="p-4 border-t bg-gray-50 flex items-center justify-around shrink-0 pb-safe">
-            <button onClick={handleShareApp} className="p-3 rounded-2xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
+        <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe gap-1">
+            <button onClick={handleShareApp} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
                 <Share2 className="w-5 h-5" />
                 <span className="text-[9px] font-bold">مشاركة</span>
             </button>
-            <button onClick={() => setShowAboutModal(true)} className="p-3 rounded-2xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors flex flex-col items-center gap-1">
+            <button onClick={() => setShowAboutModal(true)} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors flex flex-col items-center gap-1">
                 <Info className="w-5 h-5" />
                 <span className="text-[9px] font-bold">حول</span>
             </button>
-            <button onClick={signOut} className="p-3 rounded-2xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
+            {/* ✅ زر الثيم الجديد في الأسفل */}
+            <button onClick={() => setIsThemeEnabled(!isThemeEnabled)} className={`flex-1 p-2 rounded-xl transition-colors flex flex-col items-center gap-1 ${isThemeEnabled ? 'text-purple-600 bg-purple-50' : 'text-gray-500 hover:bg-gray-100'}`}>
+                <Sparkles className="w-5 h-5" />
+                <span className="text-[9px] font-bold">الثيم</span>
+            </button>
+            <button onClick={signOut} className="flex-1 p-2 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
                 <LogOut className="w-5 h-5" />
                 <span className="text-[9px] font-bold">خروج</span>
             </button>
@@ -510,21 +514,7 @@ export default function StaffDashboard({ employee }: Props) {
 
             <div className="flex items-center gap-1 md:gap-2">
                 
-                {/* 1. تبديل المظهر (الثيم) - محسّن */}
-                <div className="relative group">
-                    <button 
-                        onClick={() => setIsThemeEnabled(!isThemeEnabled)} 
-                        className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${isThemeEnabled ? 'bg-gradient-to-br from-purple-100 to-purple-200 text-purple-700 shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                        title={isThemeEnabled ? "إيقاف المظهر الحالي" : "تشغيل المظهر"}
-                    >
-                        <Sparkles className={`w-4 h-4 md:w-5 md:h-5 ${isThemeEnabled ? 'animate-pulse' : ''}`} />
-                    </button>
-                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        {isThemeEnabled ? "إيقاف المظهر" : "تشغيل المظهر"}
-                    </span>
-                </div>
-
-                {/* ✅ 2. متجر الجوائز السريع (مع تنبيه الطلبات المعلقة) - محسّن */}
+                {/* 1. متجر الجوائز السريع */}
                 <div className="relative group">
                     <button 
                         onClick={() => setActiveTab('store')} 
@@ -532,19 +522,15 @@ export default function StaffDashboard({ employee }: Props) {
                         title="متجر الجوائز"
                     >
                         <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
-                        {/* إظهار نقطة حمراء نابضة برقم الطلبات */}
                         {pendingRewardsCount > 0 && (
                             <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">
                                 {pendingRewardsCount}
                             </span>
                         )}
                     </button>
-                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        متجر الجوائز
-                    </span>
                 </div>
 
-                {/* 3. المستوى - محسّن */}
+                {/* 2. المستوى */}
                 <div className="relative group">
                     <button 
                         onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
@@ -552,24 +538,21 @@ export default function StaffDashboard({ employee }: Props) {
                     >
                         <Star className={`w-4 h-4 md:w-5 md:h-5 ${showLevelMenu ? 'animate-spin' : ''}`} style={{ animationDuration: '2s' }} />
                     </button>
-                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        مستواك
-                    </span>
+                    {/* ✅ نافذة المستوى للموبايل (Modal في المنتصف) */}
                     {showLevelMenu && (
-                        <>
-                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200" onClick={() => setShowLevelMenu(false)}>
-                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-1 overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                                    <LevelProgressBar employee={employee} />
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLevelMenu(false)}>
+                            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-black text-gray-800">مستواك الحالي</h3>
+                                    <button onClick={()=>setShowLevelMenu(false)} className="p-1 bg-gray-100 rounded-full"><X className="w-5 h-5"/></button>
                                 </div>
-                            </div>
-                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200 overflow-hidden">
                                 <LevelProgressBar employee={employee} />
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
 
-                {/* 4. لوحة الشرف - محسّن */}
+                {/* 3. لوحة الشرف */}
                 <div className="relative group">
                     <button 
                         onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
@@ -577,24 +560,23 @@ export default function StaffDashboard({ employee }: Props) {
                     >
                         <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
                     </button>
-                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        لوحة الشرف
-                    </span>
+                    {/* ✅ نافذة لوحة الشرف للموبايل */}
                     {showLeaderboardMenu && (
-                        <>
-                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200" onClick={() => setShowLeaderboardMenu(false)}>
-                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLeaderboardMenu(false)}>
+                            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                                <div className="p-4 border-b flex justify-between items-center bg-yellow-50">
+                                    <h3 className="font-black text-gray-800 flex items-center gap-2"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
+                                    <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500"><X className="w-5 h-5"/></button>
+                                </div>
+                                <div className="overflow-y-auto custom-scrollbar p-2 flex-1">
                                     <LeaderboardWidget />
                                 </div>
                             </div>
-                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200 overflow-hidden">
-                                <LeaderboardWidget />
-                            </div>
-                        </>
+                        </div>
                     )}
                 </div>
 
-                {/* 5. الإشعارات - محسّن */}
+                {/* 4. الإشعارات */}
                 <div className="relative group">
                     <button onClick={markNotifsAsRead} className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
                         <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : 'text-gray-600'}`} />
@@ -602,63 +584,10 @@ export default function StaffDashboard({ employee }: Props) {
                             <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">{unreadNotifsCount}</span>
                         )}
                     </button>
-                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                        الإشعارات
-                    </span>
+                    {/* ✅ نافذة الإشعارات للموبايل */}
                     {showNotifMenu && (
-                        <>
-                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm md:hidden animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
-                                <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                                    <div className="p-3 border-b bg-gradient-to-r from-gray-50 to-white font-black text-sm text-gray-800 flex justify-between items-center">
-                                        <span className="flex items-center gap-2">
-                                            <Bell className="w-4 h-4 text-emerald-600"/> آخر التنبيهات
-                                        </span>
-                                        <button onClick={() => setShowNotifMenu(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
-                                            <X size={16}/>
-                                        </button>
-                                    </div>
-                                    <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                        {notifications.length === 0 ? (
-                                            <div className="p-12 text-center">
-                                                <Bell className="w-16 h-16 mx-auto text-gray-300 mb-3"/>
-                                                <p className="text-gray-400 text-sm font-bold">لا توجد إشعارات حالياً</p>
-                                            </div>
-                                        ) : (
-                                            notifications.map(n => (
-                                                <div 
-                                                    key={n.id} 
-                                                    onClick={() => {
-    // توجيه ذكي يشمل جميع أنواع الإشعارات الممكنة
-    const type = n.type?.toLowerCase() || '';
-    
-    if(type.includes('task')) { setActiveTab('tasks'); }
-    else if(type.includes('message')) { setActiveTab('messages'); }
-    else if(type.includes('ovr')) { setActiveTab('ovr'); }
-    else if(type.includes('training')) { setActiveTab('training'); }
-    else if(type.includes('leave')) { setActiveTab('requests-history'); }
-    else if(type.includes('reward') || type.includes('store')) { setActiveTab('store'); }
-    else if(type.includes('shift') || type.includes('swap')) { setActiveTab('shift-requests'); }
-    
-    setShowNotifMenu(false);
-}}
-                                                    className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-emerald-50/30 cursor-pointer transition-colors ${!n.is_read ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''}`}
-                                                >
-                                                    <div className={`w-9 h-9 rounded-full ${!n.is_read ? 'bg-emerald-100' : 'bg-gray-100'} flex items-center justify-center ${!n.is_read ? 'text-emerald-600' : 'text-gray-500'} shrink-0 font-bold uppercase text-xs`}>
-                                                        {n.type === 'task' ? <ListTodo size={16}/> : n.type === 'training' ? <BookOpen size={16}/> : <Bell size={16}/>}
-                                                    </div>
-                                                    <div className="space-y-0.5 flex-1">
-                                                        <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
-                                                        <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{n.message}</p>
-                                                        <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="hidden md:block absolute left-0 top-full mt-2 w-80 z-50 bg-white rounded-3xl shadow-xl border border-gray-100 animate-in slide-in-from-top-2 duration-200 overflow-hidden">
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
+                            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
                                 <div className="p-3 border-b bg-gradient-to-r from-gray-50 to-white font-black text-sm text-gray-800 flex justify-between items-center">
                                     <span className="flex items-center gap-2">
                                         <Bell className="w-4 h-4 text-emerald-600"/> آخر التنبيهات
@@ -667,7 +596,7 @@ export default function StaffDashboard({ employee }: Props) {
                                         <X size={16}/>
                                     </button>
                                 </div>
-                                <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                <div className="flex-1 overflow-y-auto custom-scrollbar">
                                     {notifications.length === 0 ? (
                                         <div className="p-12 text-center">
                                             <Bell className="w-16 h-16 mx-auto text-gray-300 mb-3"/>
@@ -678,20 +607,24 @@ export default function StaffDashboard({ employee }: Props) {
                                             <div 
                                                 key={n.id} 
                                                 onClick={() => {
-                                                    if(n.type === 'task' || n.type === 'task_update') { setActiveTab('tasks'); }
-                                                    else if(n.type === 'message') { setActiveTab('messages'); }
-                                                    else if(n.type === 'ovr_reply') { setActiveTab('ovr'); }
-                                                    else if(n.type === 'training') { setActiveTab('training'); }
+                                                    const type = n.type?.toLowerCase() || '';
+                                                    if(type.includes('task')) { setActiveTab('tasks'); }
+                                                    else if(type.includes('message')) { setActiveTab('messages'); }
+                                                    else if(type.includes('ovr')) { setActiveTab('ovr'); }
+                                                    else if(type.includes('training')) { setActiveTab('training'); }
+                                                    else if(type.includes('leave')) { setActiveTab('requests-history'); }
+                                                    else if(type.includes('reward') || type.includes('store')) { setActiveTab('store'); }
+                                                    else if(type.includes('shift') || type.includes('swap')) { setActiveTab('shift-requests'); }
                                                     setShowNotifMenu(false);
                                                 }}
-                                                className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-emerald-50/30' : ''}`}
+                                                className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-emerald-50/30 cursor-pointer transition-colors ${!n.is_read ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''}`}
                                             >
-                                                <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 shrink-0 font-bold uppercase text-xs">
+                                                <div className={`w-9 h-9 rounded-full ${!n.is_read ? 'bg-emerald-100' : 'bg-gray-100'} flex items-center justify-center ${!n.is_read ? 'text-emerald-600' : 'text-gray-500'} shrink-0 font-bold uppercase text-xs`}>
                                                     {n.type === 'task' ? <ListTodo size={16}/> : n.type === 'training' ? <BookOpen size={16}/> : <Bell size={16}/>}
                                                 </div>
-                                                <div className="space-y-0.5">
+                                                <div className="space-y-0.5 flex-1">
                                                     <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
-                                                    <p className="text-xs text-gray-500 leading-relaxed truncate max-w-[200px]">{n.message}</p>
+                                                    <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{n.message}</p>
                                                     <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
                                                 </div>
                                             </div>
@@ -699,7 +632,7 @@ export default function StaffDashboard({ employee }: Props) {
                                     )}
                                 </div>
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
                 <div className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1">
@@ -729,7 +662,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'stats' && <StaffStats attendance={attendanceData} evals={evaluations} requests={leaveRequests} month={selectedMonth} employee={employee} />}
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={fetchAllData} />}
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
-                    {activeTab === 'arcade' && <StaffArcade employee={employee} />} {/* السطر الجديد */}
+                    {activeTab === 'arcade' && <StaffArcade employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'store' && <RewardsStore employee={employee} />}
                     {activeTab === 'training' && (
