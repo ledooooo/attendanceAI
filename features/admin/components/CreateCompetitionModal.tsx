@@ -124,30 +124,51 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         toast.success('تم اختيار السؤال');
     };
 
-    const handleCreate = async () => {
+const handleCreate = async () => {
         if (team1.length === 0 || team2.length === 0) return toast.error('يجب اختيار فرق');
         // التحقق من تعبئة جميع الأسئلة
         if (questions.some(q => !q.text || !q.a || !q.b)) return toast.error('يرجى إكمال جميع الأسئلة (على الأقل نص السؤال وأول خيارين)');
 
         setLoading(true);
         try {
+            // 1. إنشاء المسابقة
             const { data: comp, error } = await supabase.from('competitions').insert({
                 team1_ids: team1, team2_ids: team2, current_turn_team: 1, reward_points: points, status: 'active'
             }).select().single();
 
             if (error) throw error;
 
+            // 2. إدخال الأسئلة
             const dbQuestions = questions.map((q, idx) => ({
                 competition_id: comp.id,
                 assigned_to_team: idx < 3 ? 1 : 2, // أول 3 للفريق 1، والباقي للفريق 2
                 question_text: q.text,
-                option_a: q.a, option_b: q.b, option_c: q.c, option_d: q.d, // تأكدنا من إضافة option_d في الجدول سابقاً أو تجاهله لو لم يضف
+                option_a: q.a, option_b: q.b, option_c: q.c, option_d: q.d,
                 correct_option: q.correct,
                 order_index: idx + 1
             }));
 
             await supabase.from('competition_questions').insert(dbQuestions);
-            toast.success('تم إطلاق المسابقة! 🚀');
+
+            // -------------------------------------------------------
+            // 3. ✅ إرسال الإشعارات للمتسابقين (الخطوة الجديدة)
+            // -------------------------------------------------------
+            const allPlayers = [...team1, ...team2]; // دمج الفريقين
+            
+            const notificationsPayload = allPlayers.map(playerId => ({
+                user_id: playerId, // تأكد أن اسم العمود في جدولك هو user_id
+                title: '🔥 تحدي جديد!',
+                message: `تم اختيارك للمشاركة في مسابقة جديدة ضد الفريق المنافس. استعد وأثبت وجودك! 🏆`,
+                type: 'competition', // نوع الإشعار للتوجيه لاحقاً
+                is_read: false
+            }));
+
+            if (notificationsPayload.length > 0) {
+                await supabase.from('notifications').insert(notificationsPayload);
+            }
+            // -------------------------------------------------------
+
+            toast.success('تم إطلاق المسابقة وإشعار اللاعبين! 🚀');
             onClose();
         } catch (err: any) {
             toast.error(err.message);
@@ -155,7 +176,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             setLoading(false);
         }
     };
-
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
             
