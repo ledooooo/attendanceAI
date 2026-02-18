@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react'; // ✅ تصحيح Import إلى import
 import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../../context/AuthContext';
-import { CheckSquare, Plus, Loader2, Clock, CheckCircle, User, Users, Briefcase } from 'lucide-react';
+import { CheckSquare, Plus, Loader2, Clock, CheckCircle, User, Users, Briefcase, Shield } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function SupervisorTasks() {
@@ -18,14 +18,20 @@ export default function SupervisorTasks() {
     const [assigneeType, setAssigneeType] = useState<'manager' | 'staff'>('manager'); 
     const [selectedUser, setSelectedUser] = useState('');
 
-    // 1. جلب كل الموظفين النشطين
+    // 1. جلب كل الموظفين النشطين (مع معالجة الأخطاء)
     const { data: allEmployees = [], isLoading: loadingEmployees } = useQuery({
         queryKey: ['all_active_employees'],
         queryFn: async () => {
-            const { data } = await supabase
+            // نتأكد أولاً أن الجدول يحتوي على الأعمدة المطلوبة لتجنب الأخطاء
+            const { data, error } = await supabase
                 .from('employees')
                 .select('id, name, role, specialty, admin_tasks')
                 .eq('status', 'نشط');
+            
+            if (error) {
+                console.error("Error fetching employees:", error);
+                return [];
+            }
             return data || [];
         }
     });
@@ -35,8 +41,13 @@ export default function SupervisorTasks() {
         const managers = [];
         const staff = [];
         
+        // حماية ضد البيانات الفارغة
+        if (!allEmployees) return { managersList: [], staffList: [] };
+
         for (const emp of allEmployees) {
-            if (['admin', 'quality_manager', 'head_of_dept'].includes(emp.role)) {
+            // تحويل الدور لنص صغير لتجنب مشاكل الحروف الكبيرة والصغيرة
+            const role = emp.role ? emp.role.toLowerCase() : '';
+            if (['admin', 'quality_manager', 'head_of_dept'].includes(role)) {
                 managers.push(emp);
             } else {
                 staff.push(emp);
@@ -49,11 +60,17 @@ export default function SupervisorTasks() {
     const { data: tasks = [], isLoading } = useQuery({
         queryKey: ['supervisor_tasks', user?.id],
         queryFn: async () => {
-            const { data } = await supabase
+            if (!user?.id) return [];
+            const { data, error } = await supabase
                 .from('tasks')
                 .select('*')
-                .eq('created_by', user?.id) // أو manager_id حسب تسمية عمودك
+                .eq('created_by', user.id)
                 .order('created_at', { ascending: false });
+            
+            if (error) {
+                console.error("Error fetching tasks:", error);
+                return [];
+            }
             return data || [];
         },
         enabled: !!user?.id
@@ -62,6 +79,7 @@ export default function SupervisorTasks() {
     // 4. دالة الإرسال
     const addTaskMutation = useMutation({
         mutationFn: async () => {
+            if (!user?.id) throw new Error("يجب تسجيل الدخول أولاً");
             if (!title) throw new Error("يجب كتابة عنوان التكليف");
             if (!selectedUser) throw new Error("يرجى اختيار الموظف المكلف");
             
@@ -75,13 +93,13 @@ export default function SupervisorTasks() {
                 description, 
                 due_date: dueDate || null, 
                 
-                // ✅ الربط الصحيح لتجنب الأخطاء
+                // البيانات الأساسية
                 employee_id: targetEmp.id, 
                 target_name: targetEmp.name, 
                 
-                // ✅ إصلاح خطأ manager_id (إرسال رقم المشرف الحالي)
-                manager_id: user?.id, 
-                created_by: user?.id,
+                // بيانات المشرف (أنت)
+                manager_id: user.id, 
+                created_by: user.id,
                 
                 status: 'pending'
             });
