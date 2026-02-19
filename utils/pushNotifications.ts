@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 // ---------------------------------------------------------
 // 1. الجزء الخاص بتسجيل الجهاز (موجود سابقاً)
 // ---------------------------------------------------------
-const VAPID_PUBLIC_KEY = 'BM0IXAut6bPbAvWuDvT7hlT9Twhl1j_BtSBo6UEUplxqXAnJ3XtkD30SvDe0w-B-KjmVqwOknpfqhTIVMwQmurk';
+const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
