@@ -12,6 +12,7 @@ import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications';
 import { Toaster } from 'react-hot-toast';
 
+
 // 2. استيراد مكتبات React Query والـ Persister
 import { QueryClient, useQuery } from '@tanstack/react-query'; // ✅ تأكد من إضافة useQuery هنا
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
