@@ -14,21 +14,22 @@ serve(async (req) => {
   }
 
   try {
+    // ✅ صح: أسماء المتغيرات مش قيمها
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const publicKey = Deno.env.get("VAPID_PUBLIC_KEY");
     const privateKey = Deno.env.get("VAPID_PRIVATE_KEY");
+    const subject = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@gharbelmatar.com";
 
     if (!supabaseUrl || !supabaseKey || !publicKey || !privateKey) {
+      console.error("Missing env vars:", { hasUrl: !!supabaseUrl, hasKey: !!supabaseKey, hasPub: !!publicKey, hasPriv: !!privateKey });
       throw new Error("Server Misconfiguration: Missing Secrets");
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const subject = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@gharbelmatar.com";
     webpush.setVapidDetails(subject, publicKey, privateKey);
 
     const { userId, title, body, url } = await req.json();
-
     if (!userId) throw new Error("Missing userId");
 
     const { data: subscriptions, error: dbError } = await supabase
@@ -46,29 +47,31 @@ serve(async (req) => {
     }
 
     const payload = JSON.stringify({ title, body, url: url || '/' });
-    
+
     const results = await Promise.all(
       subscriptions.map(async (record: any) => {
         try {
           let sub = record.subscription_data;
           if (typeof sub === 'string') sub = JSON.parse(sub);
-          
+
           await webpush.sendNotification(sub, payload);
+          console.log(`✅ Sent to endpoint: ${record.endpoint?.substring(0, 50)}`);
           return { success: true };
         } catch (error: any) {
-          console.error("Push Error:", error);
+          console.error("Push Error:", error.statusCode, error.message);
           if (error.statusCode === 410 || error.statusCode === 404) {
             await supabase.from('push_subscriptions').delete().eq('id', record.id);
+            console.log(`🗑️ Deleted expired subscription: ${record.id}`);
           }
           return { success: false, error: error.message };
         }
       })
     );
 
-    return new Response(JSON.stringify({ 
-      success: true, 
+    return new Response(JSON.stringify({
+      success: true,
       sent: results.filter(r => r.success).length,
-      failed: results.filter(r => !r.success).length
+      failed: results.filter(r => !r.success).length,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
