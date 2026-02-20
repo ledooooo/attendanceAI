@@ -1,6 +1,5 @@
 import { supabase } from '../supabaseClient';
 
-// ✅ استخدم المفتاح العام الجديد اللي ولدته
 const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc';
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -15,8 +14,14 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 export async function requestNotificationPermission(userId: string) {
-  console.log("🚀 بدء عملية تسجيل الإشعارات للمستخدم:", userId);
-  
+  console.log("🚀 تسجيل إشعارات للمستخدم (UUID):", userId);
+
+  // ✅ تأكد إن الـ userId هو UUID وليس رقم
+  if (!userId || userId.length < 10) {
+    console.error('❌ userId غير صالح - يجب أن يكون UUID من Supabase Auth');
+    return false;
+  }
+
   if (!('Notification' in window) || !('serviceWorker' in navigator)) {
     console.error('❌ المتصفح لا يدعم الإشعارات');
     return false;
@@ -29,7 +34,6 @@ export async function requestNotificationPermission(userId: string) {
       return false;
     }
 
-    // ✅ انتظر تسجيل SW
     const registration = await navigator.serviceWorker.ready;
 
     let subscription = await registration.pushManager.getSubscription();
@@ -43,18 +47,25 @@ export async function requestNotificationPermission(userId: string) {
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    console.log("📡 جاري حفظ الاشتراك في Supabase...");
+    console.log("📡 حفظ الاشتراك بـ UUID:", userId);
+
+    // ✅ امسح أي اشتراك قديم بنفس الـ endpoint لكن بـ user_id مختلف (الرقم القديم)
+    await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('endpoint', endpoint)
+      .neq('user_id', userId);
 
     const { error } = await supabase
       .from('push_subscriptions')
       .upsert({
-        user_id: userId,
+        user_id: userId,          // ✅ دايماً UUID من auth.uid()
         subscription_data: subscriptionJson,
         endpoint: endpoint,
         device_info: {
-             userAgent: navigator.userAgent,
-             platform: navigator.platform,
-             language: navigator.language
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          language: navigator.language
         },
         updated_at: new Date().toISOString()
       }, {
@@ -64,9 +75,9 @@ export async function requestNotificationPermission(userId: string) {
     if (error) {
       console.error('❌ فشل الحفظ:', error.message);
       return false;
-    } 
-    
-    console.log('✅ تم التسجيل بنجاح!');
+    }
+
+    console.log('✅ تم التسجيل بنجاح بالـ UUID!');
     return true;
 
   } catch (error) {
@@ -76,13 +87,12 @@ export async function requestNotificationPermission(userId: string) {
 }
 
 export const sendSystemNotification = async (
-  userId: string,
+  userId: string,   // ✅ يجب أن يكون UUID دايماً
   title: string,
   message: string,
   type: 'task' | 'task_update' | 'general' = 'general'
 ) => {
   try {
-    // أ) إرسال إشعار داخلي (Database)
     const { error: dbError } = await supabase.from('notifications').insert({
       user_id: userId,
       title,
@@ -94,24 +104,23 @@ export const sendSystemNotification = async (
 
     if (dbError) console.error('Database Notification Error:', dbError);
 
-    // ب) إرسال إشعار خارجي (Push Notification) عبر Edge Function
     try {
-        const { data, error } = await supabase.functions.invoke('send-push-notification', {
-          body: {
-            userId: userId,
-            title: title,
-            body: message,
-            url: type === 'task' ? '/staff?tab=tasks' : '/admin?tab=tasks'
-          }
-        });
-        
-        if (error) {
-          console.error('Push invoke error:', error);
-        } else {
-          console.log('✅ Push sent:', data);
+      const { data, error } = await supabase.functions.invoke('send-push-notification', {
+        body: {
+          userId: userId,   // ✅ UUID
+          title: title,
+          body: message,
+          url: type === 'task' ? '/staff?tab=tasks' : '/admin?tab=tasks'
         }
+      });
+
+      if (error) {
+        console.error('Push invoke error:', error);
+      } else {
+        console.log('✅ Push sent:', data);
+      }
     } catch (pushError) {
-        console.warn('Push failed:', pushError);
+      console.warn('Push failed:', pushError);
     }
 
   } catch (error) {
