@@ -4,7 +4,6 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import webpush from "npm:web-push@3.6.3";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// ✅ تعريف الـ Headers بشكل ثابت وموسع
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -12,33 +11,35 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // 1. ✅ معالجة طلب المصافحة (OPTIONS) فوراً
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // 2. ✅ التحقق من المتغيرات قبل الاستخدام (لتجنب الانهيار الصامت)
+    // ✅ قراءة المتغيرات من البيئة بالطريقة الصحيحة
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const publicKey = Deno.env.get("VAPID_PUBLIC_KEY");
     const privateKey = Deno.env.get("VAPID_PRIVATE_KEY");
 
     if (!supabaseUrl || !supabaseKey || !publicKey || !privateKey) {
+      console.error("Missing env vars:", { 
+        hasUrl: !!supabaseUrl, 
+        hasKey: !!supabaseKey, 
+        hasPub: !!publicKey, 
+        hasPriv: !!privateKey 
+      });
       throw new Error("Server Misconfiguration: Missing Secrets");
     }
 
-    // إعداد الاتصال
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const subject = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@example.com";
+    const subject = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@gharbelmatar.com";
     webpush.setVapidDetails(subject, publicKey, privateKey);
 
-    // 3. قراءة البيانات
     const { userId, title, body, url } = await req.json();
 
     if (!userId) throw new Error("Missing userId");
 
-    // 4. جلب الاشتراكات
     const { data: subscriptions, error: dbError } = await supabase
       .from('push_subscriptions')
       .select('*')
@@ -54,22 +55,20 @@ serve(async (req) => {
       });
     }
 
-    // 5. إرسال الإشعارات
     const payload = JSON.stringify({ title, body, url: url || '/' });
     
     const results = await Promise.all(
       subscriptions.map(async (record: any) => {
         try {
-          // محاولة إصلاح صيغة الـ JSON إذا كانت نصاً
           let sub = record.subscription_data;
           if (typeof sub === 'string') sub = JSON.parse(sub);
           
           await webpush.sendNotification(sub, payload);
+          console.log(`✅ Sent to ${record.endpoint.substring(0, 50)}...`);
           return { success: true };
         } catch (error: any) {
-          console.error("Push Error:", error);
+          console.error("Push Error:", error.message);
           if (error.statusCode === 410 || error.statusCode === 404) {
-            // حذف الاشتراك المنتهي
             await supabase
               .from('push_subscriptions')
               .delete()
@@ -91,10 +90,9 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error("Critical Error:", error.message);
-    // الرد برسالة خطأ واضحة مع Headers لتجنب خطأ CORS
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500, // Internal Server Error
+      status: 500,
     });
   }
 });
