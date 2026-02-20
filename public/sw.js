@@ -1,5 +1,4 @@
-// public/sw.js
-const CACHE_NAME = 'gharbelmatar-v1';
+const CACHE_NAME = 'gharbelmatar-v2';
 
 self.addEventListener('install', (event) => {
   console.log('✅ SW installing...');
@@ -8,67 +7,69 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   console.log('✅ SW activated');
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('push', (event) => {
-  console.log('🔔 Push event received:', event);
+  console.log('🔔 Push received');
 
-  let title = 'إشعار جديد';
-  let body = 'لديك تحديث جديد';
-  let icon = '/pwa-192x192.png';
-  let badge = '/pwa-192x192.png';
+  let data = { title: 'إشعار جديد', body: 'لديك تحديث جديد', url: '/' };
 
   if (event.data) {
     try {
-      const data = event.data.json();
-      title = data.title || title;
-      body = data.body || body;
-      icon = data.icon || icon;
+      data = { ...data, ...event.data.json() };
     } catch (e) {
-      body = event.data.text();
+      data.body = event.data.text();
     }
   }
 
   const options = {
-    body: body,
-    icon: icon,
-    badge: badge,
+    body: data.body,
+    icon: '/pwa-192x192.png',
+    badge: '/pwa-192x192.png',
     vibrate: [200, 100, 200],
     requireInteraction: true,
     dir: 'rtl',
     lang: 'ar',
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1
-    },
+    data: { url: data.url || '/' },
     actions: [
-      {
-        action: 'open',
-        title: 'فتح',
-        icon: '/pwa-192x192.png'
-      },
-      {
-        action: 'close',
-        title: 'إغلاق'
-      }
+      { action: 'open', title: 'فتح' },
+      { action: 'close', title: 'إغلاق' }
     ]
   };
 
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    self.registration.showNotification(data.title, options)
       .then(() => console.log('✅ Notification shown'))
-      .catch(err => console.error('❌ Show notification failed:', err))
+      .catch(err => console.error('❌ Show failed:', err))
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
-  console.log('🖱️ Notification clicked');
+  console.log('🖱️ Clicked:', event.action);
   event.notification.close();
 
-  if (event.action === 'open' || !event.action) {
-    event.waitUntil(
-      clients.openWindow('/')
-    );
-  }
+  if (event.action === 'close') return;
+
+  // ✅ فتح الـ URL الصح من الـ data
+  const targetUrl = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      // لو التطبيق مفتوح بالفعل، focus عليه وروح للـ URL
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.focus();
+          client.navigate(targetUrl);
+          return;
+        }
+      }
+      // لو مش مفتوح، افتحه
+      return clients.openWindow(targetUrl);
+    })
+  );
 });
