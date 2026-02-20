@@ -1,8 +1,6 @@
 import { supabase } from '../supabaseClient';
 
-// ---------------------------------------------------------
-// 1. الجزء الخاص بتسجيل الجهاز (موجود سابقاً)
-// ---------------------------------------------------------
+// ✅ استخدم المفتاح العام الجديد اللي ولدته
 const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc';
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -31,8 +29,8 @@ export async function requestNotificationPermission(userId: string) {
       return false;
     }
 
-    const registration = await navigator.serviceWorker.register('/sw.js');
-    await navigator.serviceWorker.ready;
+    // ✅ انتظر تسجيل SW
+    const registration = await navigator.serviceWorker.ready;
 
     let subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
@@ -60,7 +58,7 @@ export async function requestNotificationPermission(userId: string) {
         },
         updated_at: new Date().toISOString()
       }, {
-        onConflict: 'user_id, endpoint'
+        onConflict: 'user_id,endpoint'
       });
 
     if (error) {
@@ -68,6 +66,7 @@ export async function requestNotificationPermission(userId: string) {
       return false;
     } 
     
+    console.log('✅ تم التسجيل بنجاح!');
     return true;
 
   } catch (error) {
@@ -76,9 +75,6 @@ export async function requestNotificationPermission(userId: string) {
   }
 }
 
-// ---------------------------------------------------------
-// 2. ✅ الجزء الجديد: دالة إرسال الإشعارات الموحدة
-// ---------------------------------------------------------
 export const sendSystemNotification = async (
   userId: string,
   title: string,
@@ -100,14 +96,20 @@ export const sendSystemNotification = async (
 
     // ب) إرسال إشعار خارجي (Push Notification) عبر Edge Function
     try {
-        await supabase.functions.invoke('send-push-notification', {
+        const { data, error } = await supabase.functions.invoke('send-push-notification', {
           body: {
             userId: userId,
             title: title,
             body: message,
-            url: type === 'task' ? '/staff/tasks' : '/admin/tasks'
+            url: type === 'task' ? '/staff?tab=tasks' : '/admin?tab=tasks'
           }
         });
+        
+        if (error) {
+          console.error('Push invoke error:', error);
+        } else {
+          console.log('✅ Push sent:', data);
+        }
     } catch (pushError) {
         console.warn('Push failed:', pushError);
     }
