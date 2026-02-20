@@ -1,5 +1,3 @@
-// supabase/functions/send-push-notification/index.ts
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import webpush from "npm:web-push@3.6.3";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -16,19 +14,12 @@ serve(async (req) => {
   }
 
   try {
-    // ✅ قراءة المتغيرات من البيئة بالطريقة الصحيحة
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const publicKey = Deno.env.get("VAPID_PUBLIC_KEY");
     const privateKey = Deno.env.get("VAPID_PRIVATE_KEY");
 
     if (!supabaseUrl || !supabaseKey || !publicKey || !privateKey) {
-      console.error("Missing env vars:", { 
-        hasUrl: !!supabaseUrl, 
-        hasKey: !!supabaseKey, 
-        hasPub: !!publicKey, 
-        hasPriv: !!privateKey 
-      });
       throw new Error("Server Misconfiguration: Missing Secrets");
     }
 
@@ -48,7 +39,6 @@ serve(async (req) => {
     if (dbError) throw new Error(`DB Error: ${dbError.message}`);
 
     if (!subscriptions?.length) {
-      console.log(`No subscriptions for user ${userId}`);
       return new Response(JSON.stringify({ message: "No devices registered" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
@@ -64,15 +54,11 @@ serve(async (req) => {
           if (typeof sub === 'string') sub = JSON.parse(sub);
           
           await webpush.sendNotification(sub, payload);
-          console.log(`✅ Sent to ${record.endpoint.substring(0, 50)}...`);
           return { success: true };
         } catch (error: any) {
-          console.error("Push Error:", error.message);
+          console.error("Push Error:", error);
           if (error.statusCode === 410 || error.statusCode === 404) {
-            await supabase
-              .from('push_subscriptions')
-              .delete()
-              .eq('id', record.id);
+            await supabase.from('push_subscriptions').delete().eq('id', record.id);
           }
           return { success: false, error: error.message };
         }
