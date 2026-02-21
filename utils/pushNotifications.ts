@@ -1,23 +1,18 @@
 import { supabase } from '../supabaseClient';
 
-// ✅ تأكد من عدم وجود أي مسافات قبل أو بعد المفتاح
+// المفتاح العام كما هو، تأكد من عدم وجود مسافات حوله
 const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc';
 
-// ✅ دالة التحويل المحسنة (أكثر أماناً)
+// دالة التحويل القياسية الآمنة
 function urlBase64ToUint8Array(base64String: string) {
-  try {
-    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  } catch (error) {
-    console.error("❌ خطأ في تحويل الـ Public Key:", error);
-    throw new Error("Invalid VAPID Key");
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
   }
+  return outputArray;
 }
 
 export async function requestNotificationPermission(userId: string | number) {
@@ -30,7 +25,7 @@ export async function requestNotificationPermission(userId: string | number) {
   }
 
   if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-    console.error('❌ المتصفح لا يدعم الإشعارات أو الـ Service Worker غير مسجل');
+    console.error('❌ المتصفح لا يدعم الإشعارات');
     return false;
   }
 
@@ -41,28 +36,35 @@ export async function requestNotificationPermission(userId: string | number) {
       return false;
     }
 
-    // الانتظار حتى يصبح الـ Service Worker جاهزاً
     const registration = await navigator.serviceWorker.ready;
-    console.log("✅ Service Worker جاهز، جاري الاشتراك...");
-
-    let subscription = await registration.pushManager.getSubscription();
     
-    if (!subscription) {
-      console.log("⏳ لا يوجد اشتراك مسبق، جاري إنشاء اشتراك جديد...");
-      
-      // ✅ تحويل المفتاح هنا
-      const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-      
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: applicationServerKey
-      });
-    } else {
-      console.log("✅ اشتراك موجود بالفعل");
+    // 🛑 [الحل الجذري لخطأ AbortError]:
+    // جلب أي اشتراك قديم عالق في المتصفح وحذفه برمجياً لتهيئة بيئة نظيفة
+    const existingSubscription = await registration.pushManager.getSubscription();
+    if (existingSubscription) {
+        console.log("🔄 تم العثور على اشتراك قديم في المتصفح... جاري حذفه (Unsubscribe)");
+        await existingSubscription.unsubscribe();
     }
+
+    console.log("⏳ جاري إنشاء اشتراك جديد بالمفتاح العام...");
+    
+    const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    
+    // المفتاح السليم يجب أن يكون طوله 65 بايت، هذا الفحص للتأكيد
+    if (applicationServerKey.length !== 65) {
+        console.warn(`⚠️ طول المفتاح المحول هو ${applicationServerKey.length}، قد يسبب هذا مشكلة إذا لم يكن 65`);
+    }
+
+    // إنشاء الاشتراك الجديد
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: applicationServerKey
+    });
 
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
+
+    console.log("📡 تم إنشاء الاشتراك بالمتصفح، جاري الحفظ في قاعدة البيانات...");
 
     // حذف القديم (لتجنب الأخطاء)
     await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
@@ -90,7 +92,7 @@ export async function requestNotificationPermission(userId: string | number) {
     return true;
 
   } catch (error) {
-    console.error('❌ خطأ غير متوقع أثناء التسجيل (AbortError عادة يعني مشكلة في المفتاح):', error);
+    console.error('❌ فشل التسجيل بشكل غير متوقع:', error);
     return false;
   }
 }
