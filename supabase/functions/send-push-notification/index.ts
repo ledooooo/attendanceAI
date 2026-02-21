@@ -21,8 +21,8 @@ serve(async (req) => {
     // 2. ✅ التصحيح: إزالة Deno.env.get ووضع القيم مباشرة داخل علامات التنصيص
     const supabaseUrl = "https://dyrolfnfuaifzguaxtgs.supabase.co";
     const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5cm9sZm5mdWFpZnpndWF4dGdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjQ0OTQxMSwiZXhwIjoyMDgyMDI1NDExfQ.SjrEt5JxFtWhqVNILi5SMMGHiv_lB5kp-fxq3L4oYWQ";
-    const publicKey = "BDGMfEaUdvGYra5eburOewf4B12S0m_lK_098yvNB-g0Dg3XUIfnKgU1gmjAciYg9GIqrl4jrkXyjWTnLcp_FXI";
-    const privateKey = "JrrdwqHrIm_WCF37nEym5OmX4TWUTFfgLGK1lQnk7EQ";
+    const publicKey = "BCfkHLkVvggptfebLWL9gCfwxED51dmSXmRWya-jbiWbHVsylcgZx6-QDftZXs2NVzkftU6uKqvguVRcc8yfb_Y";
+    const privateKey = "AcMe_VBBlFn1fBghQNiN2CXgXVB-xDo6N-PQL84n44I";
 
     if (!supabaseUrl || !supabaseKey || !publicKey || !privateKey) {
       throw new Error("Server Misconfiguration: Missing Secrets");
