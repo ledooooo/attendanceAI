@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gharbelmatar-v2';
+const CACHE_NAME = 'gharbelmatar-v3';
 
 self.addEventListener('install', (event) => {
   console.log('✅ SW installing...');
@@ -8,9 +8,22 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   console.log('✅ SW activated');
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    Promise.all([
+      // مسح كل الـ caches القديمة
+      caches.keys().then(keys =>
+        Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      ),
+      // إلغاء اشتراك Push القديم حتى يتم إعادة التسجيل بالمفتاح الجديد
+      self.registration.pushManager.getSubscription().then(sub => {
+        if (sub) {
+          console.log('🧹 مسح اشتراك Push القديم من SW...');
+          return sub.unsubscribe();
+        }
+      })
+    ]).then(() => {
+      console.log('✅ SW جاهز تماماً');
+      return self.clients.claim();
+    })
   );
 });
 
@@ -55,12 +68,10 @@ self.addEventListener('notificationclick', (event) => {
 
   if (event.action === 'close') return;
 
-  // ✅ فتح الـ URL الصح من الـ data
   const targetUrl = event.notification.data?.url || '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-      // لو التطبيق مفتوح بالفعل، focus عليه وروح للـ URL
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           client.focus();
@@ -68,7 +79,6 @@ self.addEventListener('notificationclick', (event) => {
           return;
         }
       }
-      // لو مش مفتوح، افتحه
       return clients.openWindow(targetUrl);
     })
   );
