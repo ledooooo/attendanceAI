@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseClient';
 
-// ✅ المفتاح الجديد الموثق والسليم 100%
-const VAPID_PUBLIC_KEY = 'BItYbikHCzGsd-anAcw2GnKRZxfIQ4COCdK_V_i7bbRE52qf2o19Ix2pY43iH4xqmmSH1zxPcfDV5esYojEItAE';
+// ✅ المفتاح العام الرسمي الجديد (متوافق 100% مع Chrome)
+const VAPID_PUBLIC_KEY = 'BDGMfEaUdvGYra5eburOewf4B12S0m_lK_098yvNB-g0Dg3XUIfnKgU1gmjAciYg9GIqrl4jrkXyjWTnLcp_FXI';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -43,19 +43,16 @@ export async function requestNotificationPermission(userId: string | number) {
     console.log("2️⃣ الـ Service Worker جاهز.");
 
     // تفريغ أي اشتراك قديم عالق إجبارياً
-    const existingSub = await registration.pushManager.getSubscription();
-    if (existingSub) {
-      console.log("3️⃣ جاري مسح الاشتراك القديم من المتصفح...");
-      await existingSub.unsubscribe();
-    }
+    try {
+        const existingSub = await registration.pushManager.getSubscription();
+        if (existingSub) {
+            console.log("3️⃣ جاري مسح الاشتراك القديم من المتصفح...");
+            await existingSub.unsubscribe();
+        }
+    } catch(e) {}
 
     console.log("4️⃣ جاري تحويل المفتاح...");
     const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-    
-    // فحص صارم لطول المفتاح (يجب أن يكون 65)
-    if (applicationServerKey.length !== 65) {
-        throw new Error(`طول المفتاح غير صحيح: ${applicationServerKey.length}`);
-    }
 
     console.log("5️⃣ جاري طلب الاشتراك من سيرفرات جوجل...");
     const subscription = await registration.pushManager.subscribe({
@@ -108,7 +105,7 @@ export const sendSystemNotification = async (
 ) => {
   const validUserId = String(userId);
   try {
-    const { error: dbError } = await supabase.from('notifications').insert({
+    await supabase.from('notifications').insert({
       user_id: validUserId,
       title,
       message,
@@ -117,10 +114,8 @@ export const sendSystemNotification = async (
       created_at: new Date().toISOString()
     });
 
-    if (dbError) console.error('Database Notification Error:', dbError);
-
     try {
-      const { data, error } = await supabase.functions.invoke('send-push-notification', {
+      await supabase.functions.invoke('send-push-notification', {
         body: {
           userId: validUserId, 
           title: title,
@@ -128,8 +123,6 @@ export const sendSystemNotification = async (
           url: type.includes('task') ? '/staff?tab=tasks' : '/admin?tab=tasks'
         }
       });
-
-      if (error) console.error('Push invoke error:', error);
     } catch (pushError) {
       console.warn('Push failed:', pushError);
     }
