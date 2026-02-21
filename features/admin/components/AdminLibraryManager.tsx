@@ -96,20 +96,55 @@ const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
         };
         reader.readAsBinaryString(file);
     };
-    const handleSave = async () => {
+const handleSave = async () => {
         if (!formData.title || !formData.file_url) return alert('يرجى ملء اسم الملف والرابط');
         setLoading(true);
         const { error } = await supabase.from('company_documents').insert([formData]);
-        setLoading(false);
+        
         if (!error) {
+            // ✅ إرسال إشعار لجميع الموظفين بأن هناك مستند جديد تمت إضافته
+            try {
+                const { data: activeEmps } = await supabase.from('employees').select('employee_id').eq('status', 'نشط');
+                if (activeEmps && activeEmps.length > 0) {
+                    const notifTitle = "📚 مستند جديد في المكتبة";
+                    const notifMsg = `تمت إضافة مستند جديد بعنوان: ${formData.title}`;
+
+                    // 1. الحفظ في قاعدة البيانات
+                    const notificationsPayload = activeEmps.map(emp => ({
+                        user_id: String(emp.employee_id),
+                        title: notifTitle,
+                        message: notifMsg,
+                        type: 'general',
+                        is_read: false
+                    }));
+                    await supabase.from('notifications').insert(notificationsPayload);
+
+                    // 2. إرسال الإشعارات اللحظية بشكل متوازي
+                    Promise.all(
+                        activeEmps.map(emp => 
+                            supabase.functions.invoke('send-push-notification', {
+                                body: { 
+                                    userId: String(emp.employee_id), 
+                                    title: notifTitle, 
+                                    body: notifMsg.substring(0, 50), 
+                                    url: '/staff?tab=library' // توجيه الموظف لتبويب المكتبة
+                                }
+                            })
+                        )
+                    ).catch(err => console.error("Push Error in Library:", err));
+                }
+            } catch (err) {
+                console.error("Notification Error:", err);
+            }
+
             setIsModalOpen(false);
             setFormData({ title: '', file_type: 'PDF', department: '', file_url: '', description: '', category: 'general' });
             fetchDocs();
         } else {
             alert('خطأ في الحفظ يدوياً');
         }
+        setLoading(false);
     };
-
     const handleDelete = async (id: string) => {
         if (confirm('هل أنت متأكد من حذف هذا الملف نهائياً؟')) {
             await supabase.from('company_documents').delete().eq('id', id);
