@@ -63,10 +63,14 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
     // ------------------------------------------------------------------
     // 2. 🛠️ اتخاذ الإجراء (Mutation)
     // ------------------------------------------------------------------
+// ------------------------------------------------------------------
+    // 2. 🛠️ اتخاذ الإجراء (Mutation المطور بنظام الإشعارات)
+    // ------------------------------------------------------------------
     const actionMutation = useMutation({
-        mutationFn: async ({ id, action }: { id: string, action: 'approve' | 'reject' }) => {
+        mutationFn: async ({ id, action, employee_id, type, start_date }: { id: string, action: 'approve' | 'reject', employee_id: string, type: string, start_date: string }) => {
             const newStatus = action === 'approve' ? 'موافقة_رئيس_القسم' : 'مرفوض';
             
+            // أ) تحديث قاعدة البيانات
             const { error } = await supabase
                 .from('leave_requests')
                 .update({ 
@@ -76,18 +80,68 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                 .eq('id', id);
 
             if (error) throw error;
+
+            // --- نظام الإشعارات اللحظية ---
+
+            // 1. إشعار للموظف صاحب الطلب
+            const empNotifTitle = action === 'approve' ? '✅ موافقة مبدئية' : '❌ تم رفض طلبك';
+            const empNotifMsg = `تم ${action === 'approve' ? 'الموافقة المبدئية' : 'رفض'} طلب ${type} الخاص بك بتاريخ ${start_date} من قبل رئيس القسم.`;
+
+            // حفظ في الداتابيز للموظف
+            await supabase.from('notifications').insert({
+                user_id: String(employee_id),
+                title: empNotifTitle,
+                message: empNotifMsg,
+                type: 'leave',
+                is_read: false
+            });
+
+            // إرسال Push للموظف
+            supabase.functions.invoke('send-push-notification', {
+                body: { userId: String(employee_id), title: empNotifTitle, body: empNotifMsg, url: '/staff' }
+            }).catch(e => console.error("Push Employee Error:", e));
+
+            // 2. إشعار للمدير العام (في حالة الموافقة فقط)
+            if (action === 'approve') {
+                const adminTitle = '✍️ طلب بانتظار الاعتماد النهائي';
+                const adminMsg = `وافق رئيس القسم على طلب ${type} للموظف ${employee_id}. يرجى الاعتماد النهائي.`;
+
+                await supabase.from('notifications').insert({
+                    user_id: 'admin',
+                    title: adminTitle,
+                    message: adminMsg,
+                    type: 'leave',
+                    is_read: false
+                });
+
+                supabase.functions.invoke('send-push-notification', {
+                    body: { userId: 'admin', title: adminTitle, body: adminMsg, url: '/admin?tab=leaves' }
+                }).catch(e => console.error("Push Admin Error:", e));
+            }
+
             return { action, newStatus };
         },
         onSuccess: (data) => {
-            // تحديث القائمة فوراً
             queryClient.invalidateQueries({ queryKey: ['dept_requests'] });
-            
-            if (data.action === 'approve') toast.success('تمت الموافقة ورفع الطلب للمدير');
-            else toast.error('تم رفض الطلب');
+            if (data.action === 'approve') toast.success('تمت الموافقة ورفع الطلب للمدير 🚀');
+            else toast.success('تم رفض الطلب وإبلاغ الموظف ❌');
         },
-        onError: () => toast.error('حدث خطأ أثناء تنفيذ الإجراء')
+        onError: (err: any) => toast.error('خطأ: ' + err.message)
     });
 
+    // تحديث دالة الضغط لتمرير البيانات الإضافية
+    const handleAction = (req: any, action: 'approve' | 'reject') => {
+        const confirmMsg = action === 'approve' ? 'الموافقة المبدئية ورفعه للمدير' : 'رفض الطلب نهائياً';
+        if (confirm(`هل أنت متأكد من ${confirmMsg}؟`)) {
+            actionMutation.mutate({ 
+                id: req.id, 
+                action, 
+                employee_id: req.employee_id, 
+                type: req.type, 
+                start_date: req.start_date 
+            });
+        }
+    };
     const handleAction = (id: string, action: 'approve' | 'reject') => {
         const confirmMsg = action === 'approve' ? 'الموافقة المبدئية ورفعه للمدير' : 'رفض الطلب نهائياً';
         if (confirm(`هل أنت متأكد من ${confirmMsg}؟`)) {
