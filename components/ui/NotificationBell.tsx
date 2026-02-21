@@ -9,8 +9,14 @@ interface Props {
 }
 
 export default function NotificationBell({ onNavigate }: Props) {
-  const { user } = useAuth();
-  const { requestPermission, permission } = usePush(user?.id || '');
+  // ✅ 1. التعديل الجوهري: جلب employeeProfile لتوحيد الهوية
+  const { user, employeeProfile } = useAuth();
+  
+  // ✅ 2. تحديد المعرف الفعلي: نستخدم رقم الموظف (مثلاً 80) ليكون هو المرجعية لكل الإشعارات
+  const actualUserId = String(employeeProfile?.employee_id || employeeProfile?.id || user?.id || '');
+  
+  // ✅ 3. تسجيل المتصفح برقم الموظف الفعلي
+  const { requestPermission, permission } = usePush(actualUserId);
   const [isOpen, setIsOpen] = useState(false);
   
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -23,11 +29,11 @@ export default function NotificationBell({ onNavigate }: Props) {
       if (!user?.id) return;
       
       try {
-        // ✅ جرب employees أولاً (تم تعديل id إلى employee_id لحل خطأ 400)
+        // نستخدم user.id (UUID) للبحث في جدول الموظفين
         const { data: empData, error: empError } = await supabase
           .from('employees')
           .select('created_at')
-          .eq('employee_id', user.id) 
+          .eq('id', user.id) 
           .maybeSingle();
         
         if (empData && !empError) {
@@ -35,11 +41,10 @@ export default function NotificationBell({ onNavigate }: Props) {
           return;
         }
         
-        // ✅ لو مش موجود، جرب supervisors (كذلك تم التعديل هنا للأمان)
         const { data: supData, error: supError } = await supabase
           .from('supervisors')
           .select('created_at')
-          .eq('id', user.id) // بافتراض أن supervisors يستخدم id كـ UUID، إذا ظهر خطأ مشابه يمكنك تغييرها لـ employee_id أو user_id
+          .eq('id', user.id)
           .maybeSingle();
         
         if (supData && !supError) {
@@ -58,12 +63,13 @@ export default function NotificationBell({ onNavigate }: Props) {
 
   // 2. دالة جلب الإشعارات
   const fetchNotifications = async () => {
-    if (!user?.id) return;
+    if (!actualUserId) return;
     
     let query = supabase
       .from('notifications')
       .select('*')
-      .eq('user_id', user.id)
+      // ✅ البحث في الجدول بناءً على رقم الموظف
+      .eq('user_id', actualUserId)
       .order('created_at', { ascending: false })
       .limit(20);
 
@@ -77,19 +83,20 @@ export default function NotificationBell({ onNavigate }: Props) {
 
   // 3. الاشتراك في التحديثات اللحظية (Realtime)
   useEffect(() => {
-    if (!user?.id) return;
+    if (!actualUserId) return;
 
     fetchNotifications();
 
     const channel = supabase
-      .channel(`notifs_${user.id}`)
+      .channel(`notifs_${actualUserId}`)
       .on(
         'postgres_changes', 
         { 
           event: 'INSERT', 
           schema: 'public', 
           table: 'notifications', 
-          filter: `user_id=eq.${user.id}` 
+          // ✅ الاستماع للإشعارات الموجهة لرقم الموظف الفعلي
+          filter: `user_id=eq.${actualUserId}` 
         }, 
         (payload) => {
           setNotifications(prev => [payload.new, ...prev]);
@@ -101,7 +108,7 @@ export default function NotificationBell({ onNavigate }: Props) {
     return () => { 
       supabase.removeChannel(channel); 
     };
-  }, [user?.id, userCreatedAt]);
+  }, [actualUserId, userCreatedAt]);
 
   // 4. الفلترة النهائية
   const filteredNotifications = useMemo(() => {
@@ -121,7 +128,8 @@ export default function NotificationBell({ onNavigate }: Props) {
       await supabase
         .from('notifications')
         .update({ is_read: true })
-        .eq('user_id', user?.id)
+        // ✅ تحديث الإشعارات الخاصة برقم الموظف الفعلي
+        .eq('user_id', actualUserId)
         .eq('is_read', false);
       
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
