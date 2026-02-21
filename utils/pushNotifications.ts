@@ -1,6 +1,5 @@
 import { supabase } from '../supabaseClient';
 
-// ✅ المفتاح العام، أضفنا .trim() لإزالة أي مسافات خفية
 const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc'.trim();
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -19,7 +18,16 @@ function urlBase64ToUint8Array(base64String: string) {
   }
 }
 
+// ✅ هذا هو "القفل" لمنع إرسال طلبين في نفس الوقت
+let isSubscribing = false; 
+
 export async function requestNotificationPermission(userId: string | number) {
+  // إذا كان هناك طلب قيد التنفيذ، نتجاهل الطلب الثاني فوراً
+  if (isSubscribing) {
+    console.log("⏳ عملية تسجيل جارية بالفعل، يتم تخطي هذا الطلب الإضافي لتجنب التعارض...");
+    return false;
+  }
+
   const validUserId = String(userId);
   console.log("🚀 جاري محاولة تسجيل إشعارات للمستخدم:", validUserId);
 
@@ -33,37 +41,29 @@ export async function requestNotificationPermission(userId: string | number) {
     return false;
   }
 
+  isSubscribing = true; // 🔒 إغلاق القفل
+
   try {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
       console.warn('⚠️ المستخدم رفض إذن الإشعارات');
+      isSubscribing = false; // 🔓 فتح القفل
       return false;
     }
 
     const registration = await navigator.serviceWorker.ready;
     
-    // ✅ محاولة مسح الاشتراك القديم بأمان (بداخل try/catch لكي لا يوقف الكود إذا فشل)
+    // محاولة مسح الاشتراك القديم بأمان
     try {
         const existingSubscription = await registration.pushManager.getSubscription();
         if (existingSubscription) {
             console.log("🔄 جاري حذف الاشتراك القديم لتجنب التعارض...");
             await existingSubscription.unsubscribe();
-            console.log("✅ تم حذف الاشتراك القديم بنجاح");
         }
-    } catch (unsubError) {
-        console.warn("⚠️ فشل حذف الاشتراك القديم (عادي، سنستمر):", unsubError);
-    }
+    } catch (unsubError) {}
 
-    // ✅ طباعة معلومات المفتاح للتشخيص
     const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-    console.log("🔑 VAPID Key String:", VAPID_PUBLIC_KEY);
-    console.log("📏 Converted Key Length:", applicationServerKey.length, "bytes"); 
     
-    if (applicationServerKey.length !== 65) {
-        console.error("❌ خطأ حرج: طول المفتاح ليس 65 بايت! (المفتاح تالف أو به نقص)");
-        return false; // نوقف الكود هنا لأن المتصفح سيرفضه حتماً
-    }
-
     console.log("⏳ جاري إنشاء اشتراك جديد بالمفتاح العام...");
     
     const subscription = await registration.pushManager.subscribe({
@@ -95,14 +95,17 @@ export async function requestNotificationPermission(userId: string | number) {
 
     if (error) {
       console.error('❌ فشل الحفظ في قاعدة البيانات:', error.message);
+      isSubscribing = false; // 🔓 فتح القفل
       return false;
     }
 
     console.log('🎉 تم التسجيل وحفظ الاشتراك بنجاح!');
+    isSubscribing = false; // 🔓 فتح القفل
     return true;
 
   } catch (error) {
     console.error('❌ فشل التسجيل بشكل غير متوقع:', error);
+    isSubscribing = false; // 🔓 فتح القفل
     return false;
   }
 }
