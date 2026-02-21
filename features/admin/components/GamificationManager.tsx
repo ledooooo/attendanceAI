@@ -119,7 +119,7 @@ export default function GamificationManager() {
         }
     };
 
-    // --- Mutations ---
+// --- Mutations ---
 
     // معالجة وتسليم الطلبات (تم إضافة إشعار التسليم)
     const handleRequestMutation = useMutation({
@@ -136,14 +136,26 @@ export default function GamificationManager() {
                 await supabase.from('points_ledger').insert({ employee_id: empId, points: cost, reason: `استرداد نقاط (رفض طلب ${rewardName})` });
             }
 
-            // ✅ إرسال إشعار في جميع الحالات (تسليم أو رفض)
+            const title = status === 'approved' ? '✅ تم تسليم الجائزة' : '❌ طلب جائزة مرفوض';
+
+            // 1. الحفظ في قاعدة البيانات
             await supabase.from('notifications').insert({
-                user_id: empId, 
-                title: status === 'approved' ? '✅ تم تسليم الجائزة' : '❌ طلب جائزة مرفوض',
+                user_id: String(empId), 
+                title: title,
                 message: notificationMsg, 
                 type: 'reward_update', 
                 is_read: false
             });
+
+            // ✅ 2. إرسال الإشعار الفوري (Push Notification)
+            supabase.functions.invoke('send-push-notification', {
+                body: {
+                    userId: String(empId),
+                    title: title,
+                    body: notificationMsg.substring(0, 50),
+                    url: '/staff?tab=store'
+                }
+            }).catch(err => console.error("Push error:", err));
         },
         onSuccess: (_, variables) => {
             toast.success(variables.status === 'approved' ? 'تمت الموافقة وتم إرسال تنبيه للموظف' : 'تم الرفض واسترجاع النقاط');
@@ -158,7 +170,7 @@ export default function GamificationManager() {
             
             const hasDiscount = newReward.discount_points && newReward.discount_end_date;
             
-            // ✅ مطابقة الحمولة مع أعمدة قاعدة البيانات (stock و cost)
+            // مطابقة الحمولة مع أعمدة قاعدة البيانات
             const payload = {
                 title: newReward.title,
                 stock: newReward.stock,
@@ -177,11 +189,31 @@ export default function GamificationManager() {
                 if (error) throw error;
 
                 if (hasDiscount) {
+                    const title = '🔥 عرض خاص في متجر الجوائز!';
+                    const msg = `احصل على "${newReward.title}" بـ ${newReward.discount_points} نقطة فقط! ساري حتى ${newReward.discount_end_date}`;
+
                     await supabase.from('notifications').insert({
-                        user_id: 'all', title: '🔥 عرض خاص في متجر الجوائز!',
-                        message: `احصل على "${newReward.title}" بـ ${newReward.discount_points} نقطة فقط! ساري حتى ${newReward.discount_end_date}`,
+                        user_id: 'all', title: title,
+                        message: msg,
                         type: 'system', is_read: false
                     });
+
+                    // ✅ جلب كل الموظفين لإرسال إشعارات فورية بالعرض الجديد (بشكل متوازي)
+                    const { data: activeEmps } = await supabase.from('employees').select('employee_id').eq('status', 'نشط');
+                    if (activeEmps && activeEmps.length > 0) {
+                        Promise.all(
+                            activeEmps.map(emp =>
+                                supabase.functions.invoke('send-push-notification', {
+                                    body: {
+                                        userId: String(emp.employee_id),
+                                        title: title,
+                                        body: msg.substring(0, 50),
+                                        url: '/staff?tab=store'
+                                    }
+                                })
+                            )
+                        ).catch(err => console.error("Push error:", err));
+                    }
                 }
             }
         },
@@ -214,7 +246,6 @@ export default function GamificationManager() {
                 throw new Error("أكمل البيانات وتأكد من اختيار تخصص واحد على الأقل");
             }
 
-            // دمج التخصصات كنص مفصول بفواصل لتخزينه في عمود الـ DB
             const specialtyString = newQuestion.specialties.join(',');
 
             const payload = {
@@ -262,18 +293,31 @@ export default function GamificationManager() {
             for (const emp of birthdayEmployees) {
                 await supabase.rpc('increment_points', { emp_id: emp.employee_id, amount: 50 });
                 await supabase.from('points_ledger').insert({ employee_id: emp.employee_id, points: 50, reason: 'هدية عيد ميلاد 🎂' });
+                
+                const title = '🎂 كل عام وأنت بخير!';
+                const msg = 'تمت إضافة 50 نقطة هدية لرصيدك بمناسبة عيد ميلادك السعيد!';
+
                 await supabase.from('notifications').insert({
-                    user_id: emp.employee_id, title: '🎂 كل عام وأنت بخير!',
-                    message: 'تمت إضافة 50 نقطة هدية لرصيدك بمناسبة عيد ميلادك السعيد!', type: 'system', is_read: false
+                    user_id: String(emp.employee_id), title: title,
+                    message: msg, type: 'system', is_read: false
                 });
+
+                // ✅ إرسال إشعار فوري (Push) بعيد الميلاد!
+                supabase.functions.invoke('send-push-notification', {
+                    body: {
+                        userId: String(emp.employee_id),
+                        title: title,
+                        body: msg,
+                        url: '/staff?tab=store'
+                    }
+                }).catch(err => console.error("Push error:", err));
             }
 
-            toast.success(`تم توزيع هدايا أعياد الميلاد على ${birthdayEmployees.length} موظف(ين)! 🎉`, { id: loadingToast });
+            toast.success(`تم توزيع هدايا أعياد الميلاد وإرسال التنبيهات لـ ${birthdayEmployees.length} موظف(ين)! 🎉`, { id: loadingToast });
         } catch (err: any) {
             toast.error(`حدث خطأ: ${err.message}`, { id: loadingToast });
         }
     };
-
     return (
         <div className="space-y-6 animate-in fade-in">
             
