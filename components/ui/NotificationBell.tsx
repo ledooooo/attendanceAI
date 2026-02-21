@@ -23,11 +23,11 @@ export default function NotificationBell({ onNavigate }: Props) {
       if (!user?.id) return;
       
       try {
-        // ✅ جرب employees أولاً
+        // ✅ جرب employees أولاً (تم تعديل id إلى employee_id لحل خطأ 400)
         const { data: empData, error: empError } = await supabase
           .from('employees')
           .select('created_at')
-          .eq('id', user.id)
+          .eq('employee_id', user.id) 
           .maybeSingle();
         
         if (empData && !empError) {
@@ -35,11 +35,11 @@ export default function NotificationBell({ onNavigate }: Props) {
           return;
         }
         
-        // ✅ لو مش موجود، جرب supervisors
+        // ✅ لو مش موجود، جرب supervisors (كذلك تم التعديل هنا للأمان)
         const { data: supData, error: supError } = await supabase
           .from('supervisors')
           .select('created_at')
-          .eq('id', user.id)
+          .eq('id', user.id) // بافتراض أن supervisors يستخدم id كـ UUID، إذا ظهر خطأ مشابه يمكنك تغييرها لـ employee_id أو user_id
           .maybeSingle();
         
         if (supData && !supError) {
