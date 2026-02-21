@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseClient';
 
 // ✅ المفتاح الرياضي السليم 100% (لا تقم بتعديل أي حرف فيه)
-const VAPID_PUBLIC_KEY = 'BDGMfEaUdvGYra5eburOewf4B12S0m_lK_098yvNB-g0Dg3XUIfnKgU1gmjAciYg9GIqrl4jrkXyjWTnLcp_FXI';
+const VAPID_PUBLIC_KEY = 'BCfkHLkVvggptfebLWL9gCfwxED51dmSXmRWya-jbiWbHVsylcgZx6-QDftZXs2NVzkftU6uKqvguVRcc8yfb_Y';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
