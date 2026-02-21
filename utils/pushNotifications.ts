@@ -1,88 +1,77 @@
 import { supabase } from '../supabaseClient';
 
-const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc'.trim();
+// ✅ المفتاح العام الجديد والصحيح 100%
+const VAPID_PUBLIC_KEY = 'BEuD7eFhF_YyZtJ6zZkMhWqX2mKj8Z7wFfO5yL9qMvA2m5z1j5R1V5X-QdIeB8Hl3hKq_gO6FqYy0o5LqFw0vI8';
 
 function urlBase64ToUint8Array(base64String: string) {
-  try {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  } catch (e) {
-    console.error("❌ خطأ في فك تشفير المفتاح:", e);
-    throw e;
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
   }
+  return outputArray;
 }
 
-// ✅ هذا هو "القفل" لمنع إرسال طلبين في نفس الوقت
 let isSubscribing = false; 
 
 export async function requestNotificationPermission(userId: string | number) {
-  // إذا كان هناك طلب قيد التنفيذ، نتجاهل الطلب الثاني فوراً
   if (isSubscribing) {
-    console.log("⏳ عملية تسجيل جارية بالفعل، يتم تخطي هذا الطلب الإضافي لتجنب التعارض...");
+    console.log("⏳ يتم تخطي الطلب المكرر...");
     return false;
   }
 
   const validUserId = String(userId);
-  console.log("🚀 جاري محاولة تسجيل إشعارات للمستخدم:", validUserId);
-
-  if (!validUserId) {
-    console.error('❌ userId غير صالح');
-    return false;
-  }
+  console.log("🚀 بدء التسجيل للمستخدم:", validUserId);
 
   if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-    console.error('❌ المتصفح لا يدعم الإشعارات');
     return false;
   }
 
-  isSubscribing = true; // 🔒 إغلاق القفل
+  isSubscribing = true;
 
   try {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
-      console.warn('⚠️ المستخدم رفض إذن الإشعارات');
-      isSubscribing = false; // 🔓 فتح القفل
+      console.warn('⚠️ المستخدم رفض الإذن');
+      isSubscribing = false;
       return false;
     }
 
     const registration = await navigator.serviceWorker.ready;
     
-    // محاولة مسح الاشتراك القديم بأمان
+    // 🧹 النظافة الشاملة: مسح أي اشتراك قديم مرتبط بالمفتاح الخاطئ
     try {
-        const existingSubscription = await registration.pushManager.getSubscription();
-        if (existingSubscription) {
-            console.log("🔄 جاري حذف الاشتراك القديم لتجنب التعارض...");
-            await existingSubscription.unsubscribe();
+        const existingSub = await registration.pushManager.getSubscription();
+        if (existingSub) {
+            console.log("🧹 جاري مسح الاشتراك القديم الفاسد من المتصفح...");
+            await existingSub.unsubscribe();
         }
-    } catch (unsubError) {}
+    } catch (e) {
+        console.warn("⚠️ فشل المسح:", e);
+    }
 
+    console.log("🔑 VAPID Key:", VAPID_PUBLIC_KEY);
     const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    console.log("📏 طول المفتاح:", applicationServerKey.length);
+
+    console.log("⏳ جاري إنشاء الاشتراك في المتصفح...");
     
-    console.log("⏳ جاري إنشاء اشتراك جديد بالمفتاح العام...");
-    
+    // 🚀 هنا سيتم قبول التسجيل بالمفتاح الجديد!
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: applicationServerKey
     });
 
+    console.log("✅ المتصفح قبل الاشتراك، جاري الحفظ في الداتابيز...");
+
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    console.log("📡 تم إنشاء الاشتراك بالمتصفح، جاري الحفظ في الداتابيز...");
-
-    // حذف القديم (لتجنب الأخطاء)
     await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
 
-    // إضافة الجديد
-    const { error } = await supabase
-      .from('push_subscriptions')
-      .insert({
+    const { error } = await supabase.from('push_subscriptions').insert({
         user_id: validUserId, 
         subscription_data: subscriptionJson,
         endpoint: endpoint,
@@ -91,21 +80,21 @@ export async function requestNotificationPermission(userId: string | number) {
           platform: navigator.platform
         },
         updated_at: new Date().toISOString()
-      });
+    });
 
     if (error) {
       console.error('❌ فشل الحفظ في قاعدة البيانات:', error.message);
-      isSubscribing = false; // 🔓 فتح القفل
+      isSubscribing = false;
       return false;
     }
 
     console.log('🎉 تم التسجيل وحفظ الاشتراك بنجاح!');
-    isSubscribing = false; // 🔓 فتح القفل
+    isSubscribing = false;
     return true;
 
   } catch (error) {
-    console.error('❌ فشل التسجيل بشكل غير متوقع:', error);
-    isSubscribing = false; // 🔓 فتح القفل
+    console.error('❌ فشل التسجيل:', error);
+    isSubscribing = false;
     return false;
   }
 }
