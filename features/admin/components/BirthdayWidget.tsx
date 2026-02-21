@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
-import { Cake, Send, Check, Search, Filter, CalendarClock } from 'lucide-react';
+import { Cake, Send, Check, Search, Filter, CalendarClock, Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface Props {
   employees: Employee[];
@@ -21,15 +22,15 @@ export default function BirthdayWidget({ employees }: Props) {
   const [postedMap, setPostedMap] = useState<Record<string, boolean>>({});
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all'); // الحالة الافتراضية
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // 1. استخراج الحالات المتاحة للفلتر (مثل الكود القديم)
+  // 1. استخراج الحالات المتاحة للفلتر
   const availableStatuses = useMemo(() => {
     const statuses = Array.from(new Set(employees.map(e => e.status?.trim()).filter(Boolean)));
     return statuses;
   }, [employees]);
 
-  // تعيين الفلتر الافتراضي على "نشط" إذا وجد
+  // تعيين الفلتر الافتراضي على "نشط"
   React.useEffect(() => {
     if (statusFilter === 'all' && availableStatuses.length > 0) {
         const activeKey = availableStatuses.find(s => 
@@ -39,15 +40,14 @@ export default function BirthdayWidget({ employees }: Props) {
     }
   }, [availableStatuses]);
 
-  const currentMonth = new Date().getMonth() + 1; // 1-12
+  const currentMonth = new Date().getMonth() + 1;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // 2. معالجة القائمة (فلترة + حساب الأيام + ترتيب)
+  // 2. معالجة القائمة
   const birthdayEmployees = useMemo(() => {
     return employees
       .map(emp => {
-        // أ) استخراج تاريخ الميلاد
         let birthMonth = 0;
         let birthDay = 0;
 
@@ -65,65 +65,84 @@ export default function BirthdayWidget({ employees }: Props) {
             }
         }
 
-        if (birthMonth === 0) return null; // لا يوجد تاريخ
-
-        // ب) التحقق هل هو في هذا الشهر؟
+        if (birthMonth === 0) return null;
         if (birthMonth !== currentMonth) return null;
 
-        // ج) تطبيق الفلاتر (الحالة + البحث)
         const matchStatus = statusFilter === 'all' || emp.status?.trim() === statusFilter;
         const matchSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase());
 
         if (!matchStatus || !matchSearch) return null;
 
-        // د) حساب الأيام المتبقية للترتيب
-        // ننشئ تاريخ لعيد الميلاد في السنة الحالية
         const bDayDate = new Date(today.getFullYear(), birthMonth - 1, birthDay);
-        
-        // إذا كان التاريخ قد فات (أمس مثلاً)، نعتبره العام القادم لغرض الترتيب (يوضع في الآخر)
-        // أو يمكننا تركه كما هو ليظهر بالسالب، لكن الأفضل وضعه في النهاية
         let daysRemaining = Math.ceil((bDayDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        
-        // إذا فات الميعاد، نضيف 365 يوماً ليظهر في أسفل القائمة
-        // أو يمكننا جعله رقماً كبيراً جداً
         const sortValue = daysRemaining < 0 ? daysRemaining + 365 : daysRemaining;
 
         return {
             ...emp,
             displayDay: birthDay,
             daysRemaining,
-            sortValue // قيمة نستخدمها للترتيب فقط
+            sortValue 
         };
       })
-      .filter((item): item is any => item !== null) // حذف الفارغ
-      .sort((a, b) => a.sortValue - b.sortValue); // الترتيب حسب الأقرب للقادم
+      .filter((item): item is any => item !== null)
+      .sort((a, b) => a.sortValue - b.sortValue);
 
   }, [employees, currentMonth, searchTerm, statusFilter, today]);
 
-  // 3. دالة نشر التهنئة (تم إصلاح الخطأ)
+  // 3. دالة نشر التهنئة المحدثة بنظام الإشعارات اللحظية
   const postBirthdayGreeting = async (emp: any) => {
     if (postedMap[emp.id]) return;
-    
     setLoadingMap(prev => ({ ...prev, [emp.id]: true }));
 
     try {
-        // ✅ تم حذف author_id لأنه غير موجود في الجدول
+        const greetingTitle = `🎂 عيد ميلاد سعيد!`;
+        const greetingContent = `تتقدم إدارة المركز وأسرة العاملين بأحر التهاني للزميل/ة **${emp.name}** بمناسبة عيد ميلاده الموافق ${emp.displayDay} / ${currentMonth}، متمنين له عاماً مليئاً بالنجاح والسعادة! 🎉`;
+
+        // أ) نشر الخبر في جدول الأخبار
         const { error } = await supabase.from('news_posts').insert({
-            title: `🎂 عيد ميلاد سعيد!`,
-            content: `تتقدم إدارة المركز وأسرة العاملين بأحر التهاني للزميل/ة **${emp.name}** بمناسبة عيد ميلاده الموافق ${emp.displayDay} / ${currentMonth}، متمنين له عاماً مليئاً بالنجاح والسعادة! 🎉`,
+            title: greetingTitle,
+            content: greetingContent,
             image_url: emp.photo_url || 'https://cdn-icons-png.flaticon.com/512/864/864758.png', 
             is_pinned: false
-            // ❌ author_id: 'admin'  <-- تم الحذف
         });
 
         if (error) throw error;
 
+        // ب) إرسال إشعارات لحظية لجميع الموظفين
+        const { data: activeEmps } = await supabase.from('employees').select('employee_id').eq('status', 'نشط');
+        
+        if (activeEmps && activeEmps.length > 0) {
+            // 1. الحفظ في جدول notifications للجميع
+            const dbNotifs = activeEmps.map(targetEmp => ({
+                user_id: String(targetEmp.employee_id),
+                title: greetingTitle,
+                message: `اليوم عيد ميلاد الزميل/ة ${emp.name}.. شارك في التهنئة!`,
+                type: 'general',
+                is_read: false
+            }));
+            await supabase.from('notifications').insert(dbNotifs);
+
+            // 2. إرسال Push Notification لحظي (Parallel)
+            Promise.all(
+                activeEmps.map(targetEmp => 
+                    supabase.functions.invoke('send-push-notification', {
+                        body: { 
+                            userId: String(targetEmp.employee_id), 
+                            title: greetingTitle, 
+                            body: `اليوم عيد ميلاد الزميل/ة ${emp.name}.. شارك في التهنئة! 🎈`, 
+                            url: '/staff?tab=news' 
+                        }
+                    })
+                )
+            ).catch(err => console.error("Push Error in Birthday Greeting:", err));
+        }
+
         setPostedMap(prev => ({ ...prev, [emp.id]: true }));
-        alert(`تم نشر تهنئة ${emp.name} بنجاح!`);
+        toast.success(`تم نشر تهنئة ${emp.name} وإشعار الجميع! 🎉`);
 
     } catch (error: any) {
         console.error(error);
-        alert('فشل النشر: ' + error.message);
+        toast.error('فشل النشر: ' + error.message);
     } finally {
         setLoadingMap(prev => ({ ...prev, [emp.id]: false }));
     }
@@ -136,7 +155,6 @@ export default function BirthdayWidget({ employees }: Props) {
             <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
                 <Cake className="w-6 h-6 text-pink-500"/> أعياد ميلاد شهر ({currentMonth})
             </h3>
-            {/* فلتر الحالة */}
             <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">
                 <Filter className="w-3.5 h-3.5 text-gray-400" />
                 <select 
@@ -154,7 +172,6 @@ export default function BirthdayWidget({ employees }: Props) {
             </div>
         </div>
         
-        {/* حقل بحث سريع */}
         <div className="relative w-full">
              <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
              <input 
@@ -216,7 +233,7 @@ export default function BirthdayWidget({ employees }: Props) {
                     title="نشر تهنئة في الأخبار"
                 >
                     {loadingMap[emp.id] ? (
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"/>
+                        <Loader2 className="w-4 h-4 animate-spin"/>
                     ) : postedMap[emp.id] ? (
                         <Check className="w-4 h-4"/>
                     ) : (
