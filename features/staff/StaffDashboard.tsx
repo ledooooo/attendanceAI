@@ -12,7 +12,8 @@ import {
     List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-    Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Gamepad2, Sparkles 
+    Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Gamepad2, Sparkles,
+    Smartphone, BellRing, DownloadCloud // أيقونات إضافية للحث
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -62,13 +63,13 @@ export default function StaffDashboard({ employee }: Props) {
   const [showLevelMenu, setShowLevelMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
   
-  // ✅ حالة لتشغيل/إيقاف الثيم (المظهر)
+  // حالة لتشغيل/إيقاف الثيم (المظهر)
   const [isThemeEnabled, setIsThemeEnabled] = useState(true);
 
   // حالة للتدريب الإجباري
   const [pendingMandatoryTraining, setPendingMandatoryTraining] = useState<any>(null);
 
-  // ✅ تعديل: السماح بظهور لوحة الإدارة إذا كان أدمن أو لديه أي صلاحيات (بما فيها العهد)
+  // السماح بظهور لوحة الإدارة إذا كان أدمن أو لديه أي صلاحيات
   const hasAdminAccess = employee.role === 'admin' || (employee.permissions && employee.permissions.length > 0);
   
   // --- States ---
@@ -85,7 +86,25 @@ export default function StaffDashboard({ employee }: Props) {
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
+  // ✅ حالة اكتشاف إذن الإشعارات الحالي
+  const [notificationStatus, setNotificationStatus] = useState<NotificationPermission>(
+    'Notification' in window ? Notification.permission : 'default'
+  );
+
   // --- Effects ---
+  
+  // تحديث حالة الإشعارات دورياً للتأكد من استجابة الموظف
+  useEffect(() => {
+    if ('Notification' in window) {
+      const interval = setInterval(() => {
+        if (Notification.permission !== notificationStatus) {
+          setNotificationStatus(Notification.permission);
+        }
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [notificationStatus]);
+
   useEffect(() => {
     if (employee?.employee_id) {
         requestNotificationPermission(employee.employee_id);
@@ -202,7 +221,6 @@ export default function StaffDashboard({ employee }: Props) {
     setShowLeaderboardMenu(false);
   }, [notifications, employee.employee_id, showNotifMenu, fetchNotifications, queryClient]);
 
-  // ✅ استعلام عدد طلبات الجوائز المعلقة (محسّن)
   const { data: pendingRewardsCount = 0 } = useQuery({
       queryKey: ['pending_rewards_count', employee.employee_id],
       queryFn: async () => {
@@ -214,19 +232,17 @@ export default function StaffDashboard({ employee }: Props) {
 
           return count || 0;
       },
-      staleTime: 1000 * 45, // 45 ثانية
-      refetchInterval: 45000, // كل 45 ثانية بدل 30
+      staleTime: 1000 * 45,
+      refetchInterval: 45000,
       refetchOnWindowFocus: false,
   });
 
-  // استعلام العدادات المحسّن
   const { data: staffBadges = { messages: 0, tasks: 0, swaps: 0, news: 0, ovr_replies: 0, training: 0 } } = useQuery({
       queryKey: ['staff_badges', employee.employee_id],
       queryFn: async () => {
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
 
-          // استخدام Promise.all للسرعة
           const [msg, tasks, swaps, news, ovrReplies, availableTrainings, myCompleted] = await Promise.all([
               supabase.from('messages').select('*', { count: 'exact', head: true }).eq('to_user', employee.employee_id).eq('is_read', false),
               supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('employee_id', employee.employee_id).eq('status', 'pending'),
@@ -249,15 +265,15 @@ export default function StaffDashboard({ employee }: Props) {
           return {
               messages: msg.count || 0,
               tasks: tasks.count || 0,
-              swaps: swaps.count || 0,
+               swaps: swaps.count || 0,
               news: news.count || 0,
               ovr_replies: ovrReplies.count || 0,
               training: pendingTrainingsCount 
           };
       },
-      staleTime: 1000 * 30, // 30 ثانية بدل 20 ثانية
-      refetchInterval: 30000, // كل 30 ثانية
-      refetchOnWindowFocus: false, // تقليل الطلبات غير الضرورية
+      staleTime: 1000 * 30,
+      refetchInterval: 30000,
+      refetchOnWindowFocus: false,
   });
 
   const fetchAllData = async () => {
@@ -329,9 +345,20 @@ export default function StaffDashboard({ employee }: Props) {
   const handleInstallClick = async () => {
     if (deferredPrompt) { deferredPrompt.prompt(); const { outcome } = await deferredPrompt.userChoice; if (outcome === 'accepted') { setDeferredPrompt(null); setShowInstallPopup(false); } }
   };
+  
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  // ✅ ترتيب القائمة وتعيين البادجات (محسّن بـ useMemo)
+  // دالة تفعيل الإشعارات يدوياً من الشريط
+  const handleEnableNotifications = async () => {
+    const result = await requestNotificationPermission(employee.employee_id);
+    if (result) {
+      setNotificationStatus('granted');
+      toast.success('تم تفعيل التنبيهات بنجاح! 🔔');
+    } else {
+      toast.error('يرجى تفعيل الإذن من إعدادات المتصفح ⚙️');
+    }
+  };
+
   const menuItems = useMemo(() => [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
@@ -362,13 +389,52 @@ export default function StaffDashboard({ employee }: Props) {
   );
 
   return (
-<div {...swipeHandlers} className="min-h-screen w-full bg-gray-50 flex overflow-visible font-sans text-right" dir="rtl">
+    <div {...swipeHandlers} className="min-h-screen w-full bg-gray-50 flex overflow-visible font-sans text-right" dir="rtl">
       
       {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
       
-      {/* ✅ إظهار مكون الثيم فقط إذا كان isThemeEnabled مفعل */}
+      {/* إظهار مكون الثيم فقط إذا كان isThemeEnabled مفعل */}
       {isThemeEnabled && <ThemeOverlay employee={employee} />}
+
+      {/* ✅ 1. شريط الحث الذكي (تثبيت التطبيق + تفعيل الإشعارات) */}
+      <div className="fixed top-0 left-0 right-0 z-[60] flex flex-col gap-2 p-2 md:px-6 pointer-events-none">
+          
+          {/* حث على التثبيت PWA */}
+          {!isStandalone && showInstallPopup && (
+            <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-500 border border-white/20">
+                <div className="flex items-center gap-3">
+                    <div className="bg-white/20 p-2 rounded-xl">
+                        <DownloadCloud className="w-5 h-5 animate-bounce" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-black">ثبّت تطبيق غرب المطار</p>
+                        <p className="text-[10px] opacity-80">لتجربة أسرع وسهولة في الوصول للخدمات</p>
+                    </div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                    <button onClick={() => setShowInstallPopup(false)} className="text-[10px] font-bold px-2 py-1 hover:bg-white/10 rounded-lg">لاحقاً</button>
+                    <button onClick={handleInstallClick} className="bg-white text-indigo-600 text-xs font-black px-4 py-2 rounded-xl shadow-sm active:scale-95 transition-transform">تثبيت</button>
+                </div>
+            </div>
+          )}
+
+          {/* حث على تفعيل الإشعارات */}
+          {notificationStatus !== 'granted' && (
+            <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-orange-500 to-pink-500 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-700 border border-white/20">
+                <div className="flex items-center gap-3">
+                    <div className="bg-white/20 p-2 rounded-xl">
+                        <BellRing className="w-5 h-5 animate-ring" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-black">فعّل التنبيهات اللحظية</p>
+                        <p className="text-[10px] opacity-80">لتصلك المهام والجوائز فور صدورها</p>
+                    </div>
+                </div>
+                <button onClick={handleEnableNotifications} className="bg-white text-orange-600 text-xs font-black px-5 py-2 rounded-xl shadow-sm active:scale-95 transition-transform shrink-0">تفعيل</button>
+            </div>
+          )}
+      </div>
 
       {/* مكون التدريب الإجباري */}
       {pendingMandatoryTraining && (
@@ -405,7 +471,7 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
       )}
 
-      {/* --- تظليل الخلفية عند فتح القائمة --- */}
+      {/* تظليل الخلفية عند فتح القائمة */}
       {isSidebarOpen && (
         <div 
             className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" 
@@ -413,14 +479,13 @@ export default function StaffDashboard({ employee }: Props) {
         />
       )}
 
-      {/* --- القائمة الجانبية (Sidebar) --- */}
+      {/* القائمة الجانبية (Sidebar) */}
       <aside className={`
           fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl 
           transform transition-transform duration-300 ease-in-out flex flex-col 
           ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
           md:translate-x-0 md:static md:w-72 md:shadow-none h-[100dvh]
       `}>
-        {/* Header القائمة */}
         <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-gradient-to-r from-emerald-50 to-white">
             <div className="flex items-center gap-3">
                 <div className="bg-white p-1.5 rounded-xl shadow-sm border border-emerald-100">
@@ -436,7 +501,6 @@ export default function StaffDashboard({ employee }: Props) {
             </button>
         </div>
 
-        {/* عناصر القائمة (Scrollable) */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
           {menuItems.map((item: any) => {
             const Icon = item.icon;
@@ -456,7 +520,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
                 
-                {/* ✅ الكود الخاص بكلمة NEW أو البادجات الرقمية */}
                 {item.isNew && (
                     <span className="absolute left-4 bg-fuchsia-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse border border-white shadow-md">
                         NEW!
@@ -477,10 +540,8 @@ export default function StaffDashboard({ employee }: Props) {
               </button>
             );
           })}
-          <div className="h-4 md:h-0"></div>
         </nav>
 
-        {/* Footer القائمة */}
         <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe gap-1">
             <button onClick={handleShareApp} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
                 <Share2 className="w-5 h-5" />
@@ -490,7 +551,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <Info className="w-5 h-5" />
                 <span className="text-[9px] font-bold">حول</span>
             </button>
-            {/* ✅ زر الثيم الجديد في الأسفل */}
             <button onClick={() => setIsThemeEnabled(!isThemeEnabled)} className={`flex-1 p-2 rounded-xl transition-colors flex flex-col items-center gap-1 ${isThemeEnabled ? 'text-purple-600 bg-purple-50' : 'text-gray-500 hover:bg-gray-100'}`}>
                 <Sparkles className="w-5 h-5" />
                 <span className="text-[9px] font-bold">الثيم</span>
@@ -502,7 +562,7 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
       </aside>
 
-      {/* --- المحتوى الرئيسي --- */}
+      {/* المحتوى الرئيسي */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
         <header className="h-16 bg-white border-b flex items-center justify-between px-3 md:px-6 sticky top-0 z-30 shadow-sm shrink-0 bg-white/95">
             <div className="flex items-center gap-2 md:gap-3">
@@ -513,131 +573,41 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
 
             <div className="flex items-center gap-1 md:gap-2">
-                
-                {/* 1. متجر الجوائز السريع */}
-                <div className="relative group">
-                    <button 
-                        onClick={() => setActiveTab('store')} 
-                        className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'store' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
-                        title="متجر الجوائز"
-                    >
-                        <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
-                        {pendingRewardsCount > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">
-                                {pendingRewardsCount}
-                            </span>
-                        )}
-                    </button>
-                </div>
-
-                {/* 2. المستوى */}
-                <div className="relative group">
-                    <button 
-                        onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
-                        className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLevelMenu ? 'bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 shadow-sm' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                    >
-                        <Star className={`w-4 h-4 md:w-5 md:h-5 ${showLevelMenu ? 'animate-spin' : ''}`} style={{ animationDuration: '2s' }} />
-                    </button>
-                    {/* ✅ نافذة المستوى للموبايل (Modal في المنتصف) */}
-                    {showLevelMenu && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLevelMenu(false)}>
-                            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                                <div className="flex justify-between items-center mb-4">
-                                    <h3 className="font-black text-gray-800">مستواك الحالي</h3>
-                                    <button onClick={()=>setShowLevelMenu(false)} className="p-1 bg-gray-100 rounded-full"><X className="w-5 h-5"/></button>
-                                </div>
-                                <LevelProgressBar employee={employee} />
-                            </div>
-                        </div>
+                <button 
+                    onClick={() => setActiveTab('store')} 
+                    className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'store' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
+                >
+                    <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
+                    {pendingRewardsCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">
+                            {pendingRewardsCount}
+                        </span>
                     )}
-                </div>
+                </button>
 
-                {/* 3. لوحة الشرف */}
-                <div className="relative group">
-                    <button 
-                        onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
-                        className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
-                    >
-                        <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
-                    </button>
-                    {/* ✅ نافذة لوحة الشرف للموبايل */}
-                    {showLeaderboardMenu && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowLeaderboardMenu(false)}>
-                            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                                <div className="p-4 border-b flex justify-between items-center bg-yellow-50">
-                                    <h3 className="font-black text-gray-800 flex items-center gap-2"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
-                                    <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500"><X className="w-5 h-5"/></button>
-                                </div>
-                                <div className="overflow-y-auto custom-scrollbar p-2 flex-1">
-                                    <LeaderboardWidget />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
+                <button 
+                    onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
+                    className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLevelMenu ? 'bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 shadow-sm' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                >
+                    <Star className={`w-4 h-4 md:w-5 md:h-5 ${showLevelMenu ? 'animate-spin' : ''}`} style={{ animationDuration: '2s' }} />
+                </button>
 
-                {/* 4. الإشعارات */}
-                <div className="relative group">
-                    <button onClick={markNotifsAsRead} className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
-                        <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : 'text-gray-600'}`} />
-                        {unreadNotifsCount > 0 && (
-                            <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">{unreadNotifsCount}</span>
-                        )}
-                    </button>
-                    {/* ✅ نافذة الإشعارات للموبايل */}
-                    {showNotifMenu && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
-                            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                                <div className="p-3 border-b bg-gradient-to-r from-gray-50 to-white font-black text-sm text-gray-800 flex justify-between items-center">
-                                    <span className="flex items-center gap-2">
-                                        <Bell className="w-4 h-4 text-emerald-600"/> آخر التنبيهات
-                                    </span>
-                                    <button onClick={() => setShowNotifMenu(false)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-lg hover:bg-gray-100">
-                                        <X size={16}/>
-                                    </button>
-                                </div>
-                                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                                    {notifications.length === 0 ? (
-                                        <div className="p-12 text-center">
-                                            <Bell className="w-16 h-16 mx-auto text-gray-300 mb-3"/>
-                                            <p className="text-gray-400 text-sm font-bold">لا توجد إشعارات حالياً</p>
-                                        </div>
-                                    ) : (
-                                        notifications.map(n => (
-                                            <div 
-                                                key={n.id} 
-                                                onClick={() => {
-                                                    const type = n.type?.toLowerCase() || '';
-                                                    if(type.includes('task')) { setActiveTab('tasks'); }
-                                                    else if(type.includes('message')) { setActiveTab('messages'); }
-                                                    else if(type.includes('ovr')) { setActiveTab('ovr'); }
-                                                    else if(type.includes('training')) { setActiveTab('training'); }
-                                                    else if(type.includes('leave')) { setActiveTab('requests-history'); }
-                                                    else if(type.includes('reward') || type.includes('store')) { setActiveTab('store'); }
-                                                    else if(type.includes('shift') || type.includes('swap')) { setActiveTab('shift-requests'); }
-                                                    setShowNotifMenu(false);
-                                                }}
-                                                className={`p-3 border-b border-gray-50 flex gap-3 hover:bg-emerald-50/30 cursor-pointer transition-colors ${!n.is_read ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''}`}
-                                            >
-                                                <div className={`w-9 h-9 rounded-full ${!n.is_read ? 'bg-emerald-100' : 'bg-gray-100'} flex items-center justify-center ${!n.is_read ? 'text-emerald-600' : 'text-gray-500'} shrink-0 font-bold uppercase text-xs`}>
-                                                    {n.type === 'task' ? <ListTodo size={16}/> : n.type === 'training' ? <BookOpen size={16}/> : <Bell size={16}/>}
-                                                </div>
-                                                <div className="space-y-0.5 flex-1">
-                                                    <p className="text-xs text-gray-800 leading-relaxed font-bold">{n.title}</p>
-                                                    <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{n.message}</p>
-                                                    <p className="text-[10px] text-gray-400 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})}</p>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        </div>
+                <button 
+                    onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
+                    className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
+                >
+                    <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
+                </button>
+
+                <button onClick={markNotifsAsRead} className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                    <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : 'text-gray-600'}`} />
+                    {unreadNotifsCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">{unreadNotifsCount}</span>
                     )}
-                </div>
-                <div className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1">
-                    {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full bg-emerald-200 flex items-center justify-center rounded-full text-emerald-700 font-bold text-sm">{employee.name.charAt(0)}</div>}
-                </div>
+                </button>
+            </div>
+            <div className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1">
+                {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full bg-emerald-200 flex items-center justify-center rounded-full text-emerald-700 font-bold text-sm">{employee.name.charAt(0)}</div>}
             </div>
         </header>
 
@@ -748,18 +718,45 @@ export default function StaffDashboard({ employee }: Props) {
 
       </div>
 
+      {/* مودال المستويات ولوحة الشرف للهواتف (Global Modals) */}
+      {showLevelMenu && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLevelMenu(false)}>
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="font-black text-gray-800 flex items-center gap-2"><Star className="w-5 h-5 text-indigo-600"/> مستواك الحالي</h3>
+                      <button onClick={()=>setShowLevelMenu(false)} className="p-1 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><X size={18}/></button>
+                  </div>
+                  <LevelProgressBar employee={employee} />
+              </div>
+          </div>
+      )}
+
+      {showLeaderboardMenu && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                  <div className="p-4 border-b flex justify-between items-center bg-yellow-50">
+                      <h3 className="font-black text-gray-800 flex items-center gap-2"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
+                      <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><X size={18}/></button>
+                  </div>
+                  <div className="overflow-y-auto custom-scrollbar p-2 flex-1">
+                      <LeaderboardWidget />
+                  </div>
+              </div>
+          </div>
+      )}
+
       {showAboutModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-3xl p-6 w-full max-w-sm text-center relative animate-in zoom-in-95">
-                  <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100"><X size={16}/></button>
-                  <div className="w-16 h-16 bg-emerald-100 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200">
-                        <img src="/pwa-192x192.png" className="w-12 h-12 rounded-xl" alt="Logo" />
+              <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95 shadow-2xl">
+                  <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100 transition-colors"><X size={16}/></button>
+                  <div className="w-20 h-20 bg-emerald-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-emerald-200 rotate-3 hover:rotate-0 transition-transform duration-300">
+                        <img src="/pwa-192x192.png" className="w-14 h-14 rounded-xl" alt="Logo" />
                   </div>
-                  <h2 className="text-lg font-black text-gray-800">غرب المطار</h2>
-                  <p className="text-xs text-gray-500 font-bold mb-4">نظام إدارة الموارد البشرية</p>
-                  <div className="space-y-2 text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border">
-                      <div className="flex justify-between"><span>الإصدار:</span><span className="font-bold">1.2.0</span></div>
-                      <div className="flex justify-between"><span>التطوير:</span><span className="font-bold">IT Department</span></div>
+                  <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
+                  <p className="text-xs text-gray-500 font-bold mb-6 tracking-widest uppercase">نظام إدارة الموارد البشرية</p>
+                  <div className="space-y-3 text-xs text-gray-600 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                      <div className="flex justify-between border-b border-gray-200 pb-2"><span>الإصدار:</span><span className="font-black text-gray-800">2.1.0</span></div>
+                      <div className="flex justify-between pt-1"><span>التطوير:</span><span className="font-black text-emerald-600">IT Department</span></div>
                   </div>
               </div>
         </div>
