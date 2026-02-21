@@ -54,6 +54,9 @@ export default function QualityDashboard() {
     // ------------------------------------------------------------------
     // 2. 🛠️ Submit Response & Notify (Complex Mutation)
     // ------------------------------------------------------------------
+// ------------------------------------------------------------------
+    // 2. 🛠️ Submit Response & Notify (Complex Mutation)
+    // ------------------------------------------------------------------
     const responseMutation = useMutation({
         mutationFn: async () => {
             if (!selectedReport || !response) throw new Error("بيانات ناقصة");
@@ -69,13 +72,29 @@ export default function QualityDashboard() {
 
             if (updateError) throw updateError;
 
-            // 2. Notify Reporter
-            await supabase.from('notifications').insert({
-                user_id: selectedReport.reporter_id,
-                title: 'تم الرد على تقرير OVR',
-                message: 'قام قسم الجودة بالرد على التقرير الذي أرسلته.',
-                is_read: false
-            });
+            // 2. Notify Reporter (إذا لم يكن التقرير مجهولاً وكان هناك ID للمبلغ)
+            if (selectedReport.reporter_id) {
+                const reporterTitle = 'تم الرد على تقرير OVR';
+                const reporterMsg = 'قام قسم الجودة بالرد على التقرير الذي أرسلته.';
+
+                await supabase.from('notifications').insert({
+                    user_id: String(selectedReport.reporter_id),
+                    title: reporterTitle,
+                    message: reporterMsg,
+                    type: 'ovr_reply',
+                    is_read: false
+                });
+
+                // ✅ إرسال إشعار لحظي للمبلغ
+                supabase.functions.invoke('send-push-notification', {
+                    body: {
+                        userId: String(selectedReport.reporter_id),
+                        title: reporterTitle,
+                        body: reporterMsg,
+                        url: '/staff?tab=ovr'
+                    }
+                }).catch(err => console.error("Push error reporter:", err));
+            }
 
             // 3. Notify Admins
             const { data: admins } = await supabase
@@ -84,14 +103,32 @@ export default function QualityDashboard() {
                 .eq('role', 'admin');
 
             if (admins && admins.length > 0) {
+                const adminTitle = '🔴 تقرير جودة تم إغلاقه';
+                const adminMsg = `قام مسؤول الجودة بالرد على واقعة ${selectedReport.is_anonymous ? 'مجهولة' : selectedReport.reporter_name}.`;
+
                 const adminNotifications = admins.map(admin => ({
-                    user_id: admin.employee_id,
-                    title: '🔴 تقرير جودة تم إغلاقه',
-                    message: `قام مسؤول الجودة بالرد على واقعة ${selectedReport.is_anonymous ? 'مجهولة' : selectedReport.reporter_name}.`,
+                    user_id: String(admin.employee_id),
+                    title: adminTitle,
+                    message: adminMsg,
+                    type: 'ovr_report',
                     is_read: false
                 }));
                 
                 await supabase.from('notifications').insert(adminNotifications);
+
+                // ✅ إرسال إشعار لحظي للمديرين بشكل متوازي
+                Promise.all(
+                    admins.map(admin =>
+                        supabase.functions.invoke('send-push-notification', {
+                            body: {
+                                userId: String(admin.employee_id),
+                                title: adminTitle,
+                                body: adminMsg,
+                                url: '/admin?tab=quality'
+                            }
+                        })
+                    )
+                ).catch(err => console.error("Push error admin:", err));
             }
         },
         onSuccess: () => {
@@ -105,7 +142,7 @@ export default function QualityDashboard() {
             toast.error('حدث خطأ: ' + err.message);
         }
     });
-
+    
     // ------------------------------------------------------------------
     // 3. 🎨 UI Render
     // ------------------------------------------------------------------
