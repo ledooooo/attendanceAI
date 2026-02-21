@@ -6,7 +6,6 @@ import {
     CheckCircle2, Clock, User, FileText, 
     Check, X, Filter, Search, Calendar, AlertCircle, Loader2
 } from 'lucide-react';
-// 1. ✅ استيراد React Query
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function DepartmentRequests({ hod }: { hod: Employee }) {
@@ -22,7 +21,7 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
     // 1. 📥 جلب طلبات القسم (Query)
     // ------------------------------------------------------------------
     const { data: requests = [], isLoading } = useQuery({
-        queryKey: ['dept_requests', hod.specialty, filterMonth], // مفتاح الكاش يعتمد على التخصص والشهر
+        queryKey: ['dept_requests', hod.specialty, filterMonth], 
         queryFn: async () => {
             // أ) جلب موظفي القسم
             const { data: deptEmployees } = await supabase
@@ -57,13 +56,10 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                 };
             });
         },
-        staleTime: 1000 * 60 * 5, // البيانات صالحة لمدة 5 دقائق
+        staleTime: 1000 * 60 * 5, 
     });
 
     // ------------------------------------------------------------------
-    // 2. 🛠️ اتخاذ الإجراء (Mutation)
-    // ------------------------------------------------------------------
-// ------------------------------------------------------------------
     // 2. 🛠️ اتخاذ الإجراء (Mutation المطور بنظام الإشعارات)
     // ------------------------------------------------------------------
     const actionMutation = useMutation({
@@ -87,7 +83,6 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
             const empNotifTitle = action === 'approve' ? '✅ موافقة مبدئية' : '❌ تم رفض طلبك';
             const empNotifMsg = `تم ${action === 'approve' ? 'الموافقة المبدئية' : 'رفض'} طلب ${type} الخاص بك بتاريخ ${start_date} من قبل رئيس القسم.`;
 
-            // حفظ في الداتابيز للموظف
             await supabase.from('notifications').insert({
                 user_id: String(employee_id),
                 title: empNotifTitle,
@@ -96,15 +91,14 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                 is_read: false
             });
 
-            // إرسال Push للموظف
             supabase.functions.invoke('send-push-notification', {
                 body: { userId: String(employee_id), title: empNotifTitle, body: empNotifMsg, url: '/staff' }
             }).catch(e => console.error("Push Employee Error:", e));
 
             // 2. إشعار للمدير العام (في حالة الموافقة فقط)
             if (action === 'approve') {
-                const adminTitle = '✍️ طلب بانتظار الاعتماد النهائي';
-                const adminMsg = `وافق رئيس القسم على طلب ${type} للموظف ${employee_id}. يرجى الاعتماد النهائي.`;
+                const adminTitle = '✍️ طلب بانتظار الاعتماد';
+                const adminMsg = `وافق رئيس القسم على طلب ${type} للموظف ${employee_id}.`;
 
                 await supabase.from('notifications').insert({
                     user_id: 'admin',
@@ -129,7 +123,6 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
         onError: (err: any) => toast.error('خطأ: ' + err.message)
     });
 
-    // تحديث دالة الضغط لتمرير البيانات الإضافية
     const handleAction = (req: any, action: 'approve' | 'reject') => {
         const confirmMsg = action === 'approve' ? 'الموافقة المبدئية ورفعه للمدير' : 'رفض الطلب نهائياً';
         if (confirm(`هل أنت متأكد من ${confirmMsg}؟`)) {
@@ -142,16 +135,18 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
             });
         }
     };
-    const handleAction = (id: string, action: 'approve' | 'reject') => {
-        const confirmMsg = action === 'approve' ? 'الموافقة المبدئية ورفعه للمدير' : 'رفض الطلب نهائياً';
-        if (confirm(`هل أنت متأكد من ${confirmMsg}؟`)) {
-            actionMutation.mutate({ id, action });
-        }
-    };
 
     // ------------------------------------------------------------------
-    // 3. 🎨 المنطق والفلترة (UI Logic)
+    // 3. 🎨 التنسيقات والألوان
     // ------------------------------------------------------------------
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'مقبول': return 'bg-green-100 text-green-700 border-green-200';
+            case 'مرفوض': return 'bg-red-100 text-red-700 border-red-200';
+            case 'موافقة_رئيس_القسم': return 'bg-blue-100 text-blue-700 border-blue-200';
+            default: return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        }
+    };
 
     const filteredRequests = requests.filter((req: any) => {
         if (filterStatus !== 'all' && req.status !== filterStatus) return false;
@@ -164,15 +159,6 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
         }
         return true;
     });
-
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'مقبول': return 'bg-green-100 text-green-700 border-green-200';
-            case 'مرفوض': return 'bg-red-100 text-red-700 border-red-200';
-            case 'موافقة_رئيس_القسم': return 'bg-blue-100 text-blue-700 border-blue-200';
-            default: return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-        }
-    };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -258,7 +244,6 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                 <div className="grid gap-4">
                     {filteredRequests.map((req: any) => (
                         <div key={req.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
-                            {/* Card Header */}
                             <div className="flex justify-between items-start mb-3">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center border border-purple-100">
@@ -284,7 +269,6 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                                 </div>
                             </div>
 
-                            {/* Details */}
                             <div className="flex items-center gap-4 text-xs text-gray-600 bg-gray-50 p-3 rounded-xl mb-4 border border-gray-100">
                                 <div className="flex items-center gap-1">
                                     <span className="text-gray-400 font-bold">من:</span>
@@ -304,18 +288,17 @@ export default function DepartmentRequests({ hod }: { hod: Employee }) {
                                 </div>
                             )}
 
-                            {/* Actions (Only for pending requests) */}
                             {(req.status === 'قيد الانتظار' || req.status === 'معلق') ? (
                                 <div className="flex gap-2 pt-2 border-t border-gray-50">
                                     <button 
-                                        onClick={() => handleAction(req.id, 'approve')}
+                                        onClick={() => handleAction(req, 'approve')}
                                         disabled={actionMutation.isPending}
                                         className="flex-1 bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-700 flex items-center justify-center gap-1 transition-all shadow-sm active:scale-95 disabled:opacity-50"
                                     >
                                         {actionMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin"/> : <Check className="w-4 h-4"/>} موافقة ورفع للمدير
                                     </button>
                                     <button 
-                                        onClick={() => handleAction(req.id, 'reject')}
+                                        onClick={() => handleAction(req, 'reject')}
                                         disabled={actionMutation.isPending}
                                         className="flex-1 bg-white text-red-600 border border-red-100 py-2.5 rounded-xl text-xs font-bold hover:bg-red-50 flex items-center justify-center gap-1 transition-all active:scale-95 disabled:opacity-50"
                                     >
