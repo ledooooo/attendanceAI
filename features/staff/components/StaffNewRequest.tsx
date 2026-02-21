@@ -218,7 +218,7 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         }
     };
 
-    const submit = async () => {
+const submit = async () => {
         if (!formData.type || !formData.start || !formData.end || !formData.returnDate || !formData.backup) {
             return alert('⚠️ عفواً، جميع الحقول الموضحة بعلامة (*) إجبارية.');
         }
@@ -230,7 +230,7 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         try {
             // 1. حفظ الطلب في قاعدة البيانات
             const { error } = await supabase.from('leave_requests').insert([{ 
-                employee_id: employee.employee_id, 
+                employee_id: String(employee.employee_id), 
                 type: formData.type, 
                 start_date: formData.start, 
                 end_date: formData.end,
@@ -241,19 +241,64 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
             }]);
             if (error) throw error;
 
-            // 2. إشعار للمدير
-            await sendNotification('admin', 'طلب جديد 📄', `قام ${employee.name} بتقديم طلب ${formData.type}`);
+            // --- إرسال الإشعارات اللحظية ---
 
-            // 3. 🔥 إشعار للموظف البديل
+            // 2. إشعار للمدير (نستخدم 'admin' كمعرف موحد للمدير في نظامك)
+            const adminTitle = '📄 طلب جديد';
+            const adminBody = `قام الموظف ${employee.name} بتقديم طلب ${formData.type}`;
+            
+            // أ) الحفظ في notifications
+            await supabase.from('notifications').insert({
+                user_id: 'admin',
+                title: adminTitle,
+                message: adminBody,
+                type: 'leave',
+                is_read: false
+            });
+
+            // ب) إرسال Push Notification للمدير
+            supabase.functions.invoke('send-push-notification', {
+                body: { 
+                    userId: 'admin', 
+                    title: adminTitle, 
+                    body: adminBody, 
+                    url: '/admin?tab=leaves' 
+                }
+            }).catch(e => console.error("Push Admin Error:", e));
+
+
+            // 3. 🔥 إشعار للموظف البديل (باستخدام معرفه الموحد)
             if (selectedBackupId) {
-                await sendNotification(
-                    selectedBackupId, 
-                    'تنبيه قائم بالعمل 🔄', 
-                    `قام ${employee.name} باختيارك كبديل (قائم بالعمل) في طلب ${formData.type} من ${formData.start}`
-                );
+                // جلب الـ employee_id الخاص بالزميل البديل (لأن selectedBackupId هو الـ UUID)
+                const colleague = colleagues.find(c => c.id === selectedBackupId);
+                const colleagueEmpId = colleague?.employee_id;
+
+                if (colleagueEmpId) {
+                    const colleagueTitle = '🔄 تنبيه قائم بالعمل';
+                    const colleagueBody = `قام ${employee.name} باختيارك كبديل في طلب ${formData.type} من ${formData.start}`;
+
+                    // أ) الحفظ في notifications للزميل
+                    await supabase.from('notifications').insert({
+                        user_id: String(colleagueEmpId),
+                        title: colleagueTitle,
+                        message: colleagueBody,
+                        type: 'info',
+                        is_read: false
+                    });
+
+                    // ب) إرسال Push Notification للزميل
+                    supabase.functions.invoke('send-push-notification', {
+                        body: { 
+                            userId: String(colleagueEmpId), 
+                            title: colleagueTitle, 
+                            body: colleagueBody, 
+                            url: '/staff' 
+                        }
+                    }).catch(e => console.error("Push Colleague Error:", e));
+                }
             }
 
-            alert('✅ تم إرسال الطلب وإبلاغ الزميل بنجاح'); 
+            alert('✅ تم إرسال الطلب وإبلاغ الإدارة والزميل بنجاح'); 
             setFormData({ type: LEAVE_TYPES[0], start: '', end: '', returnDate: '', backup: '', notes: '' }); 
             setSelectedBackupId('');
             refresh();
@@ -263,7 +308,6 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
             setSubmitting(false);
         }
     };
-
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
             <h3 className="text-2xl font-black flex items-center gap-3 text-gray-800">
@@ -364,3 +408,4 @@ export default function StaffNewRequest({ employee, refresh, initialDate }: Prop
         </div>
     );
 }
+
