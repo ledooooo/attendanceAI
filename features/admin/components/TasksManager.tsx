@@ -41,11 +41,11 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
         refetchInterval: 10000, 
     });
 
-    // 2. 🚀 إرسال التكليف
+// 2. 🚀 إرسال التكليف (نسخة مطورة وموحدة للإشعارات)
     const sendTaskMutation = useMutation({
         mutationFn: async () => {
             if (!title) throw new Error("يجب كتابة عنوان للتكليف");
-            if (!dueDate) throw new Error("يجب تحديد مدة/موعد انتهاء المهمة"); // ✅ التحقق من التاريخ
+            if (!dueDate) throw new Error("يجب تحديد مدة/موعد انتهاء المهمة");
 
             let targetEmployees: Employee[] = [];
 
@@ -64,38 +64,56 @@ export default function TasksManager({ employees }: { employees: Employee[] }) {
 
             if (targetEmployees.length === 0) throw new Error("لا يوجد موظفين مستهدفين");
 
-            // أ) إدخال التكليفات
+            // أ) إدخال التكليفات في قاعدة البيانات
             const tasksPayload = targetEmployees.map(emp => ({
                 title,
                 description: desc,
-                employee_id: emp.employee_id,
+                employee_id: String(emp.employee_id), // التأكد من أنه نص
                 manager_id: 'admin',
                 priority,
                 status: 'pending',
-                due_date: new Date(dueDate).toISOString() // ✅ حفظ التاريخ
+                due_date: new Date(dueDate).toISOString()
             }));
 
             const { error: taskError } = await supabase.from('tasks').insert(tasksPayload);
             if (taskError) throw taskError;
 
-            // ب) إرسال التنبيهات
-            await Promise.all(targetEmployees.map(emp => 
-                sendSystemNotification(
-                    emp.employee_id,
-                    '⚡ تكليف جديد',
-                    `مطلوب: ${title} - الموعد النهائي: ${new Date(dueDate).toLocaleTimeString('ar-EG', {day:'numeric', month:'numeric', hour:'2-digit', minute:'2-digit'})}`,
-                    'task'
+            // ب) تجهيز وإرسال الإشعارات اللحظية (Push & Database)
+            const notifTitle = priority === 'urgent' ? '🚨 تكليف عاجل وهام' : '⚡ تكليف جديد';
+            const notifMsg = `${title} (الموعد: ${new Date(dueDate).toLocaleDateString('ar-EG')})`;
+
+            // 1. حفظ الإشعارات في جدول notifications
+            const notificationsPayload = targetEmployees.map(emp => ({
+                user_id: String(emp.employee_id),
+                title: notifTitle,
+                message: notifMsg,
+                type: 'task',
+                is_read: false
+            }));
+            await supabase.from('notifications').insert(notificationsPayload);
+
+            // 2. إرسال Push Notifications فورية لكل الأجهزة
+            Promise.all(
+                targetEmployees.map(emp => 
+                    supabase.functions.invoke('send-push-notification', {
+                        body: { 
+                            userId: String(emp.employee_id), 
+                            title: notifTitle, 
+                            body: notifMsg, 
+                            url: '/staff?tab=tasks' 
+                        }
+                    })
                 )
-            ));
+            ).catch(err => console.error("Push Error in Tasks:", err));
 
             return targetEmployees.length;
         },
         onSuccess: (count) => {
-            toast.success(`تم إرسال التكليف لـ ${count} موظف بنجاح`);
+            toast.success(`تم إرسال التكليف لـ ${count} موظف بنجاح 🚀`);
             queryClient.invalidateQueries({ queryKey: ['admin_tasks_history'] });
             setTitle('');
             setDesc('');
-            setDueDate(''); // تصفير التاريخ
+            setDueDate('');
             setActiveTab('history');
         },
         onError: (err: any) => toast.error(err.message)
