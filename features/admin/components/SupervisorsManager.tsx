@@ -30,6 +30,7 @@ export default function SupervisorsManager() {
     const approvedSupervisors = supervisors.filter(s => s.status === 'approved');
 
     // 2. دالة تحديث حالة المشرف (قبول / رفض)
+// 2. دالة تحديث حالة المشرف (قبول / رفض)
     const updateStatusMutation = useMutation({
         mutationFn: async ({ id, newStatus, email, name }: { id: string, newStatus: string, email: string, name: string }) => {
             const { error } = await supabase
@@ -39,14 +40,29 @@ export default function SupervisorsManager() {
             
             if (error) throw error;
 
-            // إذا تم القبول، يمكننا إرسال إشعار ترحيبي يراه فور تسجيل دخوله الأول
+            // إذا تم القبول، إرسال إشعار ترحيبي ولحظي
             if (newStatus === 'approved') {
+                const title = '🎉 مرحباً بك في مركز غرب المطار';
+                const msg = `أهلاً بك أستاذ ${name}. تم تفعيل حسابك الإشرافي بنجاح.`;
+
+                // 1. الحفظ في الداتابيز
                 await supabase.from('notifications').insert({
                     user_id: id,
                     type: 'welcome',
-                    title: '🎉 مرحباً بك في مركز غرب المطار',
-                    message: `أهلاً بك أستاذ ${name}. تم تفعيل حسابك الإشرافي بنجاح. يرجى استكمال ملفك الشخصي للحصول على نقاط إضافية.`,
+                    title: title,
+                    message: msg,
+                    is_read: false
                 });
+
+                // ✅ 2. إرسال الإشعار اللحظي (Push Notification)
+                supabase.functions.invoke('send-push-notification', {
+                    body: {
+                        userId: id,
+                        title: title,
+                        body: msg,
+                        url: '/'
+                    }
+                }).catch(err => console.error("Push Error Supervisors:", err));
             }
             
             return { newStatus, email };
@@ -54,17 +70,14 @@ export default function SupervisorsManager() {
         onSuccess: (data) => {
             if (data.newStatus === 'approved') {
                 toast.success('تم قبول المشرف وتفعيل حسابه بنجاح! ✅');
-                // تذكير للمدير ليقوم بمراسلته
-                toast('لا تنسَ إبلاغه عبر الواتساب أو الإيميل بأنه يمكنه الدخول الآن.', { icon: '💡', duration: 5000 });
             } else {
                 toast.error('تم رفض الطلب.');
             }
             queryClient.invalidateQueries({ queryKey: ['admin_supervisors'] });
-            queryClient.invalidateQueries({ queryKey: ['admin_badges'] }); // لتحديث عداد القائمة الجانبية
+            queryClient.invalidateQueries({ queryKey: ['admin_badges'] }); 
         },
         onError: (err: any) => toast.error(err.message)
     });
-
     // 3. دالة حذف مشرف
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
