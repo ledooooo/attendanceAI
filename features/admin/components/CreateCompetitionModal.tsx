@@ -35,15 +35,14 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
     // --- Queries ---
     
-    // 1. الموظفين
-    const { data: employees = [] } = useQuery({
+const { data: employees = [] } = useQuery({
         queryKey: ['active_employees'],
         queryFn: async () => {
-            const { data } = await supabase.from('employees').select('id, name').eq('status', 'نشط');
+            // ✅ تم إضافة employee_id ليكون الهوية الموحدة للإشعارات
+            const { data } = await supabase.from('employees').select('id, employee_id, name').eq('status', 'نشط');
             return data || [];
         }
     });
-
     // 2. تخصصات البنك
     const { data: specialties = [] } = useQuery({
         queryKey: ['bank_specialties'],
@@ -164,7 +163,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         toast.success('تم اختيار السؤال');
     };
 
-    const handleCreate = async () => {
+const handleCreate = async () => {
         if (team1.length === 0 || team2.length === 0) return toast.error('يجب اختيار فرق');
         if (questions.some(q => !q.text || !q.a || !q.b)) return toast.error('يرجى إكمال جميع الأسئلة');
 
@@ -196,8 +195,15 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
             // 3. إشعار المتسابقين
             const allPlayers = [...team1, ...team2];
-            const notificationsPayload = allPlayers.map(playerId => ({
-                user_id: playerId,
+            
+            // ✅ تحويل الـ UUID إلى employee_id الفعلي لكل موظف
+            const allPlayerEmpIds = allPlayers.map(id => {
+                const emp = employees.find((e: any) => e.id === id);
+                return emp?.employee_id || id;
+            });
+
+            const notificationsPayload = allPlayerEmpIds.map(empId => ({
+                user_id: String(empId),
                 title: '🔥 تحدي جديد!',
                 message: `تم اختيارك للمشاركة في مسابقة جديدة ضد الفريق المنافس. استعد وأثبت وجودك! 🏆`,
                 type: 'competition',
@@ -205,7 +211,22 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             }));
 
             if (notificationsPayload.length > 0) {
+                // حفظ في قاعدة البيانات
                 await supabase.from('notifications').insert(notificationsPayload);
+
+                // ✅ إرسال الإشعارات الفورية (Push) بشكل متوازي (Parallel) ليتوافق مع السيرفر
+                Promise.all(
+                    allPlayerEmpIds.map(empId => 
+                        supabase.functions.invoke('send-push-notification', {
+                            body: { 
+                                userId: String(empId), 
+                                title: '🔥 تحدي جديد!', 
+                                body: 'تم اختيارك للمشاركة في مسابقة جديدة. استعد وأثبت وجودك! 🏆', 
+                                url: '/staff?tab=competitions' 
+                            }
+                        })
+                    )
+                ).catch(err => console.error("Push invocation error:", err));
             }
 
             toast.success('تم إطلاق المسابقة! 🚀');
@@ -217,7 +238,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             setLoading(false);
         }
     };
-
+    
     const getEmpName = (id: string) => employees.find((e: any) => e.id === id)?.name || 'غير معروف';
 
     return (
