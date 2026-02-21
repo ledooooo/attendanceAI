@@ -103,15 +103,31 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     // 2. 🛠️ العمليات (Mutations للأخبار)
     // ------------------------------------------------------------------
 
-    const sendNotification = async (recipientId: string, type: string, postId: string, message: string) => {
-        if (recipientId === employee.employee_id) return;
+// دالة محسنة لإرسال إشعار داخلي + إشعار لحظي (Push)
+    const sendInstantNotification = async (recipientEmpId: string, title: string, body: string, type: string) => {
+        if (recipientEmpId === String(employee.employee_id)) return;
+
+        // 1. الحفظ في جدول الإشعارات بـ Supabase
         await supabase.from('notifications').insert({
-            recipient_id: recipientId, sender_id: employee.employee_id,
-            sender_name: employee.name, type, post_id: postId, message
+            user_id: recipientEmpId, // الهوية الموحدة (مثل 80)
+            title: title,
+            message: body,
+            type: type,
+            is_read: false
         });
+
+        // ✅ 2. إرسال Push Notification لحظي لهاتف المستلم
+        supabase.functions.invoke('send-push-notification', {
+            body: { 
+                userId: recipientEmpId, 
+                title: title, 
+                body: body, 
+                url: '/staff?tab=news' // توجيهه لتبويب الأخبار عند النقر
+            }
+        }).catch(err => console.error("Push Error in News Feed:", err));
     };
 
-    const reactionMutation = useMutation({
+const reactionMutation = useMutation({
         mutationFn: async ({ id, emoji, type, targetUserId }: { id: string, emoji: string, type: 'post' | 'comment', targetUserId: string }) => {
             const table = type === 'post' ? 'post_reactions' : 'comment_reactions';
             const field = type === 'post' ? 'post_id' : 'comment_id';
@@ -123,21 +139,25 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 return { action: 'removed', emoji };
             } else {
                 await supabase.from(table).insert({ [field]: id, user_id: employee.employee_id, user_name: employee.name, emoji });
-                sendNotification(targetUserId, 'reaction', id, `تفاعل ${employee.name} بـ ${emoji} على ${type === 'post' ? 'منشورك' : 'تعليقك'}`);
+                
+                // ✅ إرسال إشعار لصاحب المنشور/التعليق
+                const msgBody = `تفاعل ${employee.name} بـ ${emoji} على ${type === 'post' ? 'منشورك' : 'تعليقك'}`;
+                sendInstantNotification(String(targetUserId), '❤️ تفاعل جديد', msgBody, 'reaction');
+                
                 return { action: 'added', emoji };
             }
         },
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] });
-            if (data.action === 'added') toast.success(`تم التفاعل ${data.emoji}`, { duration: 1000 });
             setShowPostReactions(null);
             setShowCommentReactions(null);
         },
         onError: () => toast.error('حدث خطأ في التفاعل')
     });
 
-    const commentMutation = useMutation({
-        mutationFn: async ({ postId, text }: { postId: string, text: string }) => {
+    
+const commentMutation = useMutation({
+        mutationFn: async ({ postId, text, postAuthorId }: { postId: string, text: string, postAuthorId: string }) => {
             const payload: any = { 
                 post_id: postId, 
                 user_id: employee.employee_id, 
@@ -148,18 +168,26 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             
             const { error } = await supabase.from('news_comments').insert(payload);
             if (error) throw error;
+
+            // ✅ إرسال إشعار لصاحب الرد أو صاحب المنشور
+            if (replyTo) {
+                const msg = `ردَّ ${employee.name} على تعليقك: "${text.substring(0, 20)}..."`;
+                sendInstantNotification(String(replyTo.userId), '💬 رد جديد', msg, 'reply');
+            } else {
+                const msg = `علّق ${employee.name} على منشورك: "${text.substring(0, 20)}..."`;
+                sendInstantNotification(String(postAuthorId), '💬 تعليق جديد', msg, 'comment');
+            }
+
             return { postId };
         },
         onSuccess: (data) => {
             toast.success('تم النشر بنجاح!');
-            if (replyTo) sendNotification(replyTo.userId, 'reply', data.postId, `ردَّ ${employee.name} على تعليقك`);
             setCommentText(prev => ({ ...prev, [data.postId]: '' }));
             setReplyTo(null);
             queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] });
         },
         onError: () => toast.error('فشل نشر التعليق')
     });
-
     const formatDateTime = (dateStr: string) => {
         const date = new Date(dateStr);
         return {
