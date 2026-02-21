@@ -60,27 +60,42 @@ export default function NewsManagementTab() {
     }
   };
 
-  // ✅ الدالة الجديدة لإرسال الإشعارات لجميع المشتركين
+// ✅ الدالة الموحدة لإرسال الإشعارات لجميع الموظفين
   const triggerPushNotifications = async (title: string, body: string) => {
     try {
-      // جلب كافة الاشتراكات المسجلة
-      const { data: subs } = await supabase
-        .from('push_subscriptions')
-        .select('subscription_data');
+      // 1. جلب جميع أرقام الموظفين النشطين
+      const { data: activeEmps } = await supabase
+        .from('employees')
+        .select('employee_id')
+        .eq('status', 'نشط');
 
-      if (!subs || subs.length === 0) return;
+      if (!activeEmps || activeEmps.length === 0) return;
 
-      // استدعاء الوظيفة السحابية لإرسال الإشعارات
-      await supabase.functions.invoke('send-push-notification', {
-        body: {
-          subscriptions: subs.map(s => s.subscription_data),
-          payload: {
-            title: "خبر جديد من الإدارة 📢",
-            body: title,
-            url: "/staff/news" // الرابط الذي سيفتحه الموظف عند النقر
-          }
-        }
-      });
+      // 2. تسجيل الإشعار في قاعدة البيانات لجميع الموظفين
+      const notificationsPayload = activeEmps.map(emp => ({
+        user_id: String(emp.employee_id),
+        title: "خبر جديد من الإدارة 📢",
+        message: title,
+        type: 'general',
+        is_read: false
+      }));
+
+      await supabase.from('notifications').insert(notificationsPayload);
+
+      // 3. إرسال الإشعارات الفورية (Push) بشكل متوازي (Parallel) ليتوافق مع السيرفر
+      Promise.all(
+          activeEmps.map(emp => 
+              supabase.functions.invoke('send-push-notification', {
+                  body: { 
+                      userId: String(emp.employee_id), 
+                      title: "خبر جديد من الإدارة 📢", 
+                      body: title.substring(0, 50), 
+                      url: '/staff?tab=news' 
+                  }
+              })
+          )
+      ).catch(err => console.error("Push invocation error:", err));
+      
     } catch (err) {
       console.error("Notification Error:", err);
     }
@@ -112,7 +127,7 @@ export default function NewsManagementTab() {
     });
 
     if (!error) {
-      // ✅ 2. إرسال إشعارات فورية لكل الأجهزة المفعلة
+      // ✅ 2. استدعاء دالة الإشعارات الموحدة
       await triggerPushNotifications(formData.title, formData.content);
 
       alert('تم نشر الخبر وإرسال تنبيهات للموظفين بنجاح ✅');
@@ -126,6 +141,7 @@ export default function NewsManagementTab() {
     setSubmitting(false);
   };
 
+  
   const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا الخبر؟')) return;
     try {
