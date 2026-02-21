@@ -114,44 +114,59 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
     // 2. Mutations
     
-    // ✅ 3. دالة منح النقاط
+// ✅ 3. دالة منح النقاط (نسخة مطورة بالإشعارات اللحظية)
     const givePointsMutation = useMutation({
         mutationFn: async () => {
             if (!rewardData.reason) throw new Error("يجب كتابة سبب المكافأة");
             
-            // أ) زيادة النقاط
+            // أ) زيادة النقاط في قاعدة البيانات
             const { error: rpcError } = await supabase.rpc('increment_points', { 
                 emp_id: rewardData.empId, 
                 amount: rewardData.amount 
             });
             if (rpcError) throw rpcError;
 
-            // ب) تسجيل في السجل
+            // ب) تسجيل العملية في سجل النقاط
             await supabase.from('points_ledger').insert({
                 employee_id: rewardData.empId,
                 points: rewardData.amount,
                 reason: `مكافأة إدارية: ${rewardData.reason}`
             });
 
-            // ج) إرسال إشعار للموظف
+            // ج) إرسال الإشعارات
+            const notifTitle = '🎉 مكافأة جديدة!';
+            const notifMsg = `تم منحك ${rewardData.amount} نقطة من الإدارة. السبب: ${rewardData.reason}`;
+
+            // 1. الحفظ في جدول notifications
             await supabase.from('notifications').insert({
-                user_id: rewardData.empId,
-                title: '🎉 مكافأة جديدة!',
-                message: `تم منحك ${rewardData.amount} نقطة من الإدارة. السبب: ${rewardData.reason}`,
+                user_id: String(rewardData.empId),
+                title: notifTitle,
+                message: notifMsg,
                 type: 'reward',
                 sender_name: 'الإدارة',
                 is_read: false
             });
+
+            // ✅ 2. إرسال Push Notification لحظي لهاتف الموظف
+            supabase.functions.invoke('send-push-notification', {
+                body: { 
+                    userId: String(rewardData.empId), 
+                    title: notifTitle, 
+                    body: notifMsg, 
+                    url: '/staff?tab=store' // توجيه الموظف لمتجر الجوائز لرؤية رصيده
+                }
+            }).catch(err => console.error("Push Reward Error:", err));
         },
         onSuccess: () => {
-            toast.success(`تم منح ${rewardData.amount} نقطة للموظف ${rewardData.empName}`);
+            toast.success(`تم منح ${rewardData.amount} نقطة للموظف ${rewardData.empName} بنجاح 🎁`);
             setShowRewardModal(false);
             setRewardData({ empId: '', empName: '', amount: 10, reason: '' });
-            queryClient.invalidateQueries({ queryKey: ['admin_employees'] }); // تحديث القائمة
+            queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
         },
         onError: (err: any) => toast.error(err.message)
     });
 
+    
     const saveMutation = useMutation({
         mutationFn: async (data: any) => {
             // التحقق من تفعيل صلاحية الإحصائيات إذا تم اختيارها من المصفوفة
