@@ -17,10 +17,9 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 const NOTIFICATION_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
 
 export const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
-  // التصحيح هنا: نستخرج employeeProfile بدلاً من role
   const { user, employeeProfile } = useAuth();
   
-  // نستخرج الدور من ملف الموظف (إذا كان محملاً)
+  // استخراج الدور من ملف الموظف
   const role = employeeProfile?.role; 
 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -31,7 +30,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     try {
       const audio = new Audio(NOTIFICATION_SOUND_URL);
       audio.play().catch(() => {}); 
-    } catch (error) { console.error(error); }
+    } catch (error) { console.error("Audio playback failed:", error); }
   };
 
   const showToast = (title: string, msg: string) => {
@@ -40,17 +39,15 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       setTimeout(() => setToast(null), 5000);
   };
 
-  const fetchNotifications = async () => {
-    if (!user) return;
-    
-    // تحديد هوية المستلم بناءً على الدور
-    let targetId = user.id; // احتياطي
+  // دالة موحدة لتحديد المعرف المستخدم في الإشعارات
+  const getTargetId = () => {
+    if (role === 'admin') return 'admin';
+    return employeeProfile?.employee_id ? String(employeeProfile.employee_id) : user?.id;
+  };
 
-    if (role === 'admin') {
-        targetId = 'admin';
-    } else if (employeeProfile?.employee_id) {
-        targetId = employeeProfile.employee_id;
-    }
+  const fetchNotifications = async () => {
+    const targetId = getTargetId();
+    if (!targetId) return;
 
     const { data, error } = await supabase
       .from('notifications')
@@ -66,15 +63,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   };
 
   const markAsRead = async () => {
-    if (!user) return;
-    
-    let targetId = user.id;
-
-    if (role === 'admin') {
-        targetId = 'admin';
-    } else if (employeeProfile?.employee_id) {
-        targetId = employeeProfile.employee_id;
-    }
+    const targetId = getTargetId();
+    if (!targetId) return;
 
     const { error } = await supabase
       .from('notifications')
@@ -98,53 +88,51 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   };
 
   useEffect(() => {
-    fetchNotifications();
-    if (!user) return;
+    const targetId = getTargetId();
+    if (!targetId) return;
 
+    fetchNotifications();
+
+    // إنشاء قناة اتصال حية مع فلترة من جهة السيرفر لتحسين الأداء
     const channel = supabase
-      .channel('public:notifications')
+      .channel(`notifs:${targetId}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications' },
-        async (payload) => {
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'notifications',
+          filter: `user_id=in.(${targetId},all)` // استقبال ما يخصني فقط
+        },
+        (payload) => {
           const newNotif = payload.new as AppNotification;
-          
-          let myTargetId = 'admin'; 
-
-          if (role !== 'admin') {
-             if (employeeProfile?.employee_id) {
-                 myTargetId = employeeProfile.employee_id;
-             } else {
-                 return; // لم يتم تحميل ملف الموظف بعد
-             }
-          }
-
-          if (newNotif.user_id === myTargetId || newNotif.user_id === 'all') {
-             setNotifications(prev => [newNotif, ...prev]);
-             setUnreadCount(prev => prev + 1);
-             showToast(newNotif.title, newNotif.message);
-          }
+          setNotifications(prev => [newNotif, ...prev]);
+          setUnreadCount(prev => prev + 1);
+          showToast(newNotif.title, newNotif.message);
         }
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-    // أضفنا employeeProfile للمراقبة ليعيد التشغيل عند تحميل البيانات
-  }, [user, employeeProfile]); 
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, employeeProfile?.employee_id, role]); 
 
   return (
     <NotificationContext.Provider value={{ notifications, unreadCount, markAsRead, fetchNotifications, sendNotification }}>
       {children}
+      
+      {/* التنبيه البصري (Toast) */}
       {toast && (
-          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] bg-white border-l-4 border-orange-500 shadow-2xl rounded-lg p-4 min-w-[300px] animate-in slide-in-from-top-5 duration-300 flex items-start gap-3">
-              <div className="bg-orange-100 p-2 rounded-full">
-                  <Bell className="w-5 h-5 text-orange-600" />
+          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] bg-white border-l-4 border-orange-500 shadow-2xl rounded-2xl p-4 min-w-[320px] animate-in slide-in-from-top-5 duration-300 flex items-start gap-3 border border-gray-100">
+              <div className="bg-orange-100 p-2 rounded-xl shrink-0">
+                  <Bell className="w-5 h-5 text-orange-600 animate-ring" />
               </div>
-              <div className="flex-1">
-                  <h4 className="font-bold text-gray-800 text-sm">{toast.title}</h4>
-                  <p className="text-gray-600 text-xs mt-1">{toast.msg}</p>
+              <div className="flex-1 min-w-0">
+                  <h4 className="font-black text-gray-800 text-sm truncate">{toast.title}</h4>
+                  <p className="text-gray-600 text-xs mt-1 leading-relaxed line-clamp-2">{toast.msg}</p>
               </div>
-              <button onClick={() => setToast(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setToast(null)} className="text-gray-400 hover:text-gray-600 transition-colors p-1">
                   <X className="w-4 h-4"/>
               </button>
           </div>
