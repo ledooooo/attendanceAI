@@ -94,30 +94,29 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     XLSX.writeFile(wb, "نموذج_طلبات_الإجازات.xlsx");
   };
 
-  const handleExcelImport = async (data: any[]) => {
+const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     let inserted = 0; let updated = 0; let skipped = 0;
     
     try {
-        // 1. جلب البيانات الحالية للمقارنة
         const { data: currentLeaves } = await supabase.from('leave_requests').select('*');
         const dbLeaves = currentLeaves || [];
         
-        // 2. فصل القوائم
         const rowsToInsert: any[] = [];
         const rowsToUpdate: any[] = [];
         const processedKeys = new Set(); 
+        
+        // مصفوفة لجمع الإشعارات للإرسال المجمع
+        const notificationsToSave: any[] = [];
+        const pushPromises: Promise<any>[] = [];
 
         for (const row of data) {
-            // تنظيف البيانات
             const empId = String(row['كود الموظف'] || row.employee_id || '').trim();
             const type = String(row['نوع الإجازة'] || row.type || '').trim();
             const startDate = formatDateForDB(row['تاريخ البداية'] || row.start_date);
             
-            // تخطي الصفوف غير الصالحة
             if (!empId || !type || !startDate) continue;
 
-            // منع التكرار داخل ملف الإكسيل نفسه
             const rowKey = `${empId}_${type}_${startDate}`;
             if (processedKeys.has(rowKey)) continue; 
             processedKeys.add(rowKey);
@@ -126,7 +125,6 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
             const statusRaw = String(row['الحالة'] || row.status || 'معلق').trim();
             const status = ['مقبول', 'مرفوض', 'معلق'].includes(statusRaw) ? statusRaw : 'معلق';
             
-            // تجهيز الكائن (بدون ID حالياً)
             const payload = {
                 employee_id: empId,
                 type,
@@ -138,7 +136,6 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
                 back_date: formatDateForDB(row['تاريخ العودة'] || row.back_date)
             };
 
-            // البحث عن سجل موجود مطابق
             const existingRecord = dbLeaves.find(l => 
                 l.employee_id === empId && 
                 l.type === type && 
@@ -146,42 +143,50 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
             );
 
             if (existingRecord) {
-                // التحقق هل هناك تغيير يستدعي التحديث
                 const isChanged = existingRecord.end_date !== payload.end_date || 
                                   existingRecord.status !== payload.status ||
                                   existingRecord.notes !== payload.notes ||
                                   existingRecord.backup_person !== payload.backup_person;
                                   
                 if (isChanged) {
-                    // إضافة ID للسجل المراد تحديثه ووضعه في قائمة التحديث
                     rowsToUpdate.push({ ...payload, id: existingRecord.id });
                     updated++;
+
+                    // تجهيز إشعار إذا تغيرت الحالة (مثلاً من معلق إلى مقبول)
+                    if (existingRecord.status !== payload.status) {
+                        const msg = `تم تحديث طلب إجازتك (${type}) ليكون: ${payload.status}`;
+                        notificationsToSave.push({
+                            user_id: empId, title: 'تحديث طلب الإجازة', message: msg, type: 'leave', is_read: false
+                        });
+                        pushPromises.push(
+                            supabase.functions.invoke('send-push-notification', {
+                                body: { userId: empId, title: 'تحديث طلب الإجازة', body: msg, url: '/staff?tab=requests-history' }
+                            })
+                        );
+                    }
                 } else {
                     skipped++;
                 }
             } else {
-                // سجل جديد يذهب لقائمة الإضافة (بدون ID)
                 rowsToInsert.push(payload);
                 inserted++;
             }
         }
 
-        // 3. تنفيذ العمليات بشكل منفصل لتجنب خطأ الـ ID
-        
-        // أولاً: الإضافة (Insert)
         if (rowsToInsert.length > 0) {
-            const { error: insertError } = await supabase
-                .from('leave_requests')
-                .insert(rowsToInsert);
+            const { error: insertError } = await supabase.from('leave_requests').insert(rowsToInsert);
             if (insertError) throw insertError;
         }
 
-        // ثانياً: التحديث (Upsert/Update)
         if (rowsToUpdate.length > 0) {
-            const { error: updateError } = await supabase
-                .from('leave_requests')
-                .upsert(rowsToUpdate); // هنا upsert آمنة لأن كل العناصر لديها ID
+            const { error: updateError } = await supabase.from('leave_requests').upsert(rowsToUpdate); 
             if (updateError) throw updateError;
+        }
+
+        // إرسال وحفظ الإشعارات (إن وجدت)
+        if (notificationsToSave.length > 0) {
+            await supabase.from('notifications').insert(notificationsToSave);
+            Promise.all(pushPromises).catch(e => console.error("Batch Push Error:", e));
         }
 
         alert(`تمت المعالجة بنجاح:\n- إضافة جديدة: ${inserted}\n- تحديث بيانات: ${updated}\n- تخطي (بدون تغيير): ${skipped}`);
@@ -194,7 +199,8 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
         setIsProcessing(false);
     }
   };
-  // --- دوال التعديل اليدوي ---
+  
+// --- دوال التعديل اليدوي ---
   const startEditing = (req: LeaveRequest) => {
     setEditingId(req.id);
     setEditFormData({ ...req });
@@ -227,17 +233,35 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     }
   };
 
-  const updateStatus = async (request: LeaveRequest, newStatus: string) => {
+const updateStatus = async (request: LeaveRequest, newStatus: string) => {
     const { error: updateError } = await supabase.from('leave_requests').update({ status: newStatus }).eq('id', request.id);
     if (updateError) return;
+
+    const notifTitle = 'تحديث حالة طلب الإجازة';
+    const notifMsg = `تم تغيير حالة طلب الإجازة (${request.type}) لشهر ${request.start_date} إلى: ${newStatus}`;
+
+    // 1. الحفظ في قاعدة البيانات
     await supabase.from('notifications').insert({
-        user_id: request.employee_id,
-        title: 'تحديث حالة طلب الإجازة',
-        message: `تم تغيير حالة طلب الإجازة (${request.type}) لشهر ${request.start_date} إلى: ${newStatus}`,
+        user_id: String(request.employee_id),
+        title: notifTitle,
+        message: notifMsg,
+        type: 'leave',
         is_read: false
     });
+
+    // ✅ 2. إرسال الإشعار اللحظي للموظف
+    supabase.functions.invoke('send-push-notification', {
+        body: {
+            userId: String(request.employee_id),
+            title: notifTitle,
+            body: notifMsg,
+            url: '/staff?tab=requests-history' // أو المسار الصحيح لصفحة الإجازات عند الموظف
+        }
+    }).catch(err => console.error("Push Error in Leaves:", err));
+
     fetchData();
   };
+  
 
   const handleDelete = async (id: string) => {
     if(!confirm('هل أنت متأكد من حذف هذا الطلب؟')) return;
