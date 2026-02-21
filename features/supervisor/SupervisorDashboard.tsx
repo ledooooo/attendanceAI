@@ -29,7 +29,7 @@ import CompetitionsManager from '../admin/components/CompetitionsManager';
 import { requestNotificationPermission } from '../../utils/pushNotifications';
 
 export default function SupervisorDashboard() {
-    const { user, signOut, loading: authLoading } = useAuth(); // أضفنا authLoading
+    const { user, signOut, loading: authLoading } = useAuth();
     const queryClient = useQueryClient();
     
     // UI States
@@ -38,7 +38,10 @@ export default function SupervisorDashboard() {
     const [isThemeEnabled, setIsThemeEnabled] = useState(true);
     const [showLevelMenu, setShowLevelMenu] = useState(false);
     const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
+    
+    // ✅ حالة قائمة الإشعارات
     const [showNotifMenu, setShowNotifMenu] = useState(false);
+    const [notifications, setNotifications] = useState<any[]>([]);
 
     const [showCompletionModal, setShowCompletionModal] = useState(false);
     const [showAboutModal, setShowAboutModal] = useState(false);
@@ -54,7 +57,7 @@ export default function SupervisorDashboard() {
         'Notification' in window ? Notification.permission : 'default'
     );
 
-    // 1. جلب بيانات المشرف (تم تحسين شرط الـ enabled)
+    // 1. جلب بيانات المشرف
     const { data: supervisor, isLoading: loadingDB, isError } = useQuery({
         queryKey: ['current_supervisor', user?.id],
         queryFn: async () => {
@@ -63,7 +66,7 @@ export default function SupervisorDashboard() {
                 .from('supervisors')
                 .select('*')
                 .eq('id', user.id)
-                .maybeSingle(); // استخدام maybeSingle لتجنب كراش Single
+                .maybeSingle(); 
             
             if (error) throw error;
             if (!data) throw new Error("لم يتم العثور على بيانات المشرف");
@@ -78,7 +81,7 @@ export default function SupervisorDashboard() {
         if (!supervisor) return null;
         return {
             id: supervisor.id, 
-            employee_id: supervisor.id, // لضمان عمل الإشعارات بالـ UUID حالياً للمشرف
+            employee_id: supervisor.id, 
             name: supervisor.name,
             specialty: supervisor.role_title, 
             photo_url: supervisor.avatar_url || '', 
@@ -152,13 +155,53 @@ export default function SupervisorDashboard() {
         enabled: !!user?.id
     });
 
+    // ✅ جلب الإشعارات الخاصة بالمشرف
+    const fetchNotifications = useCallback(async () => {
+        if (!supervisor?.id) return;
+        const { data } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('user_id', supervisor.id)
+            .order('created_at', { ascending: false })
+            .limit(20);
+        if (data) setNotifications(data);
+    }, [supervisor?.id]);
+
+    useEffect(() => {
+        fetchNotifications();
+    }, [fetchNotifications]);
+
+    // ✅ دالة تحديث وعرض الإشعارات
+    const handleToggleNotifMenu = useCallback(async () => {
+        const nextState = !showNotifMenu;
+        setShowNotifMenu(nextState);
+        
+        if (nextState) {
+            setShowLevelMenu(false);
+            setShowLeaderboardMenu(false);
+            
+            if (notifications.some(n => !n.is_read)) {
+                await supabase
+                  .from('notifications')
+                  .update({ is_read: true })
+                  .eq('user_id', supervisor?.id);
+                
+                fetchNotifications();
+            }
+        }
+    }, [showNotifMenu, notifications, supervisor?.id, fetchNotifications]);
+
+    const unreadNotifsCount = useMemo(() => 
+        notifications.filter(n => !n.is_read).length, 
+        [notifications]
+    );
+
     const swipeHandlers = useSwipeable({
         onSwipedLeft: (e) => { if (e.initial[0] > window.innerWidth * 0.8) setIsSidebarOpen(true); },
         onSwipedRight: () => setIsSidebarOpen(false),
         trackMouse: true, delta: 50,
     });
 
-    // ⛔ حالة الخطأ أو عدم وجود حساب مشرف
     if (isError) {
         return (
             <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-6 text-center">
@@ -170,28 +213,48 @@ export default function SupervisorDashboard() {
         );
     }
 
-    // ⏳ حالة التحميل (Auth + Database)
     if (authLoading || loadingDB) {
         return (
             <div className="h-screen flex flex-col items-center justify-center bg-white gap-4">
                 <Loader2 className="w-12 h-12 animate-spin text-purple-600"/>
-                <p className="font-black text-gray-400 animate-pulse">جاري التحقق من صلاحيات الإشراف...</p>
+                <p className="font-black text-gray-400 animate-pulse">جاري التحقق من الصلاحيات...</p>
             </div>
         );
     }
 
-    // ⛔ إذا انتهى التحميل ولم نجد بيانات (أمان إضافي)
     if (!supervisor || !mockEmployee) {
          return <div className="h-screen flex items-center justify-center font-black text-red-500">حدث خطأ في تحميل البيانات</div>;
     }
+
+    const menuItems = [
+        { id: 'home', label: 'الرئيسية', icon: Home },
+        { id: 'force', label: 'القوة الفعلية', icon: Users },
+        { id: 'tasks', label: 'التكليفات الصادرة', icon: CheckSquare },
+        { id: 'schedule', label: 'النوبتجيات', icon: CalendarRange },
+        { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
+        { id: 'competitions', label: 'المسابقات', icon: Swords },
+        { id: 'training', label: 'مركز التدريب', icon: BookOpen },
+        { id: 'library', label: 'السياسات والأدلة', icon: LibraryIcon },
+        { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
+        { id: 'rewards', label: 'متجر الجوائز', icon: Gift },
+    ];
+
+    const bottomNavItems = [
+        { id: 'home', label: 'الرئيسية', icon: Home },
+        { id: 'force', label: 'القوة الفعلية', icon: Users },
+        { id: 'tasks', label: 'التكليفات', icon: CheckSquare },
+        { id: 'statistics', label: 'الإحصائيات', icon: BarChart3 },
+    ];
+
+    const level = Math.floor((supervisor?.total_points || 0) / 100) + 1;
 
     return (
         <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
             
             {isThemeEnabled && <ThemeOverlay employee={mockEmployee} />}
 
-            {/* Sidebar */}
             {isSidebarOpen && <div className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />}
+            
             <aside className={`fixed inset-y-0 right-0 z-[70] w-72 bg-white border-l shadow-2xl transform transition-transform duration-300 md:translate-x-0 md:static flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
                 <div className="h-24 flex items-center justify-between px-6 border-b text-white bg-gradient-to-r from-purple-600 to-indigo-600">
                     <div className="flex items-center gap-3">
@@ -240,17 +303,32 @@ export default function SupervisorDashboard() {
 
                 <header className="h-16 md:h-20 bg-white border-b flex items-center justify-between px-3 md:px-6 sticky top-0 z-30 shadow-sm shrink-0">
                     <div className="flex items-center gap-2">
-                        <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-xl border"><Menu className="w-5 h-5" /></button>
-                        <span className="font-black text-gray-800">بوابة المتابعة الإشرافية</span>
+                        <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-xl border">
+                            <Menu className="w-5 h-5 text-gray-700"/>
+                        </button>
+                        <span className="font-black text-gray-800 text-sm md:text-base">بوابة المشرف</span>
                     </div>
 
                     <div className="flex items-center gap-2 md:gap-3">
-                        <button onClick={() => setShowLeaderboardMenu(true)} className="p-2 bg-yellow-50 text-yellow-600 rounded-xl hover:bg-yellow-100 transition-all">
+                        <button onClick={() => { setShowLeaderboardMenu(true); setShowLevelMenu(false); setShowNotifMenu(false); }} className="p-2 bg-yellow-50 text-yellow-600 rounded-xl hover:bg-yellow-100 transition-all">
                             <Trophy className="w-5 h-5" />
                         </button>
-                        
+
+                        <button onClick={() => { setShowLevelMenu(true); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-all flex items-center gap-1">
+                            <Star className="w-5 h-5" />
+                            <span className="text-xs font-black hidden sm:block">{level}</span>
+                        </button>
+
+                        {/* ✅ زر الإشعارات المربوط بالقائمة الجديدة */}
                         <div className="relative">
-                            <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
+                            <button onClick={handleToggleNotifMenu} className="p-2 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 relative transition-all">
+                                <Bell className="w-5 h-5" />
+                                {unreadNotifsCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] w-4 h-4 flex items-center justify-center rounded-full border-2 border-white font-bold animate-pulse">
+                                        {unreadNotifsCount}
+                                    </span>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </header>
@@ -294,7 +372,38 @@ export default function SupervisorDashboard() {
                 </div>
             </div>
 
-            {/* Global Modals (Level & Leaderboard) */}
+            {/* ========== GLOBAL MODALS (Fixed Mobile Layout) ========== */}
+
+            {/* ✅ مودال الإشعارات المستقل والمتجاوب */}
+            {showNotifMenu && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowNotifMenu(false)}>
+                    <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-50 font-black text-gray-800 text-sm">
+                            <span className="flex items-center gap-2"><Bell className="w-4 h-4 text-purple-600"/> التنبيهات الأخيرة</span>
+                            <button onClick={()=>setShowNotifMenu(false)} className="p-1 hover:bg-red-50 hover:text-red-500 transition-colors rounded-full"><X size={18}/></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                             {notifications.length === 0 ? (
+                                <div className="p-10 text-center text-gray-400 font-bold italic text-xs">
+                                    <Bell className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                                    لا توجد تنبيهات جديدة حالياً ✨
+                                </div>
+                             ) : (
+                                notifications.map(n => (
+                                    <div key={n.id} className="p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <h4 className="font-bold text-xs text-gray-800">{n.title}</h4>
+                                            {!n.is_read && <span className="w-2 h-2 bg-purple-500 rounded-full"></span>}
+                                        </div>
+                                        <p className="text-[11px] text-gray-500 leading-relaxed mt-1">{n.message}</p>
+                                    </div>
+                                ))
+                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {showLeaderboardMenu && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
                     <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
@@ -321,8 +430,53 @@ export default function SupervisorDashboard() {
                 </div>
             )}
 
-            {/* About & Completion Modals - (بقية الأكواد ثابتة) */}
+            {showAboutModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95 shadow-2xl">
+                        <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100"><X size={16}/></button>
+                        <div className="w-20 h-20 bg-purple-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-purple-200 rotate-3 transition-transform">
+                            <img src="/pwa-192x192.png" className="w-14 h-14 rounded-xl" alt="Logo" />
+                        </div>
+                        <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
+                        <p className="text-xs text-gray-500 font-bold mb-6 tracking-widest uppercase">بوابة المتابعة الإشرافية</p>
+                        <div className="space-y-3 text-xs text-gray-600 bg-gray-50 p-4 rounded-2xl border border-gray-100">
+                            <div className="flex justify-between border-b border-gray-200 pb-2"><span>الإصدار:</span><span className="font-black text-gray-800">2.6.0</span></div>
+                            <div className="flex justify-between pt-1"><span>التطوير:</span><span className="font-black text-purple-600">IT Department</span></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showCompletionModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in">
+                    <div className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl p-6 md:p-8 animate-in zoom-in-95 border-t-8 border-purple-500 relative overflow-hidden flex flex-col max-h-[90vh]">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -z-10"></div>
+                        <div className="text-center mb-6 relative z-10 shrink-0">
+                            <div className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-orange-500 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-200">
+                                <Award className="w-10 h-10"/>
+                            </div>
+                            <h2 className="text-2xl font-black text-gray-800">خطوة واحدة للبدء!</h2>
+                        </div>
+                        
+                        <div className="space-y-4 overflow-y-auto custom-scrollbar p-2 flex-1 relative z-10 text-right">
+                            <div><label className="block text-xs font-bold text-gray-600 mb-1">الرقم القومي</label><input type="text" maxLength={14} value={formData.national_id} onChange={e => setFormData({...formData, national_id: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl font-mono text-left outline-none" dir="ltr" placeholder="14 رقم"/></div>
+                            <div><label className="block text-xs font-bold text-gray-600 mb-1">تاريخ استلام العمل</label><input type="date" value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none"/></div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="block text-xs font-bold text-gray-600 mb-1">المؤهل</label><input type="text" value={formData.qualification} onChange={e => setFormData({...formData, qualification: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none"/></div>
+                                <div><label className="block text-xs font-bold text-gray-600 mb-1">التخصص</label><input type="text" value={formData.specialty} onChange={e => setFormData({...formData, specialty: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl outline-none"/></div>
+                            </div>
+                            <div><label className="block text-xs font-bold text-gray-600 mb-1">ملاحظات أخرى</label><textarea value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl resize-none h-20 outline-none"></textarea></div>
+                        </div>
+
+                        <div className="mt-6 flex gap-3 relative z-10 shrink-0">
+                            <button onClick={() => setShowCompletionModal(false)} className="px-6 py-3 bg-gray-100 text-gray-500 rounded-xl font-bold hover:bg-gray-200 transition-colors">تخطي</button>
+                            <button onClick={() => completeProfileMutation.mutate(formData)} disabled={completeProfileMutation.isPending} className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-xl font-black shadow-lg hover:shadow-xl transition-all flex justify-center items-center gap-2">
+                                {completeProfileMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : 'حفظ واستلام 150 نقطة 🎁'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
-
