@@ -179,7 +179,7 @@ export default function ThemeOverlay({ employee }: Props) {
                                         {/* الفانوس مع توهج محسّن */}
                                         <div className="relative animate-bounce-in" style={{ animationDelay: `${i * 0.2}s` }}>
                                             <img 
-                                                src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjfI9u7voEn02bukifDWCgR1S4pMUd58kSKsVAz8HPMgBRXZpQM2BeYZWy1Rf_vVLWWbRERdkpggQQKvtVR7hDtAiYvzJnN-52i2OvDD5eYxOiYjkPr8HYMy9ReOTpU-IX-pmWSvIpGM8X9s7rZpMPsoBqlOhhXrWBXCa1A0dGAb_6lqzhEkyAr6Vqdq2uK/s320/Ramadan%20%281%29.png"
+                                                src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjhltmO3A0zBEoi111UNoYQ2Ag9q6hSd6neT3tlGBEoHsiv1dvpZHcg14JRabMZkfacrYb4BMauec1BkbJtwjyhJoB5s10tUlGF9VvRnETwjcAxmKJpBF2mpgxh2QPpi9ZxBIZTDLbQQ_95Griuzxn00vXKX2nzd6TMy8Qzhi_CBJSTPBm9tP_ssmKmSb5c/s320/fanoos.png"
                                                 alt="Ramadan Lantern" 
                                                 className={`${lanternSize} object-contain animate-glow`}
                                             />
