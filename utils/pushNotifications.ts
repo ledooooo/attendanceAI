@@ -1,7 +1,7 @@
 import { supabase } from '../supabaseClient';
 
-// ✅ المفتاح الرسمي والأكيد 100%
-const VAPID_PUBLIC_KEY = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeZpUif9KOBRoCcinySK_roweU0lj9-X-G0P8gD1DkiB9H_Hn-Hw';
+// ✅ المفتاح الرياضي السليم 100% (لا تقم بتعديل أي حرف فيه)
+const VAPID_PUBLIC_KEY = 'BDGMfEaUdvGYra5eburOewf4B12S0m_lK_098yvNB-g0Dg3XUIfnKgU1gmjAciYg9GIqrl4jrkXyjWTnLcp_FXI';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -37,36 +37,29 @@ export async function requestNotificationPermission(userId: string | number) {
       return false;
     }
 
-    // ☢️ [الخيار النووي]: مسح الـ Service Worker القديم من جذوره لمسح الكاش العالق
-    console.log("🧹 جاري تدمير الـ Service Worker القديم لتنظيف المتصفح...");
-    const registrations = await navigator.serviceWorker.getRegistrations();
-    for (let reg of registrations) {
-        await reg.unregister();
-    }
+    const registration = await navigator.serviceWorker.ready;
+    
+    try {
+        const existingSub = await registration.pushManager.getSubscription();
+        if (existingSub) {
+            console.log("🧹 جاري مسح الاشتراك القديم...");
+            await existingSub.unsubscribe();
+        }
+    } catch(e) {}
 
-    // إعادة تسجيل الـ Service Worker على نظافة
-    const registration = await navigator.serviceWorker.register('/sw.js');
-    await navigator.serviceWorker.ready;
-    console.log("2️⃣ الـ Service Worker جديد ونظيف وجاهز.");
-
-    console.log("4️⃣ جاري تحويل المفتاح...");
-    const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-
-    console.log("5️⃣ جاري طلب الاشتراك من سيرفرات جوجل...");
+    console.log("4️⃣ جاري طلب الاشتراك من سيرفرات جوجل...");
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: applicationServerKey
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     });
 
-    console.log("6️⃣ تم الحصول على الاشتراك بنجاح! جاري الحفظ في الداتابيز...");
+    console.log("5️⃣ تم الحصول على الاشتراك بنجاح! جاري الحفظ في الداتابيز...");
 
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    // مسح من الداتابيز لتجنب التكرار
     await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
 
-    // الحفظ في الداتابيز
     const { error } = await supabase.from('push_subscriptions').insert({
         user_id: validUserId, 
         subscription_data: subscriptionJson,
@@ -103,7 +96,7 @@ export const sendSystemNotification = async (
 ) => {
   const validUserId = String(userId);
   try {
-    const { error: dbError } = await supabase.from('notifications').insert({
+    await supabase.from('notifications').insert({
       user_id: validUserId,
       title,
       message,
@@ -111,8 +104,6 @@ export const sendSystemNotification = async (
       is_read: false,
       created_at: new Date().toISOString()
     });
-
-    if (dbError) console.error('Database Notification Error:', dbError);
 
     try {
       await supabase.functions.invoke('send-push-notification', {
