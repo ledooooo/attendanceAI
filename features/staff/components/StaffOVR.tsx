@@ -93,7 +93,7 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
         setImagePreview(null);
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
         if (selectedLocations.length === 0) {
@@ -126,9 +126,9 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
                 finalLocation = finalLocation.replace('اخرى', `أخرى (${otherLocationText})`);
             }
 
-            // 3. إدراج التقرير
+            // 3. إدراج التقرير في قاعدة البيانات
             const { error: insertError } = await supabase.from('ovr_reports').insert({
-                reporter_id: employee.employee_id,
+                reporter_id: String(employee.employee_id),
                 reporter_name: employee.name,
                 is_anonymous: isAnonymous,
                 location: finalLocation,
@@ -139,7 +139,7 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
 
             if (insertError) throw insertError;
 
-            // 4. إضافة 15 نقطة للموظف
+            // 4. إضافة مكافأة (15 نقطة) للموظف
             await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: 15 });
             await supabase.from('points_ledger').insert({
                 employee_id: employee.employee_id,
@@ -147,17 +147,40 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
                 reason: 'إرسال تقرير OVR للارتقاء بالجودة'
             });
 
-            // 5. إرسال إشعار لمسؤولي الجودة
-            const { data: qManagers } = await supabase.from('employees').select('employee_id').eq('role', 'quality_manager').eq('status', 'نشط');
+            // ✅ 5. إرسال إشعار لحظي (Push Notification) لمسؤولي الجودة
+            const { data: qManagers } = await supabase
+                .from('employees')
+                .select('employee_id')
+                .eq('role', 'quality_manager')
+                .eq('status', 'نشط');
+
             if (qManagers && qManagers.length > 0) {
+                const notifTitle = '🚨 تقرير OVR جديد';
+                const notifMsg = `تقرير جديد ${isAnonymous ? '(مجهول)' : `من ${employee.name}`} في: ${finalLocation}`;
+
+                // أ) الحفظ في قاعدة البيانات
                 const notifs = qManagers.map(qm => ({
-                    user_id: qm.employee_id,
-                    title: '🚨 تقرير OVR جديد',
-                    message: `تم إرسال تقرير OVR جديد ${isAnonymous ? '(مجهول المصدر)' : `بواسطة ${employee.name}`}. يرجى المراجعة.`,
+                    user_id: String(qm.employee_id),
+                    title: notifTitle,
+                    message: notifMsg,
                     type: 'ovr',
                     is_read: false
                 }));
                 await supabase.from('notifications').insert(notifs);
+
+                // ب) إرسال تنبيه Push فوري لكل مسؤول جودة
+                Promise.all(
+                    qManagers.map(qm => 
+                        supabase.functions.invoke('send-push-notification', {
+                            body: { 
+                                userId: String(qm.employee_id), 
+                                title: notifTitle, 
+                                body: notifMsg.substring(0, 50), 
+                                url: '/admin?tab=quality' 
+                            }
+                        })
+                    )
+                ).catch(err => console.error("Push Error in OVR Submission:", err));
             }
 
             // 6. إنهاء بنجاح
@@ -177,7 +200,7 @@ export default function StaffOVR({ employee }: { employee: Employee }) {
             setLoading(false);
         }
     };
-
+    
     return (
         <div className="space-y-8 animate-in fade-in duration-500 pb-20">
             
