@@ -1,18 +1,22 @@
 import { supabase } from '../supabaseClient';
 
-// المفتاح العام كما هو، تأكد من عدم وجود مسافات حوله
-const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc';
+// ✅ المفتاح العام، أضفنا .trim() لإزالة أي مسافات خفية
+const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc'.trim();
 
-// دالة التحويل القياسية الآمنة
 function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
+  try {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  } catch (e) {
+    console.error("❌ خطأ في فك تشفير المفتاح:", e);
+    throw e;
   }
-  return outputArray;
 }
 
 export async function requestNotificationPermission(userId: string | number) {
@@ -38,24 +42,30 @@ export async function requestNotificationPermission(userId: string | number) {
 
     const registration = await navigator.serviceWorker.ready;
     
-    // 🛑 [الحل الجذري لخطأ AbortError]:
-    // جلب أي اشتراك قديم عالق في المتصفح وحذفه برمجياً لتهيئة بيئة نظيفة
-    const existingSubscription = await registration.pushManager.getSubscription();
-    if (existingSubscription) {
-        console.log("🔄 تم العثور على اشتراك قديم في المتصفح... جاري حذفه (Unsubscribe)");
-        await existingSubscription.unsubscribe();
+    // ✅ محاولة مسح الاشتراك القديم بأمان (بداخل try/catch لكي لا يوقف الكود إذا فشل)
+    try {
+        const existingSubscription = await registration.pushManager.getSubscription();
+        if (existingSubscription) {
+            console.log("🔄 جاري حذف الاشتراك القديم لتجنب التعارض...");
+            await existingSubscription.unsubscribe();
+            console.log("✅ تم حذف الاشتراك القديم بنجاح");
+        }
+    } catch (unsubError) {
+        console.warn("⚠️ فشل حذف الاشتراك القديم (عادي، سنستمر):", unsubError);
+    }
+
+    // ✅ طباعة معلومات المفتاح للتشخيص
+    const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    console.log("🔑 VAPID Key String:", VAPID_PUBLIC_KEY);
+    console.log("📏 Converted Key Length:", applicationServerKey.length, "bytes"); 
+    
+    if (applicationServerKey.length !== 65) {
+        console.error("❌ خطأ حرج: طول المفتاح ليس 65 بايت! (المفتاح تالف أو به نقص)");
+        return false; // نوقف الكود هنا لأن المتصفح سيرفضه حتماً
     }
 
     console.log("⏳ جاري إنشاء اشتراك جديد بالمفتاح العام...");
     
-    const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-    
-    // المفتاح السليم يجب أن يكون طوله 65 بايت، هذا الفحص للتأكيد
-    if (applicationServerKey.length !== 65) {
-        console.warn(`⚠️ طول المفتاح المحول هو ${applicationServerKey.length}، قد يسبب هذا مشكلة إذا لم يكن 65`);
-    }
-
-    // إنشاء الاشتراك الجديد
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: applicationServerKey
@@ -64,7 +74,7 @@ export async function requestNotificationPermission(userId: string | number) {
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    console.log("📡 تم إنشاء الاشتراك بالمتصفح، جاري الحفظ في قاعدة البيانات...");
+    console.log("📡 تم إنشاء الاشتراك بالمتصفح، جاري الحفظ في الداتابيز...");
 
     // حذف القديم (لتجنب الأخطاء)
     await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
@@ -84,7 +94,7 @@ export async function requestNotificationPermission(userId: string | number) {
       });
 
     if (error) {
-      console.error('❌ فشل حفظ الاشتراك في قاعدة البيانات:', error.message);
+      console.error('❌ فشل الحفظ في قاعدة البيانات:', error.message);
       return false;
     }
 
