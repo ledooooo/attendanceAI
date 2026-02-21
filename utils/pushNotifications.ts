@@ -1,22 +1,28 @@
 import { supabase } from '../supabaseClient';
 
+// ✅ تأكد من عدم وجود أي مسافات قبل أو بعد المفتاح
 const VAPID_PUBLIC_KEY = 'BFg7hJozSKJ3nU4lmiKfWPwCMWW3bHHBmK-gcGheDNCXbsjjf4w9hpVhXRI_hUaGzGSx4shYYQJ8mvlbieVmGzc';
 
+// ✅ دالة التحويل المحسنة (أكثر أماناً)
 function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
+  try {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  } catch (error) {
+    console.error("❌ خطأ في تحويل الـ Public Key:", error);
+    throw new Error("Invalid VAPID Key");
   }
-  return outputArray;
 }
 
 export async function requestNotificationPermission(userId: string | number) {
-  // ✅ تحويل الـ ID إلى نص لضمان التوافق
   const validUserId = String(userId);
-  console.log("🚀 تسجيل إشعارات للمستخدم:", validUserId);
+  console.log("🚀 جاري محاولة تسجيل إشعارات للمستخدم:", validUserId);
 
   if (!validUserId) {
     console.error('❌ userId غير صالح');
@@ -24,7 +30,7 @@ export async function requestNotificationPermission(userId: string | number) {
   }
 
   if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-    console.error('❌ المتصفح لا يدعم الإشعارات');
+    console.error('❌ المتصفح لا يدعم الإشعارات أو الـ Service Worker غير مسجل');
     return false;
   }
 
@@ -35,28 +41,33 @@ export async function requestNotificationPermission(userId: string | number) {
       return false;
     }
 
+    // الانتظار حتى يصبح الـ Service Worker جاهزاً
     const registration = await navigator.serviceWorker.ready;
+    console.log("✅ Service Worker جاهز، جاري الاشتراك...");
 
     let subscription = await registration.pushManager.getSubscription();
+    
     if (!subscription) {
+      console.log("⏳ لا يوجد اشتراك مسبق، جاري إنشاء اشتراك جديد...");
+      
+      // ✅ تحويل المفتاح هنا
+      const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      
       subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        applicationServerKey: applicationServerKey
       });
+    } else {
+      console.log("✅ اشتراك موجود بالفعل");
     }
 
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    console.log("📡 حفظ الاشتراك بـ ID:", validUserId);
+    // حذف القديم (لتجنب الأخطاء)
+    await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
 
-    // ✅ حذف أي اشتراك قديم بنفس الـ endpoint لتجنب التكرار وخطأ 400
-    await supabase
-      .from('push_subscriptions')
-      .delete()
-      .eq('endpoint', endpoint);
-
-    // ✅ استخدام insert بدلاً من upsert لتجنب مشاكل القيود (Constraints)
+    // إضافة الجديد
     const { error } = await supabase
       .from('push_subscriptions')
       .insert({
@@ -65,22 +76,21 @@ export async function requestNotificationPermission(userId: string | number) {
         endpoint: endpoint,
         device_info: {
           userAgent: navigator.userAgent,
-          platform: navigator.platform,
-          language: navigator.language
+          platform: navigator.platform
         },
         updated_at: new Date().toISOString()
       });
 
     if (error) {
-      console.error('❌ فشل الحفظ:', error.message);
+      console.error('❌ فشل حفظ الاشتراك في قاعدة البيانات:', error.message);
       return false;
     }
 
-    console.log('✅ تم التسجيل بنجاح!');
+    console.log('🎉 تم التسجيل وحفظ الاشتراك بنجاح!');
     return true;
 
   } catch (error) {
-    console.error('❌ خطأ غير متوقع:', error);
+    console.error('❌ خطأ غير متوقع أثناء التسجيل (AbortError عادة يعني مشكلة في المفتاح):', error);
     return false;
   }
 }
@@ -93,7 +103,6 @@ export const sendSystemNotification = async (
 ) => {
   const validUserId = String(userId);
   try {
-    // 1. الحفظ في قاعدة البيانات
     const { error: dbError } = await supabase.from('notifications').insert({
       user_id: validUserId,
       title,
@@ -105,14 +114,13 @@ export const sendSystemNotification = async (
 
     if (dbError) console.error('Database Notification Error:', dbError);
 
-    // 2. إرسال الـ Push Notification عبر الـ Edge Function
     try {
       const { data, error } = await supabase.functions.invoke('send-push-notification', {
         body: {
           userId: validUserId, 
           title: title,
           body: message,
-          url: type === 'task' ? '/staff?tab=tasks' : '/admin?tab=tasks'
+          url: type.includes('task') ? '/staff?tab=tasks' : '/admin?tab=tasks'
         }
       });
 
