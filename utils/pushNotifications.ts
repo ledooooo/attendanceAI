@@ -1,15 +1,12 @@
 import { supabase } from '../supabaseClient';
 
-// ✅ المفتاح العام الرسمي الجديد (متوافق 100% مع Chrome)
 const VAPID_PUBLIC_KEY = 'BDGMfEaUdvGYra5eburOewf4B12S0m_lK_098yvNB-g0Dg3XUIfnKgU1gmjAciYg9GIqrl4jrkXyjWTnLcp_FXI';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-  
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
-  
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);
   }
@@ -42,11 +39,10 @@ export async function requestNotificationPermission(userId: string | number) {
     const registration = await navigator.serviceWorker.ready;
     console.log("2️⃣ الـ Service Worker جاهز.");
 
-    // تفريغ أي اشتراك قديم عالق إجبارياً
     try {
         const existingSub = await registration.pushManager.getSubscription();
         if (existingSub) {
-            console.log("3️⃣ جاري مسح الاشتراك القديم من المتصفح...");
+            console.log("3️⃣ جاري مسح الاشتراك القديم...");
             await existingSub.unsubscribe();
         }
     } catch(e) {}
@@ -55,20 +51,31 @@ export async function requestNotificationPermission(userId: string | number) {
     const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
 
     console.log("5️⃣ جاري طلب الاشتراك من سيرفرات جوجل...");
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: applicationServerKey
-    });
+    
+    let subscription;
+    try {
+        // المحاولة الأولى
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey
+        });
+    } catch (subError: any) {
+        console.warn("⚠️ فشل التسجيل في المحاولة الأولى، جاري إعادة المحاولة بعد ثانية...", subError);
+        // انتظار ثانية واحدة ثم إعادة المحاولة (يحل مشكلة تأخر المتصفح)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey
+        });
+    }
 
     console.log("6️⃣ تم الحصول على الاشتراك بنجاح! جاري الحفظ في الداتابيز...");
 
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    // مسح من الداتابيز لتجنب التكرار
     await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
 
-    // الحفظ في الداتابيز
     const { error } = await supabase.from('push_subscriptions').insert({
         user_id: validUserId, 
         subscription_data: subscriptionJson,
@@ -105,7 +112,7 @@ export const sendSystemNotification = async (
 ) => {
   const validUserId = String(userId);
   try {
-    await supabase.from('notifications').insert({
+    const { error: dbError } = await supabase.from('notifications').insert({
       user_id: validUserId,
       title,
       message,
@@ -113,6 +120,8 @@ export const sendSystemNotification = async (
       is_read: false,
       created_at: new Date().toISOString()
     });
+
+    if (dbError) console.error('Database Notification Error:', dbError);
 
     try {
       await supabase.functions.invoke('send-push-notification', {
