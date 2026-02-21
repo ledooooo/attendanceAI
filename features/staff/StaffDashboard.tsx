@@ -62,6 +62,7 @@ export default function StaffDashboard({ employee }: Props) {
   // حالات القوائم المنسدلة
   const [showLevelMenu, setShowLevelMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
+  const [showNotifMenu, setShowNotifMenu] = useState(false);
   
   // حالة لتشغيل/إيقاف الثيم (المظهر)
   const [isThemeEnabled, setIsThemeEnabled] = useState(true);
@@ -77,7 +78,6 @@ export default function StaffDashboard({ employee }: Props) {
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   
   // PWA States
@@ -93,7 +93,7 @@ export default function StaffDashboard({ employee }: Props) {
 
   // --- Effects ---
   
-  // تحديث حالة الإشعارات دورياً للتأكد من استجابة الموظف
+  // تحديث حالة الإشعارات دورياً
   useEffect(() => {
     if ('Notification' in window) {
       const interval = setInterval(() => {
@@ -167,7 +167,7 @@ export default function StaffDashboard({ employee }: Props) {
     checkDailyVisitReward();
   }, [employee.employee_id, queryClient]);
 
-  // فحص التدريبات الإلزامية غير المكتملة
+  // فحص التدريبات الإلزامية
   useQuery({
     queryKey: ['check_mandatory_training', employee.employee_id],
     queryFn: async () => {
@@ -206,20 +206,26 @@ export default function StaffDashboard({ employee }: Props) {
     if (data) setNotifications(data);
   }, [employee.employee_id]);
 
-  const markNotifsAsRead = useCallback(async () => {
-    if (notifications.some(n => !n.is_read)) {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', employee.employee_id);
-      
-      fetchNotifications();
-      queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
+  // ✅ تصحيح دالة فتح الإشعارات وعلامة القراءة
+  const handleToggleNotifMenu = useCallback(async () => {
+    const nextState = !showNotifMenu;
+    setShowNotifMenu(nextState);
+    
+    if (nextState) {
+        setShowLevelMenu(false);
+        setShowLeaderboardMenu(false);
+        
+        if (notifications.some(n => !n.is_read)) {
+            await supabase
+              .from('notifications')
+              .update({ is_read: true })
+              .eq('user_id', employee.employee_id);
+            
+            fetchNotifications();
+            queryClient.invalidateQueries({ queryKey: ['staff_badges'] });
+        }
     }
-    setShowNotifMenu(!showNotifMenu);
-    setShowLevelMenu(false);
-    setShowLeaderboardMenu(false);
-  }, [notifications, employee.employee_id, showNotifMenu, fetchNotifications, queryClient]);
+  }, [showNotifMenu, notifications, employee.employee_id, fetchNotifications, queryClient]);
 
   const { data: pendingRewardsCount = 0 } = useQuery({
       queryKey: ['pending_rewards_count', employee.employee_id],
@@ -265,7 +271,7 @@ export default function StaffDashboard({ employee }: Props) {
           return {
               messages: msg.count || 0,
               tasks: tasks.count || 0,
-               swaps: swaps.count || 0,
+              swaps: swaps.count || 0,
               news: news.count || 0,
               ovr_replies: ovrReplies.count || 0,
               training: pendingTrainingsCount 
@@ -348,7 +354,7 @@ export default function StaffDashboard({ employee }: Props) {
   
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  // دالة تفعيل الإشعارات يدوياً من الشريط
+  // تفعيل الإشعارات
   const handleEnableNotifications = async () => {
     const result = await requestNotificationPermission(employee.employee_id);
     if (result) {
@@ -397,7 +403,7 @@ export default function StaffDashboard({ employee }: Props) {
       {/* إظهار مكون الثيم فقط إذا كان isThemeEnabled مفعل */}
       {isThemeEnabled && <ThemeOverlay employee={employee} />}
 
-      {/* ✅ 1. شريط الحث الذكي (تثبيت التطبيق + تفعيل الإشعارات) */}
+      {/* ✅ شريط الحث الذكي (تثبيت التطبيق + تفعيل الإشعارات) */}
       <div className="fixed top-0 left-0 right-0 z-[60] flex flex-col gap-2 p-2 md:px-6 pointer-events-none">
           
           {/* حث على التثبيت PWA */}
@@ -471,7 +477,7 @@ export default function StaffDashboard({ employee }: Props) {
         </div>
       )}
 
-      {/* تظليل الخلفية عند فتح القائمة */}
+      {/* تظليل الخلفية */}
       {isSidebarOpen && (
         <div 
             className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" 
@@ -599,7 +605,8 @@ export default function StaffDashboard({ employee }: Props) {
                     <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
                 </button>
 
-                <button onClick={markNotifsAsRead} className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                {/* ✅ تم ربط هذا الزر بالدالة المصححة لفتح القائمة */}
+                <button onClick={handleToggleNotifMenu} className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
                     <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : 'text-gray-600'}`} />
                     {unreadNotifsCount > 0 && (
                         <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">{unreadNotifsCount}</span>
@@ -718,7 +725,35 @@ export default function StaffDashboard({ employee }: Props) {
 
       </div>
 
-      {/* مودال المستويات ولوحة الشرف للهواتف (Global Modals) */}
+      {/* ✅ مودال الإشعارات الذي يظهر عند الضغط على الزر */}
+      {showNotifMenu && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                  <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                      <h3 className="font-black text-gray-800 flex items-center gap-2"><Bell className="w-5 h-5 text-emerald-600"/> التنبيهات</h3>
+                      <button onClick={()=>setShowNotifMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><X size={18}/></button>
+                  </div>
+                  <div className="overflow-y-auto custom-scrollbar flex-1">
+                      {notifications.length === 0 ? (
+                          <div className="p-10 text-center text-gray-400 font-bold italic">لا توجد إشعارات حالياً ✨</div>
+                      ) : (
+                          notifications.map(n => (
+                              <div key={n.id} className={`p-4 border-b last:border-0 ${!n.is_read ? 'bg-emerald-50/50' : ''}`}>
+                                  <div className="flex justify-between items-start mb-1">
+                                      <h4 className="font-black text-xs text-gray-800">{n.title}</h4>
+                                      {!n.is_read && <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>}
+                                  </div>
+                                  <p className="text-[11px] text-gray-600 leading-relaxed">{n.message}</p>
+                                  <p className="text-[9px] text-gray-400 mt-2 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleString('ar-EG')}</p>
+                              </div>
+                          ))
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* مودال المستويات ولوحة الشرف */}
       {showLevelMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLevelMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
@@ -755,7 +790,7 @@ export default function StaffDashboard({ employee }: Props) {
                   <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
                   <p className="text-xs text-gray-500 font-bold mb-6 tracking-widest uppercase">نظام إدارة الموارد البشرية</p>
                   <div className="space-y-3 text-xs text-gray-600 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                      <div className="flex justify-between border-b border-gray-200 pb-2"><span>الإصدار:</span><span className="font-black text-gray-800">2.1.0</span></div>
+                      <div className="flex justify-between border-b border-gray-200 pb-2"><span>الإصدار:</span><span className="font-black text-gray-800">2.5.0</span></div>
                       <div className="flex justify-between pt-1"><span>التطوير:</span><span className="font-black text-emerald-600">IT Department</span></div>
                   </div>
               </div>
