@@ -13,12 +13,13 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-export async function requestNotificationPermission(userId: string) {
-  console.log("🚀 تسجيل إشعارات للمستخدم (UUID):", userId);
+export async function requestNotificationPermission(userId: string | number) {
+  // ✅ تحويل الـ ID إلى نص لضمان التوافق
+  const validUserId = String(userId);
+  console.log("🚀 تسجيل إشعارات للمستخدم:", validUserId);
 
-  // ✅ تأكد إن الـ userId هو UUID وليس رقم
-  if (!userId || userId.length < 10) {
-    console.error('❌ userId غير صالح - يجب أن يكون UUID من Supabase Auth');
+  if (!validUserId) {
+    console.error('❌ userId غير صالح');
     return false;
   }
 
@@ -47,19 +48,19 @@ export async function requestNotificationPermission(userId: string) {
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    console.log("📡 حفظ الاشتراك بـ UUID:", userId);
+    console.log("📡 حفظ الاشتراك بـ ID:", validUserId);
 
-    // ✅ امسح أي اشتراك قديم بنفس الـ endpoint لكن بـ user_id مختلف (الرقم القديم)
+    // ✅ حذف أي اشتراك قديم بنفس الـ endpoint لتجنب التكرار وخطأ 400
     await supabase
       .from('push_subscriptions')
       .delete()
-      .eq('endpoint', endpoint)
-      .neq('user_id', userId);
+      .eq('endpoint', endpoint);
 
+    // ✅ استخدام insert بدلاً من upsert لتجنب مشاكل القيود (Constraints)
     const { error } = await supabase
       .from('push_subscriptions')
-      .upsert({
-        user_id: userId,          // ✅ دايماً UUID من auth.uid()
+      .insert({
+        user_id: validUserId, 
         subscription_data: subscriptionJson,
         endpoint: endpoint,
         device_info: {
@@ -68,8 +69,6 @@ export async function requestNotificationPermission(userId: string) {
           language: navigator.language
         },
         updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,endpoint'
       });
 
     if (error) {
@@ -77,7 +76,7 @@ export async function requestNotificationPermission(userId: string) {
       return false;
     }
 
-    console.log('✅ تم التسجيل بنجاح بالـ UUID!');
+    console.log('✅ تم التسجيل بنجاح!');
     return true;
 
   } catch (error) {
@@ -87,14 +86,16 @@ export async function requestNotificationPermission(userId: string) {
 }
 
 export const sendSystemNotification = async (
-  userId: string,   // ✅ يجب أن يكون UUID دايماً
+  userId: string | number, 
   title: string,
   message: string,
-  type: 'task' | 'task_update' | 'general' = 'general'
+  type: 'task' | 'task_update' | 'general' | 'competition' = 'general'
 ) => {
+  const validUserId = String(userId);
   try {
+    // 1. الحفظ في قاعدة البيانات
     const { error: dbError } = await supabase.from('notifications').insert({
-      user_id: userId,
+      user_id: validUserId,
       title,
       message,
       type,
@@ -104,10 +105,11 @@ export const sendSystemNotification = async (
 
     if (dbError) console.error('Database Notification Error:', dbError);
 
+    // 2. إرسال الـ Push Notification عبر الـ Edge Function
     try {
       const { data, error } = await supabase.functions.invoke('send-push-notification', {
         body: {
-          userId: userId,   // ✅ UUID
+          userId: validUserId, 
           title: title,
           body: message,
           url: type === 'task' ? '/staff?tab=tasks' : '/admin?tab=tasks'
