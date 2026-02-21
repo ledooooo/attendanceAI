@@ -126,7 +126,7 @@ export default function TrainingManager() {
         enabled: !!showStatsModal
     });
 
-    // ================= MUTATIONS =================
+// ================= MUTATIONS =================
 
     const createMutation = useMutation({
         mutationFn: async (form: any) => {
@@ -139,40 +139,62 @@ export default function TrainingManager() {
                 target_employees: form.target_employees.length ? form.target_employees : null, 
                 responsible_person: form.responsible_person
             };
+            
             const { error } = await supabase.from('trainings').insert([payload]);
             if(error) throw error;
 
-            // Notify Target Users Logic
-            let targetIds = new Set<string>();
+            // --- منطق تحديد الموظفين المستهدفين لإرسال الإشعارات ---
+            let targetEmpIds = new Set<string>();
 
             if (!payload.target_specialties && !payload.target_employees) {
-                // للجميع
-                const { data: allIds } = await supabase.from('employees').select('employee_id').eq('status', 'نشط');
-                allIds?.forEach(e => targetIds.add(e.employee_id));
+                // الحالة 1: التدريب موجه للجميع
+                const { data: allEmps } = await supabase.from('employees').select('employee_id').eq('status', 'نشط');
+                allEmps?.forEach(e => targetEmpIds.add(String(e.employee_id)));
             } else {
-                // 2. تجميع أصحاب التخصصات
+                // الحالة 2: التدريب موجه لتخصصات معينة
                 if (payload.target_specialties) {
-                    const { data: specIds } = await supabase.from('employees').select('employee_id').in('specialty', payload.target_specialties).eq('status', 'نشط');
-                    specIds?.forEach(e => targetIds.add(e.employee_id));
+                    const { data: specEmps } = await supabase.from('employees').select('employee_id').in('specialty', payload.target_specialties).eq('status', 'نشط');
+                    specEmps?.forEach(e => targetEmpIds.add(String(e.employee_id)));
                 }
-                // 3. تجميع الموظفين المحددين بالاسم
+                // الحالة 3: التدريب موجه لموظفين محددين بالاسم
                 if (payload.target_employees) {
-                    payload.target_employees.forEach((id: string) => targetIds.add(id));
+                    payload.target_employees.forEach((id: string) => targetEmpIds.add(String(id)));
                 }
             }
 
-            if (targetIds.size > 0) {
-                const notifs = Array.from(targetIds).map(userId => ({
-                    user_id: userId,
-                    title: payload.is_mandatory ? '🚨 تدريب إلزامي جديد' : '📚 تدريب جديد متاح',
-                    message: `تم إضافة تدريب: "${payload.title}"${payload.responsible_person ? `، المحاضر: ${payload.responsible_person}` : ''}`,
-                    type: 'training', is_read: false
+            const finalTargetList = Array.from(targetEmpIds);
+
+            if (finalTargetList.length > 0) {
+                const notifTitle = payload.is_mandatory ? '🚨 تدريب إلزامي جديد' : '📚 تدريب جديد متاح';
+                const notifMsg = `تم إضافة تدريب: "${payload.title}"${payload.responsible_person ? `، المحاضر: ${payload.responsible_person}` : ''}`;
+
+                // 1. الحفظ في جدول notifications في قاعدة البيانات
+                const dbNotifs = finalTargetList.map(empId => ({
+                    user_id: empId,
+                    title: notifTitle,
+                    message: notifMsg,
+                    type: 'training',
+                    is_read: false
                 }));
-                await supabase.from('notifications').insert(notifs);
+                await supabase.from('notifications').insert(dbNotifs);
+
+                // ✅ 2. إرسال Push Notifications لحظية لجميع الأجهزة المستهدفة (بشكل متوازي)
+                Promise.all(
+                    finalTargetList.map(empId => 
+                        supabase.functions.invoke('send-push-notification', {
+                            body: { 
+                                userId: empId, 
+                                title: notifTitle, 
+                                body: notifMsg.substring(0, 50), 
+                                url: '/staff?tab=training' 
+                            }
+                        })
+                    )
+                ).catch(err => console.error("Push Error Training:", err));
             }
         },
         onSuccess: () => { 
-            toast.success('تم النشر وإرسال الإشعارات'); 
+            toast.success('تم نشر الدورة وإرسال التنبيهات بنجاح 🚀'); 
             setShowCreateModal(false); 
             setCreateForm(initialFormState);
             refetchTrainings(); 
@@ -180,6 +202,49 @@ export default function TrainingManager() {
         onError: (err: any) => toast.error('خطأ: ' + err.message)
     });
 
+    const assignMutation = useMutation({
+        mutationFn: async (form: any) => {
+            const { error } = await supabase.from('employee_trainings').insert([{
+                employee_id: form.employee_id,
+                training_id: null,
+                status: 'completed',
+                type: 'manual',
+                manual_title: form.manual_title,
+                manual_date: form.manual_date,
+                manual_location: form.manual_location
+            }]);
+            if(error) throw error;
+
+            const notifTitle = '✅ تسجيل تدريب يدوي';
+            const notifMsg = `تم توثيق حصولك على تدريب: ${form.manual_title}`;
+
+            // 1. الحفظ في الداتابيز
+            await supabase.from('notifications').insert({
+                user_id: String(form.employee_id),
+                title: notifTitle,
+                message: notifMsg,
+                type: 'info',
+                is_read: false
+            });
+
+            // ✅ 2. إرسال إشعار لحظي للموظف المحدد
+            supabase.functions.invoke('send-push-notification', {
+                body: {
+                    userId: String(form.employee_id),
+                    title: notifTitle,
+                    body: notifMsg,
+                    url: '/staff?tab=training'
+                }
+            }).catch(err => console.error("Push Error Manual Assign:", err));
+        },
+        onSuccess: () => { 
+            toast.success('تم تسجيل التدريب وإرسال التنبيه ✅'); 
+            setShowAssignModal(false); 
+            setAssignForm({ ...assignForm, employee_id: '', manual_title: '' });
+            refetchRecords(); 
+        },
+        onError: (err: any) => toast.error(err.message)
+    });
     const assignMutation = useMutation({
         mutationFn: async (form: any) => {
             const { error } = await supabase.from('employee_trainings').insert([{
