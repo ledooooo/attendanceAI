@@ -133,7 +133,7 @@ export default function StaffMessages({ employee }: Props) {
         }
     }, [localMessages, activeChatId, myId]);
 
-    // 6. الإرسال
+// 6. الإرسال
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newMessage.trim() || !activeChatId) return;
@@ -167,7 +167,7 @@ export default function StaffMessages({ employee }: Props) {
                     notifTitle = `👥 الإدارة: ${employee.name}`;
                 } else {
                     let target = contacts.find(c => c.employee_id === activeChatId);
-                    // ✅ ضمان إرسال إشعار للمدير حتى لو لم يكن في قائمة contacts
+                    // ضمان إرسال إشعار للمدير حتى لو لم يكن في قائمة contacts
                     if (activeChatId === 'admin' && !target) {
                         target = { employee_id: 'admin', id: null } as any;
                     }
@@ -179,6 +179,7 @@ export default function StaffMessages({ employee }: Props) {
                 }
 
                 if (targetEmps.length > 0) {
+                    // 1. حفظ الإشعارات في قاعدة البيانات
                     const appNotifs = targetEmps.map(emp => ({
                         user_id: emp.employee_id,
                         title: notifTitle,
@@ -188,11 +189,24 @@ export default function StaffMessages({ employee }: Props) {
                     }));
                     await supabase.from('notifications').insert(appNotifs);
 
-                    const pushTargetIds = targetEmps.map(emp => emp.id).filter(Boolean);
+                    // 2. إرسال الإشعارات الفورية (Push Notifications)
+                    // ✅ تم التعديل: استخدام employee_id ليتوافق مع الهوية الموحدة
+                    const pushTargetIds = targetEmps.map(emp => emp.employee_id).filter(Boolean);
+                    
                     if (pushTargetIds.length > 0) {
-                        await supabase.functions.invoke('send-push-notification', {
-                            body: { userIds: pushTargetIds, title: notifTitle, body: msgContent.substring(0, 50), url: '/messages' }
-                        });
+                        // ✅ تم التعديل: إرسال كل إشعار على حدة بشكل متوازي لأن السيرفر يقبل userId مفرد
+                        Promise.all(
+                            pushTargetIds.map(targetId => 
+                                supabase.functions.invoke('send-push-notification', {
+                                    body: { 
+                                        userId: String(targetId), 
+                                        title: notifTitle, 
+                                        body: msgContent.substring(0, 50), 
+                                        url: '/messages' 
+                                    }
+                                })
+                            )
+                        ).catch(err => console.error("Push invocation error:", err));
                     }
                 }
             } catch (err) { console.error(err); }
@@ -201,7 +215,6 @@ export default function StaffMessages({ employee }: Props) {
         }
         setSending(false);
     };
-
     const getUnreadCount = (senderId: string) => localMessages.filter(m => !m.is_read && m.to_user === myId && m.from_user === senderId).length;
     
     // ✅ تحديث اسم جهة الاتصال ليعرض "المدير العام" إذا كان الـ ID هو admin
