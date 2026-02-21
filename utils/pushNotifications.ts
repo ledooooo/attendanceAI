@@ -1,6 +1,7 @@
 import { supabase } from '../supabaseClient';
 
-const VAPID_PUBLIC_KEY = 'BDGMfEaUdvGYra5eburOewf4B12S0m_lK_098yvNB-g0Dg3XUIfnKgU1gmjAciYg9GIqrl4jrkXyjWTnLcp_FXI';
+// ✅ المفتاح الرسمي والأكيد 100%
+const VAPID_PUBLIC_KEY = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeZpUif9KOBRoCcinySK_roweU0lj9-X-G0P8gD1DkiB9H_Hn-Hw';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -36,46 +37,36 @@ export async function requestNotificationPermission(userId: string | number) {
       return false;
     }
 
-    const registration = await navigator.serviceWorker.ready;
-    console.log("2️⃣ الـ Service Worker جاهز.");
+    // ☢️ [الخيار النووي]: مسح الـ Service Worker القديم من جذوره لمسح الكاش العالق
+    console.log("🧹 جاري تدمير الـ Service Worker القديم لتنظيف المتصفح...");
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    for (let reg of registrations) {
+        await reg.unregister();
+    }
 
-    try {
-        const existingSub = await registration.pushManager.getSubscription();
-        if (existingSub) {
-            console.log("3️⃣ جاري مسح الاشتراك القديم...");
-            await existingSub.unsubscribe();
-        }
-    } catch(e) {}
+    // إعادة تسجيل الـ Service Worker على نظافة
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    console.log("2️⃣ الـ Service Worker جديد ونظيف وجاهز.");
 
     console.log("4️⃣ جاري تحويل المفتاح...");
     const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
 
     console.log("5️⃣ جاري طلب الاشتراك من سيرفرات جوجل...");
-    
-    let subscription;
-    try {
-        // المحاولة الأولى
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: applicationServerKey
-        });
-    } catch (subError: any) {
-        console.warn("⚠️ فشل التسجيل في المحاولة الأولى، جاري إعادة المحاولة بعد ثانية...", subError);
-        // انتظار ثانية واحدة ثم إعادة المحاولة (يحل مشكلة تأخر المتصفح)
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: applicationServerKey
-        });
-    }
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: applicationServerKey
+    });
 
     console.log("6️⃣ تم الحصول على الاشتراك بنجاح! جاري الحفظ في الداتابيز...");
 
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
+    // مسح من الداتابيز لتجنب التكرار
     await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
 
+    // الحفظ في الداتابيز
     const { error } = await supabase.from('push_subscriptions').insert({
         user_id: validUserId, 
         subscription_data: subscriptionJson,
