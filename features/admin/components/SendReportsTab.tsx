@@ -313,7 +313,7 @@ export default function SendReportsTab() {
         }
     };
 
-    const handleSendReports = async () => {
+const handleSendReports = async () => {
         if (selectedIds.length === 0) return toast.error('اختر موظفاً واحداً على الأقل');
         
         if (emailType === 'custom' && (!customSubject || !customMessageHTML.trim() || customMessageHTML === '<br>')) {
@@ -333,12 +333,18 @@ export default function SendReportsTab() {
             const startOfMonth = `${month}-01`;
             const endOfMonth = `${month}-${daysInMonth}`;
 
+            // تحضير مصفوفة لحفظ الإشعارات (لإرسالها دفعة واحدة لاحقاً)
+            const notificationsToSave: any[] = [];
+            const pushPromises: Promise<any>[] = [];
+
             for (const empId of selectedIds) {
                 const emp = employees.find(e => e.id === empId);
                 if (!emp || !emp.email) { failCount++; continue; }
 
                 let htmlContent = '';
                 let subject = '';
+                let notificationTitle = '';
+                let notificationBody = '';
 
                 if (emailType === 'report') {
                     const { data: empAtt } = await supabase
@@ -352,21 +358,61 @@ export default function SendReportsTab() {
                     
                     htmlContent = generateReportHTML(emp, empAtt || [], empLeaves, month);
                     subject = `تقرير شهر ${month} - ${emp.name}`;
+                    
+                    notificationTitle = '📄 تقرير الحضور والانصراف';
+                    notificationBody = `تم إرسال تقرير شهر ${month} إلى بريدك الإلكتروني.`;
                 } else {
                     htmlContent = generateCustomHTML(emp, customMessageHTML);
                     subject = customSubject;
+                    
+                    notificationTitle = '📩 رسالة إدارية جديدة';
+                    notificationBody = `وصلتك رسالة جديدة على بريدك: ${customSubject}`;
                 }
 
                 const result = await sendViaServer(emp.email, emp.name, subject, htmlContent);
                 
                 if (result.success) {
                     successCount++;
+                    
+                    // ✅ تجهيز الإشعار للحفظ في قاعدة البيانات
+                    notificationsToSave.push({
+                        user_id: String(emp.employee_id),
+                        title: notificationTitle,
+                        message: notificationBody,
+                        type: 'general',
+                        is_read: false
+                    });
+
+                    // ✅ تجهيز الإشعار الفوري (Push Notification)
+                    pushPromises.push(
+                        supabase.functions.invoke('send-push-notification', {
+                            body: {
+                                userId: String(emp.employee_id),
+                                title: notificationTitle,
+                                body: notificationBody,
+                                url: '/' // يمكن تغييره لرابط صفحة معينة إذا لزم الأمر
+                            }
+                        })
+                    );
+
                 } else {
                     failCount++;
                     lastError = result.error || 'Unknown';
                 }
             }
+
+            // ✅ حفظ جميع الإشعارات في قاعدة البيانات دفعة واحدة
+            if (notificationsToSave.length > 0) {
+                await supabase.from('notifications').insert(notificationsToSave);
+            }
+
+            // ✅ إرسال جميع الإشعارات اللحظية بشكل متوازي
+            if (pushPromises.length > 0) {
+                Promise.all(pushPromises).catch(err => console.error("Push Error in Reports:", err));
+            }
+
             alert(`النتيجة:\n✅ تم الإرسال: ${successCount}\n❌ فشل: ${failCount}\n${lastError ? 'آخر خطأ: ' + lastError : ''}`);
+            
             if (emailType === 'custom') {
                 setCustomSubject('');
                 setCustomMessageHTML('');
@@ -379,7 +425,6 @@ export default function SendReportsTab() {
             setSelectedIds([]);
         }
     };
-
     const handleDebug = async () => {
         if (selectedIds.length === 0) return alert("اختر موظفاً واحداً للفحص");
         const emp = employees.find(e => e.id === selectedIds[0]);
@@ -529,3 +574,4 @@ export default function SendReportsTab() {
         </div>
     );
 }
+
