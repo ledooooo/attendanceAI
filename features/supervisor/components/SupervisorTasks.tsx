@@ -77,51 +77,61 @@ export default function SupervisorTasks() {
     });
 
     // 4. دالة الإرسال
+// 4. دالة الإرسال (المحدثة بنظام الإشعارات اللحظية)
     const addTaskMutation = useMutation({
         mutationFn: async () => {
             if (!user?.id) throw new Error("يجب تسجيل الدخول أولاً");
-            if (!title) throw new Error("يجب كتابة عنوان التكليف");
+            if (!title) throw new Error("يجب كتابة عنوان للتكليف");
             if (!selectedUser) throw new Error("يرجى اختيار الموظف المكلف");
             
             // البحث عن بيانات الموظف المختار
             const targetEmp = allEmployees.find((e: any) => e.id === selectedUser);
             if (!targetEmp) throw new Error("الموظف غير موجود");
 
-            // الإدراج في قاعدة البيانات
+            // أ) الإدراج في قاعدة البيانات
             const { error } = await supabase.from('tasks').insert({
                 title, 
                 description, 
                 due_date: dueDate || null, 
-                
-                // البيانات الأساسية
-                employee_id: targetEmp.id, 
+                employee_id: String(targetEmp.employee_id), // استخدام المعرف الموحد (مثل 80)
                 target_name: targetEmp.name, 
-                
-                // بيانات المشرف (أنت)
                 manager_id: user.id, 
                 created_by: user.id,
-                
                 status: 'pending'
             });
 
             if (error) throw error;
             
-            // إرسال إشعار للموظف
+            // ب) تجهيز الإشعارات
+            const notifTitle = '⚡ تكليف إشرافي جديد';
+            const notifBody = `كلفك المشرف بـ: ${title}`;
+
+            // 1. الحفظ في جدول notifications في قاعدة البيانات
             await supabase.from('notifications').insert({
-                type: 'task_update', 
-                title: 'تكليف إشرافي جديد', 
-                message: `قام المشرف بتكليفك بـ: ${title}`, 
-                user_id: targetEmp.id 
+                user_id: String(targetEmp.employee_id),
+                title: notifTitle,
+                message: notifBody,
+                type: 'task',
+                is_read: false
             });
+
+            // ✅ 2. إرسال Push Notification لحظي لهاتف الموظف
+            supabase.functions.invoke('send-push-notification', {
+                body: { 
+                    userId: String(targetEmp.employee_id), 
+                    title: notifTitle, 
+                    body: notifBody, 
+                    url: '/staff?tab=tasks' 
+                }
+            }).catch(err => console.error("Push Error (Supervisor Task):", err));
         },
         onSuccess: () => {
-            toast.success('تم إرسال التكليف بنجاح ✅');
+            toast.success('تم إرسال التكليف وتنبيه الموظف بنجاح ✅');
             setTitle(''); setDescription(''); setDueDate(''); setSelectedUser('');
             queryClient.invalidateQueries({ queryKey: ['supervisor_tasks'] });
         },
         onError: (err: any) => toast.error(err.message)
     });
-
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in">
             {/* نموذج التكليف */}
