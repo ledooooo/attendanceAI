@@ -59,7 +59,10 @@ export default function StaffDashboard({ employee }: Props) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
 
-  // ✅ حالات القوائم المنسدلة (تم استبدال Level بـ Profile)
+  // ✅ حالة التمرير لتصغير كارت الترحيب
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  // حالات القوائم المنسدلة (تم استبدال Level بـ Profile)
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
@@ -365,6 +368,13 @@ export default function StaffDashboard({ employee }: Props) {
     }
   };
 
+  // ✅ دالة مراقبة التمرير (Scroll) لتصغير وتثبيت كارت الترحيب
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+      const scrollTop = e.currentTarget.scrollTop;
+      if (scrollTop > 40 && !isScrolled) setIsScrolled(true);
+      else if (scrollTop <= 40 && isScrolled) setIsScrolled(false);
+  };
+
   const menuItems = useMemo(() => [
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
@@ -405,8 +415,9 @@ export default function StaffDashboard({ employee }: Props) {
 
       {/* شريط الحث الذكي (تثبيت التطبيق + تفعيل الإشعارات) */}
       <div className="fixed top-0 left-0 right-0 z-[60] flex flex-col gap-2 p-2 md:px-6 pointer-events-none">
+          
           {!isStandalone && showInstallPopup && (
-            <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-500 border border-white/20">
+            <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-500 border border-white/20">
                 <div className="flex items-center gap-3">
                     <div className="bg-white/20 p-2 rounded-xl">
                         <DownloadCloud className="w-5 h-5 animate-bounce" />
@@ -418,7 +429,7 @@ export default function StaffDashboard({ employee }: Props) {
                 </div>
                 <div className="flex gap-2 shrink-0">
                     <button onClick={() => setShowInstallPopup(false)} className="text-[10px] font-bold px-2 py-1 hover:bg-white/10 rounded-lg">لاحقاً</button>
-                    <button onClick={handleInstallClick} className="bg-white text-indigo-600 text-xs font-black px-4 py-2 rounded-xl shadow-sm active:scale-95 transition-transform">تثبيت</button>
+                    <button onClick={handleInstallClick} className="bg-white text-emerald-600 text-xs font-black px-4 py-2 rounded-xl shadow-sm active:scale-95 transition-transform">تثبيت</button>
                 </div>
             </div>
           )}
@@ -546,7 +557,7 @@ export default function StaffDashboard({ employee }: Props) {
         </nav>
 
         <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe gap-1">
-            <button onClick={handleShareApp} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-purple-100 hover:text-purple-600 transition-colors flex flex-col items-center gap-1">
+            <button onClick={handleShareApp} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-emerald-100 hover:text-emerald-600 transition-colors flex flex-col items-center gap-1">
                 <Share2 className="w-5 h-5" />
                 <span className="text-[9px] font-bold">مشاركة</span>
             </button>
@@ -554,7 +565,7 @@ export default function StaffDashboard({ employee }: Props) {
                 <Info className="w-5 h-5" />
                 <span className="text-[9px] font-bold">حول</span>
             </button>
-            <button onClick={() => setIsThemeEnabled(!isThemeEnabled)} className={`flex-1 p-2 rounded-xl transition-colors flex flex-col items-center gap-1 ${isThemeEnabled ? 'text-purple-600 bg-purple-50' : 'text-gray-500 hover:bg-gray-100'}`}>
+            <button onClick={() => setIsThemeEnabled(!isThemeEnabled)} className={`flex-1 p-2 rounded-xl transition-colors flex flex-col items-center gap-1 ${isThemeEnabled ? 'text-emerald-600 bg-emerald-50' : 'text-gray-500 hover:bg-gray-100'}`}>
                 <Sparkles className="w-5 h-5" />
                 <span className="text-[9px] font-bold">الثيم</span>
             </button>
@@ -565,21 +576,23 @@ export default function StaffDashboard({ employee }: Props) {
       <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
         <header className="h-16 bg-white border-b flex items-center justify-between px-3 md:px-6 sticky top-0 z-30 shadow-sm shrink-0 bg-white/95">
             <div className="flex items-center gap-2 md:gap-3">
-                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl hover:from-gray-100 hover:to-gray-200 transition-all active:scale-95 shadow-sm">
+                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-xl hover:bg-gray-100 transition-all">
                     <Menu className="w-5 h-5 text-gray-700"/>
                 </button>
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            <div className="flex items-center gap-1 md:gap-2">
+            {/* ✅ الأزرار العلوية مجمعة بجوار بعضها على اليسار (mr-auto لضمان المحاذاة) */}
+            <div className="flex items-center justify-end gap-1.5 md:gap-2 mr-auto">
+                
                 {/* 1. زر المتجر */}
                 <button 
                     onClick={() => setActiveTab('store')} 
-                    className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'store' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
+                    className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 relative ${activeTab === 'store' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
                 >
                     <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
                     {pendingRewardsCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">
+                        <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-md">
                             {pendingRewardsCount}
                         </span>
                     )}
@@ -588,30 +601,62 @@ export default function StaffDashboard({ employee }: Props) {
                 {/* 2. زر لوحة الشرف */}
                 <button 
                     onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowProfileMenu(false); setShowNotifMenu(false); }} 
-                    className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
+                    className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
                 >
-                    <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
+                    <Trophy className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
-                {/* 3. الإشعارات */}
-                <button onClick={handleToggleNotifMenu} className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
-                    <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : 'text-gray-600'}`} />
+                {/* 3. زر الإشعارات */}
+                <button 
+                    onClick={handleToggleNotifMenu} 
+                    className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                >
+                    <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : ''}`} />
                     {unreadNotifsCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-full border-2 border-white animate-bounce shadow-lg">{unreadNotifsCount}</span>
+                        <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-md">
+                            {unreadNotifsCount}
+                        </span>
                     )}
                 </button>
+
+                {/* 4. زر البروفايل (بدلاً من النجمة) */}
+                <button 
+                    onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifMenu(false); setShowLeaderboardMenu(false); }}
+                    className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1 hover:scale-105 transition-transform active:scale-95 outline-none focus:ring-2 focus:ring-emerald-400 bg-emerald-50"
+                >
+                    {employee.photo_url ? (
+                        <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center rounded-full text-emerald-700 font-black text-xs md:text-sm">
+                            {employee.name.charAt(0)}
+                        </div>
+                    )}
+                </button>
+
             </div>
-            
-            {/* 4. صورة البروفايل (تفتح قائمة البروفايل) */}
-            <button 
-                onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifMenu(false); setShowLeaderboardMenu(false); }}
-                className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1 hover:scale-105 transition-transform active:scale-95 outline-none"
-            >
-                {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full bg-emerald-200 flex items-center justify-center rounded-full text-emerald-700 font-bold text-sm">{employee.name.charAt(0)}</div>}
-            </button>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24">
+        {/* ✅ المراقبة الذكية للسكرول (onScroll) لتصغير وتثبيت كارت الترحيب */}
+        <main onScroll={handleScroll} className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24 relative">
+            
+            {/* ✅ كارت الترحيب المثبت (Sticky & Shrinkable) */}
+            {activeTab === 'news' && (
+                <div className={`sticky top-0 z-[40] transition-all duration-300 ease-in-out ${isScrolled ? '-mx-2 md:-mx-4 -mt-2 md:-mt-4 mb-4' : 'mb-6 pt-2'}`}>
+                    <div className={`bg-gradient-to-r from-emerald-600 to-teal-600 text-white transition-all duration-300 overflow-hidden ${isScrolled ? 'rounded-b-3xl px-4 py-3 shadow-md flex items-center justify-between' : 'rounded-[2rem] p-6 md:p-8 shadow-lg flex flex-col'}`}>
+                        <h2 className={`font-black flex items-center gap-2 transition-all duration-300 ${isScrolled ? 'text-sm md:text-lg m-0' : 'text-xl md:text-3xl mb-2'}`}>
+                            مرحباً بك، {employee?.name.split(' ')[0]} 👋
+                        </h2>
+                        {!isScrolled ? (
+                            <p className="text-emerald-50 font-bold text-xs md:text-base animate-in fade-in duration-500">
+                                نتمنى لك يوماً سعيداً ومليئاً بالإنجازات في المركز.
+                            </p>
+                        ) : (
+                            <span className="text-[10px] bg-white/20 px-2 py-1 rounded-lg font-bold shadow-inner">بوابة الموظفين</span>
+                        )}
+                    </div>
+                </div>
+            )}
+
             <div className="max-w-6xl mx-auto space-y-4">
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-3 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
@@ -652,40 +697,26 @@ export default function StaffDashboard({ employee }: Props) {
         </main>
 
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-2 flex justify-between items-center z-50 pb-safe md:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-            <button 
-                onClick={() => setActiveTab('news')}
-                className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'news' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}
-            >
+            <button onClick={() => setActiveTab('news')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'news' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}>
                 <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'news' ? 'bg-emerald-50' : ''}`}>
                     <LayoutDashboard className={`w-6 h-6 ${activeTab === 'news' ? 'fill-current' : ''}`} />
                 </div>
                 <span className="text-[10px] font-bold">الرئيسية</span>
             </button>
 
-            <button 
-                onClick={() => setActiveTab('new-request')}
-                className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'new-request' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}
-            >
+            <button onClick={() => setActiveTab('new-request')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'new-request' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}>
                 <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'new-request' ? 'bg-emerald-50' : ''}`}>
                     <FilePlus className="w-6 h-6" />
                 </div>
                 <span className="text-[10px] font-bold">طلب جديد</span>
             </button>
 
-            <button 
-                onClick={() => { setShowProfileMenu(true); setShowLeaderboardMenu(false); setShowNotifMenu(false); }}
-                className="relative -top-6 bg-emerald-600 text-white p-4 rounded-full shadow-xl shadow-emerald-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform"
-            >
+            <button onClick={() => { setShowProfileMenu(true); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} className="relative -top-6 bg-emerald-600 text-white p-4 rounded-full shadow-xl shadow-emerald-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform">
                 <User className="w-6 h-6" />
             </button>
 
             {hasAdminAccess && (
-                <button 
-                    onClick={() => setActiveTab('admin')}
-                    className={`flex flex-col items-center gap-1 transition-colors ${
-                        activeTab === 'admin' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'
-                    }`}
-                >
+                <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'admin' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}>
                     <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'admin' ? 'bg-indigo-50' : ''}`}>
                         <Settings className={`w-6 h-6 ${activeTab === 'admin' ? 'fill-current' : ''}`} />
                     </div>
@@ -694,10 +725,7 @@ export default function StaffDashboard({ employee }: Props) {
             )}
 
             {!hasAdminAccess && (
-                 <button 
-                 onClick={() => setActiveTab('attendance')}
-                 className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'attendance' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}
-             >
+                 <button onClick={() => setActiveTab('attendance')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'attendance' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}>
                  <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'attendance' ? 'bg-emerald-50' : ''}`}>
                      <Clock className="w-6 h-6" />
                  </div>
@@ -705,20 +733,14 @@ export default function StaffDashboard({ employee }: Props) {
              </button>
             )}
 
-            <button 
-                onClick={() => setIsSidebarOpen(true)}
-                className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600"
-            >
-                <div className="p-1.5">
-                    <Menu className="w-6 h-6" />
-                </div>
+            <button onClick={() => setIsSidebarOpen(true)} className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600">
+                <div className="p-1.5"><Menu className="w-6 h-6" /></div>
                 <span className="text-[10px] font-bold">المزيد</span>
             </button>
         </div>
-
       </div>
 
-      {/* ✅ مودال الإشعارات */}
+      {/* ✅ مودال الإشعارات (إصلاح النقر) */}
       {showNotifMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -731,7 +753,10 @@ export default function StaffDashboard({ employee }: Props) {
                           <div className="p-10 text-center text-gray-400 font-bold italic">لا توجد إشعارات حالياً ✨</div>
                       ) : (
                           notifications.map(n => (
-                              <div key={n.id} 
+                              <div 
+                                  key={n.id} 
+                                  role="button"
+                                  tabIndex={0}
                                   onClick={() => {
                                       const type = n.type?.toLowerCase() || '';
                                       if(type.includes('task')) setActiveTab('tasks');
@@ -741,15 +766,16 @@ export default function StaffDashboard({ employee }: Props) {
                                       else if(type.includes('leave')) setActiveTab('requests-history');
                                       else if(type.includes('reward') || type.includes('store')) setActiveTab('store');
                                       else if(type.includes('shift') || type.includes('swap')) setActiveTab('shift-requests');
+                                      
                                       setShowNotifMenu(false);
                                   }}
-                                  className={`p-4 border-b last:border-0 cursor-pointer transition-colors hover:bg-gray-50 ${!n.is_read ? 'bg-emerald-50/50' : ''}`}
+                                  className={`w-full text-right block p-4 border-b last:border-0 cursor-pointer transition-colors hover:bg-emerald-50 active:bg-emerald-100 outline-none ${!n.is_read ? 'bg-emerald-50/40' : 'bg-white'}`}
                               >
                                   <div className="flex justify-between items-start mb-1">
                                       <h4 className="font-black text-xs text-gray-800">{n.title}</h4>
-                                      {!n.is_read && <span className="w-2 h-2 bg-emerald-500 rounded-full shrink-0"></span>}
+                                      {!n.is_read && <span className="w-2 h-2 bg-emerald-500 rounded-full shrink-0 shadow-sm"></span>}
                                   </div>
-                                  <p className="text-[11px] text-gray-600 leading-relaxed">{n.message}</p>
+                                  <p className="text-[11px] text-gray-600 leading-relaxed mt-1">{n.message}</p>
                                   <p className="text-[9px] text-gray-400 mt-2 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleString('ar-EG')}</p>
                               </div>
                           ))
@@ -759,26 +785,32 @@ export default function StaffDashboard({ employee }: Props) {
           </div>
       )}
 
-      {/* ✅ مودال الملف الشخصي الجديد (بديل قائمة المستوى) */}
+      {/* ✅ مودال الملف الشخصي الجديد (بألوان متناسقة مع الثيم) */}
       {showProfileMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowProfileMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
                   
                   {/* رأس البروفايل */}
-                  <div className="p-6 pb-4 bg-gradient-to-br from-emerald-50 to-teal-100 flex flex-col items-center relative">
-                      <button onClick={()=>setShowProfileMenu(false)} className="absolute top-4 right-4 p-1.5 bg-white/50 rounded-full hover:bg-white transition-colors text-gray-600 hover:text-red-500"><X size={18}/></button>
+                  <div className="p-6 pb-4 bg-gradient-to-br from-emerald-500 to-teal-600 flex flex-col items-center relative text-white">
+                      <button onClick={()=>setShowProfileMenu(false)} className="absolute top-4 right-4 p-1.5 bg-black/10 rounded-full hover:bg-black/20 transition-colors text-white outline-none"><X size={18}/></button>
                       
-                      <div className="w-20 h-20 bg-white rounded-full border-4 border-white shadow-md overflow-hidden mb-3">
-                           {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-emerald-600">{employee.name.charAt(0)}</div>}
+                      <div className="w-20 h-20 bg-white rounded-full border-4 border-emerald-100 shadow-md overflow-hidden mb-3">
+                           {employee.photo_url ? (
+                               <img src={employee.photo_url} className="w-full h-full object-cover" alt="Profile" />
+                           ) : (
+                               <div className="w-full h-full flex items-center justify-center text-3xl font-black text-emerald-600">
+                                   {employee.name.charAt(0)}
+                               </div>
+                           )}
                       </div>
                       
-                      <h3 className="font-black text-gray-800 text-lg">{employee.name}</h3>
-                      <p className="text-xs text-gray-500 font-bold mt-1 bg-white/50 px-3 py-1 rounded-full">{employee.specialty || 'موظف'}</p>
+                      <h3 className="font-black text-lg">{employee.name}</h3>
+                      <p className="text-xs text-emerald-50 font-bold mt-1 bg-black/10 px-3 py-1 rounded-full">{employee.specialty || 'موظف'}</p>
                   </div>
 
-                  <div className="p-5 pt-2 space-y-4">
-                      {/* عرض المستوى كشريط */}
-                      <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 shadow-inner">
+                  <div className="p-5 pt-4 space-y-4">
+                      {/* عرض المستوى كشريط بلمسة الأخضر الزمردي */}
+                      <div className="bg-emerald-50/80 rounded-2xl p-4 border border-emerald-100 shadow-sm relative overflow-hidden">
                           <LevelProgressBar employee={employee} />
                       </div>
 
@@ -786,13 +818,13 @@ export default function StaffDashboard({ employee }: Props) {
                       <div className="grid grid-cols-2 gap-3 pt-2">
                           <button 
                               onClick={() => { setActiveTab('profile'); setShowProfileMenu(false); }} 
-                              className="flex items-center justify-center gap-2 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all active:scale-95 text-sm"
+                              className="flex items-center justify-center gap-2 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all active:scale-95 text-sm outline-none"
                           >
                               <User size={18}/> ملفي الشخصي
                           </button>
                           <button 
                               onClick={signOut} 
-                              className="flex items-center justify-center gap-2 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-all active:scale-95 text-sm"
+                              className="flex items-center justify-center gap-2 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-all active:scale-95 text-sm outline-none"
                           >
                               <LogOut size={18}/> تسجيل خروج
                           </button>
@@ -802,32 +834,31 @@ export default function StaffDashboard({ employee }: Props) {
           </div>
       )}
 
-      {/* ✅ مودال لوحة الشرف المطور */}
+      {/* ✅ مودال لوحة الشرف المطور (إلغاء الكحلي وتطبيق ألوان متناسقة) */}
       {showLeaderboardMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                  <div className="p-4 border-b flex justify-between items-center bg-yellow-50 shrink-0">
-                      <h3 className="font-black text-gray-800 flex items-center gap-2 text-sm"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
-                      <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><X className="w-5 h-5"/></button>
+                  <div className="p-4 border-b flex justify-between items-center bg-emerald-50 shrink-0">
+                      <h3 className="font-black text-emerald-800 flex items-center gap-2 text-sm"><Trophy className="w-5 h-5 text-yellow-500"/> لوحة الشرف</h3>
+                      <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500 transition-colors text-emerald-700"><X className="w-5 h-5"/></button>
                   </div>
                   
                   <div className="overflow-y-auto custom-scrollbar flex-1 flex flex-col">
-                      {/* قسم شرح تجميع النقاط */}
-                      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 m-3 rounded-2xl border border-indigo-100 shadow-sm shrink-0">
-                          <h4 className="text-xs font-black text-indigo-800 mb-3 flex items-center gap-1">
-                              <Sparkles size={16} className="text-indigo-500 animate-pulse"/> كيف تجمع النقاط؟
+                      {/* قسم شرح تجميع النقاط بألوان الـ Emerald */}
+                      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-4 m-3 rounded-2xl border border-emerald-100 shadow-sm shrink-0">
+                          <h4 className="text-xs font-black text-emerald-800 mb-3 flex items-center gap-1">
+                              <Sparkles size={16} className="text-yellow-500 animate-pulse"/> كيف تجمع النقاط؟
                           </h4>
                           <div className="flex flex-wrap gap-2 text-[10px] font-bold text-gray-700">
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><Clock size={12} className="text-blue-500"/> الحضور المبكر</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><CheckSquare size={12} className="text-emerald-500"/> تنفيذ التكليفات</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><LayoutDashboard size={12} className="text-orange-500"/> الزيارة اليومية</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><Award size={12} className="text-pink-500"/> التحديات اليومية</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><Gamepad2 size={12} className="text-purple-500"/> صالة الألعاب</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><AlertTriangle size={12} className="text-red-500"/> إرسال OVR</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Clock size={12} className="text-emerald-500"/> الحضور المبكر</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><CheckSquare size={12} className="text-emerald-500"/> تنفيذ التكليفات</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><LayoutDashboard size={12} className="text-emerald-500"/> الزيارة اليومية</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Award size={12} className="text-emerald-500"/> التحديات اليومية</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Gamepad2 size={12} className="text-emerald-500"/> صالة الألعاب</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><AlertTriangle size={12} className="text-emerald-500"/> إرسال OVR</span>
                           </div>
                       </div>
 
-                      {/* المكون الأصلي للوحة الشرف */}
                       <div className="px-2 pb-2">
                           <LeaderboardWidget />
                       </div>
