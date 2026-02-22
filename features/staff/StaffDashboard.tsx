@@ -59,8 +59,8 @@ export default function StaffDashboard({ employee }: Props) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
 
-  // حالات القوائم المنسدلة
-  const [showLevelMenu, setShowLevelMenu] = useState(false);
+  // ✅ حالات القوائم المنسدلة (تم استبدال Level بـ Profile)
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   
@@ -86,7 +86,7 @@ export default function StaffDashboard({ employee }: Props) {
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
-  // ✅ حالة اكتشاف إذن الإشعارات الحالي
+  // حالة اكتشاف إذن الإشعارات الحالي
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'default'
   );
@@ -206,13 +206,13 @@ export default function StaffDashboard({ employee }: Props) {
     if (data) setNotifications(data);
   }, [employee.employee_id]);
 
-  // ✅ تصحيح دالة فتح الإشعارات وعلامة القراءة
+  // تصحيح دالة فتح الإشعارات وإغلاق النوافذ الأخرى
   const handleToggleNotifMenu = useCallback(async () => {
     const nextState = !showNotifMenu;
     setShowNotifMenu(nextState);
     
     if (nextState) {
-        setShowLevelMenu(false);
+        setShowProfileMenu(false); // ✅ إغلاق البروفايل
         setShowLeaderboardMenu(false);
         
         if (notifications.some(n => !n.is_read)) {
@@ -403,10 +403,8 @@ export default function StaffDashboard({ employee }: Props) {
       {/* إظهار مكون الثيم فقط إذا كان isThemeEnabled مفعل */}
       {isThemeEnabled && <ThemeOverlay employee={employee} />}
 
-      {/* ✅ شريط الحث الذكي (تثبيت التطبيق + تفعيل الإشعارات) */}
+      {/* شريط الحث الذكي (تثبيت التطبيق + تفعيل الإشعارات) */}
       <div className="fixed top-0 left-0 right-0 z-[60] flex flex-col gap-2 p-2 md:px-6 pointer-events-none">
-          
-          {/* حث على التثبيت PWA */}
           {!isStandalone && showInstallPopup && (
             <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-500 border border-white/20">
                 <div className="flex items-center gap-3">
@@ -425,7 +423,6 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
           )}
 
-          {/* حث على تفعيل الإشعارات */}
           {notificationStatus !== 'granted' && (
             <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-orange-500 to-pink-500 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-700 border border-white/20">
                 <div className="flex items-center gap-3">
@@ -561,10 +558,6 @@ export default function StaffDashboard({ employee }: Props) {
                 <Sparkles className="w-5 h-5" />
                 <span className="text-[9px] font-bold">الثيم</span>
             </button>
-            <button onClick={signOut} className="flex-1 p-2 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
-                <LogOut className="w-5 h-5" />
-                <span className="text-[9px] font-bold">خروج</span>
-            </button>
         </div>
       </aside>
 
@@ -579,6 +572,7 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
 
             <div className="flex items-center gap-1 md:gap-2">
+                {/* 1. زر المتجر */}
                 <button 
                     onClick={() => setActiveTab('store')} 
                     className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${activeTab === 'store' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
@@ -591,21 +585,15 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                 </button>
 
+                {/* 2. زر لوحة الشرف */}
                 <button 
-                    onClick={() => { setShowLevelMenu(!showLevelMenu); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} 
-                    className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLevelMenu ? 'bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 shadow-sm' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
-                >
-                    <Star className={`w-4 h-4 md:w-5 md:h-5 ${showLevelMenu ? 'animate-spin' : ''}`} style={{ animationDuration: '2s' }} />
-                </button>
-
-                <button 
-                    onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowLevelMenu(false); setShowNotifMenu(false); }} 
+                    onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowProfileMenu(false); setShowNotifMenu(false); }} 
                     className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
                 >
                     <Trophy className={`w-4 h-4 md:w-5 md:h-5 ${showLeaderboardMenu ? 'animate-bounce' : ''}`} />
                 </button>
 
-                {/* ✅ تم ربط هذا الزر بالدالة المصححة لفتح القائمة */}
+                {/* 3. الإشعارات */}
                 <button onClick={handleToggleNotifMenu} className={`p-2 rounded-xl transition-all duration-200 transform hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
                     <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : 'text-gray-600'}`} />
                     {unreadNotifsCount > 0 && (
@@ -613,9 +601,14 @@ export default function StaffDashboard({ employee }: Props) {
                     )}
                 </button>
             </div>
-            <div className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1">
+            
+            {/* 4. صورة البروفايل (تفتح قائمة البروفايل) */}
+            <button 
+                onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifMenu(false); setShowLeaderboardMenu(false); }}
+                className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1 hover:scale-105 transition-transform active:scale-95 outline-none"
+            >
                 {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full bg-emerald-200 flex items-center justify-center rounded-full text-emerald-700 font-bold text-sm">{employee.name.charAt(0)}</div>}
-            </div>
+            </button>
         </header>
 
         <main className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24">
@@ -680,7 +673,7 @@ export default function StaffDashboard({ employee }: Props) {
             </button>
 
             <button 
-                onClick={() => setActiveTab('profile')}
+                onClick={() => { setShowProfileMenu(true); setShowLeaderboardMenu(false); setShowNotifMenu(false); }}
                 className="relative -top-6 bg-emerald-600 text-white p-4 rounded-full shadow-xl shadow-emerald-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform"
             >
                 <User className="w-6 h-6" />
@@ -725,7 +718,7 @@ export default function StaffDashboard({ employee }: Props) {
 
       </div>
 
-      {/* ✅ مودال الإشعارات الذي يظهر عند الضغط على الزر */}
+      {/* ✅ مودال الإشعارات */}
       {showNotifMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -738,10 +731,23 @@ export default function StaffDashboard({ employee }: Props) {
                           <div className="p-10 text-center text-gray-400 font-bold italic">لا توجد إشعارات حالياً ✨</div>
                       ) : (
                           notifications.map(n => (
-                              <div key={n.id} className={`p-4 border-b last:border-0 ${!n.is_read ? 'bg-emerald-50/50' : ''}`}>
+                              <div key={n.id} 
+                                  onClick={() => {
+                                      const type = n.type?.toLowerCase() || '';
+                                      if(type.includes('task')) setActiveTab('tasks');
+                                      else if(type.includes('message')) setActiveTab('messages');
+                                      else if(type.includes('ovr')) setActiveTab('ovr');
+                                      else if(type.includes('training')) setActiveTab('training');
+                                      else if(type.includes('leave')) setActiveTab('requests-history');
+                                      else if(type.includes('reward') || type.includes('store')) setActiveTab('store');
+                                      else if(type.includes('shift') || type.includes('swap')) setActiveTab('shift-requests');
+                                      setShowNotifMenu(false);
+                                  }}
+                                  className={`p-4 border-b last:border-0 cursor-pointer transition-colors hover:bg-gray-50 ${!n.is_read ? 'bg-emerald-50/50' : ''}`}
+                              >
                                   <div className="flex justify-between items-start mb-1">
                                       <h4 className="font-black text-xs text-gray-800">{n.title}</h4>
-                                      {!n.is_read && <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>}
+                                      {!n.is_read && <span className="w-2 h-2 bg-emerald-500 rounded-full shrink-0"></span>}
                                   </div>
                                   <p className="text-[11px] text-gray-600 leading-relaxed">{n.message}</p>
                                   <p className="text-[9px] text-gray-400 mt-2 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleString('ar-EG')}</p>
@@ -753,33 +759,84 @@ export default function StaffDashboard({ employee }: Props) {
           </div>
       )}
 
-      {/* مودال المستويات ولوحة الشرف */}
-      {showLevelMenu && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLevelMenu(false)}>
-              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                  <div className="flex justify-between items-center mb-6">
-                      <h3 className="font-black text-gray-800 flex items-center gap-2"><Star className="w-5 h-5 text-indigo-600"/> مستواك الحالي</h3>
-                      <button onClick={()=>setShowLevelMenu(false)} className="p-1 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><X size={18}/></button>
+      {/* ✅ مودال الملف الشخصي الجديد (بديل قائمة المستوى) */}
+      {showProfileMenu && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowProfileMenu(false)}>
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
+                  
+                  {/* رأس البروفايل */}
+                  <div className="p-6 pb-4 bg-gradient-to-br from-emerald-50 to-teal-100 flex flex-col items-center relative">
+                      <button onClick={()=>setShowProfileMenu(false)} className="absolute top-4 right-4 p-1.5 bg-white/50 rounded-full hover:bg-white transition-colors text-gray-600 hover:text-red-500"><X size={18}/></button>
+                      
+                      <div className="w-20 h-20 bg-white rounded-full border-4 border-white shadow-md overflow-hidden mb-3">
+                           {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-emerald-600">{employee.name.charAt(0)}</div>}
+                      </div>
+                      
+                      <h3 className="font-black text-gray-800 text-lg">{employee.name}</h3>
+                      <p className="text-xs text-gray-500 font-bold mt-1 bg-white/50 px-3 py-1 rounded-full">{employee.specialty || 'موظف'}</p>
                   </div>
-                  <LevelProgressBar employee={employee} />
+
+                  <div className="p-5 pt-2 space-y-4">
+                      {/* عرض المستوى كشريط */}
+                      <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 shadow-inner">
+                          <LevelProgressBar employee={employee} />
+                      </div>
+
+                      {/* أزرار الإجراءات */}
+                      <div className="grid grid-cols-2 gap-3 pt-2">
+                          <button 
+                              onClick={() => { setActiveTab('profile'); setShowProfileMenu(false); }} 
+                              className="flex items-center justify-center gap-2 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all active:scale-95 text-sm"
+                          >
+                              <User size={18}/> ملفي الشخصي
+                          </button>
+                          <button 
+                              onClick={signOut} 
+                              className="flex items-center justify-center gap-2 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-all active:scale-95 text-sm"
+                          >
+                              <LogOut size={18}/> تسجيل خروج
+                          </button>
+                      </div>
+                  </div>
               </div>
           </div>
       )}
 
+      {/* ✅ مودال لوحة الشرف المطور */}
       {showLeaderboardMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                  <div className="p-4 border-b flex justify-between items-center bg-yellow-50">
-                      <h3 className="font-black text-gray-800 flex items-center gap-2"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
-                      <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><X size={18}/></button>
+                  <div className="p-4 border-b flex justify-between items-center bg-yellow-50 shrink-0">
+                      <h3 className="font-black text-gray-800 flex items-center gap-2 text-sm"><Trophy className="w-5 h-5 text-yellow-600"/> لوحة الشرف</h3>
+                      <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><X className="w-5 h-5"/></button>
                   </div>
-                  <div className="overflow-y-auto custom-scrollbar p-2 flex-1">
-                      <LeaderboardWidget />
+                  
+                  <div className="overflow-y-auto custom-scrollbar flex-1 flex flex-col">
+                      {/* قسم شرح تجميع النقاط */}
+                      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 m-3 rounded-2xl border border-indigo-100 shadow-sm shrink-0">
+                          <h4 className="text-xs font-black text-indigo-800 mb-3 flex items-center gap-1">
+                              <Sparkles size={16} className="text-indigo-500 animate-pulse"/> كيف تجمع النقاط؟
+                          </h4>
+                          <div className="flex flex-wrap gap-2 text-[10px] font-bold text-gray-700">
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><Clock size={12} className="text-blue-500"/> الحضور المبكر</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><CheckSquare size={12} className="text-emerald-500"/> تنفيذ التكليفات</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><LayoutDashboard size={12} className="text-orange-500"/> الزيارة اليومية</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><Award size={12} className="text-pink-500"/> التحديات اليومية</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><Gamepad2 size={12} className="text-purple-500"/> صالة الألعاب</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-indigo-50 shadow-sm flex items-center gap-1"><AlertTriangle size={12} className="text-red-500"/> إرسال OVR</span>
+                          </div>
+                      </div>
+
+                      {/* المكون الأصلي للوحة الشرف */}
+                      <div className="px-2 pb-2">
+                          <LeaderboardWidget />
+                      </div>
                   </div>
               </div>
           </div>
       )}
 
+      {/* مودال "حول التطبيق" */}
       {showAboutModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
               <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95 shadow-2xl">
@@ -790,7 +847,7 @@ export default function StaffDashboard({ employee }: Props) {
                   <h2 className="text-xl font-black text-gray-800">غرب المطار</h2>
                   <p className="text-xs text-gray-500 font-bold mb-6 tracking-widest uppercase">نظام إدارة الموارد البشرية</p>
                   <div className="space-y-3 text-xs text-gray-600 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-                      <div className="flex justify-between border-b border-gray-200 pb-2"><span>الإصدار:</span><span className="font-black text-gray-800">2.5.0</span></div>
+                      <div className="flex justify-between border-b border-gray-200 pb-2"><span>الإصدار:</span><span className="font-black text-gray-800">2.6.0</span></div>
                       <div className="flex justify-between pt-1"><span>التطوير:</span><span className="font-black text-emerald-600">IT Department</span></div>
                   </div>
               </div>
