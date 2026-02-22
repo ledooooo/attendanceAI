@@ -611,29 +611,6 @@ export default function StaffDashboard({ employee }: Props) {
         </header>
 
         <main onScroll={handleScroll} className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24 relative">
-            
-            {/* ✅ كارت الترحيب الثابت والذكي كما طلبت */}
-            {activeTab === 'news' && (
-                <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-xl border border-emerald-100 rounded-2xl p-3 shadow-sm flex items-center justify-between overflow-hidden mb-6 mt-1">
-                    <div className="absolute -left-4 -top-4 w-20 h-20 bg-emerald-50 rounded-full blur-2xl opacity-60"></div>
-                    <div className="relative flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-sm shadow-emerald-200">
-                            <Sparkles className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <h2 className="text-sm font-black text-gray-800">أهلاً بك، {employee?.name.split(' ')[0]}</h2>
-                            <p className="text-[10px] text-emerald-600 font-bold">نتمنى لك يوماً سعيداً في المركز</p>
-                        </div>
-                    </div>
-                    <div className="hidden sm:block text-left relative z-10">
-                        <p className="text-[9px] text-gray-400 font-black uppercase tracking-wider">تاريخ اليوم</p>
-                        <p className="text-xs font-black text-gray-700">
-                            {new Date().toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        </p>
-                    </div>
-                </div>
-            )}
-
             <div className="max-w-6xl mx-auto space-y-4">
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-3 md:p-6 min-h-[500px]">
                     {activeTab === 'news' && (
