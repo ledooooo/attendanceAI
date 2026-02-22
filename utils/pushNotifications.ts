@@ -20,7 +20,6 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
   isSubscribing = true;
 
   try {
-    // 1. جلب بيانات المستخدم الأساسية من الـ Auth بشكل مباشر
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user;
     
@@ -31,9 +30,8 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
     }
 
     console.log("🔍 جاري توحيد الهوية من قاعدة البيانات مباشرة...");
-    let finalUserId = user.id; // نبدأ بالـ UUID كاحتياطي
+    let finalUserId = user.id;
 
-    // 2. التحقق من جدول الموظفين (للموظف العادي والمدير)
     const { data: empData } = await supabase
         .from('employees')
         .select('role, employee_id')
@@ -42,12 +40,11 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
 
     if (empData) {
         if (empData.role === 'admin') {
-            finalUserId = 'admin'; // توحيد جهاز المدير ليكون دائما 'admin'
+            finalUserId = 'admin';
         } else {
-            finalUserId = String(empData.employee_id); // توحيد جهاز الموظف ليكون رقمه (مثل 80)
+            finalUserId = String(empData.employee_id);
         }
     } else {
-        // 3. إذا لم يكن في الموظفين، نتحقق من جدول المشرفين
         const { data: supData } = await supabase
             .from('supervisors')
             .select('id')
@@ -55,7 +52,7 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
             .maybeSingle();
         
         if (supData) {
-            finalUserId = user.id; // جهاز المشرف يعتمد على الـ UUID
+            finalUserId = user.id;
         }
     }
 
@@ -96,19 +93,22 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    // استخدام upsert بدلاً من delete ثم insert لتجنب الأخطاء
+    // ✅ الحل: حذف أي اشتراك قديم بنفس الـ endpoint لتجنب التكرار بدلاً من استخدام upsert
+    await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
+
+    // ✅ إدخال الاشتراك الجديد بشكل آمن
     const { error } = await supabase
         .from('push_subscriptions')
-        .upsert({
+        .insert({
             user_id: validUserId, 
-            subscription_data: JSON.stringify(subscriptionJson), // التأكد من أنه نص
+            subscription_data: JSON.stringify(subscriptionJson), 
             endpoint: endpoint,
-            device_info: JSON.stringify({ // التأكد من أنه نص
+            device_info: JSON.stringify({ 
               userAgent: navigator.userAgent,
               platform: navigator.platform
             }),
             updated_at: new Date().toISOString()
-        }, { onConflict: 'endpoint' });
+        });
 
     if (error) {
         console.error("❌ خطأ أثناء الحفظ في قاعدة البيانات:", error);
