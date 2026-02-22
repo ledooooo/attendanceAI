@@ -13,7 +13,7 @@ import {
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
     Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Gamepad2, Sparkles,
-    Smartphone, BellRing, DownloadCloud // أيقونات إضافية للحث
+    Smartphone, BellRing, DownloadCloud 
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -62,7 +62,7 @@ export default function StaffDashboard({ employee }: Props) {
   // ✅ حالة التمرير لتصغير كارت الترحيب
   const [isScrolled, setIsScrolled] = useState(false);
 
-  // حالات القوائم المنسدلة (تم استبدال Level بـ Profile)
+  // حالات القوائم المنسدلة
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
@@ -213,11 +213,9 @@ export default function StaffDashboard({ employee }: Props) {
   const handleToggleNotifMenu = useCallback(async () => {
     const nextState = !showNotifMenu;
     setShowNotifMenu(nextState);
-    
     if (nextState) {
-        setShowProfileMenu(false); // ✅ إغلاق البروفايل
+        setShowProfileMenu(false); 
         setShowLeaderboardMenu(false);
-        
         if (notifications.some(n => !n.is_read)) {
             await supabase
               .from('notifications')
@@ -357,7 +355,6 @@ export default function StaffDashboard({ employee }: Props) {
   
   const handleShareApp = async () => { try { if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); else { navigator.clipboard.writeText(window.location.origin); alert('تم النسخ'); } } catch (err) { console.error(err); } };
 
-  // تفعيل الإشعارات
   const handleEnableNotifications = async () => {
     const result = await requestNotificationPermission(employee.employee_id);
     if (result) {
@@ -371,8 +368,8 @@ export default function StaffDashboard({ employee }: Props) {
   // ✅ دالة مراقبة التمرير (Scroll) لتصغير وتثبيت كارت الترحيب
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
       const scrollTop = e.currentTarget.scrollTop;
-      if (scrollTop > 40 && !isScrolled) setIsScrolled(true);
-      else if (scrollTop <= 40 && isScrolled) setIsScrolled(false);
+      if (scrollTop > 20 && !isScrolled) setIsScrolled(true);
+      else if (scrollTop <= 20 && isScrolled) setIsScrolled(false);
   };
 
   const menuItems = useMemo(() => [
@@ -405,27 +402,17 @@ export default function StaffDashboard({ employee }: Props) {
   );
 
   return (
-    <div {...swipeHandlers} className="min-h-screen w-full bg-gray-50 flex overflow-visible font-sans text-right" dir="rtl">
+    <div {...swipeHandlers} className="min-h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
-      {/* مكون تحدي اليوم */}
       <DailyQuizModal employee={employee} />
-      
-      {/* إظهار مكون الثيم فقط إذا كان isThemeEnabled مفعل */}
       {isThemeEnabled && <ThemeOverlay employee={employee} />}
 
-      {/* شريط الحث الذكي (تثبيت التطبيق + تفعيل الإشعارات) */}
       <div className="fixed top-0 left-0 right-0 z-[60] flex flex-col gap-2 p-2 md:px-6 pointer-events-none">
-          
           {!isStandalone && showInstallPopup && (
             <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-500 border border-white/20">
                 <div className="flex items-center gap-3">
-                    <div className="bg-white/20 p-2 rounded-xl">
-                        <DownloadCloud className="w-5 h-5 animate-bounce" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-black">ثبّت تطبيق غرب المطار</p>
-                        <p className="text-[10px] opacity-80">لتجربة أسرع وسهولة في الوصول للخدمات</p>
-                    </div>
+                    <div className="bg-white/20 p-2 rounded-xl"><DownloadCloud className="w-5 h-5 animate-bounce" /></div>
+                    <div><p className="text-xs font-black">ثبّت تطبيق غرب المطار</p><p className="text-[10px] opacity-80">لتجربة أسرع وسهولة في الوصول للخدمات</p></div>
                 </div>
                 <div className="flex gap-2 shrink-0">
                     <button onClick={() => setShowInstallPopup(false)} className="text-[10px] font-bold px-2 py-1 hover:bg-white/10 rounded-lg">لاحقاً</button>
@@ -437,119 +424,48 @@ export default function StaffDashboard({ employee }: Props) {
           {notificationStatus !== 'granted' && (
             <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-orange-500 to-pink-500 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-700 border border-white/20">
                 <div className="flex items-center gap-3">
-                    <div className="bg-white/20 p-2 rounded-xl">
-                        <BellRing className="w-5 h-5 animate-ring" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-black">فعّل التنبيهات اللحظية</p>
-                        <p className="text-[10px] opacity-80">لتصلك المهام والجوائز فور صدورها</p>
-                    </div>
+                    <div className="bg-white/20 p-2 rounded-xl"><BellRing className="w-5 h-5 animate-ring" /></div>
+                    <div><p className="text-xs font-black">فعّل التنبيهات اللحظية</p><p className="text-[10px] opacity-80">لتصلك المهام والجوائز فور صدورها</p></div>
                 </div>
                 <button onClick={handleEnableNotifications} className="bg-white text-orange-600 text-xs font-black px-5 py-2 rounded-xl shadow-sm active:scale-95 transition-transform shrink-0">تفعيل</button>
             </div>
           )}
       </div>
 
-      {/* مكون التدريب الإجباري */}
       {pendingMandatoryTraining && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border-4 border-red-500 relative animate-in zoom-in-95">
-                <div className="bg-red-500 text-white p-6 text-center">
-                    <AlertTriangle className="w-16 h-16 mx-auto mb-3 text-yellow-300 animate-bounce" />
-                    <h2 className="text-2xl font-black">تنبيه هام: تدريب إلزامي</h2>
-                    <p className="text-sm font-bold opacity-90 mt-1">يوجد تدريب جديد يجب عليك إتمامه للمتابعة</p>
-                </div>
+                <div className="bg-red-500 text-white p-6 text-center"><AlertTriangle className="w-16 h-16 mx-auto mb-3 text-yellow-300 animate-bounce" /><h2 className="text-2xl font-black">تنبيه هام: تدريب إلزامي</h2></div>
                 <div className="p-8 text-center space-y-6">
-                    <div>
-                        <h3 className="text-2xl font-black text-gray-800 mb-2">{pendingMandatoryTraining.title}</h3>
-                        <div className="flex justify-center gap-4 text-sm text-gray-500 font-bold">
-                            <span>📍 {pendingMandatoryTraining.type === 'online' ? 'Online' : pendingMandatoryTraining.location}</span>
-                            <span className="text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-lg border border-yellow-100">⭐ {pendingMandatoryTraining.points} نقطة</span>
-                        </div>
-                    </div>
-                    <p className="text-gray-600 text-sm bg-gray-50 p-4 rounded-xl border leading-relaxed">
-                        هذا التدريب مطلوب من قبل إدارة المركز لضمان الجودة والسلامة المهنية. <br/>
-                        لن تتمكن من استخدام التطبيق قبل مشاهدة المحتوى وتسجيل الإتمام.
-                    </p>
-                    <button 
-                        onClick={() => {
-                            setPendingMandatoryTraining(null); 
-                            setActiveTab('training'); 
-                        }}
-                        className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-lg hover:bg-red-700 shadow-lg shadow-red-200 transition-transform active:scale-95 flex items-center justify-center gap-2"
-                    >
-                        الذهاب للتدريب الآن 🚀
-                    </button>
+                    <div><h3 className="text-2xl font-black text-gray-800 mb-2">{pendingMandatoryTraining.title}</h3></div>
+                    <button onClick={() => { setPendingMandatoryTraining(null); setActiveTab('training'); }} className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-lg hover:bg-red-700 shadow-lg shadow-red-200 transition-transform active:scale-95 flex items-center justify-center gap-2">الذهاب للتدريب الآن 🚀</button>
                 </div>
             </div>
         </div>
       )}
 
-      {/* تظليل الخلفية */}
-      {isSidebarOpen && (
-        <div 
-            className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" 
-            onClick={() => setIsSidebarOpen(false)} 
-        />
-      )}
+      {isSidebarOpen && <div className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />}
 
-      {/* القائمة الجانبية (Sidebar) */}
-      <aside className={`
-          fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl 
-          transform transition-transform duration-300 ease-in-out flex flex-col 
-          ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
-          md:translate-x-0 md:static md:w-72 md:shadow-none h-[100dvh]
-      `}>
+      <aside className={`fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl transform transition-transform duration-300 flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0 md:static md:w-72 md:shadow-none h-[100dvh]`}>
         <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-gradient-to-r from-emerald-50 to-white">
             <div className="flex items-center gap-3">
-                <div className="bg-white p-1.5 rounded-xl shadow-sm border border-emerald-100">
-                    <img src="/pwa-192x192.png" className="w-8 h-8 rounded-lg" alt="Logo" />
-                </div>
-                <div>
-                    <h1 className="font-black text-gray-800 text-base">غرب المطار</h1>
-                    <p className="text-[10px] text-gray-500 font-bold">بوابة الموظفين</p>
-                </div>
+                <div className="bg-white p-1.5 rounded-xl shadow-sm border border-emerald-100"><img src="/pwa-192x192.png" className="w-8 h-8 rounded-lg" alt="Logo" /></div>
+                <div><h1 className="font-black text-gray-800 text-base">غرب المطار</h1><p className="text-[10px] text-gray-500 font-bold">بوابة الموظفين</p></div>
             </div>
-            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                <X className="w-6 h-6"/>
-            </button>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full"><X className="w-6 h-6"/></button>
         </div>
 
         <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
           {menuItems.map((item: any) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
+            const Icon = item.icon; const isActive = activeTab === item.id;
             return (
-              <button
-                key={item.id}
-                onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
-                className={`
-                    w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group relative
-                    ${isActive 
-                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 font-bold translate-x-[-5px]' 
-                        : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 font-medium'
-                    }
-                `}
-              >
+              <button key={item.id} onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group relative ${isActive ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 font-bold translate-x-[-5px]' : 'text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 font-medium'}`}>
                 <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-emerald-600'}`} />
                 <span className="text-sm">{item.label}</span>
-                
-                {item.isNew && (
-                    <span className="absolute left-4 bg-fuchsia-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse border border-white shadow-md">
-                        NEW!
-                    </span>
-                )}
-                
+                {item.isNew && <span className="absolute left-4 bg-fuchsia-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse border shadow-md">NEW!</span>}
                 {typeof item.badge !== 'undefined' && !item.isNew && (
-                    item.badge > 0 ? (
-                        <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
-                            {item.badge > 99 ? '+99' : item.badge}
-                        </span>
-                    ) : (
-                        <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-emerald-400 to-green-500 text-white flex items-center justify-center rounded-full shadow-sm border-[1.5px] border-white">
-                            <Check size={12} strokeWidth={3} />
-                        </span>
-                    )
+                    item.badge > 0 ? <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md animate-pulse">{item.badge > 99 ? '+99' : item.badge}</span>
+                    : <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-emerald-400 to-green-500 text-white flex items-center justify-center rounded-full shadow-sm"><Check size={12} strokeWidth={3} /></span>
                 )}
               </button>
             );
@@ -569,90 +485,68 @@ export default function StaffDashboard({ employee }: Props) {
                 <Sparkles className="w-5 h-5" />
                 <span className="text-[9px] font-bold">الثيم</span>
             </button>
+            {/* ✅ تمت إضافة زر تسجيل الخروج هنا */}
+            <button onClick={signOut} className="flex-1 p-2 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
+                <LogOut className="w-5 h-5" />
+                <span className="text-[9px] font-bold">خروج</span>
+            </button>
         </div>
       </aside>
 
-      {/* المحتوى الرئيسي */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
         <header className="h-16 bg-white border-b flex items-center justify-between px-3 md:px-6 sticky top-0 z-30 shadow-sm shrink-0 bg-white/95">
             <div className="flex items-center gap-2 md:gap-3">
-                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-xl hover:bg-gray-100 transition-all">
-                    <Menu className="w-5 h-5 text-gray-700"/>
-                </button>
+                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-xl hover:bg-gray-100 transition-all"><Menu className="w-5 h-5 text-gray-700"/></button>
                 <span className="font-black text-gray-800 hidden md:block">لوحة التحكم</span>
             </div>
 
-            {/* ✅ الأزرار العلوية مجمعة بجوار بعضها على اليسار (mr-auto لضمان المحاذاة) */}
-            <div className="flex items-center justify-end gap-1.5 md:gap-2 mr-auto">
+            {/* ✅ الأزرار العلوية مجمعة بجوار بعضها على اليسار */}
+            <div className="flex items-center justify-end gap-1.5 md:gap-2 flex-1">
                 
-                {/* 1. زر المتجر */}
-                <button 
-                    onClick={() => setActiveTab('store')} 
-                    className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 relative ${activeTab === 'store' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}
-                >
+                <button onClick={() => setActiveTab('store')} className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 relative ${activeTab === 'store' ? 'bg-gradient-to-br from-pink-100 to-pink-200 text-pink-700 shadow-sm' : 'bg-pink-50 text-pink-600 hover:bg-pink-100'}`}>
                     <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
-                    {pendingRewardsCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-md">
-                            {pendingRewardsCount}
-                        </span>
-                    )}
+                    {pendingRewardsCount > 0 && <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-md">{pendingRewardsCount}</span>}
                 </button>
 
-                {/* 2. زر لوحة الشرف */}
-                <button 
-                    onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowProfileMenu(false); setShowNotifMenu(false); }} 
-                    className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}
-                >
+                <button onClick={() => { setShowLeaderboardMenu(true); setShowProfileMenu(false); setShowNotifMenu(false); }} className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}>
                     <Trophy className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
 
-                {/* 3. زر الإشعارات */}
-                <button 
-                    onClick={handleToggleNotifMenu} 
-                    className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
-                >
+                <button onClick={handleToggleNotifMenu} className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
                     <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-emerald-600 animate-pulse' : ''}`} />
-                    {unreadNotifsCount > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-md">
-                            {unreadNotifsCount}
-                        </span>
-                    )}
+                    {unreadNotifsCount > 0 && <span className="absolute -top-1 -right-1 bg-gradient-to-br from-red-500 to-red-600 text-white text-[9px] md:text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-md">{unreadNotifsCount}</span>}
                 </button>
-
-                {/* 4. زر البروفايل (بدلاً من النجمة) */}
-                <button 
-                    onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifMenu(false); setShowLeaderboardMenu(false); }}
-                    className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1 hover:scale-105 transition-transform active:scale-95 outline-none focus:ring-2 focus:ring-emerald-400 bg-emerald-50"
-                >
-                    {employee.photo_url ? (
-                        <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center rounded-full text-emerald-700 font-black text-xs md:text-sm">
-                            {employee.name.charAt(0)}
-                        </div>
-                    )}
+                
+                <button onClick={() => { setShowProfileMenu(true); setShowNotifMenu(false); setShowLeaderboardMenu(false); }} className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-emerald-100 p-0.5 overflow-hidden ml-1 hover:scale-105 transition-transform active:scale-95 outline-none focus:ring-2 focus:ring-emerald-400 bg-emerald-50">
+                    {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full flex items-center justify-center rounded-full text-emerald-700 font-black text-xs md:text-sm">{employee.name.charAt(0)}</div>}
                 </button>
-
             </div>
         </header>
 
-        {/* ✅ المراقبة الذكية للسكرول (onScroll) لتصغير وتثبيت كارت الترحيب */}
+        {/* ✅ المراقبة الذكية للسكرول */}
         <main onScroll={handleScroll} className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24 relative">
             
-            {/* ✅ كارت الترحيب المثبت (Sticky & Shrinkable) */}
+            {/* ✅ كارت الترحيب المثبت (Sticky) الموحد */}
             {activeTab === 'news' && (
                 <div className={`sticky top-0 z-[40] transition-all duration-300 ease-in-out ${isScrolled ? '-mx-2 md:-mx-4 -mt-2 md:-mt-4 mb-4' : 'mb-6 pt-2'}`}>
-                    <div className={`bg-gradient-to-r from-emerald-600 to-teal-600 text-white transition-all duration-300 overflow-hidden ${isScrolled ? 'rounded-b-3xl px-4 py-3 shadow-md flex items-center justify-between' : 'rounded-[2rem] p-6 md:p-8 shadow-lg flex flex-col'}`}>
-                        <h2 className={`font-black flex items-center gap-2 transition-all duration-300 ${isScrolled ? 'text-sm md:text-lg m-0' : 'text-xl md:text-3xl mb-2'}`}>
-                            مرحباً بك، {employee?.name.split(' ')[0]} 👋
-                        </h2>
-                        {!isScrolled ? (
-                            <p className="text-emerald-50 font-bold text-xs md:text-base animate-in fade-in duration-500">
-                                نتمنى لك يوماً سعيداً ومليئاً بالإنجازات في المركز.
+                    <div className={`bg-gradient-to-r from-emerald-600 to-teal-600 text-white transition-all duration-300 overflow-hidden shadow-lg ${isScrolled ? 'rounded-b-3xl px-4 py-3 flex items-center justify-between opacity-95 backdrop-blur-md' : 'rounded-[2rem] p-6 md:p-8 flex flex-col'}`}>
+                        <div>
+                            <h2 className={`font-black flex items-center gap-2 transition-all duration-300 ${isScrolled ? 'text-sm md:text-lg m-0' : 'text-xl md:text-3xl mb-2'}`}>
+                                أهلاً بك، {employee?.name.split(' ')[0]} 👋
+                            </h2>
+                            <div className={`transition-all duration-300 ${isScrolled ? 'h-0 opacity-0 overflow-hidden' : 'h-auto opacity-100'}`}>
+                                <p className="text-emerald-50 font-bold text-xs md:text-base animate-in fade-in duration-500">
+                                    نتمنى لك يوماً سعيداً ومليئاً بالإنجازات في المركز.
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div className={`text-left ${isScrolled ? 'text-[10px] md:text-xs' : 'mt-4'}`}>
+                            {!isScrolled && <p className="text-emerald-100 text-[10px] md:text-xs font-bold mb-1">تاريخ اليوم</p>}
+                            <p className="font-black bg-white/20 px-3 py-1.5 rounded-xl shadow-inner inline-block">
+                                {new Date().toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
                             </p>
-                        ) : (
-                            <span className="text-[10px] bg-white/20 px-2 py-1 rounded-lg font-bold shadow-inner">بوابة الموظفين</span>
-                        )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -680,13 +574,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'arcade' && <StaffArcade employee={employee} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'store' && <RewardsStore employee={employee} />}
-                    {activeTab === 'training' && (
-                        <StaffTrainingCenter 
-                            employee={employee} 
-                            deepLinkTrainingId={deepLinkTrainingId} 
-                        />
-                    )}
-                    
+                    {activeTab === 'training' && <StaffTrainingCenter employee={employee} deepLinkTrainingId={deepLinkTrainingId} />}
                     {activeTab === 'links' && <StaffLinksTab />}
                     {activeTab === 'tasks' && <StaffTasks employee={employee} />}
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
@@ -698,52 +586,25 @@ export default function StaffDashboard({ employee }: Props) {
 
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-2 flex justify-between items-center z-50 pb-safe md:hidden shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <button onClick={() => setActiveTab('news')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'news' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'news' ? 'bg-emerald-50' : ''}`}>
-                    <LayoutDashboard className={`w-6 h-6 ${activeTab === 'news' ? 'fill-current' : ''}`} />
-                </div>
-                <span className="text-[10px] font-bold">الرئيسية</span>
+                <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'news' ? 'bg-emerald-50' : ''}`}><LayoutDashboard className="w-6 h-6"/></div><span className="text-[10px] font-bold">الرئيسية</span>
             </button>
-
             <button onClick={() => setActiveTab('new-request')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'new-request' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'new-request' ? 'bg-emerald-50' : ''}`}>
-                    <FilePlus className="w-6 h-6" />
-                </div>
-                <span className="text-[10px] font-bold">طلب جديد</span>
+                <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'new-request' ? 'bg-emerald-50' : ''}`}><FilePlus className="w-6 h-6"/></div><span className="text-[10px] font-bold">طلب جديد</span>
             </button>
-
-            <button onClick={() => { setShowProfileMenu(true); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} className="relative -top-6 bg-emerald-600 text-white p-4 rounded-full shadow-xl shadow-emerald-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform">
-                <User className="w-6 h-6" />
-            </button>
-
-            {hasAdminAccess && (
-                <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'admin' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                    <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'admin' ? 'bg-indigo-50' : ''}`}>
-                        <Settings className={`w-6 h-6 ${activeTab === 'admin' ? 'fill-current' : ''}`} />
-                    </div>
-                    <span className="text-[10px] font-bold">الإدارة</span>
-                </button>
+            <button onClick={() => { setShowProfileMenu(true); setShowLeaderboardMenu(false); setShowNotifMenu(false); }} className="relative -top-6 bg-emerald-600 text-white p-4 rounded-full shadow-xl shadow-emerald-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform"><User className="w-6 h-6" /></button>
+            {hasAdminAccess ? (
+                <button onClick={() => setActiveTab('admin')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'admin' ? 'text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}><div className={`p-1.5 rounded-xl ${activeTab === 'admin' ? 'bg-indigo-50' : ''}`}><Settings className="w-6 h-6"/></div><span className="text-[10px] font-bold">الإدارة</span></button>
+            ) : (
+                 <button onClick={() => setActiveTab('attendance')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'attendance' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}><div className={`p-1.5 rounded-xl ${activeTab === 'attendance' ? 'bg-emerald-50' : ''}`}><Clock className="w-6 h-6"/></div><span className="text-[10px] font-bold">حضوري</span></button>
             )}
-
-            {!hasAdminAccess && (
-                 <button onClick={() => setActiveTab('attendance')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'attendance' ? 'text-emerald-600' : 'text-gray-400 hover:text-gray-600'}`}>
-                 <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'attendance' ? 'bg-emerald-50' : ''}`}>
-                     <Clock className="w-6 h-6" />
-                 </div>
-                 <span className="text-[10px] font-bold">حضوري</span>
-             </button>
-            )}
-
-            <button onClick={() => setIsSidebarOpen(true)} className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600">
-                <div className="p-1.5"><Menu className="w-6 h-6" /></div>
-                <span className="text-[10px] font-bold">المزيد</span>
-            </button>
+            <button onClick={() => setIsSidebarOpen(true)} className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600"><div className="p-1.5"><Menu className="w-6 h-6" /></div><span className="text-[10px] font-bold">المزيد</span></button>
         </div>
       </div>
 
       {/* ✅ مودال الإشعارات (إصلاح النقر) */}
       {showNotifMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
-              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
                   <div className="p-4 border-b flex justify-between items-center bg-gray-50">
                       <h3 className="font-black text-gray-800 flex items-center gap-2"><Bell className="w-5 h-5 text-emerald-600"/> التنبيهات</h3>
                       <button onClick={()=>setShowNotifMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500 transition-colors"><X size={18}/></button>
@@ -753,11 +614,11 @@ export default function StaffDashboard({ employee }: Props) {
                           <div className="p-10 text-center text-gray-400 font-bold italic">لا توجد إشعارات حالياً ✨</div>
                       ) : (
                           notifications.map(n => (
-                              <div 
+                              <button 
                                   key={n.id} 
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => {
+                                  type="button"
+                                  onClick={(e) => {
+                                      e.stopPropagation();
                                       const type = n.type?.toLowerCase() || '';
                                       if(type.includes('task')) setActiveTab('tasks');
                                       else if(type.includes('message')) setActiveTab('messages');
@@ -766,10 +627,9 @@ export default function StaffDashboard({ employee }: Props) {
                                       else if(type.includes('leave')) setActiveTab('requests-history');
                                       else if(type.includes('reward') || type.includes('store')) setActiveTab('store');
                                       else if(type.includes('shift') || type.includes('swap')) setActiveTab('shift-requests');
-                                      
                                       setShowNotifMenu(false);
                                   }}
-                                  className={`w-full text-right block p-4 border-b last:border-0 cursor-pointer transition-colors hover:bg-emerald-50 active:bg-emerald-100 outline-none ${!n.is_read ? 'bg-emerald-50/40' : 'bg-white'}`}
+                                  className={`w-full text-right block p-4 border-b last:border-0 cursor-pointer transition-all hover:bg-emerald-50 active:bg-emerald-100 focus:bg-emerald-50 outline-none ${!n.is_read ? 'bg-emerald-50/40' : 'bg-white'}`}
                               >
                                   <div className="flex justify-between items-start mb-1">
                                       <h4 className="font-black text-xs text-gray-800">{n.title}</h4>
@@ -777,7 +637,7 @@ export default function StaffDashboard({ employee }: Props) {
                                   </div>
                                   <p className="text-[11px] text-gray-600 leading-relaxed mt-1">{n.message}</p>
                                   <p className="text-[9px] text-gray-400 mt-2 flex items-center gap-1"><Clock size={10}/> {new Date(n.created_at).toLocaleString('ar-EG')}</p>
-                              </div>
+                              </button>
                           ))
                       )}
                   </div>
@@ -785,47 +645,28 @@ export default function StaffDashboard({ employee }: Props) {
           </div>
       )}
 
-      {/* ✅ مودال الملف الشخصي الجديد (بألوان متناسقة مع الثيم) */}
+      {/* ✅ مودال الملف الشخصي والمستوى (ألوان متناسقة مع الثيم) */}
       {showProfileMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowProfileMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col" onClick={e => e.stopPropagation()}>
-                  
-                  {/* رأس البروفايل */}
                   <div className="p-6 pb-4 bg-gradient-to-br from-emerald-500 to-teal-600 flex flex-col items-center relative text-white">
                       <button onClick={()=>setShowProfileMenu(false)} className="absolute top-4 right-4 p-1.5 bg-black/10 rounded-full hover:bg-black/20 transition-colors text-white outline-none"><X size={18}/></button>
-                      
-                      <div className="w-20 h-20 bg-white rounded-full border-4 border-emerald-100 shadow-md overflow-hidden mb-3">
-                           {employee.photo_url ? (
-                               <img src={employee.photo_url} className="w-full h-full object-cover" alt="Profile" />
-                           ) : (
-                               <div className="w-full h-full flex items-center justify-center text-3xl font-black text-emerald-600">
-                                   {employee.name.charAt(0)}
-                               </div>
-                           )}
+                      <div className="w-20 h-20 bg-white rounded-full border-4 border-emerald-100 shadow-md overflow-hidden mb-3 flex items-center justify-center">
+                           {employee.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover" alt="Profile" /> : <span className="text-3xl font-black text-emerald-600">{employee.name.charAt(0)}</span>}
                       </div>
-                      
                       <h3 className="font-black text-lg">{employee.name}</h3>
-                      <p className="text-xs text-emerald-50 font-bold mt-1 bg-black/10 px-3 py-1 rounded-full">{employee.specialty || 'موظف'}</p>
+                      <p className="text-xs text-emerald-50 font-bold mt-1 bg-black/10 px-3 py-1 rounded-full shadow-inner">{employee.specialty || 'موظف'}</p>
                   </div>
-
                   <div className="p-5 pt-4 space-y-4">
-                      {/* عرض المستوى كشريط بلمسة الأخضر الزمردي */}
-                      <div className="bg-emerald-50/80 rounded-2xl p-4 border border-emerald-100 shadow-sm relative overflow-hidden">
+                      {/* ✅ تغيير لون كارت المستوى للدرجات الخضراء الزمردية */}
+                      <div className="bg-gradient-to-b from-emerald-50 to-teal-50 rounded-2xl p-4 border border-emerald-100 shadow-sm relative overflow-hidden">
                           <LevelProgressBar employee={employee} />
                       </div>
-
-                      {/* أزرار الإجراءات */}
                       <div className="grid grid-cols-2 gap-3 pt-2">
-                          <button 
-                              onClick={() => { setActiveTab('profile'); setShowProfileMenu(false); }} 
-                              className="flex items-center justify-center gap-2 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all active:scale-95 text-sm outline-none"
-                          >
+                          <button onClick={() => { setActiveTab('profile'); setShowProfileMenu(false); }} className="flex items-center justify-center gap-2 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-bold hover:bg-emerald-200 transition-all active:scale-95 text-sm outline-none">
                               <User size={18}/> ملفي الشخصي
                           </button>
-                          <button 
-                              onClick={signOut} 
-                              className="flex items-center justify-center gap-2 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-all active:scale-95 text-sm outline-none"
-                          >
+                          <button onClick={signOut} className="flex items-center justify-center gap-2 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-all active:scale-95 text-sm outline-none">
                               <LogOut size={18}/> تسجيل خروج
                           </button>
                       </div>
@@ -850,12 +691,12 @@ export default function StaffDashboard({ employee }: Props) {
                               <Sparkles size={16} className="text-yellow-500 animate-pulse"/> كيف تجمع النقاط؟
                           </h4>
                           <div className="flex flex-wrap gap-2 text-[10px] font-bold text-gray-700">
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Clock size={12} className="text-emerald-500"/> الحضور المبكر</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Clock size={12} className="text-blue-500"/> الحضور المبكر</span>
                               <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><CheckSquare size={12} className="text-emerald-500"/> تنفيذ التكليفات</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><LayoutDashboard size={12} className="text-emerald-500"/> الزيارة اليومية</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Award size={12} className="text-emerald-500"/> التحديات اليومية</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Gamepad2 size={12} className="text-emerald-500"/> صالة الألعاب</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><AlertTriangle size={12} className="text-emerald-500"/> إرسال OVR</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><LayoutDashboard size={12} className="text-orange-500"/> الزيارة اليومية</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Award size={12} className="text-pink-500"/> التحديات اليومية</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Gamepad2 size={12} className="text-purple-500"/> صالة الألعاب</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><AlertTriangle size={12} className="text-red-500"/> إرسال OVR</span>
                           </div>
                       </div>
 
