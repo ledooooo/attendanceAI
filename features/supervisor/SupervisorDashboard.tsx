@@ -15,7 +15,7 @@ import toast from 'react-hot-toast';
 import StaffNewsFeed from '../staff/components/StaffNewsFeed';
 import StaffTrainingCenter from '../staff/components/StaffTrainingCenter';
 import StaffLibrary from '../staff/components/StaffLibrary';
-import StaffArcade from '../staff/components/StaffArcade';
+import SupervisorRounds from './components/SupervisorRounds';
 import RewardsStore from '../staff/components/RewardsStore'; 
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
@@ -242,7 +242,7 @@ export default function SupervisorDashboard() {
         { id: 'tasks', label: 'التكليفات الصادرة', icon: CheckSquare },
         { id: 'schedule', label: 'النوبتجيات', icon: CalendarRange },
         { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
-        { id: 'competitions', label: 'المسابقات', icon: Swords },
+        { id: 'rounds', label: 'المرور الإشرافي', icon: MapPin },
         { id: 'training', label: 'مركز التدريب', icon: BookOpen },
         { id: 'library', label: 'السياسات والأدلة', icon: LibraryIcon },
         { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
@@ -365,7 +365,7 @@ export default function SupervisorDashboard() {
                         {activeTab === 'tasks' && <SupervisorTasks />}
                         {activeTab === 'schedule' && <SupervisorSchedules />}
                         {activeTab === 'statistics' && <SupervisorStatistics />}
-                        {activeTab === 'competitions' && <CompetitionsManager />}
+                        {activeTab === 'rounds' && <SupervisorRounds />}
                         {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
                         {activeTab === 'library' && <StaffLibrary employee={mockEmployee} />}
                         {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
