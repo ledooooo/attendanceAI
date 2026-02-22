@@ -15,7 +15,6 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 let isSubscribing = false; 
 
-// ✅ لم نعد نعتمد على المتغير الممرر من React، الدالة ستجلب الهوية الصحيحة بنفسها
 export async function requestNotificationPermission(_ignoredUserId?: string | number) {
   if (isSubscribing) return false;
   isSubscribing = true;
@@ -34,16 +33,29 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
     console.log("🔍 جاري توحيد الهوية من قاعدة البيانات مباشرة...");
     let finalUserId = user.id; // نبدأ بالـ UUID كاحتياطي
 
-    // 2. البحث عن الرقم الوظيفي الحقيقي في جدول الموظفين
-    const { data: emp } = await supabase.from('employees').select('employee_id').eq('id', user.id).maybeSingle();
-    
-    if (emp && emp.employee_id) {
-        finalUserId = emp.employee_id; // مثال: سيصبح 80
+    // 2. التحقق من جدول الموظفين (للموظف العادي والمدير)
+    const { data: empData } = await supabase
+        .from('employees')
+        .select('role, employee_id')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (empData) {
+        if (empData.role === 'admin') {
+            finalUserId = 'admin'; // توحيد جهاز المدير ليكون دائما 'admin'
+        } else {
+            finalUserId = String(empData.employee_id); // توحيد جهاز الموظف ليكون رقمه (مثل 80)
+        }
     } else {
-        // 3. إذا لم يكن موظفاً، نبحث في جدول المشرفين
-        const { data: sup } = await supabase.from('supervisors').select('supervisor_id').eq('id', user.id).maybeSingle();
-        if (sup && sup.supervisor_id) {
-            finalUserId = sup.supervisor_id; // مثال: سيصبح 555
+        // 3. إذا لم يكن في الموظفين، نتحقق من جدول المشرفين
+        const { data: supData } = await supabase
+            .from('supervisors')
+            .select('id')
+            .eq('id', user.id)
+            .maybeSingle();
+        
+        if (supData) {
+            finalUserId = user.id; // جهاز المشرف يعتمد على الـ UUID
         }
     }
 
@@ -84,18 +96,19 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
-
-    const { error } = await supabase.from('push_subscriptions').insert({
-        user_id: validUserId, 
-        subscription_data: subscriptionJson,
-        endpoint: endpoint,
-        device_info: {
-          userAgent: navigator.userAgent,
-          platform: navigator.platform
-        },
-        updated_at: new Date().toISOString()
-    });
+    // استخدام upsert بدلاً من delete ثم insert لتجنب الأخطاء
+    const { error } = await supabase
+        .from('push_subscriptions')
+        .upsert({
+            user_id: validUserId, 
+            subscription_data: JSON.stringify(subscriptionJson), // التأكد من أنه نص
+            endpoint: endpoint,
+            device_info: JSON.stringify({ // التأكد من أنه نص
+              userAgent: navigator.userAgent,
+              platform: navigator.platform
+            }),
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'endpoint' });
 
     if (error) {
         console.error("❌ خطأ أثناء الحفظ في قاعدة البيانات:", error);
