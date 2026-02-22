@@ -268,8 +268,11 @@ export default function SupervisorDashboard() {
                 <div className="h-24 flex items-center justify-between px-6 border-b text-white bg-gradient-to-r from-purple-600 to-indigo-600">
                     <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-2xl border border-white/30 shadow-inner overflow-hidden shrink-0">
-                             {supervisor?.avatar_url ? <img src={supervisor.avatar_url} className="w-full h-full object-cover" /> : "👨‍💼"}
-                        </div>
+{supervisor?.avatar_url && supervisor.avatar_url.startsWith('http') ? (
+    <img src={supervisor.avatar_url} className="w-full h-full object-cover" alt="avatar" />
+) : (
+    <span className="text-2xl">{supervisor?.avatar_url || "👨‍💼"}</span>
+)}                        </div>
                         <div className="min-w-0">
                             <h1 className="font-black text-sm drop-shadow-md truncate">{supervisor?.name}</h1>
                             <p className="text-[10px] font-bold opacity-90">{supervisor?.role_title}</p>
