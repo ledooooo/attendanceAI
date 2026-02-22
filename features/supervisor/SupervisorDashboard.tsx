@@ -7,7 +7,7 @@ import {
     LogOut, Menu, X, Home, BookOpen, Library as LibraryIcon, 
     Gamepad2, CalendarRange, Gift, BarChart3, Loader2, Sparkles, 
     Award, ShieldCheck, Bell, ShoppingBag, Trophy, Share2, Info, 
-    Users, CheckSquare, Swords, Smartphone, BellRing, DownloadCloud, Star 
+    Users, CheckSquare, Swords, Smartphone, BellRing, MapPin, DownloadCloud, Star 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
