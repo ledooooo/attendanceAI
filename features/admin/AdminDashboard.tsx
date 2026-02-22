@@ -8,7 +8,7 @@ import {
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
-    LayoutDashboard, UserCog, ShieldCheck, BarChart3, Swords 
+    LayoutDashboard, UserCog, ShieldCheck, BarChart3, MapPin, Swords 
 } from 'lucide-react';
 
 import HomeTab from './components/HomeTab';
