@@ -7,11 +7,11 @@ import {
     LogOut, Menu, X, Home, BookOpen, Library as LibraryIcon, 
     Gamepad2, CalendarRange, Gift, BarChart3, Loader2, Sparkles, 
     Award, ShieldCheck, Bell, ShoppingBag, Trophy, Share2, Info, 
-    Users, User, CheckSquare, Swords, Smartphone, BellRing, DownloadCloud, Star, MapPin 
+    Users, User, CheckSquare, Swords, Smartphone, BellRing, DownloadCloud, Star, MapPin, Check
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// --- استيراد مكونات الموظف المشتركة ---
+// --- استيراد المكونات ---
 import StaffNewsFeed from '../staff/components/StaffNewsFeed';
 import StaffTrainingCenter from '../staff/components/StaffTrainingCenter';
 import StaffLibrary from '../staff/components/StaffLibrary';
@@ -20,8 +20,7 @@ import RewardsStore from '../staff/components/RewardsStore';
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
 import ThemeOverlay from '../staff/components/ThemeOverlay';
-import SupervisorProfile from './components/SupervisorProfile'; // ✅ إضافة الاستيراد
-// --- استيراد المكونات المخصصة للمشرف ---
+import SupervisorProfile from './components/SupervisorProfile';
 import SupervisorForce from './components/SupervisorForce';
 import SupervisorSchedules from './components/SupervisorSchedules';
 import SupervisorStatistics from './components/SupervisorStatistics';
@@ -41,7 +40,6 @@ export default function SupervisorDashboard() {
     const [showLevelMenu, setShowLevelMenu] = useState(false);
     const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
     
-    // ✅ حالة قائمة الإشعارات
     const [showNotifMenu, setShowNotifMenu] = useState(false);
     const [notifications, setNotifications] = useState<any[]>([]);
 
@@ -92,6 +90,43 @@ export default function SupervisorDashboard() {
             created_at: supervisor.created_at
         } as any;
     }, [supervisor]);
+
+    // 🌟 3. جلب العدادات الديناميكية (Badges) للمشرف
+    const { data: supervisorBadges = { rounds: 0, tasks: 0, training: 0 } } = useQuery({
+        queryKey: ['supervisor_badges', user?.id],
+        queryFn: async () => {
+            if (!user?.id) return { rounds: 0, tasks: 0, training: 0 };
+
+            // استخدام Promise.all للسرعة
+            const [roundsRes, tasksRes, availableTrainings, myCompleted] = await Promise.all([
+                // 1. جلب عدد المرورات التي تم الرد عليها من قبل الإدارة ولم يرها المشرف بعد (افتراضاً بناءً على الإشعارات أو status)
+                supabase.from('supervisor_rounds').select('*', { count: 'exact', head: true }).eq('supervisor_id', user.id).eq('status', 'replied'),
+                // 2. جلب عدد المهام المعلقة التي أصدرها المشرف ولم تُنجز
+                supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('created_by', user.id).eq('status', 'pending'),
+                // 3. جلب التدريبات المتاحة
+                supabase.from('trainings').select('id, target_specialties'),
+                // 4. جلب التدريبات المكتملة
+                supabase.from('employee_trainings').select('training_id').eq('employee_id', user.id).eq('status', 'completed')
+            ]);
+
+            // حساب التدريبات المتبقية
+            const targetedTrainings = availableTrainings.data?.filter(t => 
+               !t.target_specialties || 
+               t.target_specialties.length === 0 || 
+               t.target_specialties.includes(supervisor?.role_title || '')
+            ) || [];
+            const completedIds = myCompleted.data?.map(c => c.training_id) || [];
+            const pendingTrainingsCount = targetedTrainings.filter(t => !completedIds.includes(t.id)).length;
+
+            return {
+                rounds: roundsRes.count || 0, // مرورات تم الرد عليها
+                tasks: tasksRes.count || 0,   // تكليفات قيد التنفيذ
+                training: pendingTrainingsCount
+            };
+        },
+        enabled: !!user?.id && !!supervisor,
+        refetchInterval: 30000, // تحديث كل 30 ثانية
+    });
 
     useEffect(() => {
         if (supervisor && !supervisor.profile_completed) {
@@ -157,7 +192,6 @@ export default function SupervisorDashboard() {
         enabled: !!user?.id
     });
 
-    // ✅ جلب الإشعارات الخاصة بالمشرف
     const fetchNotifications = useCallback(async () => {
         if (!supervisor?.id) return;
         const { data } = await supabase
@@ -173,7 +207,22 @@ export default function SupervisorDashboard() {
         fetchNotifications();
     }, [fetchNotifications]);
 
-    // ✅ دالة تحديث وعرض الإشعارات (مصممة لتعمل مع زر الجرس الجديد)
+    // مراقبة الإشعارات في الوقت الفعلي
+    useEffect(() => {
+        if (!supervisor?.id) return;
+        const channel = supabase.channel('supervisor_dashboard_updates')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${supervisor.id}` }, (payload) => {
+              fetchNotifications();
+              queryClient.invalidateQueries({ queryKey: ['supervisor_badges'] });
+              if (payload.eventType === 'INSERT') {
+                  const audio = new Audio('/notification.mp3'); 
+                  audio.play().catch(() => {}); 
+              }
+          })
+          .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [supervisor?.id, fetchNotifications, queryClient]);
+
     const handleToggleNotifMenu = useCallback(async () => {
         const nextState = !showNotifMenu;
         setShowNotifMenu(nextState);
@@ -189,9 +238,10 @@ export default function SupervisorDashboard() {
                   .eq('user_id', supervisor?.id);
                 
                 fetchNotifications();
+                queryClient.invalidateQueries({ queryKey: ['supervisor_badges'] });
             }
         }
-    }, [showNotifMenu, notifications, supervisor?.id, fetchNotifications]);
+    }, [showNotifMenu, notifications, supervisor?.id, fetchNotifications, queryClient]);
 
     const unreadNotifsCount = useMemo(() => 
         notifications.filter(n => !n.is_read).length, 
@@ -235,24 +285,26 @@ export default function SupervisorDashboard() {
          return <div className="h-screen flex items-center justify-center font-black text-red-500">حدث خطأ في تحميل البيانات</div>;
     }
 
+    // 🌟 مصفوفة القائمة الجانبية مدمجة مع العدادات
     const menuItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
-        { id: 'profile', label: 'الملف الشخصي', icon: User }, // ✅ الزر الجديد
+        { id: 'profile', label: 'الملف الشخصي', icon: User },
         { id: 'force', label: 'القوة الفعلية', icon: Users },
-        { id: 'tasks', label: 'التكليفات الصادرة', icon: CheckSquare },
+        { id: 'tasks', label: 'التكليفات الصادرة', icon: CheckSquare, badge: supervisorBadges.tasks },
         { id: 'schedule', label: 'النوبتجيات', icon: CalendarRange },
         { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
-        { id: 'rounds', label: 'المرور الإشرافي', icon: MapPin },
-        { id: 'training', label: 'مركز التدريب', icon: BookOpen },
+        { id: 'rounds', label: 'المرور الإشرافي', icon: MapPin, badge: supervisorBadges.rounds },
+        { id: 'competitions', label: 'المسابقات', icon: Swords },
+        { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: supervisorBadges.training },
         { id: 'library', label: 'السياسات والأدلة', icon: LibraryIcon },
-        { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
+        { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, isNew: true },
         { id: 'rewards', label: 'متجر الجوائز', icon: Gift },
     ];
 
     const bottomNavItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
         { id: 'force', label: 'القوة الفعلية', icon: Users },
-        { id: 'tasks', label: 'التكليفات', icon: CheckSquare },
+        { id: 'tasks', label: 'التكليفات', icon: CheckSquare, badge: supervisorBadges.tasks },
         { id: 'statistics', label: 'الإحصائيات', icon: BarChart3 },
     ];
 
@@ -269,11 +321,12 @@ export default function SupervisorDashboard() {
                 <div className="h-24 flex items-center justify-between px-6 border-b text-white bg-gradient-to-r from-purple-600 to-indigo-600">
                     <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-2xl border border-white/30 shadow-inner overflow-hidden shrink-0">
-{supervisor?.avatar_url && supervisor.avatar_url.startsWith('http') ? (
-    <img src={supervisor.avatar_url} className="w-full h-full object-cover" alt="avatar" />
-) : (
-    <span className="text-2xl">{supervisor?.avatar_url || "👨‍💼"}</span>
-)}                        </div>
+                             {supervisor?.avatar_url && supervisor.avatar_url.startsWith('http') ? (
+                                <img src={supervisor.avatar_url} className="w-full h-full object-cover" alt="avatar" />
+                             ) : (
+                                <span className="text-2xl">{supervisor?.avatar_url || "👨‍💼"}</span>
+                             )}
+                        </div>
                         <div className="min-w-0">
                             <h1 className="font-black text-sm drop-shadow-md truncate">{supervisor?.name}</h1>
                             <p className="text-[10px] font-bold opacity-90">{supervisor?.role_title}</p>
@@ -283,12 +336,40 @@ export default function SupervisorDashboard() {
                 </div>
 
                 <nav className="flex-1 overflow-y-auto p-4 space-y-1.5 custom-scrollbar pb-24 md:pb-4">
-                    {menuItems.map(item => (
-                        <button key={item.id} onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }} 
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold transition-all ${activeTab === item.id ? 'bg-purple-600 text-white shadow-md' : 'text-gray-600 hover:bg-purple-50'}`}>
-                            <item.icon className="w-5 h-5"/> <span className="text-sm">{item.label}</span>
-                        </button>
-                    ))}
+                    {menuItems.map(item => {
+                        const isActive = activeTab === item.id;
+                        return (
+                            <button 
+                                key={item.id} 
+                                onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }} 
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold transition-all relative group
+                                    ${isActive ? 'bg-purple-600 text-white shadow-md translate-x-[-5px]' : 'text-gray-600 hover:bg-purple-50 hover:text-purple-600'}
+                                `}
+                            >
+                                <item.icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-purple-600'}`}/> 
+                                <span className="text-sm">{item.label}</span>
+
+                                {/* 🌟 عرض الـ Badges في القائمة الجانبية */}
+                                {item.isNew && (
+                                    <span className="absolute left-4 bg-fuchsia-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse border border-white shadow-md">
+                                        NEW!
+                                    </span>
+                                )}
+                                
+                                {typeof item.badge !== 'undefined' && !item.isNew && (
+                                    item.badge > 0 ? (
+                                        <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-rose-500 to-red-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full shadow-md border-[1.5px] border-white animate-pulse">
+                                            {item.badge > 99 ? '+99' : item.badge}
+                                        </span>
+                                    ) : (
+                                        <span className="absolute left-4 min-w-[20px] h-5 bg-gradient-to-tr from-emerald-400 to-green-500 text-white flex items-center justify-center rounded-full shadow-sm border-[1.5px] border-white">
+                                            <Check size={12} strokeWidth={3} />
+                                        </span>
+                                    )
+                                )}
+                            </button>
+                        );
+                    })}
                 </nav>
 
                 <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 gap-1">
@@ -332,7 +413,6 @@ export default function SupervisorDashboard() {
                             <span className="text-xs font-black hidden sm:block">{level}</span>
                         </button>
 
-                        {/* ✅ زر الإشعارات المربوط بالقائمة الجديدة - تم إزالة NotificationBell القديم */}
                         <div className="relative">
                             <button onClick={handleToggleNotifMenu} className="p-2 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 relative transition-all">
                                 <Bell className="w-5 h-5" />
@@ -366,6 +446,7 @@ export default function SupervisorDashboard() {
                         {activeTab === 'schedule' && <SupervisorSchedules />}
                         {activeTab === 'statistics' && <SupervisorStatistics />}
                         {activeTab === 'rounds' && <SupervisorRounds />}
+                        {activeTab === 'competitions' && <CompetitionsManager />}
                         {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
                         {activeTab === 'library' && <StaffLibrary employee={mockEmployee} />}
                         {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
@@ -375,19 +456,27 @@ export default function SupervisorDashboard() {
 
                 {/* Navbar Mobile */}
                 <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t px-2 py-2 flex justify-between items-center z-50 pb-safe shadow-lg">
-                    {bottomNavItems.map(item => (
-                        <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center gap-1 w-16 transition-colors ${activeTab === item.id ? 'text-purple-600' : 'text-gray-400'}`}>
-                            <div className={`p-1.5 rounded-xl ${activeTab === item.id ? 'bg-purple-50' : ''}`}><item.icon className="w-5 h-5" /></div>
-                            <span className="text-[9px] font-black">{item.label}</span>
-                        </button>
-                    ))}
+                    {bottomNavItems.map(item => {
+                        const isActive = activeTab === item.id;
+                        return (
+                            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center gap-1 w-16 transition-colors relative ${isActive ? 'text-purple-600' : 'text-gray-400'}`}>
+                                <div className={`p-1.5 rounded-xl ${isActive ? 'bg-purple-50' : ''}`}>
+                                    <item.icon className="w-5 h-5" />
+                                </div>
+                                <span className="text-[9px] font-black">{item.label}</span>
+                                {item.badge && item.badge > 0 ? (
+                                    <span className="absolute top-0 right-2 w-3 h-3 bg-red-500 rounded-full border border-white"></span>
+                                ) : null}
+                            </button>
+                        );
+                    })}
                     <button onClick={() => setIsSidebarOpen(true)} className="flex flex-col items-center gap-1 w-16 text-gray-400"><div className="p-1.5"><Menu className="w-5 h-5" /></div><span className="text-[9px] font-black">المزيد</span></button>
                 </div>
             </div>
 
-            {/* ========== GLOBAL MODALS (Fixed Mobile Layout) ========== */}
-
-            {/* ✅ مودال الإشعارات المستقل والمتجاوب */}
+            {/* ========== GLOBAL MODALS ========== */}
+            
+            {/* مودال الإشعارات المستقل والمتجاوب */}
             {showNotifMenu && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowNotifMenu(false)}>
                     <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
@@ -403,7 +492,16 @@ export default function SupervisorDashboard() {
                                 </div>
                              ) : (
                                 notifications.map(n => (
-                                    <div key={n.id} className="p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors text-right">
+                                    <div key={n.id} 
+                                        onClick={() => {
+                                            const type = n.type?.toLowerCase() || '';
+                                            if(type.includes('task')) setActiveTab('tasks');
+                                            else if(type.includes('round')) setActiveTab('rounds');
+                                            else if(type.includes('training')) setActiveTab('training');
+                                            setShowNotifMenu(false);
+                                        }}
+                                        className="p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors text-right cursor-pointer"
+                                    >
                                         <div className="flex justify-between items-start mb-1">
                                             <h4 className="font-bold text-xs text-gray-800">{n.title}</h4>
                                             {!n.is_read && <span className="w-2 h-2 bg-purple-500 rounded-full shrink-0"></span>}
