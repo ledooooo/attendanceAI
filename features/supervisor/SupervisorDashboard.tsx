@@ -11,21 +11,23 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// --- استيراد المكونات ---
+// --- استيراد مكونات الموظف المشتركة ---
 import StaffNewsFeed from '../staff/components/StaffNewsFeed';
 import StaffTrainingCenter from '../staff/components/StaffTrainingCenter';
 import StaffLibrary from '../staff/components/StaffLibrary';
 import StaffArcade from '../staff/components/StaffArcade';
 import RewardsStore from '../staff/components/RewardsStore'; 
-import NotificationBell from '../../components/ui/NotificationBell';
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
 import ThemeOverlay from '../staff/components/ThemeOverlay';
+
+// --- استيراد المكونات المخصصة للمشرف ---
 import SupervisorForce from './components/SupervisorForce';
 import SupervisorSchedules from './components/SupervisorSchedules';
 import SupervisorStatistics from './components/SupervisorStatistics';
 import SupervisorTasks from './components/SupervisorTasks';
 import CompetitionsManager from '../admin/components/CompetitionsManager'; 
+
 import { requestNotificationPermission } from '../../utils/pushNotifications';
 
 export default function SupervisorDashboard() {
@@ -171,7 +173,7 @@ export default function SupervisorDashboard() {
         fetchNotifications();
     }, [fetchNotifications]);
 
-    // ✅ دالة تحديث وعرض الإشعارات
+    // ✅ دالة تحديث وعرض الإشعارات (مصممة لتعمل مع زر الجرس الجديد)
     const handleToggleNotifMenu = useCallback(async () => {
         const nextState = !showNotifMenu;
         setShowNotifMenu(nextState);
@@ -201,6 +203,13 @@ export default function SupervisorDashboard() {
         onSwipedRight: () => setIsSidebarOpen(false),
         trackMouse: true, delta: 50,
     });
+
+    const handleShareApp = async () => { 
+        try { 
+            if (navigator.share) await navigator.share({ title: 'غرب المطار', url: window.location.origin }); 
+            else { navigator.clipboard.writeText(window.location.origin); toast.success('تم نسخ الرابط'); } 
+        } catch (err) {} 
+    };
 
     if (isError) {
         return (
@@ -319,7 +328,7 @@ export default function SupervisorDashboard() {
                             <span className="text-xs font-black hidden sm:block">{level}</span>
                         </button>
 
-                        {/* ✅ زر الإشعارات المربوط بالقائمة الجديدة */}
+                        {/* ✅ زر الإشعارات المربوط بالقائمة الجديدة - تم إزالة NotificationBell القديم */}
                         <div className="relative">
                             <button onClick={handleToggleNotifMenu} className="p-2 bg-gray-50 text-gray-600 rounded-xl hover:bg-gray-100 relative transition-all">
                                 <Bell className="w-5 h-5" />
@@ -390,10 +399,10 @@ export default function SupervisorDashboard() {
                                 </div>
                              ) : (
                                 notifications.map(n => (
-                                    <div key={n.id} className="p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                                    <div key={n.id} className="p-4 border-b border-gray-50 hover:bg-gray-50 transition-colors text-right">
                                         <div className="flex justify-between items-start mb-1">
                                             <h4 className="font-bold text-xs text-gray-800">{n.title}</h4>
-                                            {!n.is_read && <span className="w-2 h-2 bg-purple-500 rounded-full"></span>}
+                                            {!n.is_read && <span className="w-2 h-2 bg-purple-500 rounded-full shrink-0"></span>}
                                         </div>
                                         <p className="text-[11px] text-gray-500 leading-relaxed mt-1">{n.message}</p>
                                     </div>
