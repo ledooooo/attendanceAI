@@ -41,7 +41,7 @@ import AdministrationTab from '../staff/components/AdministrationTab';
 import SupervisorsManager from './components/SupervisorsManager';
 import StatisticsManager from './components/StatisticsManager';
 import CompetitionsManager from './components/CompetitionsManager';
-
+import AdminSupervisorRounds from './components/AdminSupervisorRounds';
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
     const queryClient = useQueryClient();
@@ -182,6 +182,7 @@ export default function AdminDashboard() {
         { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare, badge: badges?.tasks || 0 }, 
         { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
         { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
+        { id: 'supervisor-rounds', label: 'مرور المشرفين', icon: MapPin },
         { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
         { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
         { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
@@ -316,6 +317,7 @@ export default function AdminDashboard() {
                         {activeTab === 'statistics' && <StatisticsManager />} 
                         {activeTab === 'send_reports' && <SendReportsTab />}
                         {activeTab === 'news' && <NewsManagementTab />}
+                        {activeTab === 'supervisor-rounds' && <AdminSupervisorRounds />}
                         {activeTab === 'competitions' && <CompetitionsManager />} 
                         {activeTab === 'motivation' && (
                             <div className="space-y-6">
