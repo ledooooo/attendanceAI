@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, CheckCircle2, MessageSquare, MapPin, User, Calendar, FileText, Send, Plus, Filter, Forward, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// قائمة الأماكن (نفس الموجودة عند المشرف)
+// قائمة الأماكن
 const LOCATION_OPTIONS = [
     'المركز كامل', 'طب الاسرة', 'التطعيمات', 'المعمل', 'الاسنان',
     'الطوارئ', 'الملفات', 'الصيدلية', 'مكتب الصحة', 'تنمية الاسرة',
@@ -22,16 +22,16 @@ export default function AdminSupervisorRounds() {
     const [filterName, setFilterName] = useState('');
     const [filterLocation, setFilterLocation] = useState('');
 
-    // الرد على عناصر المرور (Interactive Replies)
+    // الرد على عناصر المرور
     const [replyingToRoundId, setReplyingToRoundId] = useState<string | null>(null);
-    const [itemReplies, setItemReplies] = useState<Record<string, string>>({}); // يخزن الردود على كل نقطة
+    const [itemReplies, setItemReplies] = useState<Record<string, string>>({}); 
     const [generalReply, setGeneralReply] = useState('');
 
-    // إحالة المرور (Forwarding)
+    // إحالة المرور 
     const [forwardingRoundId, setForwardingRoundId] = useState<string | null>(null);
     const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([]);
     
-    // إضافة مرور يدوي (من قبل المدير)
+    // إضافة مرور يدوي
     const [manualLocation, setManualLocation] = useState('');
     const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
     const [manualTime, setManualTime] = useState(new Date().toLocaleTimeString('en-GB', { hour12: false }).slice(0, 5));
@@ -41,7 +41,6 @@ export default function AdminSupervisorRounds() {
 
     // --- Queries ---
     
-    // 1. جلب التقارير
     const { data: rounds = [], isLoading: loadingRounds } = useQuery({
         queryKey: ['admin_supervisor_rounds'],
         queryFn: async () => {
@@ -51,7 +50,6 @@ export default function AdminSupervisorRounds() {
         }
     });
 
-    // 2. جلب الموظفين للإحالة (رؤساء الأقسام والجودة)
     const { data: targetStaff = [], isLoading: loadingStaff } = useQuery({
         queryKey: ['forward_targets'],
         queryFn: async () => {
@@ -67,14 +65,12 @@ export default function AdminSupervisorRounds() {
 
     // --- Mutations ---
 
-    // 1. اعتماد والرد على تقرير مرور
     const replyMutation = useMutation({
         mutationFn: async ({ id, supervisorId }: { id: string, supervisorId: string }) => {
             if (!generalReply && Object.keys(itemReplies).length === 0) {
                 throw new Error('يرجى كتابة رد عام أو الرد على نقطة واحدة على الأقل');
             }
             
-            // تجميع الردود في كائن JSON
             const finalReplyData = {
                 general: generalReply,
                 items: itemReplies
@@ -87,7 +83,6 @@ export default function AdminSupervisorRounds() {
 
             if (error) throw error;
 
-            // إشعار المشرف
             const notifTitle = '✅ تم اعتماد تقرير مرورك';
             const notifMsg = 'تم مراجعة تقريرك وإضافة توجيهات الإدارة. يرجى الاطلاع على السجل.';
             await supabase.from('notifications').insert({ user_id: supervisorId, title: notifTitle, message: notifMsg, type: 'general', is_read: false });
@@ -101,29 +96,26 @@ export default function AdminSupervisorRounds() {
         onError: (err: any) => toast.error(err.message)
     });
 
-    // 2. إحالة التقرير (رسالة)
+    // ✅ التعديل هنا: استخدام الحقول الصحيحة لجدول messages
     const forwardMutation = useMutation({
         mutationFn: async (round: any) => {
             if (selectedTargetIds.length === 0) throw new Error('يرجى اختيار شخص واحد على الأقل للإحالة');
 
-            // تجهيز نص الرسالة (ملخص المرور)
-            let msgBody = `تمت إحالة تقرير مرور إليك للاطلاع والإفادة.\n\nالمكان: ${round.location}\nالتاريخ: ${round.round_date}\n\n`;
-            if (round.negatives?.length > 0) msgBody += `السلبيات المرصودة:\n- ${round.negatives.join('\n- ')}\n\n`;
-            if (round.recommendations?.length > 0) msgBody += `التوصيات:\n- ${round.recommendations.join('\n- ')}`;
+            let msgBody = `📌 إحالة تقرير مرور: ${round.location}\n\nتمت إحالة تقرير مرور إليك للاطلاع والإفادة.\n\nالتاريخ: ${round.round_date}\n\n`;
+            if (round.negatives?.length > 0) msgBody += `❌ السلبيات المرصودة:\n- ${round.negatives.join('\n- ')}\n\n`;
+            if (round.recommendations?.length > 0) msgBody += `💡 التوصيات:\n- ${round.recommendations.join('\n- ')}`;
 
-            // إرسال كرسالة داخلية (Messages)
+            // ✅ استخدام حقل content بدلاً من body و subject، وحقل is_read بدلاً من status
             const messagesPayload = selectedTargetIds.map(targetId => ({
                 from_user: 'admin',
-                to_user: targetId, // employee_id
-                subject: `إحالة تقرير مرور: ${round.location}`,
-                body: msgBody,
-                status: 'new'
+                to_user: targetId,
+                content: msgBody,
+                is_read: false
             }));
 
             const { error: msgError } = await supabase.from('messages').insert(messagesPayload);
             if (msgError) throw msgError;
 
-            // إرسال إشعارات
             const notifPayload = selectedTargetIds.map(targetId => ({
                 user_id: targetId, title: '📬 إحالة تقرير مرور', message: `وردك تقرير مرور يخص: ${round.location}`, type: 'message', is_read: false
             }));
@@ -134,13 +126,12 @@ export default function AdminSupervisorRounds() {
             )).catch(() => {});
         },
         onSuccess: () => {
-            toast.success('تمت إحالة التقرير بنجاح');
+            toast.success('تمت إحالة التقرير بنجاح كرسالة');
             setForwardingRoundId(null); setSelectedTargetIds([]);
         },
         onError: (err: any) => toast.error(err.message)
     });
 
-    // 3. إضافة مرور يدوي
     const manualRoundMutation = useMutation({
         mutationFn: async () => {
             if (!manualLocation) throw new Error('يرجى تحديد مكان المرور');
@@ -150,7 +141,7 @@ export default function AdminSupervisorRounds() {
             const cleanRecs = manualRecommendations.filter(r => r.trim() !== '');
 
             const { error } = await supabase.from('supervisor_rounds').insert({
-                supervisor_id: 'admin', // مسجل باسم الإدارة
+                supervisor_id: 'admin', 
                 supervisor_name: 'الإدارة (تسجيل يدوي)',
                 round_date: manualDate,
                 round_time: manualTime,
@@ -158,7 +149,7 @@ export default function AdminSupervisorRounds() {
                 positives: cleanPositives,
                 negatives: cleanNegatives,
                 recommendations: cleanRecs,
-                status: 'replied', // معتمد تلقائياً
+                status: 'replied', 
                 admin_reply: '{"general":"تم التسجيل يدوياً بواسطة الإدارة","items":{}}'
             });
 
@@ -189,7 +180,6 @@ export default function AdminSupervisorRounds() {
         setItemReplies(prev => ({ ...prev, [key]: value }));
     };
 
-    // Helper for manual lists
     const handleListChange = (setter: any, list: string[], index: number, value: string) => {
         const newList = [...list]; newList[index] = value; setter(newList);
     };
@@ -208,7 +198,6 @@ export default function AdminSupervisorRounds() {
 
             {activeTab === 'history' && (
                 <>
-                    {/* شريط الفلترة */}
                     <div className="bg-white p-4 rounded-2xl shadow-sm border flex flex-wrap gap-4 items-end">
                         <div className="flex-1 min-w-[200px]">
                             <label className="text-xs font-bold text-gray-500 mb-1 block">بحث بالتاريخ</label>
@@ -225,10 +214,8 @@ export default function AdminSupervisorRounds() {
                         <button onClick={() => {setFilterDate(''); setFilterName(''); setFilterLocation('');}} className="p-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-colors" title="مسح الفلاتر"><Filter size={20}/></button>
                     </div>
 
-                    {/* عرض التقارير */}
                     {filteredRounds.length === 0 ? <div className="text-center py-20 bg-white rounded-3xl border border-dashed text-gray-400 font-bold">لا توجد تقارير تطابق بحثك.</div> : 
                         filteredRounds.map((round: any) => {
-                            // محاولة فك الردود إذا كانت بصيغة JSON (للتوافقية مع القديم والجديد)
                             let parsedReply: any = { general: round.admin_reply || '', items: {} };
                             try {
                                 if (round.admin_reply && round.admin_reply.startsWith('{')) {
@@ -247,7 +234,6 @@ export default function AdminSupervisorRounds() {
                                             </div>
                                         </div>
                                         <div className="flex gap-2">
-                                            {/* زر الإحالة */}
                                             <button onClick={() => setForwardingRoundId(forwardingRoundId === round.id ? null : round.id)} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-blue-100 transition-colors">
                                                 <Forward size={14}/> إحالة (رسالة)
                                             </button>
@@ -255,7 +241,6 @@ export default function AdminSupervisorRounds() {
                                         </div>
                                     </div>
 
-                                    {/* شاشة الإحالة */}
                                     {forwardingRoundId === round.id && (
                                         <div className="mb-4 bg-blue-50 p-4 rounded-2xl border border-blue-100 animate-in slide-in-from-top-2">
                                             <h4 className="font-bold text-sm text-blue-800 mb-2 flex items-center justify-between">إحالة التقرير إلى: <button onClick={()=>setForwardingRoundId(null)}><X size={16}/></button></h4>
@@ -278,9 +263,7 @@ export default function AdminSupervisorRounds() {
                                         </div>
                                     )}
 
-                                    {/* عرض عناصر المرور والرد عليها */}
                                     <div className="space-y-4 text-xs mt-4">
-                                        {/* الإيجابيات */}
                                         {round.positives?.length > 0 && round.positives[0] !== "" && (
                                             <div className="bg-green-50/50 p-3 rounded-xl border border-green-100">
                                                 <strong className="text-green-700 block mb-2">الإيجابيات:</strong>
@@ -300,7 +283,6 @@ export default function AdminSupervisorRounds() {
                                             </div>
                                         )}
 
-                                        {/* السلبيات */}
                                         {round.negatives?.length > 0 && round.negatives[0] !== "" && (
                                             <div className="bg-red-50/50 p-3 rounded-xl border border-red-100">
                                                 <strong className="text-red-700 block mb-2">السلبيات:</strong>
@@ -320,7 +302,6 @@ export default function AdminSupervisorRounds() {
                                             </div>
                                         )}
 
-                                        {/* التوصيات */}
                                         {round.recommendations?.length > 0 && round.recommendations[0] !== "" && (
                                             <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
                                                 <strong className="text-blue-700 block mb-2">التوصيات:</strong>
@@ -341,7 +322,6 @@ export default function AdminSupervisorRounds() {
                                         )}
                                     </div>
 
-                                    {/* قسم الاعتماد والرد العام */}
                                     {round.status === 'pending' ? (
                                         replyingToRoundId === round.id ? (
                                             <div className="mt-6 bg-indigo-50 p-4 rounded-2xl border border-indigo-100 animate-in fade-in">
@@ -370,11 +350,10 @@ export default function AdminSupervisorRounds() {
                 </>
             )}
 
-            {/* صفحة التسجيل اليدوي للمدير */}
             {activeTab === 'add_new' && (
                 <div className="bg-white p-6 rounded-[2rem] shadow-sm border space-y-6">
                     <div className="border-b pb-6">
-                        <label className="text-sm font-black text-gray-700 mb-3 flex items-center gap-2"><MapPin className="text-indigo-500 w-5 h-5"/> مكان المرور (يمكن اختيار أكثر من مكان)</label>
+                        <label className="text-sm font-black text-gray-700 mb-3 flex items-center gap-2"><MapPin className="text-indigo-500 w-5 h-5"/> مكان المرور</label>
                         <select value={manualLocation} onChange={e => setManualLocation(e.target.value)} className="w-full md:w-1/2 p-3 bg-gray-50 border rounded-xl outline-none font-bold text-sm">
                             <option value="">اختر المكان...</option>
                             {LOCATION_OPTIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
