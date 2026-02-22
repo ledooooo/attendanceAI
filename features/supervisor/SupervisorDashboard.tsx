@@ -20,7 +20,7 @@ import RewardsStore from '../staff/components/RewardsStore';
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
 import ThemeOverlay from '../staff/components/ThemeOverlay';
-
+import SupervisorProfile from './components/SupervisorProfile'; // ✅ إضافة الاستيراد
 // --- استيراد المكونات المخصصة للمشرف ---
 import SupervisorForce from './components/SupervisorForce';
 import SupervisorSchedules from './components/SupervisorSchedules';
@@ -237,6 +237,7 @@ export default function SupervisorDashboard() {
 
     const menuItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
+        { id: 'profile', label: 'الملف الشخصي', icon: User }, // ✅ الزر الجديد
         { id: 'force', label: 'القوة الفعلية', icon: Users },
         { id: 'tasks', label: 'التكليفات الصادرة', icon: CheckSquare },
         { id: 'schedule', label: 'النوبتجيات', icon: CalendarRange },
@@ -359,7 +360,7 @@ export default function SupervisorDashboard() {
                                 <StaffNewsFeed employee={mockEmployee} />
                              </>
                         )}
-
+                        {activeTab === 'profile' && <SupervisorProfile supervisor={supervisor} />}
                         {activeTab === 'force' && <SupervisorForce />}
                         {activeTab === 'tasks' && <SupervisorTasks />}
                         {activeTab === 'schedule' && <SupervisorSchedules />}
