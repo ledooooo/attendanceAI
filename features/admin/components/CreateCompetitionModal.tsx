@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 // نوع السؤال في الفورم
 type QuestionForm = {
     text: string;
-    image_url: string; // ✅ حقل جديد للصورة
+    image_url: string; 
     a: string;
     b: string;
     c: string;
@@ -20,8 +20,8 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
     const [team1, setTeam1] = useState<string[]>([]);
     const [team2, setTeam2] = useState<string[]>([]);
     const [points, setPoints] = useState(50);
-    const [timeLimit, setTimeLimit] = useState(30); // ✅ المهلة الزمنية لكل سؤال
-    const [questionsPerTeam, setQuestionsPerTeam] = useState(3); // ✅ عدد الأسئلة
+    const [timeLimit, setTimeLimit] = useState(30);
+    const [questionsPerTeam, setQuestionsPerTeam] = useState(3);
     const [loading, setLoading] = useState(false);
     const [selectedEmp, setSelectedEmp] = useState('');
     
@@ -56,30 +56,67 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         }
     });
 
-    // Fetch Bank Specialties
+    // ✅ خوارزمية دمج وتوحيد التخصصات
     const { data: specialties = [] } = useQuery({
         queryKey: ['bank_specialties'],
         queryFn: async () => {
             const { data: q1 } = await supabase.from('quiz_questions').select('specialty');
             const { data: q2 } = await supabase.from('arcade_quiz_questions').select('specialty');
             const allSpecs = [...(q1?.map((i: any) => i.specialty) || []), ...(q2?.map((i: any) => i.specialty) || [])];
-            return ['الكل', ...Array.from(new Set(allSpecs.filter(Boolean)))];
+            
+            const rawSpecs = allSpecs.flat().filter(Boolean);
+            const normalized = new Set<string>();
+            
+            rawSpecs.forEach(s => {
+                if (typeof s !== 'string') return;
+                const lowerS = s.toLowerCase();
+                if (lowerS === 'all' || lowerS === 'الكل') return;
+                
+                if (s.includes('بشر') || s.includes('طبيب عام')) normalized.add('بشري');
+                else if (s.includes('سنان')) normalized.add('أسنان');
+                else if (s.includes('تمريض') || s.includes('ممرض')) normalized.add('تمريض');
+                else if (s.includes('صيدل')) normalized.add('صيدلة');
+                else if (s.includes('معمل') || s.includes('مختبر')) normalized.add('معمل');
+                else if (s.includes('جود')) normalized.add('جودة');
+                else if (s.includes('عدوى')) normalized.add('مكافحة عدوى');
+                else normalized.add(s);
+            });
+            return ['الكل', ...Array.from(normalized)];
         },
         staleTime: 1000 * 60 * 5
     });
 
-    // Fetch Bank Questions
+    // دالة استخراج مرادفات التخصص للبحث
+    const getSpecialtyVariations = (spec: string) => {
+        if (spec === 'بشري') return ['طبيب بشرى', 'طبيب بشري', 'بشري', 'بشرى', 'طبيب عام'];
+        if (spec === 'أسنان') return ['طبيب أسنان', 'طبيب اسنان', 'أسنان', 'اسنان'];
+        if (spec === 'تمريض') return ['تمريض', 'ممرض', 'ممرضة'];
+        if (spec === 'صيدلة') return ['صيدلة', 'صيدلي', 'صيدلاني'];
+        if (spec === 'معمل') return ['معمل', 'فني معمل', 'مختبر'];
+        if (spec === 'جودة') return ['جودة', 'الجودة'];
+        if (spec === 'مكافحة عدوى') return ['مكافحة عدوى', 'مكافحه عدوى'];
+        return [spec];
+    };
+
+    // ✅ جلب أسئلة البنك مع دعم المترادفات
     const { data: bankQuestionsData, isLoading: loadingBank } = useQuery({
         queryKey: ['bank_questions', bankPage, bankSpecialty],
         queryFn: async () => {
+            const variations = getSpecialtyVariations(bankSpecialty);
+            // تجهيز نص البحث (OR Filter) ليبحث عن أي مرادف
+            const orFilter = variations.map(v => `specialty.ilike.%${v}%`).join(',');
+
+            // البحث في الجدول الجديد
             let query = supabase.from('arcade_quiz_questions').select('*', { count: 'exact' });
-            if (bankSpecialty !== 'الكل') query = query.contains('specialty', [bankSpecialty]);
+            if (bankSpecialty !== 'الكل') query = query.or(orFilter);
+            
             const { data, count, error } = await query.range(bankPage * 5, (bankPage * 5) + 4).order('created_at', { ascending: false });
             
             if (error || !data || data.length === 0) {
                 // المحاولة مع الجدول القديم إذا لم نجد بيانات
                 let oldQuery = supabase.from('quiz_questions').select('*', { count: 'exact' });
-                if (bankSpecialty !== 'الكل') oldQuery = oldQuery.eq('specialty', bankSpecialty);
+                if (bankSpecialty !== 'الكل') oldQuery = oldQuery.or(orFilter);
+                
                 const { data: oldData, count: oldCount } = await oldQuery.range(bankPage * 5, (bankPage * 5) + 4).order('created_at', { ascending: false });
                 return { data: oldData || [], count: oldCount || 0 };
             }
@@ -108,22 +145,19 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         setQuestions(newQs);
     };
 
-    // ✅ إصلاح دالة الاستيراد من البنك لتعمل بكفاءة
+    // استيراد السؤال من البنك
     const selectFromBank = (bankQ: any) => {
         if (targetQIndex === null) return;
 
-        // دعم اختلاف المسميات بين الجدولين
         let questionText = bankQ.question || bankQ.question_text || '';
         let options: { a: string, b: string, c: string, d: string, correct: string } = { a: '', b: '', c: '', d: '', correct: 'a' };
 
-        // لو البيانات من الجدول الجديد (أعمدة منفصلة)
         if (bankQ.option_a) {
             options = {
                 a: bankQ.option_a, b: bankQ.option_b, c: bankQ.option_c || '', d: bankQ.option_d || '',
                 correct: ['a', 'b', 'c', 'd'][bankQ.correct_index] || 'a'
             };
         } 
-        // لو البيانات من الجدول القديم (JSON)
         else if (bankQ.options) {
             let optsArr: string[] = [];
             try { optsArr = typeof bankQ.options === 'string' ? JSON.parse(bankQ.options) : bankQ.options; } catch (e) { }
@@ -137,7 +171,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
         const newQ: QuestionForm = {
             text: questionText,
-            image_url: bankQ.image_url || '', // لو السؤال الأصلي فيه صورة
+            image_url: bankQ.image_url || '', 
             ...options
         };
 
@@ -157,24 +191,22 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
         setLoading(true);
         try {
-            // 1. إنشاء المسابقة (مع إضافة المهلة الزمنية)
             const { data: comp, error: compError } = await supabase.from('competitions').insert({
                 team1_ids: team1, 
                 team2_ids: team2, 
                 current_turn_team: 1, 
                 reward_points: points, 
-                time_limit_seconds: timeLimit, // الحقل الجديد
+                time_limit_seconds: timeLimit,
                 status: 'active'
             }).select().single();
 
             if (compError) throw compError;
 
-            // 2. إدخال الأسئلة (مع رابط الصورة)
             const dbQuestions = questions.map((q, idx) => ({
                 competition_id: comp.id,
                 assigned_to_team: idx < questionsPerTeam ? 1 : 2,
                 question_text: q.text,
-                image_url: q.image_url || null, // حفظ الصورة
+                image_url: q.image_url || null, 
                 option_a: q.a, option_b: q.b, option_c: q.c, option_d: q.d,
                 correct_option: q.correct,
                 order_index: idx + 1
@@ -183,7 +215,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             const { error: qError } = await supabase.from('competition_questions').insert(dbQuestions);
             if (qError) throw qError;
 
-            // 3. إشعار المتسابقين
             const allPlayers = [...team1, ...team2];
             const allPlayerEmpIds = allPlayers.map(id => employees.find((e: any) => e.id === id)?.employee_id || id);
 
@@ -303,7 +334,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                                     value={q.text} onChange={e => updateQuestion(idx, 'text', e.target.value)}
                                 />
                                 
-                                {/* حقل رابط الصورة */}
                                 <div className="flex items-center gap-2 mb-3 bg-white p-2 rounded-lg border">
                                     <ImageIcon size={14} className="text-gray-400 shrink-0"/>
                                     <input 
@@ -335,7 +365,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                 </div>
             </div>
 
-            {/* --- نافذة بنك الأسئلة (Modal 2) --- */}
+            {/* --- نافذة بنك الأسئلة --- */}
             {showBank && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 animate-in fade-in backdrop-blur-sm">
                     <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
@@ -360,7 +390,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                             {loadingBank ? (
                                 <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-purple-600"/></div>
                             ) : bankQuestionsData?.data?.length === 0 ? (
-                                <div className="text-center py-10 text-gray-400 font-bold bg-white rounded-xl border border-dashed">لا توجد أسئلة بهذا التصنيف</div>
+                                <div className="text-center py-10 text-gray-400 font-bold bg-white rounded-xl border border-dashed">لا توجد أسئلة مسجلة في هذا التخصص حالياً</div>
                             ) : (
                                 bankQuestionsData?.data?.map((bq: any) => (
                                     <div 
