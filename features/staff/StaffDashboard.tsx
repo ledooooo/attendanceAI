@@ -12,7 +12,7 @@ import {
     List, Award, Inbox, BarChart, Menu, X, LayoutDashboard,
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
-    Settings, ShoppingBag, Trophy, Star, Check, ShoppingCart, Gamepad2, Sparkles,
+    Settings, ShoppingBag, Trophy, Star, Check, CheckSquare, ShoppingCart, Gamepad2, Sparkles,
     Smartphone, BellRing, DownloadCloud
 } from 'lucide-react';
 
