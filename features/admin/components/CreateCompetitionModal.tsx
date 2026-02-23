@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { supabase } from '../../../supabaseClient'; // تم تعديل المسار (4 مستويات)
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../../supabaseClient';
 import { useQuery } from '@tanstack/react-query';
-import { X, Loader2, Users, Trash2, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Loader2, Users, Trash2, BookOpen, ChevronLeft, ChevronRight, Image as ImageIcon, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// نوع السؤال في الفورم
+// نوع السؤال في الفورم (تم إضافة رابط الصورة)
 type QuestionForm = {
     text: string;
+    image_url: string; // ✅ حقل جديد للصورة
     a: string;
     b: string;
     c: string;
@@ -19,13 +20,30 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
     const [team1, setTeam1] = useState<string[]>([]);
     const [team2, setTeam2] = useState<string[]>([]);
     const [points, setPoints] = useState(50);
+    const [timeLimit, setTimeLimit] = useState(30); // ✅ المدة الزمنية لكل سؤال (بالثواني)
+    const [questionsPerTeam, setQuestionsPerTeam] = useState(3); // ✅ عدد الأسئلة المخصصة لكل فريق
     const [loading, setLoading] = useState(false);
     const [selectedEmp, setSelectedEmp] = useState('');
     
-    // 6 أسئلة (3 لكل فريق)
-    const [questions, setQuestions] = useState<QuestionForm[]>(
-        Array(6).fill({ text: '', a: '', b: '', c: '', d: '', correct: 'a' })
-    );
+    // بناء مصفوفة الأسئلة بناءً على العدد المختار (عدد أسئلة الفريق 1 + عدد أسئلة الفريق 2)
+    const [questions, setQuestions] = useState<QuestionForm[]>([]);
+
+    // تحديث مصفوفة الأسئلة عندما يتغير العدد
+    useEffect(() => {
+        const totalQuestions = questionsPerTeam * 2;
+        setQuestions(prev => {
+            // إذا كان العدد الجديد أكبر، نضيف أسئلة فارغة
+            if (totalQuestions > prev.length) {
+                const newQuestions = Array(totalQuestions - prev.length).fill({ text: '', image_url: '', a: '', b: '', c: '', d: '', correct: 'a' });
+                return [...prev, ...newQuestions];
+            } 
+            // إذا كان العدد الجديد أقل، نقص المصفوفة
+            else if (totalQuestions < prev.length) {
+                return prev.slice(0, totalQuestions);
+            }
+            return prev;
+        });
+    }, [questionsPerTeam]);
 
     // Bank Modal State
     const [showBank, setShowBank] = useState(false);
@@ -33,354 +51,284 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
     const [bankPage, setBankPage] = useState(0);
     const [bankSpecialty, setBankSpecialty] = useState('الكل');
 
-    // --- Queries ---
-    
-const { data: employees = [] } = useQuery({
-        queryKey: ['active_employees'],
+    // Fetch Employees
+    const { data: employees = [], isLoading: empLoading } = useQuery({
+        queryKey: ['active_employees_comp'],
         queryFn: async () => {
-            // ✅ تم إضافة employee_id ليكون الهوية الموحدة للإشعارات
-            const { data } = await supabase.from('employees').select('id, employee_id, name').eq('status', 'نشط');
+            const { data } = await supabase.from('employees').select('id, employee_id, name, specialty').eq('status', 'نشط');
             return data || [];
         }
     });
-    // 2. تخصصات البنك
-    const { data: specialties = [] } = useQuery({
-        queryKey: ['bank_specialties'],
+
+    // Fetch Bank Questions
+    const { data: bankQuestionsData, isLoading: bankLoading } = useQuery({
+        queryKey: ['bank_questions_comp', bankPage, bankSpecialty],
         queryFn: async () => {
-            // محاولة الجلب من الجدولين لدمج التخصصات
-            const { data: q1 } = await supabase.from('quiz_questions').select('specialty');
-            const { data: q2 } = await supabase.from('arcade_quiz_questions').select('specialty');
-            
-            const allSpecs = [
-                ...(q1?.map((i: any) => i.specialty) || []),
-                ...(q2?.map((i: any) => i.specialty) || [])
-            ];
-
-            // استخراج التخصصات الفريدة وتنظيف القيم الفارغة
-            const unique = Array.from(new Set(allSpecs.filter(Boolean)));
-            return ['الكل', ...unique];
-        },
-        staleTime: 1000 * 60 * 5
-    });
-
-    // 3. أسئلة البنك (Pagination + Filter + Merge Tables)
-    const { data: bankQuestionsData, isLoading: loadingBank } = useQuery({
-        queryKey: ['bank_questions', bankPage, bankSpecialty],
-        queryFn: async () => {
-            // دمج الجدولين في استعلام واحد (أو استعلامين ثم الدمج)
-            // سنستخدم arcade_quiz_questions كمصدر أساسي لأنه الأحدث، و quiz_questions كاحتياطي
-            
-            let query = supabase
-                .from('arcade_quiz_questions') // الجدول الجديد
-                .select('*', { count: 'exact' });
-            
-            if (bankSpecialty !== 'الكل') {
-                // ملاحظة: في الجدول الجديد التخصص قد يكون مصفوفة JSON
-                // لذا نستخدم contains للبحث داخل المصفوفة، أو eq للنص العادي
-                // سنحاول eq أولاً للتبسيط
-                query = query.contains('specialty', [bankSpecialty]); 
-            }
-
-            const { data, count, error } = await query
-                .range(bankPage * 5, (bankPage * 5) + 4)
-                .order('created_at', { ascending: false });
-            
-            if (error) {
-                // محاولة مع الجدول القديم إذا فشل الجديد أو كان فارغاً
-                console.warn("Falling back to old table or error:", error);
-                return { data: [], count: 0 }; 
-            }
-            return { data, count };
+            let q = supabase.from('question_bank').select('*', { count: 'exact' });
+            if (bankSpecialty !== 'الكل') q = q.contains('specialty', [bankSpecialty]);
+            const { data, count } = await q.range(bankPage * 5, (bankPage + 1) * 5 - 1).order('created_at', { ascending: false });
+            return { data: data || [], count: count || 0 };
         },
         enabled: showBank
     });
 
-    // --- Functions ---
-
-    const addToTeam = (teamNum: 1 | 2) => {
+    // Handlers
+    const handleAddUser = (team: 1 | 2) => {
         if (!selectedEmp) return;
-        if (team1.includes(selectedEmp) || team2.includes(selectedEmp)) return toast.error('الموظف مضاف بالفعل!');
-        if (teamNum === 1) setTeam1([...team1, selectedEmp]);
+        if (team1.includes(selectedEmp) || team2.includes(selectedEmp)) {
+            toast.error('الموظف مضاف بالفعل في أحد الفريقين');
+            return;
+        }
+        if (team === 1) setTeam1([...team1, selectedEmp]);
         else setTeam2([...team2, selectedEmp]);
         setSelectedEmp('');
     };
 
-    const removeFromTeam = (teamNum: 1 | 2, id: string) => {
-        if (teamNum === 1) setTeam1(team1.filter(m => m !== id));
-        else setTeam2(team2.filter(m => m !== id));
+    const handleRemoveUser = (team: 1 | 2, empId: string) => {
+        if (team === 1) setTeam1(team1.filter(id => id !== empId));
+        else setTeam2(team2.filter(id => id !== empId));
     };
 
-    const updateQuestion = (index: number, field: keyof QuestionForm, value: string) => {
-        const newQs = [...questions];
-        newQs[index] = { ...newQs[index], [field]: value };
-        setQuestions(newQs);
+    const updateQuestion = (idx: number, field: keyof QuestionForm, value: string) => {
+        const newQ = [...questions];
+        newQ[idx] = { ...newQ[idx], [field]: value };
+        setQuestions(newQ);
     };
 
-    // اختيار سؤال من البنك (مع معالجة اختلاف هيكل الجدولين)
-    const selectFromBank = (bankQ: any) => {
+    const useBankQuestion = (bq: any) => {
         if (targetQIndex === null) return;
-
-        let questionText = bankQ.question || bankQ.question_text || '';
-        let options: { a: string, b: string, c: string, d: string, correct: string } = { a: '', b: '', c: '', d: '', correct: 'a' };
-
-        // الحالة 1: الجدول الجديد (arcade_quiz_questions) - الأعمدة منفصلة
-        if (bankQ.option_a) {
-            options = {
-                a: bankQ.option_a,
-                b: bankQ.option_b,
-                c: bankQ.option_c,
-                d: bankQ.option_d,
-                correct: ['a', 'b', 'c', 'd'][bankQ.correct_index] || 'a'
-            };
-        } 
-        // الحالة 2: الجدول القديم (quiz_questions) - JSON
-        else if (bankQ.options) {
-            let optsArr: string[] = [];
-            try {
-                optsArr = typeof bankQ.options === 'string' ? JSON.parse(bankQ.options) : bankQ.options;
-            } catch (e) { optsArr = []; }
-
-            const correctIdx = optsArr.findIndex((o: string) => o === bankQ.correct_answer);
-            
-            options = {
-                a: optsArr[0] || '',
-                b: optsArr[1] || '',
-                c: optsArr[2] || '',
-                d: optsArr[3] || '',
-                correct: ['a', 'b', 'c', 'd'][correctIdx] || 'a'
-            };
-        }
-
-        const newQ: QuestionForm = {
-            text: questionText,
-            ...options
-        };
-
-        const newQs = [...questions];
-        newQs[targetQIndex] = newQ;
-        setQuestions(newQs);
+        updateQuestion(targetQIndex, 'text', bq.question_text);
+        updateQuestion(targetQIndex, 'a', bq.option_a);
+        updateQuestion(targetQIndex, 'b', bq.option_b);
+        updateQuestion(targetQIndex, 'c', bq.option_c);
+        updateQuestion(targetQIndex, 'd', bq.option_d);
+        updateQuestion(targetQIndex, 'correct', bq.correct_option);
+        // تحديث رابط الصورة إذا وجد في بنك الأسئلة (بافتراض إضافة حقل image_url لبنك الأسئلة مستقبلاً)
+        if(bq.image_url) updateQuestion(targetQIndex, 'image_url', bq.image_url);
+        
         setShowBank(false);
-        toast.success('تم اختيار السؤال');
+        setTargetQIndex(null);
+        toast.success('تم إدراج السؤال بنجاح');
     };
 
-const handleCreate = async () => {
-        if (team1.length === 0 || team2.length === 0) return toast.error('يجب اختيار فرق');
-        if (questions.some(q => !q.text || !q.a || !q.b)) return toast.error('يرجى إكمال جميع الأسئلة');
+    const handleSubmit = async () => {
+        if (team1.length === 0 || team2.length === 0) return toast.error('يجب اختيار موظف واحد على الأقل لكل فريق');
+        if (points <= 0) return toast.error('نقاط الجائزة غير صحيحة');
+        if (questionsPerTeam < 1) return toast.error('يجب أن يكون هناك سؤال واحد على الأقل لكل فريق');
+        if (timeLimit < 10) return toast.error('الحد الأدنى لوقت السؤال هو 10 ثوانٍ');
+
+        // Validation
+        const isIncomplete = questions.some(q => !q.text || !q.a || !q.b || !q.c || !q.d);
+        if (isIncomplete) return toast.error('يرجى استكمال جميع نصوص وخيارات الأسئلة');
 
         setLoading(true);
         try {
             // 1. إنشاء المسابقة
-            const { data: comp, error: compError } = await supabase.from('competitions').insert({
-                team1_ids: team1, 
-                team2_ids: team2, 
-                current_turn_team: 1, 
-                reward_points: points, 
-                status: 'active'
-            }).select().single();
+            const { data: compData, error: compError } = await supabase.from('competitions').insert({
+                team1_ids: team1,
+                team2_ids: team2,
+                points_reward: points,
+                status: 'active',
+                time_limit_seconds: timeLimit // ✅ إضافة المهلة الزمنية للمسابقة (يجب إضافتها في جدول competitions)
+            }).select('id').single();
 
             if (compError) throw compError;
+            const compId = compData.id;
 
             // 2. إدخال الأسئلة
             const dbQuestions = questions.map((q, idx) => ({
-                competition_id: comp.id,
-                assigned_to_team: idx < 3 ? 1 : 2,
+                competition_id: compId,
+                assigned_to_team: idx < questionsPerTeam ? 1 : 2, // النصف الأول للفريق 1، النصف الثاني للفريق 2
                 question_text: q.text,
+                image_url: q.image_url || null, // ✅ حفظ رابط الصورة
                 option_a: q.a, option_b: q.b, option_c: q.c, option_d: q.d,
-                correct_option: q.correct,
-                order_index: idx + 1
+                correct_option: q.correct
             }));
 
+            // ✅ حفظ الأسئلة في جدول competition_questions (تأكد من وجود حقل image_url في الجدول)
             const { error: qError } = await supabase.from('competition_questions').insert(dbQuestions);
             if (qError) throw qError;
 
-            // 3. إشعار المتسابقين
-            const allPlayers = [...team1, ...team2];
-            
-            // ✅ تحويل الـ UUID إلى employee_id الفعلي لكل موظف
-            const allPlayerEmpIds = allPlayers.map(id => {
-                const emp = employees.find((e: any) => e.id === id);
-                return emp?.employee_id || id;
-            });
-
-            const notificationsPayload = allPlayerEmpIds.map(empId => ({
-                user_id: String(empId),
-                title: '🔥 تحدي جديد!',
-                message: `تم اختيارك للمشاركة في مسابقة جديدة ضد الفريق المنافس. استعد وأثبت وجودك! 🏆`,
+            // 3. إرسال الإشعارات
+            const allParticipants = [...team1, ...team2];
+            const notifs = allParticipants.map(empId => ({
+                user_id: empId,
+                title: '⚔️ تحدي جديد ينتظرك!',
+                message: `تم اختيارك للمشاركة في مسابقة جديدة جائزتها ${points} نقطة. استعد!`,
                 type: 'competition',
                 is_read: false
             }));
+            await supabase.from('notifications').insert(notifs);
 
-            if (notificationsPayload.length > 0) {
-                // حفظ في قاعدة البيانات
-                await supabase.from('notifications').insert(notificationsPayload);
-
-                // ✅ إرسال الإشعارات الفورية (Push) بشكل متوازي (Parallel) ليتوافق مع السيرفر
-                Promise.all(
-                    allPlayerEmpIds.map(empId => 
-                        supabase.functions.invoke('send-push-notification', {
-                            body: { 
-                                userId: String(empId), 
-                                title: '🔥 تحدي جديد!', 
-                                body: 'تم اختيارك للمشاركة في مسابقة جديدة. استعد وأثبت وجودك! 🏆', 
-                                url: '/staff?tab=competitions' 
-                            }
-                        })
-                    )
-                ).catch(err => console.error("Push invocation error:", err));
-            }
-
-            toast.success('تم إطلاق المسابقة! 🚀');
+            toast.success('تم إطلاق المسابقة بنجاح! 🚀');
             onClose();
+            window.location.reload(); // للتحديث السريع
+
         } catch (err: any) {
-            console.error(err);
-            toast.error(err.message || 'حدث خطأ');
+            toast.error(err.message);
         } finally {
             setLoading(false);
         }
     };
-    
-    const getEmpName = (id: string) => employees.find((e: any) => e.id === id)?.name || 'غير معروف';
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-            
-            {/* النافذة الرئيسية */}
-            <div className="bg-white w-full max-w-5xl rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 max-h-[95vh] overflow-y-auto flex flex-col md:flex-row gap-6">
-                
-                {/* العمود الأيمن: الفرق والإعدادات */}
-                <div className="w-full md:w-1/3 space-y-4 shrink-0">
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-black text-gray-800">إعداد الفرق</h3>
-                        <button onClick={onClose} className="md:hidden"><X/></button>
-                    </div>
-
-                    <div className="bg-gray-50 p-3 rounded-xl border">
-                        <select className="w-full p-2 bg-white rounded-lg border text-sm mb-2" value={selectedEmp} onChange={e => setSelectedEmp(e.target.value)}>
-                            <option value="">اختر موظفاً...</option>
-                            {employees.map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                        </select>
-                        <div className="flex gap-2">
-                            <button onClick={() => addToTeam(1)} className="flex-1 bg-red-100 text-red-700 py-1.5 rounded-lg text-xs font-bold hover:bg-red-200">+ فريق 1</button>
-                            <button onClick={() => addToTeam(2)} className="flex-1 bg-blue-100 text-blue-700 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-200">+ فريق 2</button>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                        <div className="border border-red-100 rounded-lg p-2 bg-red-50/50">
-                            <p className="text-xs font-bold text-red-600 mb-1">الفريق الأحمر ({team1.length})</p>
-                            {team1.map(id => (
-                                <div key={id} className="text-[10px] flex justify-between items-center">
-                                    {getEmpName(id)} 
-                                    <Trash2 size={12} className="cursor-pointer text-red-400" onClick={() => removeFromTeam(1, id)}/>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="border border-blue-100 rounded-lg p-2 bg-blue-50/50">
-                            <p className="text-xs font-bold text-blue-600 mb-1">الفريق الأزرق ({team2.length})</p>
-                            {team2.map(id => (
-                                <div key={id} className="text-[10px] flex justify-between items-center">
-                                    {getEmpName(id)} 
-                                    <Trash2 size={12} className="cursor-pointer text-red-400" onClick={() => removeFromTeam(2, id)}/>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="text-xs font-bold text-gray-500">النقاط</label>
-                        <input type="number" value={points} onChange={e => setPoints(Number(e.target.value))} className="w-full p-2 bg-gray-50 rounded-lg border text-center font-bold"/>
-                    </div>
-
-                    <button onClick={handleCreate} disabled={loading} className="w-full bg-purple-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 disabled:opacity-50">
-                        {loading ? <Loader2 className="animate-spin w-5 h-5 mx-auto"/> : 'إطلاق المسابقة 🔥'}
-                    </button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col max-h-[90vh]">
+                {/* Header */}
+                <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-[2rem] shrink-0">
+                    <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
+                        <Users className="text-purple-600"/> إنشاء مسابقة جديدة
+                    </h2>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X size={20}/></button>
                 </div>
 
-                {/* العمود الأيسر: الأسئلة */}
-                <div className="flex-1 border-t md:border-t-0 md:border-r border-gray-100 md:pr-6 pt-4 md:pt-0 overflow-y-auto custom-scrollbar pr-2">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-black text-gray-800">أسئلة التحدي (6)</h3>
-                        <button onClick={onClose} className="hidden md:block p-1 bg-gray-100 rounded-full hover:bg-red-100 hover:text-red-500"><X size={18}/></button>
+                {/* Body */}
+                <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-8">
+                    
+                    {/* إعدادات المسابقة */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-yellow-50 p-4 rounded-2xl border border-yellow-100">
+                            <label className="text-xs font-bold text-yellow-800 mb-2 block">جائزة المسابقة (نقاط)</label>
+                            <input type="number" min="10" value={points} onChange={e => setPoints(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-yellow-200 outline-none focus:border-yellow-400 font-black text-center"/>
+                        </div>
+                        <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100">
+                            <label className="text-xs font-bold text-purple-800 mb-2 block">عدد الأسئلة لكل فريق</label>
+                            <input type="number" min="1" max="10" value={questionsPerTeam} onChange={e => setQuestionsPerTeam(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-purple-200 outline-none focus:border-purple-400 font-black text-center"/>
+                        </div>
+                        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                            <label className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1"><Clock size={14}/> المهلة لكل سؤال (ثانية)</label>
+                            <input type="number" min="10" max="300" value={timeLimit} onChange={e => setTimeLimit(Number(e.target.value))} className="w-full p-2.5 rounded-xl border border-blue-200 outline-none focus:border-blue-400 font-black text-center"/>
+                        </div>
                     </div>
 
-                    <div className="space-y-6">
-                        {questions.map((q, idx) => (
-                            <div key={idx} className={`p-4 rounded-2xl border ${idx < 3 ? 'bg-red-50/30 border-red-100' : 'bg-blue-50/30 border-blue-100'}`}>
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${idx < 3 ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                                        سؤال {idx + 1} ({idx < 3 ? 'فريق أحمر' : 'فريق أزرق'})
-                                    </span>
-                                    <button 
-                                        onClick={() => { setTargetQIndex(idx); setShowBank(true); }}
-                                        className="text-[10px] flex items-center gap-1 bg-white border border-gray-200 px-2 py-1 rounded-lg hover:bg-gray-50 shadow-sm transition-colors"
-                                    >
-                                        <BookOpen size={12}/> اختر من البنك
-                                    </button>
-                                </div>
-                                
-                                <input 
-                                    type="text" placeholder="نص السؤال..." className="w-full p-2 text-sm border rounded-lg mb-2 focus:ring-2 ring-purple-100 outline-none"
-                                    value={q.text} onChange={e => updateQuestion(idx, 'text', e.target.value)}
-                                />
-                                
-                                <div className="grid grid-cols-2 gap-2">
-                                    {['a', 'b', 'c', 'd'].map((opt) => (
-                                        <div key={opt} className="relative">
-                                            <input 
-                                                type="text" placeholder={`خيار ${opt.toUpperCase()}`} 
-                                                className={`w-full p-1.5 text-xs border rounded-lg pl-6 ${q.correct === opt ? 'bg-green-50 border-green-300' : ''}`}
-                                                value={(q as any)[opt]} onChange={e => updateQuestion(idx, opt as any, e.target.value)}
-                                            />
-                                            <input 
-                                                type="radio" name={`correct-${idx}`} checked={q.correct === opt} 
-                                                onChange={() => updateQuestion(idx, 'correct', opt)}
-                                                className="absolute left-2 top-2 cursor-pointer accent-green-600"
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
+                    {/* اختيار الفرق */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* الفريق الأول */}
+                        <div className="space-y-3">
+                            <h3 className="font-black text-red-600 flex items-center gap-2 pb-2 border-b"><Users size={18}/> الفريق الأول</h3>
+                            <div className="flex gap-2">
+                                <select value={selectedEmp} onChange={e => setSelectedEmp(e.target.value)} className="flex-1 p-2 rounded-xl border bg-gray-50 text-sm font-bold">
+                                    <option value="">اختر موظف...</option>
+                                    {employees.map((e: any) => <option key={e.employee_id} value={e.employee_id}>{e.name} ({e.specialty})</option>)}
+                                </select>
+                                <button onClick={() => handleAddUser(1)} className="bg-red-100 text-red-700 px-4 rounded-xl font-bold hover:bg-red-200">إضافة</button>
                             </div>
-                        ))}
+                            <div className="flex flex-wrap gap-2 pt-2">
+                                {team1.map(id => {
+                                    const emp = employees.find((e:any) => e.employee_id === id);
+                                    return (
+                                        <span key={id} className="bg-red-50 text-red-700 px-3 py-1 rounded-lg text-xs font-bold border border-red-100 flex items-center gap-2">
+                                            {emp?.name.split(' ')[0]} <button onClick={() => handleRemoveUser(1, id)} className="hover:text-red-900"><X size={12}/></button>
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* الفريق الثاني */}
+                        <div className="space-y-3">
+                            <h3 className="font-black text-blue-600 flex items-center gap-2 pb-2 border-b"><Users size={18}/> الفريق الثاني</h3>
+                            <div className="flex gap-2">
+                                <select value={selectedEmp} onChange={e => setSelectedEmp(e.target.value)} className="flex-1 p-2 rounded-xl border bg-gray-50 text-sm font-bold">
+                                    <option value="">اختر موظف...</option>
+                                    {employees.map((e: any) => <option key={e.employee_id} value={e.employee_id}>{e.name} ({e.specialty})</option>)}
+                                </select>
+                                <button onClick={() => handleAddUser(2)} className="bg-blue-100 text-blue-700 px-4 rounded-xl font-bold hover:bg-blue-200">إضافة</button>
+                            </div>
+                            <div className="flex flex-wrap gap-2 pt-2">
+                                {team2.map(id => {
+                                    const emp = employees.find((e:any) => e.employee_id === id);
+                                    return (
+                                        <span key={id} className="bg-blue-50 text-blue-700 px-3 py-1 rounded-lg text-xs font-bold border border-blue-100 flex items-center gap-2">
+                                            {emp?.name.split(' ')[0]} <button onClick={() => handleRemoveUser(2, id)} className="hover:text-blue-900"><X size={12}/></button>
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
+
+                    {/* الأسئلة الموحدة */}
+                    <div>
+                        <h3 className="font-black text-gray-800 flex items-center gap-2 mb-4"><BookOpen className="text-purple-600"/> الأسئلة المخصصة للفريقين</h3>
+                        <div className="space-y-6">
+                            {questions.map((q, idx) => {
+                                const isTeam1 = idx < questionsPerTeam;
+                                const teamLabel = isTeam1 ? `سؤال ${idx + 1} (للفريق الأول)` : `سؤال ${idx - questionsPerTeam + 1} (للفريق الثاني)`;
+                                const bgColor = isTeam1 ? 'bg-red-50/30 border-red-100' : 'bg-blue-50/30 border-blue-100';
+                                const textColor = isTeam1 ? 'text-red-700' : 'text-blue-700';
+
+                                return (
+                                    <div key={idx} className={`p-5 rounded-2xl border shadow-sm ${bgColor}`}>
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h4 className={`font-black text-sm ${textColor}`}>{teamLabel}</h4>
+                                            <button 
+                                                onClick={() => { setTargetQIndex(idx); setShowBank(true); }}
+                                                className="text-xs bg-white border px-3 py-1.5 rounded-lg shadow-sm hover:bg-gray-50 flex items-center gap-1 font-bold"
+                                            >
+                                                <BookOpen size={14}/> استيراد من بنك الأسئلة
+                                            </button>
+                                        </div>
+                                        
+                                        <textarea placeholder="اكتب نص السؤال هنا..." value={q.text} onChange={e => updateQuestion(idx, 'text', e.target.value)} className="w-full p-3 rounded-xl border bg-white outline-none focus:border-purple-400 text-sm font-bold resize-none h-16 mb-3"/>
+                                        
+                                        {/* ✅ حقل إضافة رابط صورة للسؤال */}
+                                        <div className="flex items-center gap-2 mb-4 bg-white p-2 rounded-xl border">
+                                            <ImageIcon size={16} className="text-gray-400"/>
+                                            <input type="url" placeholder="رابط صورة توضيحية (اختياري)..." value={q.image_url} onChange={e => updateQuestion(idx, 'image_url', e.target.value)} className="w-full text-xs outline-none bg-transparent" dir="ltr" />
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {['a', 'b', 'c', 'd'].map(opt => (
+                                                <div key={opt} className={`flex items-center gap-2 p-2 rounded-xl border bg-white ${q.correct === opt ? 'border-green-400 ring-1 ring-green-100' : ''}`}>
+                                                    <input type="radio" name={`correct_${idx}`} checked={q.correct === opt} onChange={() => updateQuestion(idx, 'correct', opt)} className="w-4 h-4 accent-green-600"/>
+                                                    <input type="text" placeholder={`الخيار ${opt.toUpperCase()}`} value={(q as any)[opt]} onChange={e => updateQuestion(idx, opt as any, e.target.value)} className="flex-1 text-sm outline-none font-bold"/>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="p-6 border-t bg-gray-50 rounded-b-[2rem] flex justify-end gap-3 shrink-0">
+                    <button onClick={onClose} className="px-6 py-2.5 rounded-xl font-bold text-gray-500 hover:bg-gray-200 transition-colors">إلغاء</button>
+                    <button onClick={handleSubmit} disabled={loading} className="bg-purple-600 text-white px-8 py-2.5 rounded-xl font-black shadow-lg hover:bg-purple-700 transition-all flex items-center gap-2 disabled:opacity-50">
+                        {loading ? <Loader2 size={18} className="animate-spin"/> : 'إطلاق المسابقة 🔥'}
+                    </button>
                 </div>
             </div>
 
-            {/* --- نافذة بنك الأسئلة (Modal 2) --- */}
+            {/* --- بنك الأسئلة Modal --- */}
             {showBank && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 animate-in fade-in">
-                    <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
                         <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-2xl">
-                            <h4 className="font-bold flex items-center gap-2"><BookOpen className="text-purple-600"/> بنك الأسئلة</h4>
-                            <button onClick={() => setShowBank(false)} className="hover:text-red-500"><X/></button>
+                            <h3 className="font-black flex items-center gap-2"><BookOpen className="text-indigo-600"/> بنك الأسئلة</h3>
+                            <button onClick={() => setShowBank(false)} className="p-1 hover:bg-gray-200 rounded-lg"><X size={20}/></button>
                         </div>
                         
-                        <div className="p-3 border-b flex gap-2 overflow-x-auto custom-scrollbar">
-                            {specialties.map((spec: any) => (
-                                <button 
-                                    key={spec} 
-                                    onClick={() => { setBankSpecialty(spec); setBankPage(0); }}
-                                    className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${bankSpecialty === spec ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                                >
-                                    {spec}
-                                </button>
-                            ))}
+                        <div className="p-4 border-b">
+                            <select value={bankSpecialty} onChange={e => { setBankSpecialty(e.target.value); setBankPage(0); }} className="w-full p-2 border rounded-xl outline-none text-sm font-bold bg-gray-50">
+                                <option value="الكل">جميع التخصصات</option>
+                                <option value="صيدلة">صيدلة</option>
+                                <option value="اسنان">أسنان</option>
+                                <option value="معمل">معمل</option>
+                                <option value="مكافحة عدوى">مكافحة عدوى</option>
+                                <option value="جودة">جودة</option>
+                            </select>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
-                            {loadingBank ? (
-                                <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-purple-600"/></div>
-                            ) : bankQuestionsData?.data?.length === 0 ? (
-                                <div className="text-center py-10 text-gray-400 font-bold">لا توجد أسئلة بهذا التصنيف</div>
-                            ) : (
-                                bankQuestionsData?.data?.map((bq: any) => (
-                                    <div 
-                                        key={bq.id} 
-                                        onClick={() => selectFromBank(bq)}
-                                        className="bg-white p-3 rounded-xl border hover:border-purple-400 cursor-pointer shadow-sm hover:shadow-md transition-all group"
-                                    >
-                                        <p className="font-bold text-sm text-gray-800 mb-1 group-hover:text-purple-700">{bq.question || bq.question_text}</p>
-                                        <div className="flex gap-2 text-[10px] text-gray-500">
-                                            <span className="bg-gray-100 px-2 py-0.5 rounded">{typeof bq.specialty === 'object' ? bq.specialty[0] : bq.specialty}</span>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                            {bankLoading ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600 mt-10"/> : (
+                                bankQuestionsData?.data.map((bq: any) => (
+                                    <div key={bq.id} className="p-4 border rounded-xl hover:border-indigo-300 transition-colors cursor-pointer group" onClick={() => useBankQuestion(bq)}>
+                                        <p className="font-bold text-sm text-gray-800 mb-2">{bq.question_text}</p>
+                                        <div className="flex gap-2 text-[10px] font-bold">
+                                            <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">{Array.isArray(bq.specialty) ? bq.specialty[0] : bq.specialty}</span>
                                             <span className="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded border border-yellow-100">{bq.difficulty || 'medium'}</span>
                                         </div>
                                     </div>
@@ -389,20 +337,9 @@ const handleCreate = async () => {
                         </div>
 
                         <div className="p-3 border-t flex justify-between items-center bg-white rounded-b-2xl">
-                            <button 
-                                disabled={bankPage === 0} onClick={() => setBankPage(p => p - 1)}
-                                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30"
-                            >
-                                <ChevronRight/>
-                            </button>
+                            <button disabled={bankPage === 0} onClick={() => setBankPage(p => p - 1)} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30"><ChevronRight/></button>
                             <span className="text-xs font-bold text-gray-500">صفحة {bankPage + 1}</span>
-                            <button 
-                                disabled={!bankQuestionsData?.data || bankQuestionsData.data.length < 5} 
-                                onClick={() => setBankPage(p => p + 1)}
-                                className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30"
-                            >
-                                <ChevronLeft/>
-                            </button>
+                            <button disabled={!bankQuestionsData?.data || bankQuestionsData.data.length < 5} onClick={() => setBankPage(p => p + 1)} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30"><ChevronLeft/></button>
                         </div>
                     </div>
                 </div>
