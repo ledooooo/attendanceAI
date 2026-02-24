@@ -84,7 +84,7 @@ export default function StaffDashboard({ employee }: Props) {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'default'
   );
-
+const [showNotifPrompt, setShowNotifPrompt] = useState(true);
   useEffect(() => {
     if ('Notification' in window) {
       const interval = setInterval(() => {
@@ -411,8 +411,17 @@ export default function StaffDashboard({ employee }: Props) {
             </div>
           )}
 
-          {notificationStatus !== 'granted' && (
-            <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-orange-500 to-pink-500 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-700 border border-white/20">
+{/* ✅ حث على تفعيل الإشعارات (قابل للإغلاق ولا يغطي الأزرار) */}
+          {notificationStatus !== 'granted' && showNotifPrompt && (
+            <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-orange-500 to-pink-500 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-4 duration-700 border border-white/20 relative mt-16 md:mt-20">
+                {/* زر الإغلاق */}
+                <button 
+                    onClick={() => setShowNotifPrompt(false)} 
+                    className="absolute -top-2 -right-2 bg-black/20 hover:bg-black/40 rounded-full p-1 transition-colors"
+                >
+                    <X size={14} className="text-white" />
+                </button>
+                
                 <div className="flex items-center gap-3">
                     <div className="bg-white/20 p-2 rounded-xl">
                         <BellRing className="w-5 h-5 animate-ring" />
