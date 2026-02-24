@@ -11,9 +11,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 // ✅ استيراد كارت المسابقة
 import CompetitionCard from './CompetitionCard';
 // 🔥 استيراد النوافذ المنبثقة للـ AI ولوحة الشرف
-import LeaderboardWidget from '../../gamification/LeaderboardWidget'; 
-import AIGameChallenge from '../../gamification/AIGameChallenge';
-
+import LeaderboardWidget from '../../../components/gamification/LeaderboardWidget'; 
+import AIGameChallenge from '../../../components/gamification/AIGameChallenge';
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
     
