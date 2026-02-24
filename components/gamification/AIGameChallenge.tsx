@@ -66,39 +66,88 @@ export default function AIGameChallenge({ employee, onClose }: Props) {
     };
 
     // 2. بدء التحدي (توليد السؤال وحفظه في الداتابيز لحمايته من الـ Refresh)
+// 2. بدء التحدي 
     const handleStartChallenge = async () => {
         setStep('generating');
         
-        // محاكاة تفكير الذكاء الاصطناعي (لإعطاء طابع مستقبلي)
+        // محاكاة تفكير الذكاء الاصطناعي
         await new Promise(res => setTimeout(res, 2500));
 
         try {
-            // جلب سؤال عشوائي من بنك الأسئلة بناءً على التخصص
-            let query = supabase.from('arcade_quiz_questions').select('*');
-            if (specialty === 'تخصصي') {
-                query = query.ilike('specialty', `%${employee.specialty || 'عام'}%`);
-            }
-            const { data: qData } = await query;
+            // توحيد مسميات التخصص للبحث (خوارزمية المترادفات التي استخدمناها سابقاً)
+            const getSpecVariations = (spec: string) => {
+                if (spec === 'بشري') return ['طبيب بشرى', 'طبيب بشري', 'بشري', 'بشرى', 'طبيب عام'];
+                if (spec === 'أسنان') return ['طبيب أسنان', 'طبيب اسنان', 'أسنان', 'اسنان'];
+                if (spec === 'تمريض') return ['تمريض', 'ممرض', 'ممرضة'];
+                if (spec === 'صيدلة') return ['صيدلة', 'صيدلي', 'صيدلاني'];
+                if (spec === 'معمل') return ['معمل', 'فني معمل', 'مختبر'];
+                return [spec];
+            };
+
+            let allQuestions: any[] = [];
+            const isSpecialized = specialty === 'تخصصي';
+            const userSpec = employee.specialty || 'عام';
+            const variations = getSpecVariations(userSpec);
+            const orFilter = variations.map(v => `specialty.ilike.%${v}%`).join(',');
+
+            // البحث في الجدول الجديد
+            let q1 = supabase.from('arcade_quiz_questions').select('*');
+            if (isSpecialized) q1 = q1.or(orFilter);
+            const { data: data1 } = await q1;
             
-            let selectedQ = qData && qData.length > 0 
-                ? qData[Math.floor(Math.random() * qData.length)] 
-                : { // سؤال احتياطي في حال عدم وجود أسئلة
+            // البحث في الجدول القديم
+            let q2 = supabase.from('quiz_questions').select('*');
+            if (isSpecialized) q2 = q2.or(orFilter);
+            const { data: data2 } = await q2;
+
+            allQuestions = [...(data1 || []), ...(data2 || [])];
+
+            // فلترة الأسئلة التي لعبها الموظف سابقاً (لضمان عدم التكرار)
+            const { data: pastAttempts } = await supabase.from('ai_daily_challenges').select('question_data').eq('employee_id', employee.employee_id);
+            const playedQuestionTexts = pastAttempts?.map(a => a.question_data?.text) || [];
+            
+            let availableQuestions = allQuestions.filter(q => {
+                const text = q.question_text || q.question;
+                return !playedQuestionTexts.includes(text);
+            });
+
+            // إذا انتهت الأسئلة المتاحة، نتيح له اللعب من الأسئلة القديمة عشوائياً
+            if (availableQuestions.length === 0 && allQuestions.length > 0) {
+                availableQuestions = allQuestions;
+            }
+
+            let selectedQ = availableQuestions.length > 0 
+                ? availableQuestions[Math.floor(Math.random() * availableQuestions.length)] 
+                : { // سؤال احتياطي نهائي
                     question_text: "ما هو الإجراء الأولي في حالة توقف القلب؟",
-                    option_a: "إعطاء صدمة كهربائية", option_b: "البدء بالإنعاش القلبي الرئوي (CPR)", option_c: "إعطاء أدرينالين", option_d: "انتظار الإسعاف",
-                    correct_index: 1 
+                    options: '["إعطاء صدمة كهربائية", "البدء بالإنعاش القلبي الرئوي (CPR)", "إعطاء أدرينالين", "انتظار الإسعاف"]',
+                    correct_answer: "البدء بالإنعاش القلبي الرئوي (CPR)"
                 };
 
-            // توحيد شكل السؤال
+            // معالجة خيارات السؤال باختلاف الجداول
+            let options = [];
+            let correct = '';
+            let text = selectedQ.question_text || selectedQ.question;
+
+            if (selectedQ.option_a) {
+                options = [selectedQ.option_a, selectedQ.option_b, selectedQ.option_c, selectedQ.option_d].filter(Boolean);
+                correct = [selectedQ.option_a, selectedQ.option_b, selectedQ.option_c, selectedQ.option_d][selectedQ.correct_index] || selectedQ.option_a;
+            } else if (selectedQ.options) {
+                try { options = typeof selectedQ.options === 'string' ? JSON.parse(selectedQ.options) : selectedQ.options; } catch(e){}
+                correct = selectedQ.correct_answer;
+            }
+
+            // توحيد شكل السؤال النهائي
             const formattedQ = {
-                text: selectedQ.question_text || selectedQ.question,
-                options: [selectedQ.option_a, selectedQ.option_b, selectedQ.option_c, selectedQ.option_d].filter(Boolean),
-                correct: [selectedQ.option_a, selectedQ.option_b, selectedQ.option_c, selectedQ.option_d][selectedQ.correct_index || 0] || selectedQ.correct_answer,
-                image_url: format === 'صورة' ? 'https://via.placeholder.com/400x200?text=Medical+Case+Scan' : null // محاكاة الصورة
+                text: text,
+                options: options,
+                correct: correct,
+                image_url: format === 'صورة' ? 'https://via.placeholder.com/400x200?text=Medical+Case+Scan' : null
             };
 
             const today = new Date().toISOString().split('T')[0];
             
-            // حفظ المحاولة في الداتابيز (بمجرد الحفظ، يعتبر السؤال محروقاً للموظف)
+            // حفظ المحاولة
             const { data: attempt, error } = await supabase.from('ai_daily_challenges').insert({
                 employee_id: employee.employee_id,
                 attempt_date: today,
@@ -120,7 +169,6 @@ export default function AIGameChallenge({ employee, onClose }: Props) {
             setStep('config');
         }
     };
-
     // 3. عداد الوقت
     const startTimer = (initialTime: number, attemptId: string) => {
         let current = initialTime;
