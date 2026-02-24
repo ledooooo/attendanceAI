@@ -4,12 +4,16 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, 
-    Reply, Calendar, Sparkles, Loader2, Star, Trophy, X 
+    Reply, Calendar, Sparkles, Loader2, Star, Trophy, X, Bot // تمت إضافة Bot
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // ✅ استيراد كارت المسابقة
 import CompetitionCard from './CompetitionCard';
+
+// 💡 ملاحظة: ستحتاج لاستيراد مكونات الـ Modals الخاصة بك هنا إذا كانت في ملفات منفصلة
+// import LeaderboardModal from './LeaderboardModal';
+// import AIChallengeModal from './AIChallengeModal';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
@@ -20,6 +24,10 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const [expandedPost, setExpandedPost] = useState<string | null>(null);
     const [showPostReactions, setShowPostReactions] = useState<string | null>(null);
     const [showCommentReactions, setShowCommentReactions] = useState<string | null>(null);
+
+    // 🔥 حالات الـ Modals الجديدة
+    const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+    const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
     const REACTION_OPTIONS = [
         { e: '❤️', l: 'حب' }, { e: '😊', l: 'سمايل' }, { e: '😂', l: 'ضحك' }, { e: '👏', l: 'تصفيق' }, { e: '👍', l: 'تمام' }
@@ -37,12 +45,41 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const currentLevel = levels.find(l => points >= l.min && points < l.max) || levels[levels.length - 1];
 
     // ------------------------------------------------------------------
+    // 0. 🤖 جلب حالة تحدي الـ AI (هل مرت 24 ساعة؟)
+    // ------------------------------------------------------------------
+    const { data: aiEligibility, isLoading: loadingAi } = useQuery({
+        queryKey: ['ai_eligibility', employee.employee_id],
+        queryFn: async () => {
+            // 💡 تنبيه: تأكد من اسم الجدول الخاص بمحاولات الـ AI ('ai_attempts')
+            const { data, error } = await supabase
+                .from('ai_attempts') 
+                .select('created_at')
+                .eq('employee_id', employee.employee_id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (error && error.code !== 'PGRST116') throw error;
+            
+            if (!data) return { canAttempt: true, hoursLeft: 0 };
+
+            const lastAttempt = new Date(data.created_at).getTime();
+            const now = new Date().getTime();
+            const diffHours = (now - lastAttempt) / (1000 * 60 * 60);
+
+            if (diffHours < 24) {
+                return { canAttempt: false, hoursLeft: Math.ceil(24 - diffHours) };
+            }
+            return { canAttempt: true, hoursLeft: 0 };
+        }
+    });
+
+    // ------------------------------------------------------------------
     // 1. 📥 جلب البيانات (أخبار + مسابقات)
     // ------------------------------------------------------------------
     const { data: feedItems = [], isLoading } = useQuery({
         queryKey: ['news_feed_mixed'],
         queryFn: async () => {
-            // أ) جلب الأخبار والتعليقات
             const [postsRes, commentsRes, pReactRes, cReactRes] = await Promise.all([
                 supabase.from('news_posts').select('*').order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
                 supabase.from('news_comments').select('*').order('created_at', { ascending: true }),
@@ -50,15 +87,13 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 supabase.from('comment_reactions').select('*')
             ]);
 
-            // ب) جلب المسابقات (مع بيانات اللاعبين)
             const { data: compsData } = await supabase
                 .from('competitions')
-                .select('*') // نجلب كل الأعمدة بما فيها team1_ids
+                .select('*')
                 .order('created_at', { ascending: false });
 
             if (postsRes.error) throw postsRes.error;
 
-            // ج) معالجة الأخبار
             const postsData = postsRes.data || [];
             const commentsData = commentsRes.data || [];
             const pReactions = pReactRes.data || [];
@@ -81,18 +116,15 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 };
             });
 
-            // د) معالجة المسابقات
             const processedComps = (compsData || []).map(c => ({
                 ...c,
                 type: 'competition'
             }));
 
-            // هـ) دمج القائمتين وترتيبهم حسب التاريخ
             const combinedFeed = [...processedPosts, ...processedComps].sort((a, b) => 
                 new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             );
             
-            // وضع "المثبت" في الأول دائماً
             return combinedFeed.sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0));
         },
         staleTime: 1000 * 30,
@@ -102,7 +134,6 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     // ------------------------------------------------------------------
     // 2. 🛠️ العمليات (Mutations للأخبار)
     // ------------------------------------------------------------------
-
     const sendNotification = async (recipientId: string, type: string, postId: string, message: string) => {
         if (recipientId === employee.employee_id) return;
         await supabase.from('notifications').insert({
@@ -179,6 +210,17 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         });
     };
 
+    // معالجة فتح الـ AI
+    const handleOpenAI = () => {
+        if (loadingAi) return toast.loading('جاري التحقق...', { duration: 1000 });
+        
+        if (aiEligibility?.canAttempt) {
+            setIsAIModalOpen(true);
+        } else {
+            toast.error(`لقد استنفذت محاولتك اليوم! حاول مجدداً بعد ${aiEligibility?.hoursLeft} ساعة.`);
+        }
+    };
+
     if (isLoading) return <div className="p-10 text-center text-gray-400 font-black animate-pulse px-4 flex flex-col items-center gap-2"><Loader2 className="animate-spin w-8 h-8 text-emerald-500"/> جاري تحميل الأحداث...</div>;
 
     return (
@@ -202,48 +244,66 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 </div>
             </div>
 
-            {/* الكروت المصغرة (Level & Leaderboard) */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* 🔥 الكروت المصغرة (Level & Leaderboard & AI) أصبحت 3 كروت 🔥 */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                
+                {/* 1. المستوى الحالي */}
                 <div className="bg-white border border-indigo-100 rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative">
                     <div className="absolute right-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
-                    <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
-                        <Star size={16} fill="currentColor" />
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                        <Star size={14} fill="currentColor" className="sm:w-4 sm:h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <div className="text-[9px] text-gray-400 font-bold">المستوى الحالي</div>
-                        <div className={`text-xs font-black truncate ${currentLevel.color}`}>{currentLevel.name} <span className="text-[9px] text-gray-400">({points})</span></div>
+                        <div className="text-[8px] sm:text-[9px] text-gray-400 font-bold">المستوى</div>
+                        <div className={`text-[10px] sm:text-xs font-black truncate ${currentLevel.color}`}>{currentLevel.name} <span className="text-[8px] sm:text-[9px] text-gray-400">({points})</span></div>
                     </div>
                 </div>
 
-                <div className="bg-white border border-yellow-100 rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative">
-                    <div className="absolute right-0 top-0 bottom-0 w-1 bg-yellow-400"></div>
-                    <div className="w-8 h-8 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600 shrink-0">
-                        <Trophy size={16} />
+                {/* 2. لوحة الشرف (قابلة للضغط) */}
+                <button 
+                    onClick={() => setIsLeaderboardOpen(true)}
+                    className="bg-white border border-yellow-100 rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative text-right hover:bg-yellow-50/50 transition-colors group cursor-pointer"
+                >
+                    <div className="absolute right-0 top-0 bottom-0 w-1 bg-yellow-400 group-hover:w-1.5 transition-all"></div>
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600 shrink-0">
+                        <Trophy size={14} className="sm:w-4 sm:h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <div className="text-[9px] text-gray-400 font-bold">لوحة الشرف</div>
-                        <div className="text-xs font-black text-gray-800 truncate">أفضل 5 نجوم</div>
+                        <div className="text-[8px] sm:text-[9px] text-gray-400 font-bold">لوحة الشرف</div>
+                        <div className="text-[10px] sm:text-xs font-black text-gray-800 truncate">أفضل 5</div>
                     </div>
-                </div>
+                </button>
+
+                {/* 3. تحدي الذكاء الاصطناعي (متاح مرة كل 24 ساعة) */}
+                <button 
+                    onClick={handleOpenAI}
+                    className="bg-gradient-to-l from-violet-600 to-fuchsia-600 border border-transparent rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative text-right hover:opacity-90 transition-opacity cursor-pointer group"
+                >
+                    <div className="absolute right-0 top-0 bottom-0 w-1 bg-white/30"></div>
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/20 flex items-center justify-center text-white shrink-0">
+                        <Bot size={14} className="sm:w-4 sm:h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[8px] sm:text-[9px] text-white/80 font-bold">تحدي AI</div>
+                        <div className="text-[10px] sm:text-xs font-black text-white truncate">حاول واربح</div>
+                    </div>
+                </button>
             </div>
 
             {/* 🔥 الـ Feed المدمج (مسابقات + أخبار) 🔥 */}
             <div className="space-y-4">
                 {feedItems.map((item: any) => {
                     
-                    // --- الحالة الأولى: عرض كارت المسابقة ---
                     if (item.type === 'competition') {
                         return (
                             <CompetitionCard 
                                 key={item.id} 
                                 comp={item} 
-                                // ✅✅ التعديل هنا: تمرير id بدلاً من employee_id ✅✅
                                 currentUserId={employee.id} 
                             />
                         );
                     }
 
-                    // --- الحالة الثانية: عرض كارت الخبر العادي ---
                     const postTime = formatDateTime(item.created_at);
                     return (
                         <div key={item.id} className={`bg-white rounded-3xl border transition-all duration-300 ${item.is_pinned ? 'border-emerald-200 ring-2 ring-emerald-50' : 'border-gray-100 shadow-sm'}`}>
@@ -389,6 +449,11 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                     );
                 })}
             </div>
+
+            {/* 🔥 تركيب النوافذ المنبثقة (Modals) هنا 🔥 */}
+            {/* {isLeaderboardOpen && <LeaderboardModal onClose={() => setIsLeaderboardOpen(false)} />} */}
+            {/* {isAIModalOpen && <AIChallengeModal onClose={() => setIsAIModalOpen(false)} />} */}
+            
         </div>
     );
 }
