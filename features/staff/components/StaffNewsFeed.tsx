@@ -10,8 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // ✅ استيراد كارت المسابقة والتحدي الذكي
 import CompetitionCard from './CompetitionCard';
-import AIGameChallenge from '../../gamification/AIGameChallenge'; // <-- تم إضافة هذا الاستيراد
-
+import AIGameChallenge from '../../../components/gamification/AIGameChallenge';
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
     
