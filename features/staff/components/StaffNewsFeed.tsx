@@ -4,12 +4,13 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, 
-    Reply, Calendar, Sparkles, Loader2, Star, Trophy, X 
+    Reply, Calendar, Sparkles, Loader2, Star, Trophy, X, BrainCircuit 
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-// ✅ استيراد كارت المسابقة
+// ✅ استيراد كارت المسابقة والتحدي الذكي
 import CompetitionCard from './CompetitionCard';
+import AIGameChallenge from '../../gamification/AIGameChallenge'; // <-- تم إضافة هذا الاستيراد
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
@@ -20,6 +21,9 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const [expandedPost, setExpandedPost] = useState<string | null>(null);
     const [showPostReactions, setShowPostReactions] = useState<string | null>(null);
     const [showCommentReactions, setShowCommentReactions] = useState<string | null>(null);
+    
+    // ✅ حالة التحكم في فتح نافذة لعبة الذكاء الاصطناعي
+    const [showAIGame, setShowAIGame] = useState(false);
 
     const REACTION_OPTIONS = [
         { e: '❤️', l: 'حب' }, { e: '😊', l: 'سمايل' }, { e: '😂', l: 'ضحك' }, { e: '👏', l: 'تصفيق' }, { e: '👍', l: 'تمام' }
@@ -53,7 +57,7 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
             // ب) جلب المسابقات (مع بيانات اللاعبين)
             const { data: compsData } = await supabase
                 .from('competitions')
-                .select('*') // نجلب كل الأعمدة بما فيها team1_ids
+                .select('*') 
                 .order('created_at', { ascending: false });
 
             if (postsRes.error) throw postsRes.error;
@@ -68,7 +72,8 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                 const postComments = commentsData.filter(c => c.post_id === p.id);
                 return {
                     ...p,
-                    type: 'post', 
+                    // ✅ إذا كان الخبر محدد كـ ai_challenge في الداتابيز، نحتفظ بنوعه لنميزه في العرض
+                    type: p.type === 'ai_challenge' ? 'ai_challenge' : 'post', 
                     reactions: pReactions.filter(r => r.post_id === p.id),
                     mainComments: postComments.filter(c => !c.parent_id).map(mc => ({
                         ...mc,
@@ -103,31 +108,28 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     // 2. 🛠️ العمليات (Mutations للأخبار)
     // ------------------------------------------------------------------
 
-// دالة محسنة لإرسال إشعار داخلي + إشعار لحظي (Push)
     const sendInstantNotification = async (recipientEmpId: string, title: string, body: string, type: string) => {
         if (recipientEmpId === String(employee.employee_id)) return;
 
-        // 1. الحفظ في جدول الإشعارات بـ Supabase
         await supabase.from('notifications').insert({
-            user_id: recipientEmpId, // الهوية الموحدة (مثل 80)
+            user_id: recipientEmpId, 
             title: title,
             message: body,
             type: type,
             is_read: false
         });
 
-        // ✅ 2. إرسال Push Notification لحظي لهاتف المستلم
         supabase.functions.invoke('send-push-notification', {
             body: { 
                 userId: recipientEmpId, 
                 title: title, 
                 body: body, 
-                url: '/staff?tab=news' // توجيهه لتبويب الأخبار عند النقر
+                url: '/staff?tab=news' 
             }
         }).catch(err => console.error("Push Error in News Feed:", err));
     };
 
-const reactionMutation = useMutation({
+    const reactionMutation = useMutation({
         mutationFn: async ({ id, emoji, type, targetUserId }: { id: string, emoji: string, type: 'post' | 'comment', targetUserId: string }) => {
             const table = type === 'post' ? 'post_reactions' : 'comment_reactions';
             const field = type === 'post' ? 'post_id' : 'comment_id';
@@ -140,7 +142,6 @@ const reactionMutation = useMutation({
             } else {
                 await supabase.from(table).insert({ [field]: id, user_id: employee.employee_id, user_name: employee.name, emoji });
                 
-                // ✅ إرسال إشعار لصاحب المنشور/التعليق
                 const msgBody = `تفاعل ${employee.name} بـ ${emoji} على ${type === 'post' ? 'منشورك' : 'تعليقك'}`;
                 sendInstantNotification(String(targetUserId), '❤️ تفاعل جديد', msgBody, 'reaction');
                 
@@ -155,8 +156,7 @@ const reactionMutation = useMutation({
         onError: () => toast.error('حدث خطأ في التفاعل')
     });
 
-    
-const commentMutation = useMutation({
+    const commentMutation = useMutation({
         mutationFn: async ({ postId, text, postAuthorId }: { postId: string, text: string, postAuthorId: string }) => {
             const payload: any = { 
                 post_id: postId, 
@@ -169,7 +169,6 @@ const commentMutation = useMutation({
             const { error } = await supabase.from('news_comments').insert(payload);
             if (error) throw error;
 
-            // ✅ إرسال إشعار لصاحب الرد أو صاحب المنشور
             if (replyTo) {
                 const msg = `ردَّ ${employee.name} على تعليقك: "${text.substring(0, 20)}..."`;
                 sendInstantNotification(String(replyTo.userId), '💬 رد جديد', msg, 'reply');
@@ -188,6 +187,7 @@ const commentMutation = useMutation({
         },
         onError: () => toast.error('فشل نشر التعليق')
     });
+
     const formatDateTime = (dateStr: string) => {
         const date = new Date(dateStr);
         return {
@@ -200,7 +200,7 @@ const commentMutation = useMutation({
         const text = commentText[postId]?.trim();
         if (!text) return toast.error('اكتب تعليقاً أولاً!');
         
-        toast.promise(commentMutation.mutateAsync({ postId, text }), {
+        toast.promise(commentMutation.mutateAsync({ postId, text, postAuthorId: feedItems.find(i=>i.id===postId)?.created_by }), {
             loading: 'جاري النشر...',
             success: 'تم النشر!',
             error: 'خطأ'
@@ -212,26 +212,10 @@ const commentMutation = useMutation({
     return (
         <div className="max-w-4xl mx-auto pb-20 text-right space-y-4 px-1" dir="rtl">
             
-            {/* قسم الترحيب */}
-            <div className="sticky top-0 z-20 bg-white/90 backdrop-blur-xl border border-emerald-100 rounded-2xl p-3 shadow-sm flex items-center justify-between overflow-hidden">
-                <div className="absolute -left-4 -top-4 w-20 h-20 bg-emerald-50 rounded-full blur-2xl opacity-60"></div>
-                <div className="relative flex items-center gap-3">
-                    <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-sm shadow-emerald-200">
-                        <Sparkles size={20} />
-                    </div>
-                    <div>
-                        <h2 className="text-sm font-black text-gray-800">أهلاً بك، {employee.name.split(' ')[0]}</h2>
-                        <p className="text-[10px] text-emerald-600 font-bold">نتمنى لك يوماً سعيداً في المركز</p>
-                    </div>
-                </div>
-                <div className="hidden sm:block text-left">
-                    <p className="text-[9px] text-gray-400 font-black uppercase tracking-wider">التاريخ اليوم</p>
-                    <p className="text-xs font-black text-gray-700">{formatDateTime(new Date().toISOString()).date}</p>
-                </div>
-            </div>
+            {/* قسم الترحيب (تم حذفه من هنا لأنه أصبح في الـ Dashboard الأساسي كما طلبت سابقاً، لكن سنبقي الكروت المصغرة) */}
 
             {/* الكروت المصغرة (Level & Leaderboard) */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 mt-4">
                 <div className="bg-white border border-indigo-100 rounded-2xl p-2 flex items-center gap-2 shadow-sm h-14 overflow-hidden relative">
                     <div className="absolute right-0 top-0 bottom-0 w-1 bg-indigo-500"></div>
                     <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
@@ -255,23 +239,58 @@ const commentMutation = useMutation({
                 </div>
             </div>
 
-            {/* 🔥 الـ Feed المدمج (مسابقات + أخبار) 🔥 */}
+            {/* 🔥 الـ Feed المدمج (مسابقات + أخبار + تحدي AI) 🔥 */}
             <div className="space-y-4">
                 {feedItems.map((item: any) => {
                     
-                    // --- الحالة الأولى: عرض كارت المسابقة ---
+                    // --- 1. الحالة الأولى: عرض كارت المسابقة الجماعية ---
                     if (item.type === 'competition') {
                         return (
                             <CompetitionCard 
                                 key={item.id} 
                                 comp={item} 
-                                // ✅✅ التعديل هنا: تمرير id بدلاً من employee_id ✅✅
                                 currentUserId={employee.id} 
                             />
                         );
                     }
 
-                    // --- الحالة الثانية: عرض كارت الخبر العادي ---
+                    // --- 2. ✅ الحالة الثانية: عرض كارت تحدي الذكاء الاصطناعي ✅ ---
+                    if (item.type === 'ai_challenge') {
+                        const postTime = formatDateTime(item.created_at);
+                        return (
+                            <div key={item.id} className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-3xl border border-indigo-500/30 text-white relative overflow-hidden shadow-2xl transition-transform hover:-translate-y-1">
+                                {/* تأثيرات بصرية */}
+                                <div className="absolute top-0 right-0 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl mix-blend-screen"></div>
+                                <div className="absolute bottom-0 left-0 w-32 h-32 bg-blue-500/20 rounded-full blur-3xl mix-blend-screen"></div>
+                                
+                                <div className="p-6 relative z-10 text-center">
+                                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-[0_0_20px_rgba(168,85,247,0.4)] rotate-3 hover:rotate-0 transition-transform">
+                                        <BrainCircuit size={32} className="text-white animate-pulse" />
+                                    </div>
+                                    <div className="flex justify-center items-center gap-2 text-gray-400 text-[10px] font-bold mb-3">
+                                        <Calendar size={12} /><span>{postTime.date}</span>
+                                        <span className="mx-1">•</span>
+                                        <Clock size={12} /><span>{postTime.time}</span>
+                                    </div>
+                                    <h3 className="font-black text-2xl mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
+                                        {item.title || 'تحدي الذكاء الاصطناعي اليومي 🤖'}
+                                    </h3>
+                                    <p className="text-sm text-slate-300 leading-relaxed mb-6 px-4">
+                                        {item.content || 'اختر مستوى الصعوبة، وحدد مجال التحدي، واربح حتى 50 نقطة فورية! هل أنت مستعد لاختبار معلوماتك أمام الـ AI؟'}
+                                    </p>
+                                    <button 
+                                        onClick={() => setShowAIGame(true)}
+                                        className="bg-white text-indigo-900 px-8 py-3.5 rounded-xl font-black shadow-[0_0_15px_rgba(255,255,255,0.3)] transition-all active:scale-95 hover:bg-gray-100 flex items-center justify-center gap-2 mx-auto w-full md:w-auto"
+                                    >
+                                        <Zap size={18} className="text-yellow-500 fill-yellow-500" />
+                                        ابدأ التحدي الآن
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    // --- 3. الحالة الثالثة: عرض كارت الخبر العادي ---
                     const postTime = formatDateTime(item.created_at);
                     return (
                         <div key={item.id} className={`bg-white rounded-3xl border transition-all duration-300 ${item.is_pinned ? 'border-emerald-200 ring-2 ring-emerald-50' : 'border-gray-100 shadow-sm'}`}>
@@ -417,6 +436,12 @@ const commentMutation = useMutation({
                     );
                 })}
             </div>
+
+            {/* ✅ عرض نافذة لعبة الذكاء الاصطناعي عند النقر */}
+            {showAIGame && (
+                <AIGameChallenge employee={employee} onClose={() => setShowAIGame(false)} />
+            )}
+
         </div>
     );
 }
