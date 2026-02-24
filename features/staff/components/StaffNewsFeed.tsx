@@ -10,10 +10,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 // ✅ استيراد كارت المسابقة
 import CompetitionCard from './CompetitionCard';
-
-// 💡 ملاحظة: ستحتاج لاستيراد مكونات الـ Modals الخاصة بك هنا إذا كانت في ملفات منفصلة
-// import LeaderboardModal from './LeaderboardModal';
-// import AIChallengeModal from './AIChallengeModal';
+// 🔥 استيراد النوافذ المنبثقة للـ AI ولوحة الشرف
+import LeaderboardWidget from '../gamification/LeaderboardWidget'; 
+import AIGameChallenge from '../gamification/AIGameChallenge';
 
 export default function StaffNewsFeed({ employee }: { employee: Employee }) {
     const queryClient = useQueryClient();
@@ -448,10 +447,17 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
                     );
                 })}
             </div>
-
-            {/* 🔥 تركيب النوافذ المنبثقة (Modals) هنا 🔥 */}
-            {/* {isLeaderboardOpen && <LeaderboardModal onClose={() => setIsLeaderboardOpen(false)} />} */}
-            {/* {isAIModalOpen && <AIChallengeModal onClose={() => setIsAIModalOpen(false)} />} */}
+{/* 🔥 تركيب النوافذ المنبثقة (Modals) هنا 🔥 */}
+            {isLeaderboardOpen && (
+                <LeaderboardWidget onClose={() => setIsLeaderboardOpen(false)} />
+            )}
+            
+            {isAIModalOpen && (
+                <AIGameChallenge 
+                    employee={employee} 
+                    onClose={() => setIsAIModalOpen(false)} 
+                />
+            )}
             
         </div>
     );
