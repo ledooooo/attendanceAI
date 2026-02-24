@@ -43,37 +43,36 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         { name: 'ماسي', min: 3000, max: 10000, color: 'text-blue-500' },
     ];
     const currentLevel = levels.find(l => points >= l.min && points < l.max) || levels[levels.length - 1];
-
-    // ------------------------------------------------------------------
-    // 0. 🤖 جلب حالة تحدي الـ AI (هل مرت 24 ساعة؟)
-    // ------------------------------------------------------------------
     const { data: aiEligibility, isLoading: loadingAi } = useQuery({
         queryKey: ['ai_eligibility', employee.employee_id],
         queryFn: async () => {
-            // 💡 تنبيه: تأكد من اسم الجدول الخاص بمحاولات الـ AI ('ai_attempts')
+            // استخدام جدولك الفعلي ai_daily_challenges
             const { data, error } = await supabase
-                .from('ai_attempts') 
-                .select('created_at')
-                .eq('employee_id', employee.employee_id)
-                .order('created_at', { ascending: false })
+                .from('ai_daily_challenges') 
+                .select('started_at') // جلبنا started_at بناءً على هيكل جدولك
+                .eq('employee_id', String(employee.employee_id)) // تحويل لنص لأن العمود عندك من نوع text
+                .order('started_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
 
             if (error && error.code !== 'PGRST116') throw error;
             
+            // إذا لم يكن هناك أي محاولة سابقة
             if (!data) return { canAttempt: true, hoursLeft: 0 };
 
-            const lastAttempt = new Date(data.created_at).getTime();
+            // حساب الفرق بين وقت آخر محاولة والوقت الحالي
+            const lastAttempt = new Date(data.started_at).getTime();
             const now = new Date().getTime();
             const diffHours = (now - lastAttempt) / (1000 * 60 * 60);
 
+            // إذا مر أقل من 24 ساعة
             if (diffHours < 24) {
                 return { canAttempt: false, hoursLeft: Math.ceil(24 - diffHours) };
             }
+            // إذا مر 24 ساعة أو أكثر
             return { canAttempt: true, hoursLeft: 0 };
         }
     });
-
     // ------------------------------------------------------------------
     // 1. 📥 جلب البيانات (أخبار + مسابقات)
     // ------------------------------------------------------------------
