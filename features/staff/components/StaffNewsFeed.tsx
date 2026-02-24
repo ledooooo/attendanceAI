@@ -4,7 +4,7 @@ import { Employee } from '../../../types';
 import toast from 'react-hot-toast';
 import { 
     Pin, MessageCircle, Send, Clock, Heart, 
-    Reply, Calendar, Sparkles, Loader2, Star, Trophy, X, BrainCircuit 
+    Reply, Calendar, Sparkles, Loader2, Star, Zap, Trophy, X, BrainCircuit 
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
