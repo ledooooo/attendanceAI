@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { NewsPost } from '../../../types';
 import { 
-    Plus, Trash2, Pin, Image as ImageIcon, 
-    Newspaper, Loader2, Save, Upload, Link as LinkIcon, Send, BrainCircuit 
+  Plus, Trash2, Pin, Image as ImageIcon, 
+  Newspaper, Loader2, Save, Upload, Link as LinkIcon, Send 
 } from 'lucide-react';
 
 export default function NewsManagementTab() {
@@ -18,8 +18,7 @@ export default function NewsManagementTab() {
     title: '',
     content: '',
     image_url: '',
-    is_pinned: false,
-    type: 'post' // ✅ إضافة حقل النوع (افتراضياً بوست عادي)
+    is_pinned: false
   });
 
   useEffect(() => {
@@ -61,8 +60,8 @@ export default function NewsManagementTab() {
     }
   };
 
-  // ✅ الدالة الموحدة لإرسال الإشعارات لجميع الموظفين
-  const triggerPushNotifications = async (title: string, body: string, type: string) => {
+// ✅ الدالة الموحدة لإرسال الإشعارات لجميع الموظفين
+  const triggerPushNotifications = async (title: string, body: string) => {
     try {
       // 1. جلب جميع أرقام الموظفين النشطين
       const { data: activeEmps } = await supabase
@@ -72,13 +71,10 @@ export default function NewsManagementTab() {
 
       if (!activeEmps || activeEmps.length === 0) return;
 
-      const isAi = type === 'ai_challenge';
-      const notifTitle = isAi ? "🤖 تحدي ذكاء اصطناعي جديد!" : "خبر جديد من الإدارة 📢";
-
       // 2. تسجيل الإشعار في قاعدة البيانات لجميع الموظفين
       const notificationsPayload = activeEmps.map(emp => ({
         user_id: String(emp.employee_id),
-        title: notifTitle,
+        title: "خبر جديد من الإدارة 📢",
         message: title,
         type: 'general',
         is_read: false
@@ -86,13 +82,13 @@ export default function NewsManagementTab() {
 
       await supabase.from('notifications').insert(notificationsPayload);
 
-      // 3. إرسال الإشعارات الفورية (Push)
+      // 3. إرسال الإشعارات الفورية (Push) بشكل متوازي (Parallel) ليتوافق مع السيرفر
       Promise.all(
           activeEmps.map(emp => 
               supabase.functions.invoke('send-push-notification', {
                   body: { 
                       userId: String(emp.employee_id), 
-                      title: notifTitle, 
+                      title: "خبر جديد من الإدارة 📢", 
                       body: title.substring(0, 50), 
                       url: '/staff?tab=news' 
                   }
@@ -122,21 +118,20 @@ export default function NewsManagementTab() {
         }
     }
 
-    // 1. إدخال الخبر في قاعدة البيانات مع تحديد النوع
+    // 1. إدخال الخبر في قاعدة البيانات
     const { error } = await supabase.from('news_posts').insert({
       title: formData.title,
       content: formData.content,
       image_url: finalImageUrl || null,
-      is_pinned: formData.is_pinned,
-      type: formData.type // ✅ حفظ نوع البوست
+      is_pinned: formData.is_pinned
     });
 
     if (!error) {
-      // 2. استدعاء دالة الإشعارات الموحدة
-      await triggerPushNotifications(formData.title, formData.content, formData.type);
+      // ✅ 2. استدعاء دالة الإشعارات الموحدة
+      await triggerPushNotifications(formData.title, formData.content);
 
       alert('تم نشر الخبر وإرسال تنبيهات للموظفين بنجاح ✅');
-      setFormData({ title: '', content: '', image_url: '', is_pinned: false, type: 'post' });
+      setFormData({ title: '', content: '', image_url: '', is_pinned: false });
       setImageFile(null);
       setImageMode('url');
       fetchPosts();
@@ -146,6 +141,7 @@ export default function NewsManagementTab() {
     setSubmitting(false);
   };
 
+  
   const handleDelete = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذا الخبر؟')) return;
     try {
@@ -177,38 +173,16 @@ export default function NewsManagementTab() {
             <div className="lg:col-span-1">
                 <div className="bg-white p-6 rounded-[30px] border shadow-sm sticky top-4">
                     <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                        <Plus className="w-5 h-5 text-emerald-600"/> إضافة منشور
+                        <Plus className="w-5 h-5 text-emerald-600"/> خبر جديد
                     </h3>
                     
                     <form onSubmit={handleSubmit} className="space-y-4">
-                        
-                        {/* ✅ اختيار نوع المنشور */}
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1">نوع المنشور</label>
-                            <div className="flex gap-2">
-                                <button 
-                                    type="button"
-                                    onClick={() => setFormData({...formData, type: 'post'})}
-                                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all border flex justify-center items-center gap-1 ${formData.type === 'post' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm' : 'bg-gray-50 text-gray-500 border-transparent hover:bg-gray-100'}`}
-                                >
-                                    <Newspaper size={14}/> خبر عادي
-                                </button>
-                                <button 
-                                    type="button"
-                                    onClick={() => setFormData({...formData, type: 'ai_challenge'})}
-                                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all border flex justify-center items-center gap-1 ${formData.type === 'ai_challenge' ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'bg-gray-50 text-gray-500 border-transparent hover:bg-gray-100'}`}
-                                >
-                                    <BrainCircuit size={14}/> لعبة AI 🤖
-                                </button>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1">عنوان الخبر / التحدي</label>
+                            <label className="block text-sm font-bold text-gray-700 mb-1">عنوان الخبر</label>
                             <input 
                                 type="text" 
                                 className="w-full p-3 rounded-xl border bg-gray-50 outline-none focus:border-emerald-500 font-bold text-sm"
-                                placeholder={formData.type === 'ai_challenge' ? "مثال: تحدي الذكاء الاصطناعي اليومي 🤖" : "مثال: تعليمات جديدة..."}
+                                placeholder="مثال: تعليمات جديدة..."
                                 value={formData.title}
                                 onChange={e => setFormData({...formData, title: e.target.value})}
                                 required
@@ -218,97 +192,93 @@ export default function NewsManagementTab() {
                         <div>
                             <label className="block text-sm font-bold text-gray-700 mb-1">المحتوى</label>
                             <textarea 
-                                className="w-full p-3 rounded-xl border bg-gray-50 outline-none focus:border-emerald-500 font-medium text-sm min-h-[100px] resize-none"
-                                placeholder={formData.type === 'ai_challenge' ? "وصف التحدي والجوائز (اختياري)..." : "اكتب تفاصيل الخبر هنا..."}
+                                className="w-full p-3 rounded-xl border bg-gray-50 outline-none focus:border-emerald-500 font-medium text-sm min-h-[120px]"
+                                placeholder="اكتب تفاصيل الخبر هنا..."
                                 value={formData.content}
                                 onChange={e => setFormData({...formData, content: e.target.value})}
                                 required
                             />
                         </div>
 
-                        {formData.type === 'post' && (
-                            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
-                                <label className="block text-sm font-bold text-gray-700 mb-2">صورة الخبر (اختياري)</label>
-                                <div className="flex gap-2 mb-3">
-                                    <button 
-                                        type="button"
-                                        onClick={() => setImageMode('url')}
-                                        className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors ${imageMode === 'url' ? 'bg-white shadow text-emerald-600' : 'text-gray-500 hover:bg-gray-100'}`}
-                                    >
-                                        <LinkIcon className="w-3 h-3"/> رابط خارجي
-                                    </button>
-                                    <button 
-                                        type="button"
-                                        onClick={() => setImageMode('upload')}
-                                        className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors ${imageMode === 'upload' ? 'bg-white shadow text-emerald-600' : 'text-gray-500 hover:bg-gray-100'}`}
-                                    >
-                                        <Upload className="w-3 h-3"/> رفع صورة
-                                    </button>
-                                </div>
-
-                                {imageMode === 'url' ? (
-                                    <input 
-                                        type="url" 
-                                        className="w-full p-2 rounded-lg border outline-none focus:border-emerald-500 font-mono text-xs bg-white"
-                                        placeholder="https://example.com/image.jpg"
-                                        value={formData.image_url}
-                                        onChange={e => setFormData({...formData, image_url: e.target.value})}
-                                    />
-                                ) : (
-                                    <input 
-                                        type="file" 
-                                        accept="image/*"
-                                        onChange={e => setImageFile(e.target.files ? e.target.files[0] : null)}
-                                        className="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
-                                    />
-                                )}
+                        <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                            <label className="block text-sm font-bold text-gray-700 mb-2">صورة الخبر (اختياري)</label>
+                            <div className="flex gap-2 mb-3">
+                                <button 
+                                    type="button"
+                                    onClick={() => setImageMode('url')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors ${imageMode === 'url' ? 'bg-white shadow text-emerald-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                                >
+                                    <LinkIcon className="w-3 h-3"/> رابط خارجي
+                                </button>
+                                <button 
+                                    type="button"
+                                    onClick={() => setImageMode('upload')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors ${imageMode === 'upload' ? 'bg-white shadow text-emerald-600' : 'text-gray-500 hover:bg-gray-100'}`}
+                                >
+                                    <Upload className="w-3 h-3"/> رفع صورة
+                                </button>
                             </div>
-                        )}
+
+                            {imageMode === 'url' ? (
+                                <input 
+                                    type="url" 
+                                    className="w-full p-2 rounded-lg border outline-none focus:border-emerald-500 font-mono text-xs bg-white"
+                                    placeholder="https://example.com/image.jpg"
+                                    value={formData.image_url}
+                                    onChange={e => setFormData({...formData, image_url: e.target.value})}
+                                />
+                            ) : (
+                                <input 
+                                    type="file" 
+                                    accept="image/*"
+                                    onChange={e => setImageFile(e.target.files ? e.target.files[0] : null)}
+                                    className="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                                />
+                            )}
+                        </div>
 
                         <div className="flex items-center gap-2 cursor-pointer" onClick={() => setFormData({...formData, is_pinned: !formData.is_pinned})}>
-                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${formData.is_pinned ? 'bg-emerald-600 border-emerald-600' : 'bg-white border-gray-300'}`}>
+                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${formData.is_pinned ? 'bg-emerald-600 border-emerald-600' : 'border-gray-300'}`}>
                                 {formData.is_pinned && <Pin className="w-3 h-3 text-white"/>}
                             </div>
-                            <span className="text-sm font-bold text-gray-600">تثبيت المنشور في الأعلى</span>
+                            <span className="text-sm font-bold text-gray-600">تثبيت الخبر في الأعلى</span>
                         </div>
 
                         <button 
                             type="submit" 
                             disabled={submitting}
-                            className={`w-full py-3 text-white rounded-xl font-bold transition-all flex justify-center items-center gap-2 shadow-lg ${formData.type === 'ai_challenge' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-100'} disabled:opacity-50`}
+                            className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 shadow-lg shadow-emerald-100"
                         >
                             {submitting ? <Loader2 className="w-5 h-5 animate-spin"/> : <Send className="w-5 h-5"/>}
-                            {submitting ? 'جاري النشر...' : 'نشر المنشور وإرسال إشعار'}
+                            {submitting ? 'جاري النشر...' : 'نشر الخبر وإرسال إشعار'}
                         </button>
                     </form>
                 </div>
             </div>
 
             <div className="lg:col-span-2 space-y-4">
-                <h3 className="text-lg font-black text-gray-800 mb-2">الأخبار المنشورة ({posts.length})</h3>
+                <h3 className="text-lg font-black text-gray-800 mb-2">الأخبار الحالية ({posts.length})</h3>
                 {loading ? (
-                    <div className="text-center py-10 text-gray-400"><Loader2 className="w-8 h-8 animate-spin mx-auto"/></div>
+                    <div className="text-center py-10 text-gray-400">جاري التحميل...</div>
                 ) : posts.length === 0 ? (
-                    <div className="text-center py-10 bg-gray-50 rounded-3xl border border-dashed text-gray-400 font-bold">لا توجد منشورات</div>
+                    <div className="text-center py-10 bg-gray-50 rounded-3xl border border-dashed text-gray-400">لا توجد أخبار منشورة</div>
                 ) : (
                     <div className="grid gap-4">
                         {posts.map(post => (
-                            <div key={post.id} className={`bg-white p-4 rounded-2xl border flex gap-4 transition-shadow hover:shadow-md ${post.is_pinned ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-100'} ${post.type === 'ai_challenge' ? 'border-indigo-200 bg-indigo-50/30' : ''}`}>
-                                
-                                <div className={`w-24 h-24 rounded-xl shrink-0 overflow-hidden border flex items-center justify-center ${post.type === 'ai_challenge' ? 'bg-indigo-100 border-indigo-200' : 'bg-gray-100 border-gray-200'}`}>
-                                    {post.type === 'ai_challenge' ? (
-                                        <BrainCircuit className="w-10 h-10 text-indigo-500 animate-pulse"/>
-                                    ) : post.image_url ? (
+                            <div key={post.id} className={`bg-white p-4 rounded-2xl border flex gap-4 transition-shadow hover:shadow-md ${post.is_pinned ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-100'}`}>
+                                <div className="w-24 h-24 bg-gray-100 rounded-xl shrink-0 overflow-hidden border border-gray-200">
+                                    {post.image_url ? (
                                         <img src={post.image_url} alt="post" className="w-full h-full object-cover"/>
                                     ) : (
-                                        <ImageIcon className="w-8 h-8 text-gray-300"/>
+                                        <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                            <ImageIcon className="w-8 h-8"/>
+                                        </div>
                                     )}
                                 </div>
-
                                 <div className="flex-1 flex flex-col justify-between">
                                     <div>
                                         <div className="flex justify-between items-start">
-                                            <h4 className={`font-black text-lg line-clamp-1 ${post.type === 'ai_challenge' ? 'text-indigo-800' : 'text-gray-800'}`}>{post.title}</h4>
+                                            <h4 className="font-black text-gray-800 text-lg line-clamp-1">{post.title}</h4>
                                             <div className="flex gap-1">
                                                 <button 
                                                     onClick={() => togglePin(post)}
@@ -328,7 +298,6 @@ export default function NewsManagementTab() {
                                     </div>
                                     <div className="flex items-center gap-4 text-xs text-gray-400 font-bold mt-2">
                                         <span>{new Date(post.created_at).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                                        {post.type === 'ai_challenge' && <span className="text-indigo-600 flex items-center gap-1 bg-white px-2 py-0.5 rounded-full border border-indigo-100 shadow-sm"><BrainCircuit className="w-3 h-3"/> تحدي ذكي</span>}
                                         {post.is_pinned && <span className="text-emerald-600 flex items-center gap-1 bg-white px-2 py-0.5 rounded-full border border-emerald-100 shadow-sm"><Pin className="w-3 h-3"/> مثبت</span>}
                                     </div>
                                 </div>
