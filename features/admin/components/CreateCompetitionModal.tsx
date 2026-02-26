@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { useQuery, useQueryClient } from '@tanstack/react-query'; // 🔥 تمت إضافة useQueryClient
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // تمت الإضافة
 import { X, Loader2, Users, Trash2, BookOpen, ChevronLeft, ChevronRight, Image as ImageIcon, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// نوع السؤال في الفورم
 type QuestionForm = {
     text: string;
     image_url: string; 
@@ -16,10 +15,8 @@ type QuestionForm = {
 };
 
 export default function CreateCompetitionModal({ onClose }: { onClose: () => void }) {
-    // 🔥 تعريف queryClient لتحديث الواجهة
-    const queryClient = useQueryClient();
-
-    // --- States ---
+    const queryClient = useQueryClient(); // لتحديث الواجهة فوراً
+    
     const [team1, setTeam1] = useState<string[]>([]);
     const [team2, setTeam2] = useState<string[]>([]);
     const [points, setPoints] = useState(50);
@@ -27,8 +24,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
     const [questionsPerTeam, setQuestionsPerTeam] = useState(3);
     const [loading, setLoading] = useState(false);
     const [selectedEmp, setSelectedEmp] = useState('');
-    
-    // بناء مصفوفة الأسئلة ديناميكياً
     const [questions, setQuestions] = useState<QuestionForm[]>([]);
 
     useEffect(() => {
@@ -44,13 +39,11 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         });
     }, [questionsPerTeam]);
 
-    // Bank Modal State
     const [showBank, setShowBank] = useState(false);
     const [targetQIndex, setTargetQIndex] = useState<number | null>(null);
     const [bankPage, setBankPage] = useState(0);
     const [bankSpecialty, setBankSpecialty] = useState('الكل');
 
-    // Fetch Employees
     const { data: employees = [] } = useQuery({
         queryKey: ['active_employees'],
         queryFn: async () => {
@@ -59,7 +52,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         }
     });
 
-    // ✅ خوارزمية دمج وتوحيد التخصصات
     const { data: specialties = [] } = useQuery({
         queryKey: ['bank_specialties'],
         queryFn: async () => {
@@ -89,7 +81,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         staleTime: 1000 * 60 * 5
     });
 
-    // دالة استخراج مرادفات التخصص للبحث
     const getSpecialtyVariations = (spec: string) => {
         if (spec === 'بشري') return ['طبيب بشرى', 'طبيب بشري', 'بشري', 'بشرى', 'طبيب عام'];
         if (spec === 'أسنان') return ['طبيب أسنان', 'طبيب اسنان', 'أسنان', 'اسنان'];
@@ -101,22 +92,18 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         return [spec];
     };
 
-    // ✅ جلب أسئلة البنك مع دعم المترادفات
     const { data: bankQuestionsData, isLoading: loadingBank } = useQuery({
         queryKey: ['bank_questions', bankPage, bankSpecialty],
         queryFn: async () => {
             const variations = getSpecialtyVariations(bankSpecialty);
-            // تجهيز نص البحث (OR Filter) ليبحث عن أي مرادف
             const orFilter = variations.map(v => `specialty.ilike.%${v}%`).join(',');
 
-            // البحث في الجدول الجديد
             let query = supabase.from('arcade_quiz_questions').select('*', { count: 'exact' });
             if (bankSpecialty !== 'الكل') query = query.or(orFilter);
             
             const { data, count, error } = await query.range(bankPage * 5, (bankPage * 5) + 4).order('created_at', { ascending: false });
             
             if (error || !data || data.length === 0) {
-                // المحاولة مع الجدول القديم إذا لم نجد بيانات
                 let oldQuery = supabase.from('quiz_questions').select('*', { count: 'exact' });
                 if (bankSpecialty !== 'الكل') oldQuery = oldQuery.or(orFilter);
                 
@@ -128,7 +115,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         enabled: showBank
     });
 
-    // Handlers
     const addToTeam = (teamNum: 1 | 2) => {
         if (!selectedEmp) return;
         if (team1.includes(selectedEmp) || team2.includes(selectedEmp)) return toast.error('الموظف مضاف بالفعل!');
@@ -148,10 +134,8 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         setQuestions(newQs);
     };
 
-    // استيراد السؤال من البنك
     const selectFromBank = (bankQ: any) => {
         if (targetQIndex === null) return;
-
         let questionText = bankQ.question || bankQ.question_text || '';
         let options: { a: string, b: string, c: string, d: string, correct: string } = { a: '', b: '', c: '', d: '', correct: 'a' };
 
@@ -164,7 +148,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         else if (bankQ.options) {
             let optsArr: string[] = [];
             try { optsArr = typeof bankQ.options === 'string' ? JSON.parse(bankQ.options) : bankQ.options; } catch (e) { }
-            
             const correctIdx = optsArr.findIndex((o: string) => o.trim() === bankQ.correct_answer?.trim());
             options = {
                 a: optsArr[0] || '', b: optsArr[1] || '', c: optsArr[2] || '', d: optsArr[3] || '',
@@ -172,14 +155,8 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             };
         }
 
-        const newQ: QuestionForm = {
-            text: questionText,
-            image_url: bankQ.image_url || '', 
-            ...options
-        };
-
         const newQs = [...questions];
-        newQs[targetQIndex] = newQ;
+        newQs[targetQIndex] = { text: questionText, image_url: bankQ.image_url || '', ...options };
         setQuestions(newQs);
         setShowBank(false);
         setTargetQIndex(null);
@@ -194,16 +171,15 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
         setLoading(true);
         try {
-            // 🔥 تأكيد وضع النتائج كأصفار عند البدء
             const { data: comp, error: compError } = await supabase.from('competitions').insert({
                 team1_ids: team1, 
                 team2_ids: team2, 
                 current_turn_team: 1, 
                 reward_points: points, 
-                player1_score: 0, 
-                player2_score: 0,
                 time_limit_seconds: timeLimit,
-                status: 'active'
+                status: 'active',
+                team1_score: 0, 
+                team2_score: 0
             }).select().single();
 
             if (compError) throw compError;
@@ -242,8 +218,8 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             }
 
             toast.success('تم إطلاق المسابقة بنجاح! 🚀');
-
-            // 🔥 إجبار الـ News Feed وشاشة الإدارة على التحديث الفوري
+            
+            // 🔥 تحديث الواجهة فوراً
             queryClient.invalidateQueries({ queryKey: ['admin_competitions'] });
             queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] });
             
@@ -261,10 +237,10 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
             <div className="bg-white w-full max-w-5xl rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 max-h-[95vh] overflow-y-auto flex flex-col md:flex-row gap-6">
                 
-                {/* العمود الأيمن: الفرق والإعدادات */}
+                {/* العمود الأيمن */}
                 <div className="w-full md:w-1/3 space-y-4 shrink-0">
                     <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-black text-gray-800">إعداد الفرق والوقت</h3>
+                        <h3 className="text-lg font-black text-gray-800">إعداد الفرق</h3>
                         <button onClick={onClose} className="md:hidden"><X/></button>
                     </div>
 
@@ -278,7 +254,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                             <input type="number" min="1" max="10" value={questionsPerTeam} onChange={e => setQuestionsPerTeam(Number(e.target.value))} className="w-full p-2 bg-purple-50 border border-purple-200 rounded-lg text-center font-bold text-purple-800"/>
                         </div>
                         <div className="col-span-2">
-                            <label className="text-[10px] font-bold text-gray-500 flex items-center gap-1"><Clock size={12}/> وقت الإجابة للسؤال الواحد (بالثواني)</label>
+                            <label className="text-[10px] font-bold text-gray-500 flex items-center gap-1"><Clock size={12}/> الوقت للسؤال (ثواني)</label>
                             <input type="number" min="10" max="300" value={timeLimit} onChange={e => setTimeLimit(Number(e.target.value))} className="w-full p-2 bg-blue-50 border border-blue-200 rounded-lg text-center font-bold text-blue-800"/>
                         </div>
                     </div>
@@ -296,7 +272,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
                     <div className="space-y-2 max-h-32 overflow-y-auto">
                         <div className="border border-red-100 rounded-lg p-2 bg-red-50/50">
-                            <p className="text-xs font-bold text-red-600 mb-1">الفريق الأحمر ({team1.length})</p>
+                            <p className="text-xs font-bold text-red-600 mb-1">الفريق الأول ({team1.length})</p>
                             {team1.map(id => (
                                 <div key={id} className="text-[10px] flex justify-between items-center">
                                     {getEmpName(id)} <Trash2 size={12} className="cursor-pointer text-red-400" onClick={() => removeFromTeam(1, id)}/>
@@ -304,7 +280,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                             ))}
                         </div>
                         <div className="border border-blue-100 rounded-lg p-2 bg-blue-50/50">
-                            <p className="text-xs font-bold text-blue-600 mb-1">الفريق الأزرق ({team2.length})</p>
+                            <p className="text-xs font-bold text-blue-600 mb-1">الفريق الثاني ({team2.length})</p>
                             {team2.map(id => (
                                 <div key={id} className="text-[10px] flex justify-between items-center">
                                     {getEmpName(id)} <Trash2 size={12} className="cursor-pointer text-red-400" onClick={() => removeFromTeam(2, id)}/>
@@ -318,7 +294,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                     </button>
                 </div>
 
-                {/* العمود الأيسر: الأسئلة */}
+                {/* العمود الأيسر */}
                 <div className="flex-1 border-t md:border-t-0 md:border-r border-gray-100 md:pr-6 pt-4 md:pt-0 overflow-y-auto custom-scrollbar pr-2">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-lg font-black text-gray-800">أسئلة التحدي ({questions.length})</h3>
@@ -330,7 +306,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                             <div key={idx} className={`p-4 rounded-2xl border ${idx < questionsPerTeam ? 'bg-red-50/30 border-red-100' : 'bg-blue-50/30 border-blue-100'}`}>
                                 <div className="flex justify-between items-center mb-2">
                                     <span className={`text-xs font-bold px-2 py-0.5 rounded ${idx < questionsPerTeam ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                                        سؤال {idx < questionsPerTeam ? idx + 1 : idx - questionsPerTeam + 1} ({idx < questionsPerTeam ? 'فريق أحمر' : 'فريق أزرق'})
+                                        سؤال {idx < questionsPerTeam ? idx + 1 : idx - questionsPerTeam + 1} ({idx < questionsPerTeam ? 'فريق 1' : 'فريق 2'})
                                     </span>
                                     <button 
                                         onClick={() => { setTargetQIndex(idx); setShowBank(true); }}
@@ -339,21 +315,10 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                                         <BookOpen size={12}/> اختر من البنك
                                     </button>
                                 </div>
-                                
                                 <textarea 
                                     placeholder="اكتب نص السؤال هنا..." className="w-full p-2 text-sm border rounded-lg mb-2 focus:ring-2 ring-purple-100 outline-none resize-none h-14"
                                     value={q.text} onChange={e => updateQuestion(idx, 'text', e.target.value)}
                                 />
-                                
-                                <div className="flex items-center gap-2 mb-3 bg-white p-2 rounded-lg border">
-                                    <ImageIcon size={14} className="text-gray-400 shrink-0"/>
-                                    <input 
-                                        type="url" placeholder="رابط صورة توضيحية للسؤال (اختياري)..." dir="ltr"
-                                        className="w-full text-xs outline-none bg-transparent"
-                                        value={q.image_url} onChange={e => updateQuestion(idx, 'image_url', e.target.value)}
-                                    />
-                                </div>
-                                
                                 <div className="grid grid-cols-2 gap-2">
                                     {['a', 'b', 'c', 'd'].map((opt) => (
                                         <div key={opt} className={`relative flex items-center gap-2 p-1.5 rounded-lg border bg-white ${q.correct === opt ? 'border-green-400 ring-1 ring-green-100' : ''}`}>
@@ -376,7 +341,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                 </div>
             </div>
 
-            {/* --- نافذة بنك الأسئلة --- */}
+            {/* نافذة بنك الأسئلة */}
             {showBank && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 animate-in fade-in backdrop-blur-sm">
                     <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
@@ -384,45 +349,24 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                             <h4 className="font-bold flex items-center gap-2"><BookOpen className="text-purple-600"/> بنك الأسئلة</h4>
                             <button onClick={() => setShowBank(false)} className="p-1 hover:text-red-500 bg-gray-200 rounded-full"><X size={18}/></button>
                         </div>
-                        
                         <div className="p-3 border-b flex gap-2 overflow-x-auto custom-scrollbar bg-white">
                             {specialties.map((spec: any) => (
-                                <button 
-                                    key={spec} 
-                                    onClick={() => { setBankSpecialty(spec); setBankPage(0); }}
-                                    className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${bankSpecialty === spec ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                                >
-                                    {spec}
-                                </button>
+                                <button key={spec} onClick={() => { setBankSpecialty(spec); setBankPage(0); }} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${bankSpecialty === spec ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{spec}</button>
                             ))}
                         </div>
-
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50">
-                            {loadingBank ? (
-                                <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-purple-600"/></div>
-                            ) : bankQuestionsData?.data?.length === 0 ? (
-                                <div className="text-center py-10 text-gray-400 font-bold bg-white rounded-xl border border-dashed">لا توجد أسئلة مسجلة في هذا التخصص حالياً</div>
-                            ) : (
-                                bankQuestionsData?.data?.map((bq: any) => (
-                                    <div 
-                                        key={bq.id} 
-                                        onClick={() => selectFromBank(bq)}
-                                        className="bg-white p-4 rounded-xl border hover:border-purple-400 cursor-pointer shadow-sm hover:shadow-md transition-all group"
-                                    >
-                                        <p className="font-bold text-sm text-gray-800 mb-2 group-hover:text-purple-700">{bq.question || bq.question_text}</p>
-                                        <div className="flex gap-2 text-[10px] text-gray-500 font-bold">
-                                            <span className="bg-gray-100 px-2 py-0.5 rounded border">{typeof bq.specialty === 'object' ? bq.specialty[0] : bq.specialty}</span>
-                                            <span className="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded border border-yellow-100">{bq.difficulty || 'medium'}</span>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
+                            {loadingBank ? <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-purple-600"/></div>
+                            : bankQuestionsData?.data?.length === 0 ? <div className="text-center py-10 text-gray-400 font-bold">لا توجد أسئلة</div>
+                            : bankQuestionsData?.data?.map((bq: any) => (
+                                <div key={bq.id} onClick={() => selectFromBank(bq)} className="bg-white p-4 rounded-xl border hover:border-purple-400 cursor-pointer shadow-sm">
+                                    <p className="font-bold text-sm mb-2">{bq.question || bq.question_text}</p>
+                                </div>
+                            ))}
                         </div>
-
                         <div className="p-3 border-t flex justify-between items-center bg-white rounded-b-2xl">
-                            <button disabled={bankPage === 0} onClick={() => setBankPage(p => p - 1)} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30 border"><ChevronRight size={18}/></button>
+                            <button disabled={bankPage === 0} onClick={() => setBankPage(p => p - 1)} className="p-2 border rounded-lg"><ChevronRight size={18}/></button>
                             <span className="text-xs font-bold text-gray-500 bg-gray-50 px-4 py-1 rounded-full">صفحة {bankPage + 1}</span>
-                            <button disabled={!bankQuestionsData?.data || bankQuestionsData.data.length < 5} onClick={() => setBankPage(p => p + 1)} className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-30 border"><ChevronLeft size={18}/></button>
+                            <button disabled={!bankQuestionsData?.data || bankQuestionsData.data.length < 5} onClick={() => setBankPage(p => p + 1)} className="p-2 border rounded-lg"><ChevronLeft size={18}/></button>
                         </div>
                     </div>
                 </div>
