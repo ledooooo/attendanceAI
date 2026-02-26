@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Trophy, Swords, Clock, Users, Play, X, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
+import { Trophy, Swords, Clock, Play, X, CheckCircle, Loader2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query'; // لتحديث الواجهة
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 
@@ -10,35 +11,26 @@ interface Props {
 }
 
 export default function CompetitionCard({ comp, currentUserId }: Props) {
+    const queryClient = useQueryClient();
     const [isPlayModalOpen, setIsPlayModalOpen] = useState(false);
     const [currentQuestion, setCurrentQuestion] = useState<any>(null);
     const [loading, setLoading] = useState(false);
-    
-    // 🔥 حالات جديدة لحفظ بيانات الموظفين بالكامل (للوصول لـ employee_id)
-    const [team1Full, setTeam1Full] = useState<any[]>([]);
-    const [team2Full, setTeam2Full] = useState<any[]>([]);
     const [team1Members, setTeam1Members] = useState<string[]>([]);
     const [team2Members, setTeam2Members] = useState<string[]>([]);
 
     const formatName = (fullName: string) => fullName ? fullName.trim().split(/\s+/).slice(0, 2).join(' ') : '';
 
-    const myTeamNumber = comp.team1_ids?.includes(currentUserId) ? 1 
-                       : comp.team2_ids?.includes(currentUserId) ? 2 
-                       : 0;
-
+    const myTeamNumber = comp.team1_ids?.includes(currentUserId) ? 1 : comp.team2_ids?.includes(currentUserId) ? 2 : 0;
     const isMyTeamTurn = comp.status === 'active' && comp.current_turn_team === myTeamNumber;
 
     useEffect(() => {
         const fetchNames = async () => {
-            // 🔥 تعديل: جلب employee_id و id مع الاسم
             if(comp.team1_ids?.length) {
-                const { data } = await supabase.from('employees').select('id, employee_id, name').in('id', comp.team1_ids);
-                setTeam1Full(data || []);
+                const { data } = await supabase.from('employees').select('name').in('id', comp.team1_ids);
                 setTeam1Members(data?.map(e => formatName(e.name)) || []);
             }
             if(comp.team2_ids?.length) {
-                const { data } = await supabase.from('employees').select('id, employee_id, name').in('id', comp.team2_ids);
-                setTeam2Full(data || []);
+                const { data } = await supabase.from('employees').select('name').in('id', comp.team2_ids);
                 setTeam2Members(data?.map(e => formatName(e.name)) || []);
             }
         };
@@ -75,9 +67,16 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
         await supabase.from('competition_questions').update({ is_answered: true }).eq('id', currentQuestion.id);
 
         const updates: any = {};
+        let t1Score = comp.team1_score || 0;
+        let t2Score = comp.team2_score || 0;
+
         if (isCorrect) {
-            if (myTeamNumber === 1) updates.player1_score = (comp.player1_score || 0) + 1;
-            else updates.player2_score = (comp.player2_score || 0) + 1;
+            if (myTeamNumber === 1) t1Score += 1;
+            else t2Score += 1;
+            
+            updates.team1_score = t1Score;
+            updates.team2_score = t2Score;
+            
             toast.success('إجابة صحيحة! 🎉', { icon: '✅' });
             confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
         } else {
@@ -85,6 +84,7 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
         }
 
         const nextTeamTurn = myTeamNumber === 1 ? 2 : 1;
+        
         const { count } = await supabase.from('competition_questions')
             .select('*', { count: 'exact', head: true })
             .eq('competition_id', comp.id)
@@ -94,21 +94,20 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
             updates.status = 'completed';
             updates.current_turn_team = null;
             
-            const finalScore1 = myTeamNumber === 1 && isCorrect ? (comp.player1_score || 0) + 1 : (comp.player1_score || 0);
-            const finalScore2 = myTeamNumber === 2 && isCorrect ? (comp.player2_score || 0) + 1 : (comp.player2_score || 0);
+            let winningTeamIds: string[] = [];
+            if (t1Score > t2Score) winningTeamIds = comp.team1_ids;
+            else if (t2Score > t1Score) winningTeamIds = comp.team2_ids;
 
-            // 🔥 إصلاح مشكلة توزيع النقاط بالاعتماد على employee_id الصحيح
-            if (finalScore1 > finalScore2 || finalScore2 > finalScore1) {
-                const winningTeamFull = finalScore1 > finalScore2 ? team1Full : team2Full;
-                for (const member of winningTeamFull) {
-                    if (member && member.employee_id) {
-                        // 1. إضافة النقاط
-                        await supabase.rpc('increment_points', { emp_id: member.employee_id, amount: comp.reward_points });
-                        // 2. تسجيلها في الدفتر لكي تظهر للموظف
+            // 🔥 توزيع الجوائز على الفريق الفائز وتسجيلها في دفتر النقاط
+            if (winningTeamIds.length > 0) {
+                const { data: winners } = await supabase.from('employees').select('employee_id').in('id', winningTeamIds);
+                if (winners) {
+                    for (const w of winners) {
+                        await supabase.rpc('increment_points', { emp_id: w.employee_id, amount: comp.reward_points });
                         await supabase.from('points_ledger').insert({
-                            employee_id: member.employee_id,
+                            employee_id: w.employee_id,
                             points: comp.reward_points,
-                            reason: 'الفوز في التحدي المشترك 🏆'
+                            reason: 'الفوز في التحدي الجماعي 🏆'
                         });
                     }
                 }
@@ -118,6 +117,9 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
         }
 
         await supabase.from('competitions').update(updates).eq('id', comp.id);
+        
+        // 🔥 تحديث الواجهة لتظهر النتيجة الجديدة فوراً
+        queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] });
         
         setLoading(false);
         setIsPlayModalOpen(false);
@@ -133,7 +135,7 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
                     <div className="flex flex-col items-center w-1/3 z-10">
                         <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center border-4 border-red-500 shadow-lg relative">
                             <span className="text-xl">🔴</span>
-                            <span className="absolute -bottom-2 bg-red-600 text-white text-[10px] px-2 rounded-full font-bold">{comp.player1_score || 0}</span>
+                            <span className="absolute -bottom-2 bg-red-600 text-white text-[10px] px-2 rounded-full font-bold">{comp.team1_score || 0}</span>
                         </div>
                         <div className="mt-3 flex flex-wrap justify-center gap-1">
                             {team1Members.map((name, idx) => <span key={idx} className="text-[9px] bg-black/20 px-2 py-0.5 rounded-md truncate max-w-[80px]">{name}</span>)}
@@ -152,7 +154,7 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
                     <div className="flex flex-col items-center w-1/3 z-10">
                         <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center border-4 border-blue-500 shadow-lg relative">
                             <span className="text-xl">🔵</span>
-                            <span className="absolute -bottom-2 bg-blue-600 text-white text-[10px] px-2 rounded-full font-bold">{comp.player2_score || 0}</span>
+                            <span className="absolute -bottom-2 bg-blue-600 text-white text-[10px] px-2 rounded-full font-bold">{comp.team2_score || 0}</span>
                         </div>
                         <div className="mt-3 flex flex-wrap justify-center gap-1">
                             {team2Members.map((name, idx) => <span key={idx} className="text-[9px] bg-black/20 px-2 py-0.5 rounded-md truncate max-w-[80px]">{name}</span>)}
@@ -179,10 +181,11 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
                                 <div className="text-center">
                                     <h3 className="text-xl font-black text-gray-800 mb-6 leading-relaxed">{currentQuestion.question_text}</h3>
                                     <div className="space-y-3">
-                                        <button onClick={() => handleAnswer('a')} className="w-full bg-gray-50 hover:bg-purple-50 border-2 border-gray-100 hover:border-purple-200 p-4 rounded-2xl font-bold text-gray-700 transition-all active:scale-95 text-sm">{currentQuestion.option_a}</button>
-                                        <button onClick={() => handleAnswer('b')} className="w-full bg-gray-50 hover:bg-purple-50 border-2 border-gray-100 hover:border-purple-200 p-4 rounded-2xl font-bold text-gray-700 transition-all active:scale-95 text-sm">{currentQuestion.option_b}</button>
-                                        {currentQuestion.option_c && <button onClick={() => handleAnswer('c')} className="w-full bg-gray-50 hover:bg-purple-50 border-2 border-gray-100 hover:border-purple-200 p-4 rounded-2xl font-bold text-gray-700 transition-all active:scale-95 text-sm">{currentQuestion.option_c}</button>}
-                                        {currentQuestion.option_d && <button onClick={() => handleAnswer('d')} className="w-full bg-gray-50 hover:bg-purple-50 border-2 border-gray-100 hover:border-purple-200 p-4 rounded-2xl font-bold text-gray-700 transition-all active:scale-95 text-sm">{currentQuestion.option_d}</button>}
+                                        {['a', 'b', 'c', 'd'].map(opt => currentQuestion[`option_${opt}`] && (
+                                            <button key={opt} onClick={() => handleAnswer(opt)} className="w-full bg-gray-50 hover:bg-purple-50 border-2 border-gray-100 hover:border-purple-200 p-4 rounded-2xl font-bold text-gray-700 transition-all active:scale-95 text-sm">
+                                                {currentQuestion[`option_${opt}`]}
+                                            </button>
+                                        ))}
                                     </div>
                                 </div>
                             ) : (
