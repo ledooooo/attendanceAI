@@ -20,6 +20,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
     const [team1, setTeam1] = useState<string[]>([]);
     const [team2, setTeam2] = useState<string[]>([]);
     const [points, setPoints] = useState(50);
+    const [drawPoints, setDrawPoints] = useState(20); // 🔥 تمت إضافة حالة نقاط التعادل
     const [timeLimit, setTimeLimit] = useState(30);
     const [questionsPerTeam, setQuestionsPerTeam] = useState(3);
     const [loading, setLoading] = useState(false);
@@ -176,6 +177,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                 team2_ids: team2, 
                 current_turn_team: 1, 
                 reward_points: points, 
+                draw_points: drawPoints, // 🔥 تسجيل نقاط التعادل في الداتا بيز
                 time_limit_seconds: timeLimit,
                 status: 'active',
                 team1_score: 0, 
@@ -248,6 +250,11 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                         <div>
                             <label className="text-[10px] font-bold text-gray-500 block">الجائزة (نقاط)</label>
                             <input type="number" min="10" value={points} onChange={e => setPoints(Number(e.target.value))} className="w-full p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-center font-bold text-yellow-800"/>
+                        </div>
+                        {/* حقل نقاط التعادل الجديد */}
+                        <div>
+                            <label className="text-[10px] font-bold text-gray-500 block">نقاط التعادل</label>
+                            <input type="number" min="0" value={drawPoints} onChange={e => setDrawPoints(Number(e.target.value))} className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold text-gray-800"/>
                         </div>
                         <div>
                             <label className="text-[10px] font-bold text-gray-500 block">أسئلة لكل فريق</label>
