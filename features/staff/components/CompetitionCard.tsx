@@ -90,24 +90,40 @@ export default function CompetitionCard({ comp, currentUserId }: Props) {
             .eq('competition_id', comp.id)
             .eq('is_answered', false);
 
-        if (count === 0) {
+if (count === 0) {
             updates.status = 'completed';
             updates.current_turn_team = null;
             
             let winningTeamIds: string[] = [];
-            if (t1Score > t2Score) winningTeamIds = comp.team1_ids;
-            else if (t2Score > t1Score) winningTeamIds = comp.team2_ids;
+            let pointsToAward = 0;
+            let ledgerReason = '';
 
-            // 🔥 توزيع الجوائز على الفريق الفائز وتسجيلها في دفتر النقاط
-            if (winningTeamIds.length > 0) {
+            // 🔥 منطق تحديد الفائز أو التعادل
+            if (t1Score > t2Score) {
+                winningTeamIds = comp.team1_ids;
+                pointsToAward = comp.reward_points;
+                ledgerReason = 'الفوز بالمركز الأول في التحدي الجماعي 🏆';
+            } else if (t2Score > t1Score) {
+                winningTeamIds = comp.team2_ids;
+                pointsToAward = comp.reward_points;
+                ledgerReason = 'الفوز بالمركز الأول في التحدي الجماعي 🏆';
+            } else {
+                // حالة التعادل: ندمج الفريقين معاً ليعطيهم النقاط
+                winningTeamIds = [...(comp.team1_ids || []), ...(comp.team2_ids || [])];
+                pointsToAward = comp.draw_points || 0; // نأخذ نقاط التعادل من الداتا بيز
+                ledgerReason = 'التعادل في التحدي الجماعي 🤝';
+            }
+
+            // 🔥 توزيع الجوائز
+            if (winningTeamIds.length > 0 && pointsToAward > 0) {
                 const { data: winners } = await supabase.from('employees').select('employee_id').in('id', winningTeamIds);
                 if (winners) {
                     for (const w of winners) {
-                        await supabase.rpc('increment_points', { emp_id: w.employee_id, amount: comp.reward_points });
+                        await supabase.rpc('increment_points', { emp_id: w.employee_id, amount: pointsToAward });
                         await supabase.from('points_ledger').insert({
                             employee_id: w.employee_id,
-                            points: comp.reward_points,
-                            reason: 'الفوز في التحدي الجماعي 🏆'
+                            points: pointsToAward,
+                            reason: ledgerReason
                         });
                     }
                 }
