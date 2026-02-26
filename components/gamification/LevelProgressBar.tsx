@@ -6,12 +6,13 @@ export default function LevelProgressBar({ employee }: { employee: Employee }) {
     const points = employee.total_points || 0;
 
     // تعريف المستويات
-    const levels = [
-        { name: 'مبتدئ', min: 0, max: 100, color: 'text-gray-500', bg: 'bg-gray-500' },
-        { name: 'برونزي', min: 100, max: 500, color: 'text-orange-700', bg: 'bg-orange-700' },
-        { name: 'فضي', min: 500, max: 1500, color: 'text-gray-400', bg: 'bg-gray-400' },
-        { name: 'ذهبي', min: 1500, max: 3000, color: 'text-yellow-500', bg: 'bg-yellow-500' },
-        { name: 'ماسي', min: 3000, max: 10000, color: 'text-blue-500', bg: 'bg-blue-500' },
+const levels = [
+        { name: 'مبتدئ', min: 0, max: 500, color: 'text-gray-500' },
+        { name: 'برونزي', min: 500, max: 1000, color: 'text-orange-700' },
+        { name: 'فضي', min: 1000, max: 2000, color: 'text-slate-400' }, 
+        { name: 'ذهبي', min: 2000, max: 3000, color: 'text-yellow-500' },
+        { name: 'ماسي', min: 3000, max: 4000, color: 'text-blue-500' },
+        { name: 'أسطوري', min: 4000, max: 1000000, color: 'text-purple-600' }, 
     ];
 
     // حساب المستوى الحالي
