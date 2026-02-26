@@ -6,7 +6,8 @@ import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import * as XLSX from 'xlsx';
 import { 
   ClipboardList, CheckCircle, XCircle, Clock, 
-  Search, Filter, Download, Trash2, Edit, Save, X, UserCheck 
+  Search, Filter, Download, Trash2, Edit, Save, X, UserCheck,
+  ChevronRight, ChevronLeft // ✅ تم إضافة أيقونات التقليب
 } from 'lucide-react';
 
 // دالة تنسيق التاريخ
@@ -47,6 +48,15 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   const [fType, setFType] = useState('all');
   const [fStatus, setFStatus] = useState('all');
   const [fMonth, setFMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  // ✅ حالات التقسيم (Pagination)
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10; // يمكنك تغيير هذا الرقم لعدد الصفوف التي تريدها في كل صفحة
+
+  // ✅ العودة للصفحة الأولى عند تغيير أي فلتر بحث
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [fEmployee, fType, fStatus, fMonth]);
 
   useEffect(() => {
     fetchData();
@@ -94,7 +104,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     XLSX.writeFile(wb, "نموذج_طلبات_الإجازات.xlsx");
   };
 
-const handleExcelImport = async (data: any[]) => {
+  const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     let inserted = 0; let updated = 0; let skipped = 0;
     
@@ -106,7 +116,6 @@ const handleExcelImport = async (data: any[]) => {
         const rowsToUpdate: any[] = [];
         const processedKeys = new Set(); 
         
-        // مصفوفة لجمع الإشعارات للإرسال المجمع
         const notificationsToSave: any[] = [];
         const pushPromises: Promise<any>[] = [];
 
@@ -152,7 +161,6 @@ const handleExcelImport = async (data: any[]) => {
                     rowsToUpdate.push({ ...payload, id: existingRecord.id });
                     updated++;
 
-                    // تجهيز إشعار إذا تغيرت الحالة (مثلاً من معلق إلى مقبول)
                     if (existingRecord.status !== payload.status) {
                         const msg = `تم تحديث طلب إجازتك (${type}) ليكون: ${payload.status}`;
                         notificationsToSave.push({
@@ -183,7 +191,6 @@ const handleExcelImport = async (data: any[]) => {
             if (updateError) throw updateError;
         }
 
-        // إرسال وحفظ الإشعارات (إن وجدت)
         if (notificationsToSave.length > 0) {
             await supabase.from('notifications').insert(notificationsToSave);
             Promise.all(pushPromises).catch(e => console.error("Batch Push Error:", e));
@@ -200,7 +207,6 @@ const handleExcelImport = async (data: any[]) => {
     }
   };
   
-// --- دوال التعديل اليدوي ---
   const startEditing = (req: LeaveRequest) => {
     setEditingId(req.id);
     setEditFormData({ ...req });
@@ -233,14 +239,13 @@ const handleExcelImport = async (data: any[]) => {
     }
   };
 
-const updateStatus = async (request: LeaveRequest, newStatus: string) => {
+  const updateStatus = async (request: LeaveRequest, newStatus: string) => {
     const { error: updateError } = await supabase.from('leave_requests').update({ status: newStatus }).eq('id', request.id);
     if (updateError) return;
 
     const notifTitle = 'تحديث حالة طلب الإجازة';
     const notifMsg = `تم تغيير حالة طلب الإجازة (${request.type}) لشهر ${request.start_date} إلى: ${newStatus}`;
 
-    // 1. الحفظ في قاعدة البيانات
     await supabase.from('notifications').insert({
         user_id: String(request.employee_id),
         title: notifTitle,
@@ -249,26 +254,25 @@ const updateStatus = async (request: LeaveRequest, newStatus: string) => {
         is_read: false
     });
 
-    // ✅ 2. إرسال الإشعار اللحظي للموظف
     supabase.functions.invoke('send-push-notification', {
         body: {
             userId: String(request.employee_id),
             title: notifTitle,
             body: notifMsg,
-            url: '/staff?tab=requests-history' // أو المسار الصحيح لصفحة الإجازات عند الموظف
+            url: '/staff?tab=requests-history' 
         }
     }).catch(err => console.error("Push Error in Leaves:", err));
 
     fetchData();
   };
   
-
   const handleDelete = async (id: string) => {
     if(!confirm('هل أنت متأكد من حذف هذا الطلب؟')) return;
     await supabase.from('leave_requests').delete().eq('id', id);
     fetchData();
   };
 
+  // ✅ الفلترة الأساسية
   const filteredLeaves = leaves.filter(l => {
     const matchName = l.employee_name?.includes(fEmployee) || l.employee_id.includes(fEmployee);
     const matchType = fType === 'all' || l.type === fType;
@@ -276,6 +280,13 @@ const updateStatus = async (request: LeaveRequest, newStatus: string) => {
     const matchMonth = l.start_date.startsWith(fMonth);
     return matchName && matchType && matchStatus && matchMonth;
   });
+
+  // ✅ حساب بيانات الـ Pagination
+  const totalPages = Math.ceil(filteredLeaves.length / itemsPerPage);
+  const paginatedLeaves = filteredLeaves.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -298,115 +309,164 @@ const updateStatus = async (request: LeaveRequest, newStatus: string) => {
         <Select label="الحالة" options={['all', 'مقبول', 'مرفوض', 'معلق']} value={fStatus} onChange={setFStatus} />
       </div>
 
-      <div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm max-h-[600px] custom-scrollbar">
-        <table className="w-full text-sm text-right min-w-[1000px]">
-          <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
-            <tr>
-              <th className="p-4">الموظف</th>
-              <th className="p-4">النوع</th>
-              <th className="p-4">من</th>
-              <th className="p-4">إلى</th>
-              <th className="p-4">المدة</th>
-              <th className="p-4">البديل</th>
-              <th className="p-4">بواسطة</th>
-              <th className="p-4 text-center">الحالة</th>
-              <th className="p-4">إجراءات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredLeaves.map(req => {
-              const isEditing = editingId === req.id;
-              const days = Math.ceil((new Date(isEditing ? editFormData.end_date! : req.end_date).getTime() - new Date(isEditing ? editFormData.start_date! : req.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1;
-              
-              return (
-                <tr key={req.id} className={`border-b transition-colors ${isEditing ? 'bg-orange-50' : 'hover:bg-orange-50/50'}`}>
-                  <td className="p-4">
-                    <div className="font-bold text-gray-800">{req.employee_name}</div>
-                    <div className="text-xs text-gray-400 font-mono">{req.employee_id}</div>
-                  </td>
-                  
-                  <td className="p-4">
-                    {isEditing ? (
-                      <select 
-                        value={editFormData.type} 
-                        onChange={e => setEditFormData({...editFormData, type: e.target.value})}
-                        className="p-1 border rounded text-xs"
-                      >
-                        {['اعتيادية', 'عارضة', 'مرضي', 'مأمورية', 'بدل راحة'].map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    ) : (
-                      <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">{req.type}</span>
-                    )}
-                  </td>
-
-                  <td className="p-4 font-mono">
-                    {isEditing ? (
-                      <input type="date" value={editFormData.start_date} onChange={e => setEditFormData({...editFormData, start_date: e.target.value})} className="p-1 border rounded text-xs" />
-                    ) : req.start_date}
-                  </td>
-
-                  <td className="p-4 font-mono">
-                    {isEditing ? (
-                      <input type="date" value={editFormData.end_date} onChange={e => setEditFormData({...editFormData, end_date: e.target.value})} className="p-1 border rounded text-xs" />
-                    ) : req.end_date}
-                  </td>
-
-                  <td className="p-4 font-bold text-blue-600">{days} يوم</td>
-                  
-                  <td className="p-4 text-gray-500">
-                    {isEditing ? (
-                      <input type="text" value={editFormData.backup_person || ''} onChange={e => setEditFormData({...editFormData, backup_person: e.target.value})} className="p-1 border rounded text-xs w-24" />
-                    ) : (req.backup_person || '-')}
-                  </td>
-
-                  <td className="p-4 text-xs font-bold text-purple-600">
-                    {req.approved_by ? <div className="flex items-center gap-1"><UserCheck className="w-3 h-3"/> {req.approved_by}</div> : '-'}
-                  </td>
-
-                  <td className="p-4 text-center">
-                    <select 
-                      value={req.status}
-                      onChange={(e) => updateStatus(req, e.target.value)}
-                      disabled={isEditing}
-                      className={`px-2 py-1 rounded-lg text-xs font-bold border outline-none cursor-pointer ${
-                        req.status === 'مقبول' ? 'bg-green-100 text-green-700 border-green-200' :
-                        req.status === 'مرفوض' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'
-                      }`}
-                    >
-                      <option value="معلق">معلق</option>
-                      <option value="مقبول">مقبول</option>
-                      <option value="مرفوض">مرفوض</option>
-                    </select>
-                  </td>
-
-                  <td className="p-4">
-                    <div className="flex gap-1">
+      {/* ✅ تعديل ارتفاع الحاوية لإظهار شريط التنقل بوضوح */}
+      <div className="border rounded-[30px] bg-white shadow-sm flex flex-col">
+        <div className="overflow-x-auto custom-scrollbar flex-1 min-h-[400px]">
+          <table className="w-full text-sm text-right min-w-[1000px]">
+            <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
+              <tr>
+                <th className="p-4">الموظف</th>
+                <th className="p-4">النوع</th>
+                <th className="p-4">من</th>
+                <th className="p-4">إلى</th>
+                <th className="p-4">المدة</th>
+                <th className="p-4">البديل</th>
+                <th className="p-4">بواسطة</th>
+                <th className="p-4 text-center">الحالة</th>
+                <th className="p-4">إجراءات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* ✅ عرض البيانات المقسمة بدلاً من كل البيانات المفلترة */}
+              {paginatedLeaves.map(req => {
+                const isEditing = editingId === req.id;
+                const days = Math.ceil((new Date(isEditing ? editFormData.end_date! : req.end_date).getTime() - new Date(isEditing ? editFormData.start_date! : req.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                
+                return (
+                  <tr key={req.id} className={`border-b transition-colors ${isEditing ? 'bg-orange-50' : 'hover:bg-orange-50/50'}`}>
+                    <td className="p-4">
+                      <div className="font-bold text-gray-800">{req.employee_name}</div>
+                      <div className="text-xs text-gray-400 font-mono">{req.employee_id}</div>
+                    </td>
+                    
+                    <td className="p-4">
                       {isEditing ? (
-                        <>
-                          <button onClick={saveEdit} className="text-green-600 hover:bg-green-100 p-2 rounded-lg transition-colors" title="حفظ">
-                            <Save className="w-4 h-4"/>
-                          </button>
-                          <button onClick={cancelEditing} className="text-gray-400 hover:bg-gray-100 p-2 rounded-lg transition-colors" title="إلغاء">
-                            <X className="w-4 h-4"/>
-                          </button>
-                        </>
+                        <select 
+                          value={editFormData.type} 
+                          onChange={e => setEditFormData({...editFormData, type: e.target.value})}
+                          className="p-1 border rounded text-xs"
+                        >
+                          {['اعتيادية', 'عارضة', 'مرضي', 'مأمورية', 'بدل راحة'].map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
                       ) : (
-                        <>
-                          <button onClick={() => startEditing(req)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="تعديل">
-                            <Edit className="w-4 h-4"/>
-                          </button>
-                          <button onClick={() => handleDelete(req.id)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg transition-colors" title="حذف">
-                            <Trash2 className="w-4 h-4"/>
-                          </button>
-                        </>
+                        <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">{req.type}</span>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+
+                    <td className="p-4 font-mono">
+                      {isEditing ? (
+                        <input type="date" value={editFormData.start_date} onChange={e => setEditFormData({...editFormData, start_date: e.target.value})} className="p-1 border rounded text-xs" />
+                      ) : req.start_date}
+                    </td>
+
+                    <td className="p-4 font-mono">
+                      {isEditing ? (
+                        <input type="date" value={editFormData.end_date} onChange={e => setEditFormData({...editFormData, end_date: e.target.value})} className="p-1 border rounded text-xs" />
+                      ) : req.end_date}
+                    </td>
+
+                    <td className="p-4 font-bold text-blue-600">{days} يوم</td>
+                    
+                    <td className="p-4 text-gray-500">
+                      {isEditing ? (
+                        <input type="text" value={editFormData.backup_person || ''} onChange={e => setEditFormData({...editFormData, backup_person: e.target.value})} className="p-1 border rounded text-xs w-24" />
+                      ) : (req.backup_person || '-')}
+                    </td>
+
+                    <td className="p-4 text-xs font-bold text-purple-600">
+                      {req.approved_by ? <div className="flex items-center gap-1"><UserCheck className="w-3 h-3"/> {req.approved_by}</div> : '-'}
+                    </td>
+
+                    <td className="p-4 text-center">
+                      <select 
+                        value={req.status}
+                        onChange={(e) => updateStatus(req, e.target.value)}
+                        disabled={isEditing}
+                        className={`px-2 py-1 rounded-lg text-xs font-bold border outline-none cursor-pointer ${
+                          req.status === 'مقبول' ? 'bg-green-100 text-green-700 border-green-200' :
+                          req.status === 'مرفوض' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                        }`}
+                      >
+                        <option value="معلق">معلق</option>
+                        <option value="مقبول">مقبول</option>
+                        <option value="مرفوض">مرفوض</option>
+                      </select>
+                    </td>
+
+                    <td className="p-4">
+                      <div className="flex gap-1">
+                        {isEditing ? (
+                          <>
+                            <button onClick={saveEdit} className="text-green-600 hover:bg-green-100 p-2 rounded-lg transition-colors" title="حفظ">
+                              <Save className="w-4 h-4"/>
+                            </button>
+                            <button onClick={cancelEditing} className="text-gray-400 hover:bg-gray-100 p-2 rounded-lg transition-colors" title="إلغاء">
+                              <X className="w-4 h-4"/>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => startEditing(req)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="تعديل">
+                              <Edit className="w-4 h-4"/>
+                            </button>
+                            <button onClick={() => handleDelete(req.id)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg transition-colors" title="حذف">
+                              <Trash2 className="w-4 h-4"/>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              
+              {/* رسالة في حالة عدم وجود بيانات */}
+              {paginatedLeaves.length === 0 && (
+                  <tr>
+                      <td colSpan={9} className="p-8 text-center text-gray-500 font-bold">
+                          لا توجد إجازات مطابقة لنتائج البحث
+                      </td>
+                  </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ✅ شريط التنقل (Pagination UI) */}
+        {filteredLeaves.length > 0 && (
+          <div className="border-t bg-gray-50/80 p-4 flex flex-col sm:flex-row justify-between items-center gap-4 rounded-b-[30px]">
+            <div className="text-xs font-bold text-gray-500 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+              إجمالي السجلات: <span className="text-orange-600">{filteredLeaves.length}</span>
+            </div>
+            
+            <div className="flex items-center gap-2" dir="ltr">
+              {/* زر السابق (سهم يسار لأننا نعكس الاتجاه للغة العربية) */}
+              <button 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-2 bg-white border rounded-lg hover:bg-orange-50 hover:text-orange-600 disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-gray-700 transition-colors shadow-sm"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              
+              {/* أرقام الصفحات */}
+              <div className="px-4 py-1.5 bg-white border rounded-lg text-sm font-bold text-gray-700 shadow-sm flex items-center gap-1">
+                <span>{currentPage}</span>
+                <span className="text-gray-400 text-xs mx-1">من</span>
+                <span>{totalPages}</span>
+              </div>
+
+              {/* زر التالي */}
+              <button 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 bg-white border rounded-lg hover:bg-orange-50 hover:text-orange-600 disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-gray-700 transition-colors shadow-sm"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
