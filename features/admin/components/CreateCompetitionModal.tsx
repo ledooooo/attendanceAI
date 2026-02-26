@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { useQuery, useQueryClient } from '@tanstack/react-query'; // تمت الإضافة
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Loader2, Users, Trash2, BookOpen, ChevronLeft, ChevronRight, Image as ImageIcon, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -15,20 +15,25 @@ type QuestionForm = {
 };
 
 export default function CreateCompetitionModal({ onClose }: { onClose: () => void }) {
-    const queryClient = useQueryClient(); // لتحديث الواجهة فوراً
+    const queryClient = useQueryClient();
     
     const [team1, setTeam1] = useState<string[]>([]);
     const [team2, setTeam2] = useState<string[]>([]);
     const [points, setPoints] = useState(50);
-    const [drawPoints, setDrawPoints] = useState(20); // 🔥 تمت إضافة حالة نقاط التعادل
+    const [drawPoints, setDrawPoints] = useState(20);
     const [timeLimit, setTimeLimit] = useState(30);
     const [questionsPerTeam, setQuestionsPerTeam] = useState(3);
+    
+    // 🔥 حالة جديدة لتحديد ما إذا كانت الأسئلة موحدة للفريقين
+    const [sharedQuestions, setSharedQuestions] = useState(false); 
+    
     const [loading, setLoading] = useState(false);
     const [selectedEmp, setSelectedEmp] = useState('');
     const [questions, setQuestions] = useState<QuestionForm[]>([]);
 
+    // 🔥 تعديل حساب عدد الأسئلة بناءً على خيار "توحيد الأسئلة"
     useEffect(() => {
-        const totalQuestions = questionsPerTeam * 2;
+        const totalQuestions = sharedQuestions ? questionsPerTeam : questionsPerTeam * 2;
         setQuestions(prev => {
             if (totalQuestions > prev.length) {
                 const newQuestions = Array(totalQuestions - prev.length).fill({ text: '', image_url: '', a: '', b: '', c: '', d: '', correct: 'a' });
@@ -38,7 +43,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             }
             return prev;
         });
-    }, [questionsPerTeam]);
+    }, [questionsPerTeam, sharedQuestions]);
 
     const [showBank, setShowBank] = useState(false);
     const [targetQIndex, setTargetQIndex] = useState<number | null>(null);
@@ -177,7 +182,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                 team2_ids: team2, 
                 current_turn_team: 1, 
                 reward_points: points, 
-                draw_points: drawPoints, // 🔥 تسجيل نقاط التعادل في الداتا بيز
+                draw_points: drawPoints, 
                 time_limit_seconds: timeLimit,
                 status: 'active',
                 team1_score: 0, 
@@ -186,15 +191,35 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
             if (compError) throw compError;
 
-            const dbQuestions = questions.map((q, idx) => ({
-                competition_id: comp.id,
-                assigned_to_team: idx < questionsPerTeam ? 1 : 2,
-                question_text: q.text,
-                image_url: q.image_url || null, 
-                option_a: q.a, option_b: q.b, option_c: q.c, option_d: q.d,
-                correct_option: q.correct,
-                order_index: idx + 1
-            }));
+            // 🔥 منطق إدراج الأسئلة بناءً على حالة التوحيد
+            let dbQuestions: any[] = [];
+
+            if (sharedQuestions) {
+                // إذا تم تفعيل توحيد الأسئلة، ننسخ كل سؤال للفريقين
+                questions.forEach((q, idx) => {
+                    const baseQ = {
+                        competition_id: comp.id,
+                        question_text: q.text,
+                        image_url: q.image_url || null, 
+                        option_a: q.a, option_b: q.b, option_c: q.c, option_d: q.d,
+                        correct_option: q.correct,
+                        order_index: idx + 1
+                    };
+                    dbQuestions.push({ ...baseQ, assigned_to_team: 1 }); // نسخة للفريق الأول
+                    dbQuestions.push({ ...baseQ, assigned_to_team: 2 }); // نسخة للفريق الثاني
+                });
+            } else {
+                // الطريقة العادية: أسئلة منفصلة لكل فريق
+                dbQuestions = questions.map((q, idx) => ({
+                    competition_id: comp.id,
+                    assigned_to_team: idx < questionsPerTeam ? 1 : 2,
+                    question_text: q.text,
+                    image_url: q.image_url || null, 
+                    option_a: q.a, option_b: q.b, option_c: q.c, option_d: q.d,
+                    correct_option: q.correct,
+                    order_index: idx + 1
+                }));
+            }
 
             const { error: qError } = await supabase.from('competition_questions').insert(dbQuestions);
             if (qError) throw qError;
@@ -221,7 +246,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
             toast.success('تم إطلاق المسابقة بنجاح! 🚀');
             
-            // 🔥 تحديث الواجهة فوراً
             queryClient.invalidateQueries({ queryKey: ['admin_competitions'] });
             queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] });
             
@@ -242,7 +266,7 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                 {/* العمود الأيمن */}
                 <div className="w-full md:w-1/3 space-y-4 shrink-0">
                     <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-black text-gray-800">إعداد الفرق</h3>
+                        <h3 className="text-lg font-black text-gray-800">إعداد الفرق والوقت</h3>
                         <button onClick={onClose} className="md:hidden"><X/></button>
                     </div>
 
@@ -251,7 +275,6 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                             <label className="text-[10px] font-bold text-gray-500 block">الجائزة (نقاط)</label>
                             <input type="number" min="10" value={points} onChange={e => setPoints(Number(e.target.value))} className="w-full p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-center font-bold text-yellow-800"/>
                         </div>
-                        {/* حقل نقاط التعادل الجديد */}
                         <div>
                             <label className="text-[10px] font-bold text-gray-500 block">نقاط التعادل</label>
                             <input type="number" min="0" value={drawPoints} onChange={e => setDrawPoints(Number(e.target.value))} className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg text-center font-bold text-gray-800"/>
@@ -260,9 +283,23 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
                             <label className="text-[10px] font-bold text-gray-500 block">أسئلة لكل فريق</label>
                             <input type="number" min="1" max="10" value={questionsPerTeam} onChange={e => setQuestionsPerTeam(Number(e.target.value))} className="w-full p-2 bg-purple-50 border border-purple-200 rounded-lg text-center font-bold text-purple-800"/>
                         </div>
-                        <div className="col-span-2">
+                        <div>
                             <label className="text-[10px] font-bold text-gray-500 flex items-center gap-1"><Clock size={12}/> الوقت للسؤال (ثواني)</label>
                             <input type="number" min="10" max="300" value={timeLimit} onChange={e => setTimeLimit(Number(e.target.value))} className="w-full p-2 bg-blue-50 border border-blue-200 rounded-lg text-center font-bold text-blue-800"/>
+                        </div>
+                        
+                        {/* 🔥 زر توحيد الأسئلة */}
+                        <div className="col-span-2 flex items-center gap-2 bg-purple-50/50 p-2.5 rounded-lg border border-purple-100">
+                            <input 
+                                type="checkbox" 
+                                id="sharedQuestions" 
+                                checked={sharedQuestions} 
+                                onChange={e => setSharedQuestions(e.target.checked)} 
+                                className="w-4 h-4 text-purple-600 rounded cursor-pointer accent-purple-600"
+                            />
+                            <label htmlFor="sharedQuestions" className="text-[11px] font-bold text-purple-800 cursor-pointer select-none">
+                                توحيد الأسئلة (نفس الأسئلة للفريقين)
+                            </label>
                         </div>
                     </div>
 
@@ -310,10 +347,14 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
                     <div className="space-y-6">
                         {questions.map((q, idx) => (
-                            <div key={idx} className={`p-4 rounded-2xl border ${idx < questionsPerTeam ? 'bg-red-50/30 border-red-100' : 'bg-blue-50/30 border-blue-100'}`}>
+                            <div key={idx} className={`p-4 rounded-2xl border ${sharedQuestions ? 'bg-purple-50/30 border-purple-100' : idx < questionsPerTeam ? 'bg-red-50/30 border-red-100' : 'bg-blue-50/30 border-blue-100'}`}>
                                 <div className="flex justify-between items-center mb-2">
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${idx < questionsPerTeam ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                                        سؤال {idx < questionsPerTeam ? idx + 1 : idx - questionsPerTeam + 1} ({idx < questionsPerTeam ? 'فريق 1' : 'فريق 2'})
+                                    {/* 🔥 تعديل عنوان السؤال ديناميكياً بناءً على حالة التوحيد */}
+                                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${sharedQuestions ? 'bg-purple-100 text-purple-700' : idx < questionsPerTeam ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                        {sharedQuestions 
+                                            ? `سؤال ${idx + 1} (للفريقين)` 
+                                            : `سؤال ${idx < questionsPerTeam ? idx + 1 : idx - questionsPerTeam + 1} (${idx < questionsPerTeam ? 'فريق 1' : 'فريق 2'})`
+                                        }
                                     </span>
                                     <button 
                                         onClick={() => { setTargetQIndex(idx); setShowBank(true); }}
