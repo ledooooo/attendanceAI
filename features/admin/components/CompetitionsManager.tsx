@@ -12,10 +12,10 @@ export default function CompetitionsManager() {
     const { data: competitions = [], isLoading } = useQuery({
         queryKey: ['admin_competitions'],
         queryFn: async () => {
-            // 🔥 تعديل: جلب عدد الأسئلة من الجدول المرتبط لكي يظهر الرقم صحيحاً
+            // جلب المسابقة مع حساب عدد الأسئلة المرتبطة بها
             const { data, error } = await supabase
                 .from('competitions')
-                .select('*, competition_questions(id)') 
+                .select('*, competition_questions(id)')
                 .order('created_at', { ascending: false });
                 
             if (error) {
@@ -30,14 +30,11 @@ export default function CompetitionsManager() {
         mutationFn: async (id: string) => {
             const { error } = await supabase.from('competitions').delete().eq('id', id);
             if (error) throw error;
-            supabase.functions.invoke('send-push-notification', {
-                body: { userId: 'all', title: 'تحديث في المسابقات 🔄', body: 'تم إنهاء إحدى المسابقات', url: '/staff?tab=arcade' }
-            }).catch(() => {});
         },
         onSuccess: () => {
             toast.success('تم الحذف بنجاح');
             queryClient.invalidateQueries({ queryKey: ['admin_competitions'] });
-            queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] }); // 🔥 تحديث الأخبار أيضاً بعد الحذف
+            queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] }); // تحديث الواجهة للموظفين فوراً
         },
         onError: (err: any) => toast.error('خطأ في الحذف: ' + err.message)
     });
@@ -69,9 +66,8 @@ export default function CompetitionsManager() {
                                     <div className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-gray-400' : 'bg-green-500'}`}></div>
                                     {isCompleted ? 'منتهية' : 'نشطة الآن'}
                                 </span>
-                                {/* 🔥 تعديل اسم المتغير ليظهر الجائزة */}
                                 <span className="bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 border border-yellow-200 shadow-sm">
-                                    <Trophy size={14}/> {comp.reward_points} نقطة 
+                                    <Trophy size={14}/> {comp.reward_points} نقطة
                                 </span>
                             </div>
 
@@ -91,7 +87,6 @@ export default function CompetitionsManager() {
 
                             <div className="text-center mb-6">
                                 <p className="text-xs font-bold text-gray-500 flex items-center justify-center gap-1">
-                                    {/* 🔥 تعديل: قراءة العدد الصحيح للأسئلة المربوطة */}
                                     <span className="bg-purple-50 text-purple-700 px-2 py-1 rounded-lg border border-purple-100">الأسئلة: {comp.competition_questions?.length || 0}</span>
                                     <span className="text-gray-300">•</span>
                                     <span className="text-[10px]">{new Date(comp.created_at).toLocaleDateString('ar-EG')}</span>
