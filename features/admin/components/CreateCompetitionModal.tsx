@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // 🔥 تمت إضافة useQueryClient
 import { X, Loader2, Users, Trash2, BookOpen, ChevronLeft, ChevronRight, Image as ImageIcon, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -16,6 +16,9 @@ type QuestionForm = {
 };
 
 export default function CreateCompetitionModal({ onClose }: { onClose: () => void }) {
+    // 🔥 تعريف queryClient لتحديث الواجهة
+    const queryClient = useQueryClient();
+
     // --- States ---
     const [team1, setTeam1] = useState<string[]>([]);
     const [team2, setTeam2] = useState<string[]>([]);
@@ -191,11 +194,14 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
 
         setLoading(true);
         try {
+            // 🔥 تأكيد وضع النتائج كأصفار عند البدء
             const { data: comp, error: compError } = await supabase.from('competitions').insert({
                 team1_ids: team1, 
                 team2_ids: team2, 
                 current_turn_team: 1, 
                 reward_points: points, 
+                player1_score: 0, 
+                player2_score: 0,
                 time_limit_seconds: timeLimit,
                 status: 'active'
             }).select().single();
@@ -236,6 +242,11 @@ export default function CreateCompetitionModal({ onClose }: { onClose: () => voi
             }
 
             toast.success('تم إطلاق المسابقة بنجاح! 🚀');
+
+            // 🔥 إجبار الـ News Feed وشاشة الإدارة على التحديث الفوري
+            queryClient.invalidateQueries({ queryKey: ['admin_competitions'] });
+            queryClient.invalidateQueries({ queryKey: ['news_feed_mixed'] });
+            
             onClose();
         } catch (err: any) {
             toast.error(err.message || 'حدث خطأ');
