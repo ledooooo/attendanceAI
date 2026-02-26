@@ -25,16 +25,16 @@ export default function StaffNewsFeed({ employee }: { employee: Employee }) {
         { e: '❤️', l: 'حب' }, { e: '😊', l: 'سمايل' }, { e: '😂', l: 'ضحك' }, { e: '👏', l: 'تصفيق' }, { e: '👍', l: 'تمام' }
     ];
 
-    // حساب المستوى الحالي
+// حساب المستوى الحالي بناءً على التحديث الجديد للتقييم
     const points = employee.total_points || 0;
     const levels = [
-        { name: 'مبتدئ', min: 0, max: 100, color: 'text-gray-500' },
-        { name: 'برونزي', min: 100, max: 500, color: 'text-orange-700' },
-        { name: 'فضي', min: 500, max: 1500, color: 'text-gray-400' },
-        { name: 'ذهبي', min: 1500, max: 3000, color: 'text-yellow-500' },
-        { name: 'ماسي', min: 3000, max: 10000, color: 'text-blue-500' },
-    ];
-    const currentLevel = levels.find(l => points >= l.min && points < l.max) || levels[levels.length - 1];
+        { name: 'مبتدئ', min: 0, max: 500, color: 'text-gray-500' },
+        { name: 'برونزي', min: 500, max: 1000, color: 'text-orange-700' },
+        { name: 'فضي', min: 1000, max: 2000, color: 'text-slate-400' }, // غيرت درجة الرصاصي ليكون أجمل
+        { name: 'ذهبي', min: 2000, max: 3000, color: 'text-yellow-500' },
+        { name: 'ماسي', min: 3000, max: 4000, color: 'text-blue-500' },
+        { name: 'أسطوري', min: 4000, max: 1000000, color: 'text-purple-600' }, // المستوى الجديد
+    ];    const currentLevel = levels.find(l => points >= l.min && points < l.max) || levels[levels.length - 1];
 
     // ------------------------------------------------------------------
     // 1. 📥 جلب البيانات (أخبار + مسابقات)
