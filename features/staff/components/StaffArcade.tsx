@@ -4,7 +4,7 @@ import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Gamepad2, Lock, Timer, Trophy, Loader2, Dices, HelpCircle, Star, Zap, Calculator, Brain, Award, Target, Clock, CheckCircle, XCircle, AlertCircle, TrendingUp, User, Sparkles, Tv2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import LiveGamesArena from '../LiveGamesArena';
+import LiveGamesArena from '../../../LiveGamesArena';
 
 interface Props {
     employee: Employee;
