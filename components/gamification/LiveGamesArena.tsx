@@ -24,6 +24,20 @@ const AvatarDisplay = ({ avatar, className = "" }: { avatar: string, className?:
     return <span className={className}>{avatar || '👤'}</span>;
 };
 
+// دالة مساعدة لتوحيد التخصصات للبحث
+const getSpecialtyVariations = (spec: string) => {
+    if (!spec) return ['الكل'];
+    const s = spec.toLowerCase();
+    if (s.includes('بشر') || s.includes('عام')) return ['بشري', 'طبيب بشرى', 'طبيب عام'];
+    if (s.includes('سنان')) return ['أسنان', 'اسنان', 'طبيب أسنان'];
+    if (s.includes('تمريض') || s.includes('ممرض')) return ['تمريض', 'ممرض', 'ممرضة'];
+    if (s.includes('صيدل')) return ['صيدلة', 'صيدلي', 'صيدلاني'];
+    if (s.includes('معمل') || s.includes('مختبر')) return ['معمل', 'فني معمل', 'مختبر'];
+    if (s.includes('جود')) return ['جودة', 'الجودة'];
+    if (s.includes('عدوى')) return ['مكافحة عدوى', 'مكافحه عدوى'];
+    return [spec, 'الكل'];
+};
+
 export default function LiveGamesArena({ employee, onClose }: { employee: Employee, onClose?: () => void }) {
     const queryClient = useQueryClient();
 
@@ -67,7 +81,11 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                     if (prev && prev.id === updatedMatch.id) {
                         // إشعار لحظي لصاحب الغرفة عندما ينضم شخص آخر
                         if (prev.status === 'waiting' && updatedMatch.status === 'playing' && updatedMatch.created_by === employee.employee_id) {
-                            toast.success('انضم منافس لغرفتك! اللعبة تبدأ الآن 🎮', { icon: '🔥', duration: 4000 });
+                            toast.success('انضم منافس لغرفتك! اللعبة تبدأ الآن 🎮', { 
+                                icon: '🔥', 
+                                duration: 4000,
+                                style: { borderRadius: '15px', background: '#333', color: '#fff' }
+                            });
                             const audio = new Audio('/notification.mp3');
                             audio.play().catch(() => {}); // محاولة تشغيل صوت إن أمكن
                         }
@@ -202,9 +220,31 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         }).eq('id', currentMatch.id);
     };
 
+    // دالة جلب سؤال (تدعم المترادفات للتخصص)
+    const fetchRandomQuestion = async (difficulty?: string) => {
+        const variations = getSpecialtyVariations(employee.specialty);
+        const orFilter = variations.map(v => `specialty.ilike.%${v}%`).join(',');
+
+        let query = supabase.from('arcade_quiz_questions').select('*');
+        query = query.or(orFilter);
+        if (difficulty) query = query.eq('difficulty', difficulty);
+
+        const { data, error } = await query.limit(20); // نجلب 20 ونختار عشوائياً
+        
+        if (error || !data || data.length === 0) {
+            // إذا لم نجد في هذا التخصص، نجلب سؤالاً عاماً (الكل)
+            let backupQuery = supabase.from('arcade_quiz_questions').select('*').or(`specialty.ilike.%الكل%,specialty.ilike.%all%`);
+            if (difficulty) backupQuery = backupQuery.eq('difficulty', difficulty);
+            
+            const { data: backupData } = await backupQuery.limit(20);
+            return backupData && backupData.length > 0 ? backupData[Math.floor(Math.random() * backupData.length)] : null;
+        }
+        
+        return data[Math.floor(Math.random() * data.length)];
+    };
+
     const prepareSuddenDeathQuestion = async (matchId: string, board: string[], nextTurn: string) => {
-        const { data: qData } = await supabase.from('arcade_quiz_questions').select('*').limit(20);
-        const randomQ = qData ? qData[Math.floor(Math.random() * qData.length)] : null;
+        const randomQ = await fetchRandomQuestion(); // بدون تحديد صعوبة لكسر التعادل
         
         await supabase.from('live_matches').update({
             game_state: { board, current_turn: nextTurn },
@@ -213,29 +253,50 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         }).eq('id', matchId);
     };
 
-    const handleSuddenDeathAnswer = async (answer: string) => {
+    // ✅ دالة ذكية للتحقق من الإجابة (تتجاوز مشكلة الحروف والنصوص الكاملة)
+    const checkAnswerIntelligence = (selectedOptionText: string, questionObj: any) => {
+        if (!questionObj) return false;
+        
+        const correctVal = String(questionObj.correct_answer || questionObj.correct_option || '').trim().toLowerCase();
+        
+        // 1. إذا كانت الإجابة المحفوظة عبارة عن حرف (a, b, c, d) أو (أ، ب، ج، د)
+        if (['a', 'b', 'c', 'd'].includes(correctVal)) {
+            // نقارن النص الذي اختاره اللاعب مع نص الخيار المحفوظ في قاعدة البيانات
+            return selectedOptionText === questionObj[`option_${correctVal}`];
+        }
+        
+        // 2. إذا كانت الإجابة المحفوظة عبارة عن اندكس رقمي (0, 1, 2, 3)
+        if (questionObj.correct_index !== undefined) {
+             const opts = [questionObj.option_a, questionObj.option_b, questionObj.option_c, questionObj.option_d];
+             return selectedOptionText === opts[questionObj.correct_index];
+        }
+
+        // 3. المطابقة المباشرة للنص
+        return selectedOptionText.trim().toLowerCase() === correctVal;
+    };
+
+    const handleSuddenDeathAnswer = async (answerText: string) => {
         if (currentMatch.status !== 'sudden_death') return;
         setLoading(true);
 
-        const isCorrect = answer === currentMatch.final_question?.correct_answer;
+        const isCorrect = checkAnswerIntelligence(answerText, currentMatch.final_question);
         
         if (isCorrect) {
             await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: 10 });
             await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: 10, reason: 'الفوز بكسر التعادل المباشر ⚡' });
             
             await supabase.from('live_matches').update({ status: 'finished', winner_id: employee.employee_id }).eq('id', currentMatch.id);
-            confetti({ particleCount: 150, spread: 80 });
-            toast.success('أنت الأسرع! كسبت التحدي ⚡🏆');
+            confetti({ particleCount: 150, spread: 80, zIndex: 9999 });
+            toast.success('أنت الأسرع! كسبت التحدي ⚡🏆', { style: { background: '#22c55e', color: '#fff', fontWeight: 'bold' } });
         } else {
-            toast.error('إجابة خاطئة! خصمك قد يفوز الآن.');
+            toast.error('إجابة خاطئة! خصمك قد يفوز الآن.', { style: { background: '#ef4444', color: '#fff', fontWeight: 'bold' } });
         }
         setLoading(false);
     };
 
     const handleRewardSelection = async (difficulty: 'easy'|'medium'|'hard', points: number) => {
         setLoading(true);
-        const { data: qData } = await supabase.from('arcade_quiz_questions').select('*').eq('difficulty', difficulty).limit(10);
-        const randomQ = qData && qData.length > 0 ? qData[Math.floor(Math.random() * qData.length)] : null;
+        const randomQ = await fetchRandomQuestion(difficulty);
 
         await supabase.from('live_matches').update({
             status: 'answering_reward',
@@ -244,18 +305,18 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         setLoading(false);
     };
 
-    const handleRewardAnswer = async (answer: string) => {
+    const handleRewardAnswer = async (answerText: string) => {
         setLoading(true);
-        const isCorrect = answer === currentMatch.final_question?.correct_answer;
+        const isCorrect = checkAnswerIntelligence(answerText, currentMatch.final_question);
         const rewardPoints = currentMatch.final_question?.rewardPoints || 0;
 
         if (isCorrect) {
             await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: rewardPoints });
-            await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: rewardPoints, reason: `سؤال جائزة التحدي (${rewardPoints} نقطة) 🏆` });
-            toast.success(`مبروك! ربحت ${rewardPoints} نقطة! 🎉`);
-            confetti({ particleCount: 200, spread: 100 });
+            await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: rewardPoints, reason: `سؤال جائزة التحدي المباشر 🏆` });
+            toast.success(`مبروك الإجابة صحيحة! ربحت ${rewardPoints} نقطة! 🎉`, { style: { background: '#22c55e', color: '#fff', fontWeight: 'bold' }, duration: 5000 });
+            confetti({ particleCount: 200, spread: 100, zIndex: 9999 });
         } else {
-            toast.error('إجابة خاطئة! للأسف ضاعت الجائزة 😞');
+            toast.error('إجابة خاطئة! للأسف ضاعت الجائزة 😞', { style: { background: '#ef4444', color: '#fff', fontWeight: 'bold' }, duration: 4000 });
         }
 
         await supabase.from('live_matches').update({ status: 'finished' }).eq('id', currentMatch.id);
@@ -313,7 +374,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                     const isMyRoom = m.created_by === employee.employee_id;
                                     
                                     return (
-                                        <div key={m.id} className="bg-white p-3 md:p-4 rounded-2xl shadow-sm border border-indigo-50 flex justify-between items-center hover:border-indigo-300 transition-colors">
+                                        <div key={m.id} className={`bg-white p-3 md:p-4 rounded-2xl shadow-sm border flex justify-between items-center transition-colors ${isMyRoom ? 'border-indigo-200 bg-indigo-50/30' : 'border-gray-100 hover:border-indigo-300'}`}>
                                             <div className="flex items-center gap-2 md:gap-3">
                                                 <div className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl shadow-inner border border-gray-100 overflow-hidden bg-gray-50 text-2xl">
                                                     <AvatarDisplay avatar={m.players[0]?.avatar} />
@@ -445,27 +506,30 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                 ))}
                             </div>
                         ) : currentMatch.status === 'sudden_death' ? (
-                            <div className="bg-white w-full max-w-md rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-6 text-center shadow-2xl border-4 border-yellow-400 animate-in zoom-in m-4">
-                                <Zap className="w-12 h-12 md:w-16 md:h-16 text-yellow-500 mx-auto mb-2 animate-bounce"/>
+                            <div className="bg-white w-full max-w-md rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-6 text-center shadow-2xl border-4 border-yellow-400 animate-in zoom-in m-4 relative overflow-hidden">
+                                {/* تأثير الإضاءة الحمراء للخطر */}
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-yellow-400 to-red-500 animate-pulse"></div>
+                                
+                                <Zap className="w-12 h-12 md:w-16 md:h-16 text-yellow-500 mx-auto mb-2 animate-bounce drop-shadow-md"/>
                                 <h3 className="text-xl md:text-2xl font-black text-gray-800 mb-1">تعادل! الموت المفاجئ ⚡</h3>
-                                <p className="text-[10px] md:text-xs font-bold text-gray-500 mb-4 md:mb-6">أول من يجيب إجابة صحيحة يربح 10 نقاط فوراً</p>
+                                <p className="text-[10px] md:text-xs font-bold text-gray-500 mb-4 md:mb-6 bg-yellow-50 p-2 rounded-lg border border-yellow-100">الأسرع في إجابة هذا السؤال الصحيح يربح 10 نقاط وينهي الجولة!</p>
                                 
                                 {currentMatch.final_question ? (
                                     <div className="space-y-3 md:space-y-4">
-                                        <p className="font-black text-sm md:text-lg bg-gray-50 p-3 md:p-4 rounded-xl border leading-relaxed">{currentMatch.final_question.question || currentMatch.final_question.question_text}</p>
+                                        <p className="font-black text-sm md:text-lg bg-gray-50 p-3 md:p-4 rounded-xl border leading-relaxed shadow-inner">{currentMatch.final_question.question || currentMatch.final_question.question_text}</p>
                                         <div className="grid grid-cols-1 gap-2">
                                             {['a', 'b', 'c', 'd'].map(opt => {
                                                 const optText = currentMatch.final_question[`option_${opt}`];
                                                 if(!optText) return null;
                                                 return (
-                                                    <button key={opt} onClick={() => handleSuddenDeathAnswer(optText)} disabled={loading} className="w-full bg-white border-2 border-gray-100 p-2.5 md:p-3 rounded-xl font-bold text-xs md:text-sm text-gray-700 hover:border-yellow-400 hover:bg-yellow-50 transition-colors">
+                                                    <button key={opt} onClick={() => handleSuddenDeathAnswer(optText)} disabled={loading} className="w-full bg-white border-2 border-gray-100 p-2.5 md:p-3 rounded-xl font-bold text-xs md:text-sm text-gray-700 hover:border-yellow-400 hover:bg-yellow-50 active:scale-95 transition-all shadow-sm">
                                                         {optText}
                                                     </button>
                                                 )
                                             })}
                                         </div>
                                     </div>
-                                ) : <Loader2 className="mx-auto animate-spin"/>}
+                                ) : <Loader2 className="mx-auto animate-spin text-yellow-500 w-8 h-8"/>}
                             </div>
                         ) : currentMatch.status === 'reward_time' ? (
                             <div className="bg-white w-full max-w-md rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-6 text-center shadow-2xl animate-in zoom-in m-4">
@@ -475,17 +539,17 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                         <h3 className="text-2xl md:text-3xl font-black text-gray-800 mb-2">أنت الفائز! 🎉</h3>
                                         <p className="text-xs md:text-sm font-bold text-gray-500 mb-4 md:mb-6">اختر مستوى الصعوبة لسؤال الجائزة لتكسب النقاط:</p>
                                         <div className="space-y-2.5 md:space-y-3">
-                                            <button onClick={() => handleRewardSelection('easy', 5)} disabled={loading} className="w-full bg-green-50 border border-green-200 text-green-700 p-3 md:p-4 rounded-xl md:rounded-2xl font-black text-sm md:text-base flex justify-between items-center hover:bg-green-100 transition-colors"><span>سهل</span> <span>+5 نقاط</span></button>
-                                            <button onClick={() => handleRewardSelection('medium', 10)} disabled={loading} className="w-full bg-yellow-50 border border-yellow-200 text-yellow-700 p-3 md:p-4 rounded-xl md:rounded-2xl font-black text-sm md:text-base flex justify-between items-center hover:bg-yellow-100 transition-colors"><span>متوسط</span> <span>+10 نقاط</span></button>
-                                            <button onClick={() => handleRewardSelection('hard', 20)} disabled={loading} className="w-full bg-red-50 border border-red-200 text-red-700 p-3 md:p-4 rounded-xl md:rounded-2xl font-black text-sm md:text-base flex justify-between items-center hover:bg-red-100 transition-colors"><span>صعب (مخاطرة)</span> <span>+20 نقطة</span></button>
+                                            <button onClick={() => handleRewardSelection('easy', 5)} disabled={loading} className="w-full bg-green-50 border border-green-200 text-green-700 p-3 md:p-4 rounded-xl md:rounded-2xl font-black text-sm md:text-base flex justify-between items-center hover:bg-green-100 active:scale-95 transition-all"><span>سهل</span> <span>+5 نقاط</span></button>
+                                            <button onClick={() => handleRewardSelection('medium', 10)} disabled={loading} className="w-full bg-yellow-50 border border-yellow-200 text-yellow-700 p-3 md:p-4 rounded-xl md:rounded-2xl font-black text-sm md:text-base flex justify-between items-center hover:bg-yellow-100 active:scale-95 transition-all"><span>متوسط</span> <span>+10 نقاط</span></button>
+                                            <button onClick={() => handleRewardSelection('hard', 20)} disabled={loading} className="w-full bg-red-50 border border-red-200 text-red-700 p-3 md:p-4 rounded-xl md:rounded-2xl font-black text-sm md:text-base flex justify-between items-center hover:bg-red-100 active:scale-95 transition-all"><span>صعب (مخاطرة)</span> <span>+20 نقطة</span></button>
                                         </div>
                                     </>
                                 ) : (
                                     <div className="py-8 md:py-10">
-                                        <span className="text-5xl md:text-6xl mb-3 md:mb-4 block">😞</span>
+                                        <span className="text-5xl md:text-6xl mb-3 md:mb-4 block animate-bounce">😞</span>
                                         <h3 className="text-lg md:text-xl font-black text-gray-800">لقد خسرت الجولة</h3>
                                         <p className="text-[10px] md:text-sm font-bold text-gray-500 mt-2">خصمك يقوم الآن باختيار سؤال الجائزة.</p>
-                                        <button onClick={exitMatch} className="mt-6 md:mt-8 bg-gray-100 px-5 py-2 md:px-6 md:py-2 rounded-xl text-sm font-bold text-gray-600">خروج للرئيسية</button>
+                                        <button onClick={exitMatch} className="mt-6 md:mt-8 bg-gray-100 hover:bg-gray-200 px-5 py-2 md:px-6 md:py-2 rounded-xl text-sm font-bold text-gray-600 transition-colors">خروج للرئيسية</button>
                                     </div>
                                 )}
                             </div>
@@ -495,16 +559,16 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                     <>
                                         <BrainCircuit className="w-12 h-12 md:w-16 md:h-16 text-indigo-500 mx-auto mb-3 md:mb-4"/>
                                         <h3 className="text-lg md:text-xl font-black text-gray-800 mb-1">سؤال الجائزة 🎁</h3>
-                                        <p className="text-[10px] md:text-xs font-bold text-yellow-600 mb-4 md:mb-6 bg-yellow-50 inline-block px-3 py-1 rounded-full border border-yellow-100">اربح {currentMatch.final_question?.rewardPoints} نقطة!</p>
+                                        <p className="text-[10px] md:text-xs font-bold text-yellow-600 mb-4 md:mb-6 bg-yellow-50 inline-block px-3 py-1 rounded-full border border-yellow-100">أجب لتربح {currentMatch.final_question?.rewardPoints} نقطة!</p>
                                         
-                                        <p className="font-black text-sm md:text-lg bg-gray-50 p-3 md:p-4 rounded-xl border mb-4 md:mb-6 leading-relaxed">{currentMatch.final_question?.question || currentMatch.final_question?.question_text}</p>
+                                        <p className="font-black text-sm md:text-lg bg-gray-50 p-3 md:p-4 rounded-xl border mb-4 md:mb-6 leading-relaxed shadow-inner">{currentMatch.final_question?.question || currentMatch.final_question?.question_text}</p>
                                         
                                         <div className="grid grid-cols-1 gap-2">
                                             {['a', 'b', 'c', 'd'].map(opt => {
                                                 const optText = currentMatch.final_question[`option_${opt}`];
                                                 if(!optText) return null;
                                                 return (
-                                                    <button key={opt} onClick={() => handleRewardAnswer(optText)} disabled={loading} className="w-full bg-white border-2 border-gray-100 p-2.5 md:p-3 rounded-xl font-bold text-xs md:text-sm text-gray-700 hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+                                                    <button key={opt} onClick={() => handleRewardAnswer(optText)} disabled={loading} className="w-full bg-white border-2 border-gray-100 p-2.5 md:p-3 rounded-xl font-bold text-xs md:text-sm text-gray-700 hover:border-indigo-400 hover:bg-indigo-50 active:scale-95 transition-all shadow-sm">
                                                         {optText}
                                                     </button>
                                                 )
@@ -516,7 +580,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                         <Loader2 className="w-10 h-10 md:w-12 md:h-12 text-indigo-300 animate-spin mx-auto mb-3 md:mb-4"/>
                                         <h3 className="text-base md:text-lg font-black text-gray-800">جاري الإجابة...</h3>
                                         <p className="text-[10px] md:text-xs font-bold text-gray-500 mt-2">الفائز يحاول الإجابة على سؤال الجائزة.</p>
-                                        <button onClick={exitMatch} className="mt-6 md:mt-8 bg-gray-100 px-5 py-2 md:px-6 md:py-2 rounded-xl font-bold text-sm text-gray-600">خروج للرئيسية</button>
+                                        <button onClick={exitMatch} className="mt-6 md:mt-8 bg-gray-100 hover:bg-gray-200 px-5 py-2 md:px-6 md:py-2 rounded-xl font-bold text-sm text-gray-600 transition-colors">خروج للرئيسية</button>
                                     </div>
                                 )}
                             </div>
@@ -524,7 +588,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                             <div className="bg-white w-full max-w-sm rounded-[1.5rem] md:rounded-[2rem] p-6 md:p-8 text-center shadow-2xl animate-in zoom-in m-4">
                                 <CheckCircle2 className="w-16 h-16 md:w-20 md:h-20 text-green-500 mx-auto mb-3 md:mb-4"/>
                                 <h3 className="text-xl md:text-2xl font-black text-gray-800 mb-2">انتهت اللعبة!</h3>
-                                <button onClick={exitMatch} className="mt-4 md:mt-6 bg-indigo-600 text-white w-full py-2.5 md:py-3 rounded-xl font-black text-sm md:text-base hover:bg-indigo-700 transition-colors shadow-lg">العودة للصالة</button>
+                                <button onClick={exitMatch} className="mt-4 md:mt-6 bg-indigo-600 text-white w-full py-2.5 md:py-3 rounded-xl font-black text-sm md:text-base hover:bg-indigo-700 active:scale-95 transition-all shadow-lg">العودة للصالة</button>
                             </div>
                         ) : null}
                     </div>
