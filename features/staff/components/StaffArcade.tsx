@@ -46,28 +46,28 @@ const DIFF_PROFILES: Record<DiffLevel, DiffProfile> = {
         color: 'bg-blue-100 text-blue-700 border-blue-300',
         weights: { easy: 40, medium: 50, hard: 10 },
         multiplier: 1.2,
-        desc: 'مزيج متوازن +20% نقاط'
+        desc: 'مزيج متوازن +10% نقاط'
     },
     advanced: {
         level: 'advanced', label: 'متقدم', emoji: '🔥',
         color: 'bg-orange-100 text-orange-700 border-orange-300',
         weights: { easy: 20, medium: 50, hard: 30 },
         multiplier: 1.4,
-        desc: 'تحدي أكبر +40% نقاط'
+        desc: 'تحدي أكبر +20% نقاط'
     },
     elite: {
         level: 'elite', label: 'نخبة', emoji: '👑',
         color: 'bg-purple-100 text-purple-700 border-purple-300',
         weights: { easy: 10, medium: 30, hard: 60 },
         multiplier: 1.7,
-        desc: 'للمتميزين فقط +70% نقاط'
+        desc: 'للمتميزين فقط +30% نقاط'
     }
 };
 
 function getDiffProfile(totalPoints: number): DiffProfile {
-    if (totalPoints >= 500) return DIFF_PROFILES.elite;
-    if (totalPoints >= 200) return DIFF_PROFILES.advanced;
-    if (totalPoints >= 50)  return DIFF_PROFILES.intermediate;
+    if (totalPoints >= 5000) return DIFF_PROFILES.elite;
+    if (totalPoints >= 2000) return DIFF_PROFILES.advanced;
+    if (totalPoints >= 1000)  return DIFF_PROFILES.intermediate;
     return DIFF_PROFILES.beginner;
 }
 
