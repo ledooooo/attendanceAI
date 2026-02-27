@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, CheckCircle2, MessageSquare, MapPin, User, Calendar, FileText, Send, Plus, Filter, Forward, X } from 'lucide-react';
+// ✅ تم إضافة Clock هنا في السطر التالي:
+import { Loader2, CheckCircle2, MessageSquare, MapPin, User, Calendar, FileText, Send, Plus, Filter, Forward, X, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // قائمة الأماكن
@@ -96,7 +97,6 @@ export default function AdminSupervisorRounds() {
         onError: (err: any) => toast.error(err.message)
     });
 
-    // ✅ التعديل هنا: استخدام الحقول الصحيحة لجدول messages
     const forwardMutation = useMutation({
         mutationFn: async (round: any) => {
             if (selectedTargetIds.length === 0) throw new Error('يرجى اختيار شخص واحد على الأقل للإحالة');
@@ -105,7 +105,6 @@ export default function AdminSupervisorRounds() {
             if (round.negatives?.length > 0) msgBody += `❌ السلبيات المرصودة:\n- ${round.negatives.join('\n- ')}\n\n`;
             if (round.recommendations?.length > 0) msgBody += `💡 التوصيات:\n- ${round.recommendations.join('\n- ')}`;
 
-            // ✅ استخدام حقل content بدلاً من body و subject، وحقل is_read بدلاً من status
             const messagesPayload = selectedTargetIds.map(targetId => ({
                 from_user: 'admin',
                 to_user: targetId,
@@ -163,7 +162,6 @@ export default function AdminSupervisorRounds() {
         },
         onError: (err: any) => toast.error(err.message)
     });
-
 
     // --- Helpers ---
     const filteredRounds = useMemo(() => {
