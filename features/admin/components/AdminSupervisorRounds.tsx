@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-// ✅ تم إضافة Clock هنا في السطر التالي:
 import { Loader2, CheckCircle2, MessageSquare, MapPin, User, Calendar, FileText, Send, Plus, Filter, Forward, X, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -39,6 +38,11 @@ export default function AdminSupervisorRounds() {
     const [manualPositives, setManualPositives] = useState<string[]>(['']);
     const [manualNegatives, setManualNegatives] = useState<string[]>(['']);
     const [manualRecommendations, setManualRecommendations] = useState<string[]>(['']);
+    
+    // 🔥 حالات القائم بالمرور (جديد)
+    const [manualSupervisorMode, setManualSupervisorMode] = useState<'select' | 'custom'>('select');
+    const [selectedSupervisorId, setSelectedSupervisorId] = useState('');
+    const [customSupervisorName, setCustomSupervisorName] = useState('');
 
     // --- Queries ---
     
@@ -61,6 +65,19 @@ export default function AdminSupervisorRounds() {
                 .eq('status', 'نشط');
             if (error) throw error;
             return data;
+        }
+    });
+
+    // 🔥 جلب المشرفين المعتمدين للقائمة المنسدلة
+    const { data: supervisorsList = [] } = useQuery({
+        queryKey: ['supervisors_list_active'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('supervisors')
+                .select('id, name')
+                .eq('status', 'approved');
+            if (error) throw error;
+            return data || [];
         }
     });
 
@@ -135,13 +152,28 @@ export default function AdminSupervisorRounds() {
         mutationFn: async () => {
             if (!manualLocation) throw new Error('يرجى تحديد مكان المرور');
             
+            // 🔥 معالجة بيانات القائم بالمرور
+            let finalSupervisorId = 'admin';
+            let finalSupervisorName = 'الإدارة (تسجيل يدوي)';
+
+            if (manualSupervisorMode === 'select') {
+                if (!selectedSupervisorId) throw new Error('يرجى اختيار المشرف أو تحديد إدخال يدوي');
+                const sup = supervisorsList.find((s: any) => s.id === selectedSupervisorId);
+                finalSupervisorId = sup?.id || 'admin';
+                finalSupervisorName = sup?.name || 'غير معروف';
+            } else {
+                if (!customSupervisorName.trim()) throw new Error('يرجى كتابة اسم القائم بالمرور يدوياً');
+                finalSupervisorId = 'manual_' + new Date().getTime(); // ID وهمي للمرور اليدوي
+                finalSupervisorName = customSupervisorName.trim();
+            }
+            
             const cleanPositives = manualPositives.filter(p => p.trim() !== '');
             const cleanNegatives = manualNegatives.filter(n => n.trim() !== '');
             const cleanRecs = manualRecommendations.filter(r => r.trim() !== '');
 
             const { error } = await supabase.from('supervisor_rounds').insert({
-                supervisor_id: 'admin', 
-                supervisor_name: 'الإدارة (تسجيل يدوي)',
+                supervisor_id: finalSupervisorId, 
+                supervisor_name: finalSupervisorName,
                 round_date: manualDate,
                 round_time: manualTime,
                 location: manualLocation,
@@ -156,12 +188,16 @@ export default function AdminSupervisorRounds() {
         },
         onSuccess: () => {
             toast.success('تم تسجيل المرور اليدوي بنجاح');
+            // إعادة تعيين الحقول
             setManualLocation(''); setManualPositives(['']); setManualNegatives(['']); setManualRecommendations(['']);
+            setSelectedSupervisorId(''); setCustomSupervisorName(''); setManualSupervisorMode('select');
+            
             setActiveTab('history');
             queryClient.invalidateQueries({ queryKey: ['admin_supervisor_rounds'] });
         },
         onError: (err: any) => toast.error(err.message)
     });
+
 
     // --- Helpers ---
     const filteredRounds = useMemo(() => {
@@ -350,12 +386,45 @@ export default function AdminSupervisorRounds() {
 
             {activeTab === 'add_new' && (
                 <div className="bg-white p-6 rounded-[2rem] shadow-sm border space-y-6">
-                    <div className="border-b pb-6">
-                        <label className="text-sm font-black text-gray-700 mb-3 flex items-center gap-2"><MapPin className="text-indigo-500 w-5 h-5"/> مكان المرور</label>
-                        <select value={manualLocation} onChange={e => setManualLocation(e.target.value)} className="w-full md:w-1/2 p-3 bg-gray-50 border rounded-xl outline-none font-bold text-sm">
-                            <option value="">اختر المكان...</option>
-                            {LOCATION_OPTIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
-                        </select>
+                    {/* 🔥 تم تعديل التصميم ليتضمن حقل القائم بالمرور بجوار مكان المرور */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b pb-6">
+                        <div>
+                            <label className="text-sm font-black text-gray-700 mb-3 flex items-center gap-2"><MapPin className="text-indigo-500 w-5 h-5"/> مكان المرور</label>
+                            <select value={manualLocation} onChange={e => setManualLocation(e.target.value)} className="w-full p-3 bg-gray-50 border rounded-xl outline-none font-bold text-sm">
+                                <option value="">اختر المكان...</option>
+                                {LOCATION_OPTIONS.map(loc => <option key={loc} value={loc}>{loc}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-black text-gray-700 mb-3 flex items-center gap-2"><User className="text-indigo-500 w-5 h-5"/> القائم بالمرور</label>
+                            <select 
+                                value={manualSupervisorMode === 'custom' ? 'custom' : selectedSupervisorId} 
+                                onChange={(e) => {
+                                    if (e.target.value === 'custom') {
+                                        setManualSupervisorMode('custom');
+                                        setSelectedSupervisorId('');
+                                    } else {
+                                        setManualSupervisorMode('select');
+                                        setSelectedSupervisorId(e.target.value);
+                                    }
+                                }} 
+                                className={`w-full p-3 bg-gray-50 border rounded-xl outline-none font-bold text-sm ${manualSupervisorMode === 'custom' ? 'mb-2' : ''}`}
+                            >
+                                <option value="">-- اختر مشرفاً من القائمة --</option>
+                                {supervisorsList.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                <option value="custom">✍️ أخرى (إدخال يدوي)...</option>
+                            </select>
+                            
+                            {manualSupervisorMode === 'custom' && (
+                                <input 
+                                    type="text" 
+                                    placeholder="اكتب اسم القائم بالمرور هنا..." 
+                                    value={customSupervisorName} 
+                                    onChange={e => setCustomSupervisorName(e.target.value)} 
+                                    className="w-full p-3 bg-white border border-indigo-200 rounded-xl outline-none font-bold text-gray-700 text-sm focus:ring-2 focus:ring-indigo-100"
+                                />
+                            )}
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b pb-6">
@@ -385,7 +454,7 @@ export default function AdminSupervisorRounds() {
                     </div>
 
                     <button onClick={() => manualRoundMutation.mutate()} disabled={manualRoundMutation.isPending} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all flex justify-center items-center gap-2 mt-4">
-                        {manualRoundMutation.isPending ? <Loader2 className="w-6 h-6 animate-spin"/> : <><CheckCircle2 size={20}/> تسجيل وحفظ المرور (باسم الإدارة)</>}
+                        {manualRoundMutation.isPending ? <Loader2 className="w-6 h-6 animate-spin"/> : <><CheckCircle2 size={20}/> تسجيل وحفظ المرور</>}
                     </button>
                 </div>
             )}
