@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Gamepad2, Lock, Timer, Trophy, Loader2, Dices, HelpCircle, Star, Zap, Calculator, Brain, Award, Target, Clock, CheckCircle, XCircle, AlertCircle, TrendingUp, User, Sparkles, Swords, Play} from 'lucide-react';
+import { Gamepad2, Lock, Timer, Trophy, Loader2, Dices, HelpCircle, Star, Zap, Calculator, Brain, Award, Target, Clock, CheckCircle, XCircle, AlertCircle, TrendingUp, User, Sparkles, Tv2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import LiveGamesArena from './LiveGamesArena';
+import LiveGamesArena from '../../LiveGamesArena';
+
 interface Props {
     employee: Employee;
 }
@@ -110,7 +111,8 @@ export default function StaffArcade({ employee }: Props) {
     const [activeGame, setActiveGame] = useState<string | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
-const [showLiveArena, setShowLiveArena] = useState(false);
+    const [showLiveGames, setShowLiveGames] = useState(false);
+
     const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
 
     // 1. جلب آخر محاولة
@@ -212,9 +214,6 @@ const [showLiveArena, setShowLiveArena] = useState(false);
         }
     });
 
-if (showLiveArena) {
-        return <LiveGamesArena employee={employee} onClose={() => setShowLiveArena(false)} />;
-    }
     return (
         <div className="space-y-4 animate-in fade-in pb-10">
             {/* Header */}
@@ -254,25 +253,6 @@ if (showLiveArena) {
                 </div>
             </div>
 
-            {/* 🔥🔥 بانر الدخول للألعاب المباشرة الأونلاين (متاح دائماً) 🔥🔥 */}
-            <button 
-                onClick={() => setShowLiveArena(true)}
-                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-[2rem] p-6 text-white shadow-xl hover:shadow-2xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group text-right flex items-center justify-between border-4 border-indigo-100"
-            >
-                <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-150 transition-transform"></div>
-                <div className="relative z-10 flex-1">
-                    <h3 className="text-2xl md:text-3xl font-black mb-2 flex items-center gap-2">
-                        <Swords className="w-8 h-8 text-yellow-300 animate-pulse" />
-                        تحدى زملائك (أونلاين) 🔥
-                    </h3>
-                    <p className="text-indigo-100 font-bold text-sm md:text-base max-w-lg">
-                        ادخل حلبة الألعاب المباشرة، العب XO مع المتواجدين الآن، واكسب نقاط الجائزة الكبرى!
-                    </p>
-                </div>
-                <div className="hidden md:flex w-16 h-16 bg-white/20 rounded-2xl backdrop-blur-sm items-center justify-center flex-shrink-0 group-hover:bg-white/30 transition-colors">
-                    <Play className="w-8 h-8 fill-current text-yellow-300" />
-                </div>
-            </button>
             {loadingPlay ? (
                 <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
                     <Loader2 className="w-12 h-12 animate-spin mx-auto text-fuchsia-600 mb-4"/>
@@ -466,7 +446,61 @@ if (showLiveArena) {
                 </div>
             )}
 
-            {/* Modal لوحة الشرف */}
+
+            {/* 🎮 Floating Button - Live Games Arena */}
+            <button
+                onClick={() => setShowLiveGames(true)}
+                className="fixed bottom-6 left-6 z-50 group"
+                title="ساحة الألعاب المباشرة"
+            >
+                <span className="absolute inset-0 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 opacity-30 animate-ping scale-125"></span>
+                <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600 shadow-2xl shadow-blue-500/60 flex items-center justify-center border-4 border-white/30 hover:scale-110 active:scale-95 transition-all duration-300">
+                    <Tv2 className="w-7 h-7 text-white drop-shadow" />
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-md flex items-center justify-center">
+                        <span className="w-2 h-2 bg-red-300 rounded-full animate-ping absolute"></span>
+                    </span>
+                </div>
+                <span className="absolute left-20 top-1/2 -translate-y-1/2 bg-gray-900/90 backdrop-blur-sm text-white text-xs font-black px-3 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap border border-blue-500/50 shadow-xl pointer-events-none">
+                    🔴 ساحة الألعاب المباشرة
+                </span>
+            </button>
+
+            {/* Modal - LiveGamesArena */}
+            {showLiveGames && (
+                <div
+                    className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in"
+                    onClick={() => setShowLiveGames(false)}
+                >
+                    <div
+                        className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="sticky top-0 z-10 bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 rounded-t-3xl px-6 py-4 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center">
+                                    <Tv2 className="w-6 h-6 text-white" />
+                                </div>
+                                <div>
+                                    <h2 className="text-white font-black text-xl">ساحة الألعاب المباشرة</h2>
+                                    <div className="flex items-center gap-1">
+                                        <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></span>
+                                        <span className="text-sky-100 text-xs font-bold">LIVE</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowLiveGames(false)}
+                                className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center transition-all active:scale-95"
+                            >
+                                <XCircle className="w-6 h-6 text-white" />
+                            </button>
+                        </div>
+                        <div className="p-4 md:p-6">
+                            <LiveGamesArena employee={employee} />
+                        </div>
+                    </div>
+                </div>
+            )}
             {showLeaderboard && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in" onClick={() => setShowLeaderboard(false)}>
                     <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-[2rem] border-2 border-amber-200 shadow-2xl p-6 md:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
