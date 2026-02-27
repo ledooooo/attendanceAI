@@ -450,7 +450,7 @@ export default function StaffArcade({ employee }: Props) {
             {/* 🎮 Floating Button - Live Games Arena */}
             <button
                 onClick={() => setShowLiveGames(true)}
-                className="fixed bottom-18 left-6 z-50 group"
+                className="fixed bottom-20 left-6 z-50 group"
                 title="ساحة الألعاب المباشرة"
             >
                 <span className="absolute inset-0 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 opacity-30 animate-ping scale-125"></span>
