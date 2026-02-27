@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { 
-    Gamepad2, Swords, UserSecret, Trophy, Users, Clock, 
+    Gamepad2, Swords, UserX, Trophy, Users, Clock, 
     AlertTriangle, Play, X, CheckCircle2, Zap, BrainCircuit, Loader2 
 } from 'lucide-react';
 
@@ -301,7 +301,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
             {view === 'identity_setup' && (
                 <div className="p-6 flex-1 flex flex-col items-center justify-center animate-in zoom-in-95">
                     <div className="bg-white p-6 rounded-[2rem] shadow-xl border border-gray-100 w-full max-w-md text-center">
-                        <UserSecret className="w-12 h-12 text-indigo-500 mx-auto mb-4"/>
+                        <UserX className="w-12 h-12 text-indigo-500 mx-auto mb-4"/>
                         <h3 className="text-xl font-black text-gray-800 mb-2">كيف تريد أن تظهر؟</h3>
                         <p className="text-xs text-gray-500 font-bold mb-6">يمكنك اللعب باسمك الحقيقي أو الدخول بهوية سرية لزيادة الحماس!</p>
 
