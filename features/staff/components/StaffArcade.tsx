@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Gamepad2, Lock, Timer, Trophy, Loader2, Dices, HelpCircle, Star, Zap, Calculator, Brain, Award, Target, Clock, CheckCircle, XCircle, AlertCircle, TrendingUp, User, Sparkles } from 'lucide-react';
+import { Gamepad2, Lock, Timer, Trophy, Loader2, Dices, HelpCircle, Star, Zap, Calculator, Brain, Award, Target, Clock, CheckCircle, XCircle, AlertCircle, TrendingUp, User, Sparkles, Swords, Play} from 'lucide-react';
 import toast from 'react-hot-toast';
-
+import LiveGamesArena from './LiveGamesArena';
 interface Props {
     employee: Employee;
 }
@@ -110,7 +110,7 @@ export default function StaffArcade({ employee }: Props) {
     const [activeGame, setActiveGame] = useState<string | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
-
+const [showLiveArena, setShowLiveArena] = useState(false);
     const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
 
     // 1. جلب آخر محاولة
@@ -212,6 +212,9 @@ export default function StaffArcade({ employee }: Props) {
         }
     });
 
+if (showLiveArena) {
+        return <LiveGamesArena employee={employee} onClose={() => setShowLiveArena(false)} />;
+    }
     return (
         <div className="space-y-4 animate-in fade-in pb-10">
             {/* Header */}
@@ -251,6 +254,25 @@ export default function StaffArcade({ employee }: Props) {
                 </div>
             </div>
 
+            {/* 🔥🔥 بانر الدخول للألعاب المباشرة الأونلاين (متاح دائماً) 🔥🔥 */}
+            <button 
+                onClick={() => setShowLiveArena(true)}
+                className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-[2rem] p-6 text-white shadow-xl hover:shadow-2xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group text-right flex items-center justify-between border-4 border-indigo-100"
+            >
+                <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-150 transition-transform"></div>
+                <div className="relative z-10 flex-1">
+                    <h3 className="text-2xl md:text-3xl font-black mb-2 flex items-center gap-2">
+                        <Swords className="w-8 h-8 text-yellow-300 animate-pulse" />
+                        تحدى زملائك (أونلاين) 🔥
+                    </h3>
+                    <p className="text-indigo-100 font-bold text-sm md:text-base max-w-lg">
+                        ادخل حلبة الألعاب المباشرة، العب XO مع المتواجدين الآن، واكسب نقاط الجائزة الكبرى!
+                    </p>
+                </div>
+                <div className="hidden md:flex w-16 h-16 bg-white/20 rounded-2xl backdrop-blur-sm items-center justify-center flex-shrink-0 group-hover:bg-white/30 transition-colors">
+                    <Play className="w-8 h-8 fill-current text-yellow-300" />
+                </div>
+            </button>
             {loadingPlay ? (
                 <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
                     <Loader2 className="w-12 h-12 animate-spin mx-auto text-fuchsia-600 mb-4"/>
