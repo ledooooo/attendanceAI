@@ -45,21 +45,21 @@ const DIFF_PROFILES: Record<DiffLevel, DiffProfile> = {
         level: 'intermediate', label: 'متوسط', emoji: '⚡',
         color: 'bg-blue-100 text-blue-700 border-blue-300',
         weights: { easy: 40, medium: 50, hard: 10 },
-        multiplier: 1.2,
+        multiplier: 1.1,
         desc: 'مزيج متوازن +10% نقاط'
     },
     advanced: {
         level: 'advanced', label: 'متقدم', emoji: '🔥',
         color: 'bg-orange-100 text-orange-700 border-orange-300',
         weights: { easy: 20, medium: 50, hard: 30 },
-        multiplier: 1.3,
+        multiplier: 1.2,
         desc: 'تحدي أكبر +20% نقاط'
     },
     elite: {
         level: 'elite', label: 'نخبة', emoji: '👑',
         color: 'bg-purple-100 text-purple-700 border-purple-300',
         weights: { easy: 10, medium: 30, hard: 60 },
-        multiplier: 1.4,
+        multiplier: 1.3,
         desc: 'للمتميزين فقط +30% نقاط'
     }
 };
@@ -213,38 +213,37 @@ export default function StaffArcade({ employee }: Props) {
     });
 
     return (
-        <div className="space-y-6 animate-in fade-in pb-10">
+        <div className="space-y-4 animate-in fade-in pb-10">
             {/* Header */}
-            <div className="relative bg-gradient-to-br from-violet-600 via-fuchsia-600 to-purple-700 rounded-[2rem] p-8 text-white shadow-2xl overflow-hidden">
+            <div className="relative bg-gradient-to-br from-violet-600 via-fuchsia-600 to-purple-700 rounded-2xl p-5 text-white shadow-2xl overflow-hidden">
                 <div className="absolute inset-0 opacity-10">
                     <div className="absolute top-10 left-10 w-32 h-32 bg-white rounded-full blur-3xl animate-pulse"></div>
                     <div className="absolute bottom-10 right-10 w-40 h-40 bg-fuchsia-300 rounded-full blur-3xl animate-pulse delay-700"></div>
                 </div>
                 <div className="relative z-10">
-                    <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                            <h2 className="text-3xl md:text-4xl font-black flex items-center gap-3 mb-2">
-                                <Gamepad2 className="w-10 h-10 text-fuchsia-300 animate-bounce"/>
-                                صالة الألعاب
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                            <h2 className="text-2xl md:text-4xl font-black flex items-center gap-2 mb-1">
+                                <Gamepad2 className="w-7 h-7 md:w-10 md:h-10 text-fuchsia-300 animate-bounce flex-shrink-0"/>
+                                <span>صالة الألعاب</span>
                             </h2>
-                            <p className="text-violet-100 text-sm md:text-base font-bold flex items-center gap-2 mb-3">
-                                <Clock className="w-4 h-4"/> محاولة واحدة كل 5 ساعات • اختبر مهاراتك واجمع النقاط!
+                            <p className="text-violet-100 text-xs md:text-base font-bold flex items-center gap-1 mb-2">
+                                <Clock className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0"/> محاولة واحدة كل 5 ساعات
                             </p>
-                            {/* شارة المستوى */}
                             <LevelBadge employee={employee} />
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                             <button
                                 onClick={() => setShowLeaderboard(true)}
-                                className="bg-white bg-opacity-20 backdrop-blur-sm hover:bg-opacity-30 px-4 py-3 rounded-2xl border border-white border-opacity-30 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                className="bg-white bg-opacity-20 backdrop-blur-sm hover:bg-opacity-30 p-2.5 md:px-4 md:py-3 rounded-xl border border-white border-opacity-30 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
                             >
                                 <Trophy className="w-5 h-5 text-yellow-300"/>
                                 <span className="hidden md:inline text-sm font-black">الأبطال</span>
                             </button>
-                            <div className="hidden md:block bg-white bg-opacity-20 backdrop-blur-sm px-6 py-3 rounded-2xl border border-white border-opacity-30">
-                                <p className="text-xs text-violet-200 mb-1">رصيدك الحالي</p>
-                                <p className="text-2xl font-black flex items-center gap-1">
-                                    <Trophy className="w-5 h-5 text-yellow-300"/> {employee.total_points || 0}
+                            <div className="bg-white bg-opacity-20 backdrop-blur-sm px-3 py-2 md:px-6 md:py-3 rounded-xl border border-white border-opacity-30">
+                                <p className="text-[10px] text-violet-200 mb-0.5">رصيدك</p>
+                                <p className="text-lg md:text-2xl font-black flex items-center gap-1">
+                                    <Trophy className="w-4 h-4 text-yellow-300"/> {employee.total_points || 0}
                                 </p>
                             </div>
                         </div>
@@ -253,22 +252,22 @@ export default function StaffArcade({ employee }: Props) {
             </div>
 
             {loadingPlay ? (
-                <div className="text-center py-20 bg-white rounded-[2rem] shadow-sm">
+                <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
                     <Loader2 className="w-12 h-12 animate-spin mx-auto text-fuchsia-600 mb-4"/>
                     <p className="text-gray-500 font-bold">جاري التحميل...</p>
                 </div>
             ) : activeGame !== null ? (
                 /* شاشة اللعب */
-                <div className="bg-white rounded-[2rem] shadow-xl border-2 border-gray-100 p-6 md:p-10">
-                    <div className="flex justify-between items-center mb-8 pb-6 border-b-2 border-gray-100">
-                        <h3 className="font-black text-xl md:text-2xl text-violet-700 flex items-center gap-2">
-                            <Target className="w-6 h-6"/> تحدي قيد التنفيذ
+                <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-100 p-4 md:p-10">
+                    <div className="flex justify-between items-center mb-6 pb-4 border-b-2 border-gray-100">
+                        <h3 className="font-black text-lg md:text-2xl text-violet-700 flex items-center gap-2">
+                            <Target className="w-5 h-5 md:w-6 md:h-6"/> تحدي قيد التنفيذ
                         </h3>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                             <LevelBadge employee={employee} />
-                            <div className="flex items-center gap-2 bg-violet-50 px-4 py-2 rounded-xl">
+                            <div className="flex items-center gap-1 bg-violet-50 px-3 py-2 rounded-xl">
                                 <Zap className="w-4 h-4 text-violet-600"/>
-                                <span className="text-sm font-bold text-violet-700">جاري اللعب...</span>
+                                <span className="text-xs font-bold text-violet-700 hidden sm:inline">جاري اللعب...</span>
                             </div>
                         </div>
                     </div>
@@ -290,11 +289,11 @@ export default function StaffArcade({ employee }: Props) {
                 </div>
             ) : timeRemaining ? (
                 /* شاشة الانتظار */
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-12 rounded-[2rem] text-center border-2 border-gray-200 shadow-xl animate-in zoom-in-95">
-                    <div className="bg-white w-28 h-28 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-                        <Timer className="w-16 h-16 text-violet-500 animate-pulse"/>
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-8 md:p-12 rounded-2xl text-center border-2 border-gray-200 shadow-xl animate-in zoom-in-95">
+                    <div className="bg-white w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
+                        <Timer className="w-14 h-14 text-violet-500 animate-pulse"/>
                     </div>
-                    <h3 className="text-3xl font-black text-gray-800 mb-3">وقت الراحة! ☕</h3>
+                    <h3 className="text-2xl md:text-3xl font-black text-gray-800 mb-3">وقت الراحة! ☕</h3>
                     <p className="text-gray-600 font-bold mb-6 max-w-md mx-auto">
                         لقد استهلكت محاولتك. خذ استراحة وتعال تلعب مرة تانية بعد:
                     </p>
@@ -319,125 +318,128 @@ export default function StaffArcade({ employee }: Props) {
                 /* قائمة الألعاب */
                 <div>
                     {/* بانر المستوى */}
-                    <div className={`mb-5 p-4 rounded-2xl border-2 flex items-center gap-4 ${diffProfile.color}`}>
-                        <span className="text-3xl">{diffProfile.emoji}</span>
-                        <div className="flex-1">
+                    <div className={`mb-4 p-3 md:p-4 rounded-2xl border-2 flex items-center gap-3 ${diffProfile.color}`}>
+                        <span className="text-2xl md:text-3xl">{diffProfile.emoji}</span>
+                        <div className="flex-1 min-w-0">
                             <p className="font-black text-sm">مستواك الحالي: {diffProfile.label}</p>
-                            <p className="text-xs font-bold opacity-80">{diffProfile.desc}</p>
+                            <p className="text-xs font-bold opacity-80 truncate">{diffProfile.desc}</p>
                         </div>
-                        <div className="text-left">
+                        <div className="text-left flex-shrink-0">
                             <p className="font-black text-lg">×{diffProfile.multiplier.toFixed(1)}</p>
-                            <p className="text-xs font-bold opacity-70">مضاعف النقاط</p>
+                            <p className="text-xs font-bold opacity-70">مضاعف</p>
                         </div>
                     </div>
 
-                    <div className="mb-6 flex items-center justify-between">
-                        <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
-                            <Star className="w-6 h-6 text-yellow-500"/> اختر لعبتك المفضلة
+                    <div className="mb-4 flex items-center justify-between">
+                        <h3 className="text-lg md:text-xl font-black text-gray-800 flex items-center gap-2">
+                            <Star className="w-5 h-5 text-yellow-500"/> اختر لعبتك
                         </h3>
-                        <div className="text-sm font-bold text-gray-500 bg-gray-100 px-4 py-2 rounded-xl">
+                        <div className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-xl">
                             6 ألعاب متاحة
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {/* Game 1 */}
-                        <button onClick={() => setActiveGame('spin')} className="group bg-gradient-to-br from-fuchsia-50 to-pink-50 border-2 border-fuchsia-100 hover:border-fuchsia-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col relative overflow-hidden hover:scale-105 active:scale-95">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
-                            <div className="relative z-10">
-                                <div className="w-12 h-12 bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 group-hover:rotate-12 transition-transform shadow-lg">
-                                    <Dices className="w-7 h-7"/>
+                    {/* ✅ Grid: 2 عامود دائماً على موبايل، 3 على تابلت، 4 على ديسكتوب كبير */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+
+                        {/* Game 1 - عجلة الحظ */}
+                        <button onClick={() => setActiveGame('spin')} className="group bg-gradient-to-br from-fuchsia-50 to-pink-50 border-2 border-fuchsia-100 hover:border-fuchsia-300 p-3 md:p-4 rounded-2xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col relative overflow-hidden hover:scale-105 active:scale-95">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-fuchsia-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 group-hover:rotate-12 transition-transform shadow-lg">
+                                    <Dices className="w-5 h-5 md:w-7 md:h-7"/>
                                 </div>
-                                <h3 className="font-black text-gray-900 text-base mb-1.5">عجلة الحظ المزدوجة</h3>
-                                <p className="text-xs text-gray-600 font-bold leading-relaxed mb-4 flex-1">لف العجلة لتحديد الجائزة، ثم أجب على سؤال طبي من تخصصك لتفوز بها!</p>
-                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-fuchsia-100">
-                                    <span className="text-xs bg-white text-fuchsia-700 px-3 py-1.5 rounded-lg font-black shadow-sm">حظ + ذكاء</span>
-                                    <span className="text-xs text-fuchsia-600 font-black flex items-center gap-1"><Trophy className="w-3 h-3"/> 5-30 نقطة</span>
+                                <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">عجلة الحظ</h3>
+                                <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">لف العجلة وأجب على سؤال طبي لتفوز!</p>
+                                <div className="flex items-center justify-between pt-2 border-t border-fuchsia-100">
+                                    <span className="text-[10px] md:text-xs bg-white text-fuchsia-700 px-2 py-1 rounded-lg font-black shadow-sm">حظ + ذكاء</span>
+                                    <span className="text-[10px] md:text-xs text-fuchsia-600 font-black flex items-center gap-0.5"><Trophy className="w-2.5 h-2.5 md:w-3 md:h-3"/> 5-30</span>
                                 </div>
                             </div>
                         </button>
 
-                        {/* Game 2 */}
-                        <button onClick={() => setActiveGame('scramble')} className="group bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-100 hover:border-blue-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
-                            <div className="relative z-10">
-                                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-600 text-white rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
-                                    <Timer className="w-7 h-7"/>
+                        {/* Game 2 - فك الشفرة */}
+                        <button onClick={() => setActiveGame('scramble')} className="group bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-100 hover:border-blue-300 p-3 md:p-4 rounded-2xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-blue-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-blue-500 to-cyan-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Timer className="w-5 h-5 md:w-7 md:h-7"/>
                                 </div>
-                                <h3 className="font-black text-gray-900 text-base mb-1.5">فك الشفرة</h3>
-                                <p className="text-xs text-gray-600 font-bold leading-relaxed mb-4 flex-1">حروف مبعثرة! رتبها بسرعة. النقاط تنقص كل ثانية تتأخر فيها.</p>
-                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-blue-100">
-                                    <span className="text-xs bg-white text-blue-700 px-3 py-1.5 rounded-lg font-black shadow-sm">سرعة بديهة</span>
-                                    <span className="text-xs text-blue-600 font-black flex items-center gap-1"><Trophy className="w-3 h-3"/> 5-20 نقطة</span>
-                                </div>
-                            </div>
-                        </button>
-
-                        {/* Game 3 */}
-                        <button onClick={() => setActiveGame('safe')} className="group bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-100 hover:border-emerald-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
-                            <div className="relative z-10">
-                                <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
-                                    <Lock className="w-7 h-7"/>
-                                </div>
-                                <h3 className="font-black text-gray-900 text-base mb-1.5">الخزنة السرية</h3>
-                                <p className="text-xs text-gray-600 font-bold leading-relaxed mb-4 flex-1">خمن الرقم السري (3 أرقام) بناءً على تلميحات الألوان في 5 محاولات.</p>
-                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-emerald-100">
-                                    <span className="text-xs bg-white text-emerald-700 px-3 py-1.5 rounded-lg font-black shadow-sm">ذكاء ومنطق</span>
-                                    <span className="text-xs text-emerald-600 font-black flex items-center gap-1"><Trophy className="w-3 h-3"/> 20 نقطة</span>
+                                <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">فك الشفرة</h3>
+                                <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">رتب الحروف بسرعة. النقاط تنقص كل ثانية!</p>
+                                <div className="flex items-center justify-between pt-2 border-t border-blue-100">
+                                    <span className="text-[10px] md:text-xs bg-white text-blue-700 px-2 py-1 rounded-lg font-black shadow-sm">سرعة بديهة</span>
+                                    <span className="text-[10px] md:text-xs text-blue-600 font-black flex items-center gap-0.5"><Trophy className="w-2.5 h-2.5 md:w-3 md:h-3"/> 5-20</span>
                                 </div>
                             </div>
                         </button>
 
-                        {/* Game 4 */}
-                        <button onClick={() => setActiveGame('memory')} className="group bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-100 hover:border-orange-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
-                            <div className="relative z-10">
-                                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
-                                    <Gamepad2 className="w-7 h-7"/>
+                        {/* Game 3 - الخزنة السرية */}
+                        <button onClick={() => setActiveGame('safe')} className="group bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-100 hover:border-emerald-300 p-3 md:p-4 rounded-2xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Lock className="w-5 h-5 md:w-7 md:h-7"/>
                                 </div>
-                                <h3 className="font-black text-gray-900 text-base mb-1.5">تطابق الذاكرة</h3>
-                                <p className="text-xs text-gray-600 font-bold leading-relaxed mb-4 flex-1">اقلب الكروت وتذكر أماكنها لتطابق الأيقونات الطبية قبل انتهاء الوقت.</p>
-                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-orange-100">
-                                    <span className="text-xs bg-white text-orange-700 px-3 py-1.5 rounded-lg font-black shadow-sm">قوة ذاكرة</span>
-                                    <span className="text-xs text-orange-600 font-black flex items-center gap-1"><Trophy className="w-3 h-3"/> 20 نقطة</span>
-                                </div>
-                            </div>
-                        </button>
-
-                        {/* Game 5 */}
-                        <button onClick={() => setActiveGame('quiz')} className="group bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-100 hover:border-indigo-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
-                            <div className="relative z-10">
-                                <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
-                                    <Brain className="w-7 h-7"/>
-                                </div>
-                                <div className="absolute -top-2 -left-2 bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded-full shadow-md animate-pulse">جديد!</div>
-                                <h3 className="font-black text-gray-900 text-base mb-1.5">سباق المعرفة الطبية</h3>
-                                <p className="text-xs text-gray-600 font-bold leading-relaxed mb-4 flex-1">أجب على 5 أسئلة طبية متتالية بأسرع وقت. كل ثانية توفرها = نقاط إضافية!</p>
-                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-indigo-100">
-                                    <span className="text-xs bg-white text-indigo-700 px-3 py-1.5 rounded-lg font-black shadow-sm">معرفة + سرعة</span>
-                                    <span className="text-xs text-indigo-600 font-black flex items-center gap-1"><Trophy className="w-3 h-3"/> 5-25 نقطة</span>
+                                <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">الخزنة السرية</h3>
+                                <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">خمن الرقم السري في 5 محاولات بالتلميحات.</p>
+                                <div className="flex items-center justify-between pt-2 border-t border-emerald-100">
+                                    <span className="text-[10px] md:text-xs bg-white text-emerald-700 px-2 py-1 rounded-lg font-black shadow-sm">ذكاء ومنطق</span>
+                                    <span className="text-[10px] md:text-xs text-emerald-600 font-black flex items-center gap-0.5"><Trophy className="w-2.5 h-2.5 md:w-3 md:h-3"/> 20</span>
                                 </div>
                             </div>
                         </button>
 
-                        {/* Game 6 */}
-                        <button onClick={() => setActiveGame('dose')} className="group bg-gradient-to-br from-rose-50 to-red-50 border-2 border-rose-100 hover:border-rose-300 p-4 rounded-3xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
-                            <div className="relative z-10">
-                                <div className="w-12 h-12 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-lg">
-                                    <Calculator className="w-7 h-7"/>
+                        {/* Game 4 - تطابق الذاكرة */}
+                        <button onClick={() => setActiveGame('memory')} className="group bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-100 hover:border-orange-300 p-3 md:p-4 rounded-2xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-orange-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Gamepad2 className="w-5 h-5 md:w-7 md:h-7"/>
                                 </div>
-                                <div className="absolute -top-2 -left-2 bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded-full shadow-md animate-pulse">جديد!</div>
-                                <h3 className="font-black text-gray-900 text-base mb-1.5">تحدي حساب الجرعات</h3>
-                                <p className="text-xs text-gray-600 font-bold leading-relaxed mb-4 flex-1">احسب الجرعات الدوائية بدقة. اختبار حقيقي لمهاراتك الحسابية الطبية!</p>
-                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-rose-100">
-                                    <span className="text-xs bg-white text-rose-700 px-3 py-1.5 rounded-lg font-black shadow-sm">دقة حسابية</span>
-                                    <span className="text-xs text-rose-600 font-black flex items-center gap-1"><Trophy className="w-3 h-3"/> 10-30 نقطة</span>
+                                <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">تطابق الذاكرة</h3>
+                                <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">اقلب الكروت وطابق الأيقونات قبل انتهاء الوقت.</p>
+                                <div className="flex items-center justify-between pt-2 border-t border-orange-100">
+                                    <span className="text-[10px] md:text-xs bg-white text-orange-700 px-2 py-1 rounded-lg font-black shadow-sm">قوة ذاكرة</span>
+                                    <span className="text-[10px] md:text-xs text-orange-600 font-black flex items-center gap-0.5"><Trophy className="w-2.5 h-2.5 md:w-3 md:h-3"/> 20</span>
                                 </div>
                             </div>
                         </button>
+
+                        {/* Game 5 - سباق المعرفة الطبية */}
+                        <button onClick={() => setActiveGame('quiz')} className="group bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-100 hover:border-indigo-300 p-3 md:p-4 rounded-2xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Brain className="w-5 h-5 md:w-7 md:h-7"/>
+                                </div>
+                                <div className="absolute -top-1 -left-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md animate-pulse">جديد!</div>
+                                <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">سباق المعرفة</h3>
+                                <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">أجب على 5 أسئلة طبية. كل ثانية = نقاط إضافية!</p>
+                                <div className="flex items-center justify-between pt-2 border-t border-indigo-100">
+                                    <span className="text-[10px] md:text-xs bg-white text-indigo-700 px-2 py-1 rounded-lg font-black shadow-sm">معرفة + سرعة</span>
+                                    <span className="text-[10px] md:text-xs text-indigo-600 font-black flex items-center gap-0.5"><Trophy className="w-2.5 h-2.5 md:w-3 md:h-3"/> 5-25</span>
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* Game 6 - تحدي حساب الجرعات */}
+                        <button onClick={() => setActiveGame('dose')} className="group bg-gradient-to-br from-rose-50 to-red-50 border-2 border-rose-100 hover:border-rose-300 p-3 md:p-4 rounded-2xl shadow-md hover:shadow-2xl transition-all text-right flex flex-col overflow-hidden hover:scale-105 active:scale-95 relative">
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-rose-200/20 rounded-full blur-3xl group-hover:blur-2xl transition-all"></div>
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform shadow-lg">
+                                    <Calculator className="w-5 h-5 md:w-7 md:h-7"/>
+                                </div>
+                                <div className="absolute -top-1 -left-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md animate-pulse">جديد!</div>
+                                <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">حساب الجرعات</h3>
+                                <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">احسب الجرعات الدوائية بدقة في 3 حالات طبية!</p>
+                                <div className="flex items-center justify-between pt-2 border-t border-rose-100">
+                                    <span className="text-[10px] md:text-xs bg-white text-rose-700 px-2 py-1 rounded-lg font-black shadow-sm">دقة حسابية</span>
+                                    <span className="text-[10px] md:text-xs text-rose-600 font-black flex items-center gap-0.5"><Trophy className="w-2.5 h-2.5 md:w-3 md:h-3"/> 10-30</span>
+                                </div>
+                            </div>
+                        </button>
+
                     </div>
                 </div>
             )}
