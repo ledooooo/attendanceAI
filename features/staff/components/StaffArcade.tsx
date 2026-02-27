@@ -52,14 +52,14 @@ const DIFF_PROFILES: Record<DiffLevel, DiffProfile> = {
         level: 'advanced', label: 'متقدم', emoji: '🔥',
         color: 'bg-orange-100 text-orange-700 border-orange-300',
         weights: { easy: 20, medium: 50, hard: 30 },
-        multiplier: 1.4,
+        multiplier: 1.3,
         desc: 'تحدي أكبر +20% نقاط'
     },
     elite: {
         level: 'elite', label: 'نخبة', emoji: '👑',
         color: 'bg-purple-100 text-purple-700 border-purple-300',
         weights: { easy: 10, medium: 30, hard: 60 },
-        multiplier: 1.7,
+        multiplier: 1.4,
         desc: 'للمتميزين فقط +30% نقاط'
     }
 };
