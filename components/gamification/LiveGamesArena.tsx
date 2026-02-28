@@ -79,7 +79,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                 // تحديث اللعبة الحالية وإشعار الانضمام
                 setCurrentMatch((prev: any) => {
                     if (prev && prev.id === updatedMatch.id) {
-                        // إشعار لحظي لصاحب الغرفة عندما ينضم شخص آخر
                         if (prev.status === 'waiting' && updatedMatch.status === 'playing' && updatedMatch.created_by === employee.employee_id) {
                             toast.success('انضم منافس لغرفتك! اللعبة تبدأ الآن 🎮', { 
                                 icon: '🔥', 
@@ -87,7 +86,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                 style: { borderRadius: '15px', background: '#333', color: '#fff' }
                             });
                             const audio = new Audio('/notification.mp3');
-                            audio.play().catch(() => {}); // محاولة تشغيل صوت إن أمكن
+                            audio.play().catch(() => {});
                         }
                         return updatedMatch;
                     }
@@ -220,31 +219,39 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         }).eq('id', currentMatch.id);
     };
 
-    // دالة جلب سؤال (تدعم المترادفات للتخصص)
-    const fetchRandomQuestion = async (difficulty?: string) => {
+    // ✅ دالة جلب سؤال محسنة جداً للتعامل مع عدم وجود أسئلة بصعوبة معينة
+    const fetchRandomQuestion = async (requestedDifficulty?: string) => {
         const variations = getSpecialtyVariations(employee.specialty);
         const orFilter = variations.map(v => `specialty.ilike.%${v}%`).join(',');
 
         let query = supabase.from('arcade_quiz_questions').select('*');
         query = query.or(orFilter);
-        if (difficulty) query = query.eq('difficulty', difficulty);
-
-        const { data, error } = await query.limit(20); // نجلب 20 ونختار عشوائياً
         
-        if (error || !data || data.length === 0) {
-            // إذا لم نجد في هذا التخصص، نجلب سؤالاً عاماً (الكل)
-            let backupQuery = supabase.from('arcade_quiz_questions').select('*').or(`specialty.ilike.%الكل%,specialty.ilike.%all%`);
-            if (difficulty) backupQuery = backupQuery.eq('difficulty', difficulty);
-            
-            const { data: backupData } = await backupQuery.limit(20);
-            return backupData && backupData.length > 0 ? backupData[Math.floor(Math.random() * backupData.length)] : null;
+        // المحاولة الأولى: بالتخصص والصعوبة المطلوبة
+        if (requestedDifficulty) {
+            const { data: preciseData } = await query.eq('difficulty', requestedDifficulty).limit(20);
+            if (preciseData && preciseData.length > 0) {
+                return preciseData[Math.floor(Math.random() * preciseData.length)];
+            }
+        }
+
+        // المحاولة الثانية: بالتخصص (أي صعوبة متاحة) لأن الصعوبة المحددة غير موجودة
+        const { data: specData, error: specError } = await supabase.from('arcade_quiz_questions').select('*').or(orFilter).limit(20);
+        if (specData && specData.length > 0) {
+            return specData[Math.floor(Math.random() * specData.length)];
         }
         
-        return data[Math.floor(Math.random() * data.length)];
+        // المحاولة الثالثة: أي سؤال في قاعدة البيانات (في حال لم يجد تخصص الموظف)
+        const { data: allData } = await supabase.from('arcade_quiz_questions').select('*').limit(20);
+        if (allData && allData.length > 0) {
+            return allData[Math.floor(Math.random() * allData.length)];
+        }
+        
+        return null; // إذا كانت قاعدة البيانات فارغة تماماً
     };
 
     const prepareSuddenDeathQuestion = async (matchId: string, board: string[], nextTurn: string) => {
-        const randomQ = await fetchRandomQuestion(); // بدون تحديد صعوبة لكسر التعادل
+        const randomQ = await fetchRandomQuestion(); 
         
         await supabase.from('live_matches').update({
             game_state: { board, current_turn: nextTurn },
@@ -253,25 +260,20 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         }).eq('id', matchId);
     };
 
-    // ✅ دالة ذكية للتحقق من الإجابة (تتجاوز مشكلة الحروف والنصوص الكاملة)
     const checkAnswerIntelligence = (selectedOptionText: string, questionObj: any) => {
         if (!questionObj) return false;
         
         const correctVal = String(questionObj.correct_answer || questionObj.correct_option || '').trim().toLowerCase();
         
-        // 1. إذا كانت الإجابة المحفوظة عبارة عن حرف (a, b, c, d) أو (أ، ب، ج، د)
         if (['a', 'b', 'c', 'd'].includes(correctVal)) {
-            // نقارن النص الذي اختاره اللاعب مع نص الخيار المحفوظ في قاعدة البيانات
             return selectedOptionText === questionObj[`option_${correctVal}`];
         }
         
-        // 2. إذا كانت الإجابة المحفوظة عبارة عن اندكس رقمي (0, 1, 2, 3)
         if (questionObj.correct_index !== undefined) {
              const opts = [questionObj.option_a, questionObj.option_b, questionObj.option_c, questionObj.option_d];
              return selectedOptionText === opts[questionObj.correct_index];
         }
 
-        // 3. المطابقة المباشرة للنص
         return selectedOptionText.trim().toLowerCase() === correctVal;
     };
 
@@ -294,14 +296,21 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         setLoading(false);
     };
 
+    // ✅ التعديل الرئيسي حدث هنا لضمان جلب السؤال بعد الفوز
     const handleRewardSelection = async (difficulty: 'easy'|'medium'|'hard', points: number) => {
         setLoading(true);
         const randomQ = await fetchRandomQuestion(difficulty);
+
+        if (!randomQ) {
+            setLoading(false);
+            return toast.error("عفواً، لا توجد أسئلة مسجلة في بنك الأسئلة لكي نختبرك بها.");
+        }
 
         await supabase.from('live_matches').update({
             status: 'answering_reward',
             final_question: { ...randomQ, rewardPoints: points }
         }).eq('id', currentMatch.id);
+        
         setLoading(false);
     };
 
@@ -329,7 +338,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         setJoiningMatchId(null);
     };
 
-    // --- Render Helpers ---
     const amIWinner = currentMatch?.winner_id === employee.employee_id;
     const opponent = currentMatch?.players?.find((p: any) => p.id !== employee.employee_id);
     const me = currentMatch?.players?.find((p: any) => p.id === employee.employee_id);
@@ -507,7 +515,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                             </div>
                         ) : currentMatch.status === 'sudden_death' ? (
                             <div className="bg-white w-full max-w-md rounded-[1.5rem] md:rounded-[2rem] p-5 md:p-6 text-center shadow-2xl border-4 border-yellow-400 animate-in zoom-in m-4 relative overflow-hidden">
-                                {/* تأثير الإضاءة الحمراء للخطر */}
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-yellow-400 to-red-500 animate-pulse"></div>
                                 
                                 <Zap className="w-12 h-12 md:w-16 md:h-16 text-yellow-500 mx-auto mb-2 animate-bounce drop-shadow-md"/>
