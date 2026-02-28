@@ -448,22 +448,31 @@ export default function StaffArcade({ employee }: Props) {
 
 
             {/* 🎮 Floating Button - Live Games Arena */}
-            <button
-                onClick={() => setShowLiveGames(true)}
-                className="fixed bottom-20 left-6 z-40 group"
-                title="ساحة الألعاب المباشرة"
-            >
-                <span className="absolute inset-0 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 opacity-30 animate-ping scale-125"></span>
-                <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600 shadow-2xl shadow-blue-500/60 flex items-center justify-center border-4 border-white/30 hover:scale-110 active:scale-95 transition-all duration-300">
-                    <Tv2 className="w-7 h-7 text-white drop-shadow" />
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-md flex items-center justify-center">
-                        <span className="w-2 h-2 bg-red-300 rounded-full animate-ping absolute"></span>
-                    </span>
-                </div>
-                <span className="absolute left-20 top-1/2 -translate-y-1/2 bg-gray-900/90 backdrop-blur-sm text-white text-xs font-black px-3 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 whitespace-nowrap border border-blue-500/50 shadow-xl pointer-events-none">
-                    🔴 ساحة الألعاب المباشرة
-                </span>
-            </button>
+<button
+    onClick={() => setShowLiveGames(true)}
+    className="fixed bottom-20 left-6 z-40 group"
+    title="ساحة الألعاب المباشرة"
+>
+    {/* Glow Effect */}
+    <span className="absolute inset-0 rounded-full bg-emerald-400 opacity-30 blur-xl scale-125 group-hover:scale-150 transition-all duration-500"></span>
+
+    {/* Main Button */}
+    <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 via-green-500 to-emerald-600 shadow-2xl shadow-green-500/60 flex items-center justify-center border border-white/30 hover:scale-110 active:scale-95 transition-all duration-300">
+
+        {/* Gamepad Icon */}
+        <Gamepad2 className="w-8 h-8 text-white drop-shadow-lg" />
+
+        {/* Live Dot */}
+        <span className="absolute -top-1 -right-1 w-4 h-4 bg-lime-400 rounded-full border-2 border-white shadow-md flex items-center justify-center">
+            <span className="w-2 h-2 bg-lime-200 rounded-full animate-ping absolute"></span>
+        </span>
+    </div>
+
+    {/* Tooltip */}
+    <span className="absolute left-20 top-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-md text-white text-xs font-bold px-4 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap border border-green-400/40 shadow-xl pointer-events-none">
+        🎮 ساحة الألعاب المباشرة
+    </span>
+</button>
 
             {/* Modal - LiveGamesArena */}
             {showLiveGames && (
