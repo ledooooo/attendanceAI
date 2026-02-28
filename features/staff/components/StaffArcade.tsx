@@ -350,8 +350,8 @@ export default function StaffArcade({ employee }: Props) {
                             <div className="relative z-10 flex flex-col h-full">
                                 <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 group-hover:rotate-12 transition-transform shadow-lg">
                                     <Dices className="w-5 h-5 md:w-7 md:h-7"/>
+                                 <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">عجلة الحظ</h3>
                                 </div>
-                                <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">عجلة الحظ</h3>
                                 <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">لف العجلة وأجب على سؤال طبي لتفوز!</p>
                                 <div className="flex items-center justify-between pt-2 border-t border-fuchsia-100">
                                     <span className="text-[10px] md:text-xs bg-white text-fuchsia-700 px-2 py-1 rounded-lg font-black shadow-sm">حظ + ذكاء</span>
@@ -415,7 +415,6 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform shadow-lg">
                                     <Brain className="w-5 h-5 md:w-7 md:h-7"/>
                                 </div>
-                                <div className="absolute -top-1 -left-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md animate-pulse">جديد!</div>
                                 <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">سباق المعرفة</h3>
                                 <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">أجب على 5 أسئلة طبية. كل ثانية = نقاط إضافية!</p>
                                 <div className="flex items-center justify-between pt-2 border-t border-indigo-100">
@@ -432,7 +431,6 @@ export default function StaffArcade({ employee }: Props) {
                                 <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-xl md:rounded-2xl flex items-center justify-center mb-2 md:mb-3 group-hover:scale-110 transition-transform shadow-lg">
                                     <Calculator className="w-5 h-5 md:w-7 md:h-7"/>
                                 </div>
-                                <div className="absolute -top-1 -left-1 bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full shadow-md animate-pulse">جديد!</div>
                                 <h3 className="font-black text-gray-900 text-sm md:text-base mb-1 leading-tight">حساب الجرعات</h3>
                                 <p className="text-[11px] md:text-xs text-gray-500 font-bold leading-relaxed mb-3 flex-1 hidden sm:block">احسب الجرعات الدوائية بدقة في 3 حالات طبية!</p>
                                 <div className="flex items-center justify-between pt-2 border-t border-rose-100">
