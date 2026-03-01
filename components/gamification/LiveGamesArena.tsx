@@ -23,7 +23,6 @@ const AvatarDisplay = ({ avatar, className = "" }: { avatar: string, className?:
     return <span className={className}>{avatar || '👤'}</span>;
 };
 
-// دالة توحيد التخصصات للبحث الدقيق
 const getSpecialtyVariations = (spec: string) => {
     if (!spec) return ['الكل'];
     const s = spec.toLowerCase();
@@ -34,7 +33,7 @@ const getSpecialtyVariations = (spec: string) => {
     if (s.includes('معمل') || s.includes('مختبر')) return ['معمل', 'فني معمل', 'مختبر'];
     if (s.includes('جود')) return ['جودة', 'الجودة'];
     if (s.includes('عدوى')) return ['مكافحة عدوى', 'مكافحه عدوى'];
-    return [spec, 'الكل', 'all'];
+    return [spec, 'الكل'];
 };
 
 export default function LiveGamesArena({ employee, onClose }: { employee: Employee, onClose?: () => void }) {
@@ -136,27 +135,24 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         return data && data.length > 0;
     };
 
-    // ✅ دالة ذكية جداً لجلب الأسئلة وتوحيد شكلها
     const fetchUnifiedQuestion = async (difficulty?: string) => {
         const variations = getSpecialtyVariations(employee.specialty);
-        // تكوين فلتر البحث بالتخصص (ilike)
         const orFilter = variations.map(v => `specialty.ilike.%${v}%`).join(',');
 
         let questionsPool: any[] = [];
 
-        // 1. البحث في arcade_quiz_questions
+        // 1. Fetch from arcade_quiz_questions
         const { data: aqData } = await supabase.from('arcade_quiz_questions').select('*').or(orFilter);
         if (aqData) questionsPool = [...questionsPool, ...aqData.map(q => ({ ...q, source: 'arcade_quiz' }))];
 
-        // 2. البحث في arcade_dose_scenarios
+        // 2. Fetch from arcade_dose_scenarios
         const { data: adData } = await supabase.from('arcade_dose_scenarios').select('*').or(orFilter);
         if (adData) questionsPool = [...questionsPool, ...adData.map(q => ({ ...q, source: 'arcade_dose' }))];
 
-        // 3. البحث في quiz_questions
+        // 3. Fetch from standard quiz_questions
         const { data: qData } = await supabase.from('quiz_questions').select('*').or(orFilter);
         if (qData) questionsPool = [...questionsPool, ...qData.map(q => ({ ...q, source: 'standard_quiz' }))];
 
-        // إذا لم يجد أسئلة بالتخصص، يجلب أسئلة عامة (Fallback)
         if (questionsPool.length === 0) {
             const { data: anyData } = await supabase.from('arcade_quiz_questions').select('*').limit(50);
             if (anyData) questionsPool = anyData.map(q => ({ ...q, source: 'arcade_quiz' }));
@@ -164,7 +160,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
         if (questionsPool.length === 0) return null;
 
-        // فلترة بالصعوبة إذا طُلبت (سهل، متوسط، صعب)
         if (difficulty) {
             const diffPool = questionsPool.filter(q => q.difficulty === difficulty || (q.source === 'standard_quiz' && difficulty === 'medium')); 
             if (diffPool.length > 0) {
@@ -172,11 +167,10 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
             }
         }
 
-        // سحب سؤال عشوائي من المتاح
         return normalizeQuestionFormat(questionsPool[Math.floor(Math.random() * questionsPool.length)]);
     };
 
-    // ✅ دالة ضبط هيكل البيانات (تضمن ظهور الخيارات والإجابة الصحيحة بغض النظر عن الجدول)
+    // ✅ دالة التطبيع القوية (Robust Normalization) لحل مشكلة الإجابات المفقودة
     const normalizeQuestionFormat = (rawQ: any) => {
         let questionText = rawQ.question || rawQ.question_text || '';
         if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`; 
@@ -185,23 +179,23 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         let correctAns = '';
 
         if (rawQ.source === 'standard_quiz') {
-            // جدول quiz_questions يخزن الخيارات كمصفوفة نصية
             try { 
                 let parsed = JSON.parse(rawQ.options);
+                // التعامل مع الـ stringified JSON المعقد
                 opts = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+                if (!Array.isArray(opts)) opts = [opts]; // تأمين إضافي
             } catch (e) { 
+                console.error("Error parsing standard quiz options:", rawQ.options);
                 opts = []; 
             }
             correctAns = rawQ.correct_answer;
         } else {
-            // جدولي الأركيد يخزنان الخيارات في حقول منفصلة
-            opts = [rawQ.option_a, rawQ.option_b, rawQ.option_c, rawQ.option_d].filter(Boolean);
+            // التعامل مع الحقول المنفصلة وتصفيتها
+            opts = [rawQ.option_a, rawQ.option_b, rawQ.option_c, rawQ.option_d].filter(opt => opt !== null && opt !== undefined && String(opt).trim() !== '');
             
-            // تحديد الإجابة الصحيحة
             if (rawQ.correct_index !== undefined && rawQ.correct_index !== null) {
                 correctAns = opts[rawQ.correct_index];
             } else {
-                // إذا كانت الإجابة محفوظة كـ a,b,c,d
                 const correctLetter = String(rawQ.correct_option || rawQ.correct_answer || '').trim().toLowerCase();
                 if (['a', 'b', 'c', 'd'].includes(correctLetter)) {
                     correctAns = rawQ[`option_${correctLetter}`];
@@ -214,7 +208,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         return {
             id: rawQ.id,
             questionText,
-            options: opts, // هنا تأكدنا أن الخيارات أصبحت مصفوفة نظيفة جاهزة للعرض
+            options: opts, 
             correctAnswer: String(correctAns).trim().toLowerCase()
         };
     };
