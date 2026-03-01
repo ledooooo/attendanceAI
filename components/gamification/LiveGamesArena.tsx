@@ -23,6 +23,7 @@ const AvatarDisplay = ({ avatar, className = "" }: { avatar: string, className?:
     return <span className={className}>{avatar || '👤'}</span>;
 };
 
+// دالة توحيد التخصصات للبحث الدقيق
 const getSpecialtyVariations = (spec: string) => {
     if (!spec) return ['الكل'];
     const s = spec.toLowerCase();
@@ -33,7 +34,7 @@ const getSpecialtyVariations = (spec: string) => {
     if (s.includes('معمل') || s.includes('مختبر')) return ['معمل', 'فني معمل', 'مختبر'];
     if (s.includes('جود')) return ['جودة', 'الجودة'];
     if (s.includes('عدوى')) return ['مكافحة عدوى', 'مكافحه عدوى'];
-    return [spec, 'الكل'];
+    return [spec, 'الكل', 'all'];
 };
 
 export default function LiveGamesArena({ employee, onClose }: { employee: Employee, onClose?: () => void }) {
@@ -103,12 +104,11 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                             toast.success('انضم منافس لغرفتك! اللعبة تبدأ الآن 🎮', { icon: '🔥', duration: 4000, style: { borderRadius: '15px', background: '#333', color: '#fff' }});
                             new Audio('/notification.mp3').play().catch(() => {});
                         }
-                        // Start timer if transitioning to question modes and I am the one playing
                         if (updatedMatch.status === 'answering_reward' && prev.status !== 'answering_reward' && updatedMatch.winner_id === employee.employee_id) {
                             setTimeLeft(updatedMatch.final_question?.timeLimit || 15);
                         }
                         if (updatedMatch.status === 'sudden_death' && prev.status !== 'sudden_death') {
-                            setTimeLeft(15); // Sudden death fixed timer
+                            setTimeLeft(15); 
                         }
                         return updatedMatch;
                     }
@@ -136,33 +136,35 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         return data && data.length > 0;
     };
 
+    // ✅ دالة ذكية جداً لجلب الأسئلة وتوحيد شكلها
     const fetchUnifiedQuestion = async (difficulty?: string) => {
         const variations = getSpecialtyVariations(employee.specialty);
+        // تكوين فلتر البحث بالتخصص (ilike)
         const orFilter = variations.map(v => `specialty.ilike.%${v}%`).join(',');
 
         let questionsPool: any[] = [];
 
-        // 1. Fetch from arcade_quiz_questions
+        // 1. البحث في arcade_quiz_questions
         const { data: aqData } = await supabase.from('arcade_quiz_questions').select('*').or(orFilter);
         if (aqData) questionsPool = [...questionsPool, ...aqData.map(q => ({ ...q, source: 'arcade_quiz' }))];
 
-        // 2. Fetch from arcade_dose_scenarios
+        // 2. البحث في arcade_dose_scenarios
         const { data: adData } = await supabase.from('arcade_dose_scenarios').select('*').or(orFilter);
         if (adData) questionsPool = [...questionsPool, ...adData.map(q => ({ ...q, source: 'arcade_dose' }))];
 
-        // 3. Fetch from standard quiz_questions (Fallback if needed)
+        // 3. البحث في quiz_questions
         const { data: qData } = await supabase.from('quiz_questions').select('*').or(orFilter);
         if (qData) questionsPool = [...questionsPool, ...qData.map(q => ({ ...q, source: 'standard_quiz' }))];
 
+        // إذا لم يجد أسئلة بالتخصص، يجلب أسئلة عامة (Fallback)
         if (questionsPool.length === 0) {
-            // Ultimate fallback (get anything if specialty fails)
             const { data: anyData } = await supabase.from('arcade_quiz_questions').select('*').limit(50);
             if (anyData) questionsPool = anyData.map(q => ({ ...q, source: 'arcade_quiz' }));
         }
 
         if (questionsPool.length === 0) return null;
 
-        // Filter by difficulty if requested
+        // فلترة بالصعوبة إذا طُلبت (سهل، متوسط، صعب)
         if (difficulty) {
             const diffPool = questionsPool.filter(q => q.difficulty === difficulty || (q.source === 'standard_quiz' && difficulty === 'medium')); 
             if (diffPool.length > 0) {
@@ -170,32 +172,49 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
             }
         }
 
+        // سحب سؤال عشوائي من المتاح
         return normalizeQuestionFormat(questionsPool[Math.floor(Math.random() * questionsPool.length)]);
     };
 
+    // ✅ دالة ضبط هيكل البيانات (تضمن ظهور الخيارات والإجابة الصحيحة بغض النظر عن الجدول)
     const normalizeQuestionFormat = (rawQ: any) => {
         let questionText = rawQ.question || rawQ.question_text || '';
-        if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`; // For dose scenarios
+        if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`; 
 
         let opts: string[] = [];
         let correctAns = '';
 
         if (rawQ.source === 'standard_quiz') {
-            try { opts = JSON.parse(rawQ.options); } catch (e) { opts = []; }
+            // جدول quiz_questions يخزن الخيارات كمصفوفة نصية
+            try { 
+                let parsed = JSON.parse(rawQ.options);
+                opts = typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+            } catch (e) { 
+                opts = []; 
+            }
             correctAns = rawQ.correct_answer;
         } else {
+            // جدولي الأركيد يخزنان الخيارات في حقول منفصلة
             opts = [rawQ.option_a, rawQ.option_b, rawQ.option_c, rawQ.option_d].filter(Boolean);
-            if (rawQ.correct_index !== undefined) {
+            
+            // تحديد الإجابة الصحيحة
+            if (rawQ.correct_index !== undefined && rawQ.correct_index !== null) {
                 correctAns = opts[rawQ.correct_index];
             } else {
-                correctAns = rawQ.correct_answer || rawQ.correct_option;
+                // إذا كانت الإجابة محفوظة كـ a,b,c,d
+                const correctLetter = String(rawQ.correct_option || rawQ.correct_answer || '').trim().toLowerCase();
+                if (['a', 'b', 'c', 'd'].includes(correctLetter)) {
+                    correctAns = rawQ[`option_${correctLetter}`];
+                } else {
+                    correctAns = correctLetter;
+                }
             }
         }
 
         return {
             id: rawQ.id,
             questionText,
-            options: opts,
+            options: opts, // هنا تأكدنا أن الخيارات أصبحت مصفوفة نظيفة جاهزة للعرض
             correctAnswer: String(correctAns).trim().toLowerCase()
         };
     };
