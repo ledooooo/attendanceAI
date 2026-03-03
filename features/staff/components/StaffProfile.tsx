@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { User, Save, Camera, Calendar, Briefcase, FileText, Phone, Loader2, Baby, Clock, Timer, Syringe } from 'lucide-react';
+import { User, Save, Camera, Calendar, Briefcase, FileText, Phone, Loader2, Baby, Clock, Timer, Syringe, Building2, ShieldCheck, PhoneCall } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
+import { useQuery } from '@tanstack/react-query';
 
 interface Props {
     employee: Employee;
@@ -16,6 +17,19 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false);
+
+    // جلب اسم المركز
+    const { data: centerName } = useQuery({
+        queryKey: ['center_name', employee.center_id],
+        queryFn: async () => {
+            if (!employee.center_id) return 'غير محدد';
+            // نفترض أن هناك جدول للإعدادات أو المراكز، وإلا نعرض الـ ID مؤقتاً إذا لم يكن هناك جدول
+            // هنا سأحاول جلبه من general_settings كما ذكرت
+            const { data } = await supabase.from('general_settings').select('center_name').eq('id', employee.center_id).maybeSingle();
+            return data?.center_name || employee.center_id;
+        },
+        enabled: !!employee.center_id
+    });
 
     useEffect(() => {
         let wd = employee.work_days;
@@ -90,7 +104,7 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                 remaining_annual: Number(formData.remaining_annual),
                 remaining_casual: Number(formData.remaining_casual),
                 total_absence: Number(formData.total_absence),
-                // يتم إرسال الحقول الجديدة تلقائياً لأنها في formData
+                // سيتم إرسال emergency_phone و insurance_number تلقائياً
             };
 
             const { error } = await supabase
@@ -109,209 +123,161 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     };
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-500 pb-10">
+        <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in duration-500 pb-10">
             
-            {/* 1. Header & Image */}
-            <div className="flex flex-col md:flex-row items-center gap-6 bg-gradient-to-br from-blue-50 to-white p-8 rounded-[30px] border border-blue-100 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-bl-full opacity-50 pointer-events-none"></div>
+            {/* 1. Compact Header */}
+            <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-5 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50 rounded-bl-full opacity-60 pointer-events-none"></div>
                 
                 <div className="relative group shrink-0">
-                    <div className="w-36 h-36 rounded-[2rem] border-4 border-white shadow-xl overflow-hidden bg-white">
+                    <div className="w-24 h-24 rounded-2xl border-2 border-white shadow-md overflow-hidden bg-gray-50">
                         {formData.photo_url ? (
                             <img src={formData.photo_url} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
-                                <User className="w-16 h-16" />
+                            <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                <User className="w-10 h-10" />
                             </div>
                         )}
                     </div>
                     {isEditable && (
-                        <label className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-3 rounded-2xl cursor-pointer hover:bg-blue-700 shadow-lg transition-transform transform hover:scale-110 border-4 border-white">
-                            {uploading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Camera className="w-5 h-5" />}
+                        <label className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-xl cursor-pointer hover:bg-blue-700 shadow-lg transition-transform transform hover:scale-105 border-2 border-white">
+                            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Camera className="w-3.5 h-3.5" />}
                             <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
                         </label>
                     )}
                 </div>
 
                 <div className="text-center md:text-right flex-1 z-10">
-                    <div className="flex flex-col md:flex-row md:items-center gap-3 mb-2">
-                        <h2 className="text-3xl font-black text-gray-800">{formData.name}</h2>
-                        <span className={`px-3 py-1 rounded-lg text-xs font-black w-fit mx-auto md:mx-0 ${formData.status === 'نشط' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                    <div className="flex flex-col md:flex-row md:items-center gap-2 mb-1">
+                        <h2 className="text-2xl font-black text-gray-800">{formData.name}</h2>
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black w-fit mx-auto md:mx-0 ${formData.status === 'نشط' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'}`}>
                             {formData.status}
                         </span>
                     </div>
-                    <p className="text-gray-500 font-bold flex items-center justify-center md:justify-start gap-2 mb-4">
-                        <Briefcase className="w-4 h-4"/> {formData.specialty}
+                    <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-xs text-gray-500 font-bold">
+                        <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5"/> {formData.specialty}</span>
                         <span className="text-gray-300">|</span>
-                        <span className="font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded">#{formData.employee_id}</span>
-                    </p>
+                        <span className="flex items-center gap-1"><Building2 className="w-3.5 h-3.5"/> {centerName || 'جاري التحميل...'}</span>
+                        <span className="text-gray-300">|</span>
+                        <span className="font-mono bg-gray-100 px-1.5 rounded text-gray-600">#{formData.employee_id}</span>
+                    </div>
                     
                     {isEditable && (
-                        <button type="submit" disabled={loading} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg hover:shadow-blue-200 transition-all flex items-center gap-2 mx-auto md:mx-0">
-                            {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>}
-                            حفظ التعديلات
-                        </button>
+                        <div className="mt-3 flex justify-center md:justify-start">
+                            <button type="submit" disabled={loading} className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-bold hover:bg-blue-700 shadow-md hover:shadow-blue-100 transition-all flex items-center gap-2">
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
+                                حفظ التعديلات
+                            </button>
+                        </div>
                     )}
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 
-                {/* 2. Personal Info */}
-                <Section title="البيانات الشخصية" icon={User}>
-                    <Field label="الاسم بالكامل" name="name" value={formData.name} onChange={handleChange} disabled={!isEditable} />
-                    <div className="grid grid-cols-2 gap-4">
+                {/* 2. Personal & Contact Info (Combined) */}
+                <Section title="البيانات الشخصية والاتصال" icon={User}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3">
+                        <Field label="الاسم بالكامل" name="name" value={formData.name} onChange={handleChange} disabled={!isEditable} className="col-span-full"/>
                         <Field label="الرقم القومي" name="national_id" value={formData.national_id} onChange={handleChange} disabled={!isEditable} />
-                        <div className="grid grid-cols-2 gap-4">
-                            <Field label="الجنس" name="gender" value={formData.gender} onChange={handleChange} disabled={!isEditable} as="select" options={['ذكر', 'أنثى']} />
-                            <Field label="الديانة" name="religion" value={formData.religion} onChange={handleChange} disabled={!isEditable} as="select" options={['مسلم', 'مسيحي']} />
-                        </div>
+                        <Field label="الرقم التأميني" name="insurance_number" value={formData.insurance_number} onChange={handleChange} disabled={!isEditable} icon={<ShieldCheck className="w-3 h-3"/>} />
+                        <Field label="رقم الهاتف" name="phone" value={formData.phone} onChange={handleChange} disabled={!isEditable} />
+                        <Field label="رقم الطوارئ" name="emergency_phone" value={formData.emergency_phone} onChange={handleChange} disabled={!isEditable} icon={<PhoneCall className="w-3 h-3 text-red-400"/>} />
+                        <Field label="الجنس" name="gender" value={formData.gender} onChange={handleChange} disabled={!isEditable} as="select" options={['ذكر', 'أنثى']} />
+                        <Field label="الديانة" name="religion" value={formData.religion} onChange={handleChange} disabled={!isEditable} as="select" options={['مسلم', 'مسيحي']} />
+                        <Field label="البريد الإلكتروني" name="email" value={formData.email} onChange={handleChange} disabled={!isEditable} className="col-span-full" />
                     </div>
                 </Section>
 
                 {/* 3. Job Details */}
-                <Section title="تفاصيل الوظيفة والتواريخ" icon={Briefcase}>
-                    <div className="grid grid-cols-2 gap-4">
+                <Section title="التفاصيل الوظيفية" icon={Briefcase}>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
                         <Field label="الكود الوظيفي" name="employee_id" value={formData.employee_id} onChange={handleChange} disabled={!isEditable} />
                         <Field label="الدرجة الوظيفية" name="grade" value={formData.grade} onChange={handleChange} disabled={!isEditable} />
                     </div>
-                    <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <div className="grid grid-cols-2 gap-3 bg-gray-50/50 p-3 rounded-xl border border-gray-100 mb-3">
                         <Field label="تاريخ استلام العمل" type="date" name="join_date" value={formData.join_date} onChange={handleChange} disabled={!isEditable} />
-                        <Field label="تاريخ إخلاء الطرف" type="date" name="resignation_date" value={formData.resignation_date} onChange={handleChange} disabled={!isEditable} placeholder="dd/mm/yyyy" />
+                        <Field label="تاريخ إخلاء الطرف" type="date" name="resignation_date" value={formData.resignation_date} onChange={handleChange} disabled={!isEditable} />
                     </div>
-                    <Field label="المركز التابع له" name="center_id" value={formData.center_id} onChange={handleChange} disabled={!isEditable} />
+                    {/* حقل المركز مخفي في التعديل لأنه يفضل تعديله من الإدارة، لكن يمكن عرضه للقراءة */}
+                    <div className="mb-3">
+                        <label className="block text-[10px] font-bold text-gray-400 mb-1">المركز التابع له</label>
+                        <div className="w-full p-2.5 rounded-xl border bg-gray-50 text-gray-700 font-bold text-sm">
+                            {centerName || formData.center_id}
+                        </div>
+                    </div>
                     <Field label="المهام الإدارية" name="admin_tasks" value={formData.admin_tasks} onChange={handleChange} disabled={!isEditable} />
                 </Section>
 
                 {/* 4. Schedule */}
-                <Section title="المواعيد ونظام العمل" icon={Calendar}>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
+                <Section title="مواعيد العمل" icon={Calendar}>
+                    <div className="grid grid-cols-2 gap-3 mb-4">
                         <Field label="وقت الحضور" type="time" name="start_time" value={formData.start_time} onChange={handleChange} disabled={!isEditable} />
                         <Field label="وقت الانصراف" type="time" name="end_time" value={formData.end_time} onChange={handleChange} disabled={!isEditable} />
                     </div>
 
-                    <div className={`p-4 rounded-2xl border transition-all ${isPartTimeEnabled ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-100'}`}>
-                        <div className="flex items-center justify-between mb-4">
-                            <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                <Timer className={`w-5 h-5 ${isPartTimeEnabled ? 'text-indigo-600' : 'text-gray-400'}`}/>
-                                تفعيل نظام العمل الجزئي (أيام محددة)؟
+                    <div className={`p-3 rounded-2xl border transition-all ${isPartTimeEnabled ? 'bg-indigo-50/50 border-indigo-100' : 'bg-white border-gray-100'}`}>
+                        <div className="flex items-center justify-between mb-3">
+                            <label className="text-xs font-bold text-gray-700 flex items-center gap-2">
+                                <Timer className={`w-4 h-4 ${isPartTimeEnabled ? 'text-indigo-500' : 'text-gray-400'}`}/>
+                                نظام العمل الجزئي (Part-time)
                             </label>
-                            <div className="flex items-center gap-2">
-                                <span className={`text-xs font-bold ${isPartTimeEnabled ? 'text-indigo-600' : 'text-gray-400'}`}>
-                                    {isPartTimeEnabled ? 'مفعل' : 'غير مفعل'}
-                                </span>
-                                <input 
-                                    type="checkbox" 
-                                    className="toggle-checkbox w-5 h-5 accent-indigo-600"
-                                    checked={isPartTimeEnabled}
-                                    onChange={(e) => isEditable && togglePartTime(e.target.checked)}
-                                    disabled={!isEditable}
-                                />
-                            </div>
+                            <input type="checkbox" className="toggle-checkbox w-4 h-4 accent-indigo-600" checked={isPartTimeEnabled} onChange={(e) => isEditable && togglePartTime(e.target.checked)} disabled={!isEditable} />
                         </div>
 
-                        {isPartTimeEnabled && (
-                            <div className="animate-in fade-in space-y-4">
-                                <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-indigo-100">
-                                    <Field label="من تاريخ" type="date" name="part_time_start_date" value={formData.part_time_start_date} onChange={handleChange} disabled={!isEditable} />
-                                    <Field label="إلى تاريخ" type="date" name="part_time_end_date" value={formData.part_time_end_date} onChange={handleChange} disabled={!isEditable} />
+                        {isPartTimeEnabled ? (
+                            <div className="animate-in fade-in space-y-3">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Field label="من" type="date" name="part_time_start_date" value={formData.part_time_start_date} onChange={handleChange} disabled={!isEditable} />
+                                    <Field label="إلى" type="date" name="part_time_end_date" value={formData.part_time_end_date} onChange={handleChange} disabled={!isEditable} />
                                 </div>
-                                
                                 <div>
-                                    <label className="block text-xs font-bold text-indigo-700 mb-2">
-                                        اختر أيام الحضور (خلال الفترة المحددة فقط):
-                                    </label>
-                                    <div className="flex flex-wrap gap-2">
+                                    <label className="block text-[10px] font-bold text-indigo-400 mb-1.5">أيام الحضور:</label>
+                                    <div className="flex flex-wrap gap-1.5">
                                         {DAYS_OPTIONS.map(day => (
-                                            <button
-                                                type="button"
-                                                key={day}
-                                                onClick={() => isEditable && handleWorkDayToggle(day)}
-                                                disabled={!isEditable}
-                                                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                                                    (formData.work_days || []).includes(day)
-                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
-                                                        : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
-                                                }`}
-                                            >
+                                            <button type="button" key={day} onClick={() => isEditable && handleWorkDayToggle(day)} disabled={!isEditable}
+                                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${
+                                                    (formData.work_days || []).includes(day) ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                                }`}>
                                                 {day}
                                             </button>
                                         ))}
                                     </div>
-                                    <p className="text-[10px] text-gray-500 mt-2 flex items-center gap-1">
-                                        <InfoIcon className="w-3 h-3"/>
-                                        ملاحظة: خارج هذه الفترة، يعود الموظف للعمل "دوام كامل" (من السبت إلى الخميس).
-                                    </p>
                                 </div>
                             </div>
-                        )}
-
-                        {!isPartTimeEnabled && (
-                            <p className="text-[10px] text-gray-400 text-center">
-                                الموظف يعمل بنظام الدوام الكامل الافتراضي (السبت - الخميس)
-                            </p>
+                        ) : (
+                            <p className="text-[10px] text-gray-400 text-center py-1">دوام كامل افتراضي (السبت - الخميس)</p>
                         )}
                     </div>
                 </Section>
 
                 {/* 5. Leaves & Maternity */}
                 <div className="xl:col-span-2">
-                    <Section title="الإجازات وإعدادات الأمومة" icon={Baby}>
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            
-                            <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <Section title="أرصدة الإجازات والأمومة" icon={Baby}>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            <div className="lg:col-span-2 grid grid-cols-4 gap-2">
                                 <BalanceCard label="رصيد اعتيادي" value={formData.leave_annual_balance} name="leave_annual_balance" onChange={handleChange} editable={isEditable} color="blue" />
                                 <BalanceCard label="متبقي اعتيادي" value={formData.remaining_annual} name="remaining_annual" onChange={handleChange} editable={isEditable} color="blue" />
                                 <BalanceCard label="رصيد عارضة" value={formData.leave_casual_balance} name="leave_casual_balance" onChange={handleChange} editable={isEditable} color="orange" />
                                 <BalanceCard label="متبقي عارضة" value={formData.remaining_casual} name="remaining_casual" onChange={handleChange} editable={isEditable} color="orange" />
                             </div>
 
-                            <div className="bg-pink-50/50 p-4 rounded-2xl border border-pink-100 space-y-4">
+                            <div className="bg-pink-50/30 p-3 rounded-2xl border border-pink-100 space-y-2">
                                 <div className="flex items-center justify-between">
-                                    <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                        <Baby className="w-4 h-4 text-pink-500"/>
-                                        إجازة وضع / رضاعة؟
-                                    </label>
-                                    <select 
-                                        name="maternity" 
-                                        value={formData.maternity ? 'نعم' : 'لا'} 
-                                        onChange={(e) => setFormData({...formData, maternity: e.target.value === 'نعم'})}
-                                        disabled={!isEditable}
-                                        className="bg-white border border-pink-200 text-pink-600 font-bold text-sm rounded-lg px-3 py-1 outline-none"
-                                    >
-                                        <option value="لا">لا</option>
-                                        <option value="نعم">نعم</option>
+                                    <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5"><Baby className="w-3.5 h-3.5 text-pink-500"/> وضع/رضاعة</label>
+                                    <select name="maternity" value={formData.maternity ? 'نعم' : 'لا'} onChange={(e) => setFormData({...formData, maternity: e.target.value === 'نعم'})} disabled={!isEditable} className="bg-white border border-pink-200 text-pink-600 font-bold text-xs rounded-lg px-2 py-0.5 outline-none">
+                                        <option value="لا">لا</option> <option value="نعم">نعم</option>
                                     </select>
                                 </div>
-
                                 {(formData.maternity === true || formData.maternity === 'نعم') && (
-                                    <div className="space-y-3 animate-in slide-in-from-top-2 pt-2 border-t border-pink-100">
+                                    <div className="space-y-2 pt-1">
                                         <div className="grid grid-cols-2 gap-2">
-                                            <Field label="بداية الرضاعة" type="date" name="nursing_start_date" value={formData.nursing_start_date} onChange={handleChange} disabled={!isEditable} />
-                                            <Field label="نهاية الرضاعة" type="date" name="nursing_end_date" value={formData.nursing_end_date} onChange={handleChange} disabled={!isEditable} />
+                                            <Field label="بداية" type="date" name="nursing_start_date" value={formData.nursing_start_date} onChange={handleChange} disabled={!isEditable} />
+                                            <Field label="نهاية" type="date" name="nursing_end_date" value={formData.nursing_end_date} onChange={handleChange} disabled={!isEditable} />
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-400 mb-1.5">توقيت ساعة الرضاعة</label>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => isEditable && setFormData({...formData, nursing_time: 'morning'})}
-                                                    className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1 transition-all ${
-                                                        formData.nursing_time === 'morning' ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-gray-500 border-gray-200'
-                                                    }`}
-                                                >
-                                                    <Clock className="w-3 h-3"/> صباحاً (تأخير)
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => isEditable && setFormData({...formData, nursing_time: 'evening'})}
-                                                    className={`px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-center gap-1 transition-all ${
-                                                        formData.nursing_time === 'evening' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-500 border-gray-200'
-                                                    }`}
-                                                >
-                                                    <Clock className="w-3 h-3"/> مساءً (انصراف)
-                                                </button>
-                                            </div>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => isEditable && setFormData({...formData, nursing_time: 'morning'})} className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold border ${formData.nursing_time === 'morning' ? 'bg-pink-500 text-white border-pink-500' : 'bg-white text-gray-500'}`}>صباحاً</button>
+                                            <button type="button" onClick={() => isEditable && setFormData({...formData, nursing_time: 'evening'})} className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold border ${formData.nursing_time === 'evening' ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-500'}`}>مساءً</button>
                                         </div>
                                     </div>
                                 )}
@@ -320,36 +286,24 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
                     </Section>
                 </div>
 
-                {/* ✅ 6. Vaccination Info (New Section) */}
-                <div className="xl:col-span-2">
-                    <Section title="التطعيمات الصحية (التهاب كبدي B)" icon={Syringe}>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <Field label="تاريخ الجرعة الأولى" type="date" name="hep_b_dose1" value={formData.hep_b_dose1} onChange={handleChange} disabled={!isEditable} />
-                            <Field label="تاريخ الجرعة الثانية" type="date" name="hep_b_dose2" value={formData.hep_b_dose2} onChange={handleChange} disabled={!isEditable} />
-                            <Field label="تاريخ الجرعة الثالثة" type="date" name="hep_b_dose3" value={formData.hep_b_dose3} onChange={handleChange} disabled={!isEditable} />
+                {/* 6. Health & Additional */}
+                <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Section title="تطعيم فيروس B" icon={Syringe}>
+                        <div className="grid grid-cols-3 gap-2">
+                            <Field label="جرعة 1" type="date" name="hep_b_dose1" value={formData.hep_b_dose1} onChange={handleChange} disabled={!isEditable} />
+                            <Field label="جرعة 2" type="date" name="hep_b_dose2" value={formData.hep_b_dose2} onChange={handleChange} disabled={!isEditable} />
+                            <Field label="جرعة 3" type="date" name="hep_b_dose3" value={formData.hep_b_dose3} onChange={handleChange} disabled={!isEditable} />
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                            <Field label="مكان التطعيم" name="hep_b_location" value={formData.hep_b_location} onChange={handleChange} disabled={!isEditable} placeholder="اسم المستشفى أو المركز..." />
-                            <Field label="ملاحظات التطعيم" name="hep_b_notes" value={formData.hep_b_notes} onChange={handleChange} disabled={!isEditable} placeholder="أي أعراض أو ملاحظات إضافية..." />
-                        </div>
+                        <Field label="ملاحظات التطعيم" name="hep_b_notes" value={formData.hep_b_notes} onChange={handleChange} disabled={!isEditable} className="mt-2"/>
                     </Section>
-                </div>
 
-                {/* 7. Contact & Files */}
-                <div className="xl:col-span-2">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <Section title="بيانات الاتصال" icon={Phone}>
-                            <Field label="رقم الهاتف" name="phone" value={formData.phone} onChange={handleChange} disabled={!isEditable} />
-                            <Field label="البريد الإلكتروني" name="email" value={formData.email} onChange={handleChange} disabled={!isEditable} />
-                            <Field label="الدورات التدريبية" name="training_courses" value={formData.training_courses} onChange={handleChange} disabled={!isEditable} as="textarea" />
-                        </Section>
-
-                        <Section title="مرفقات وملاحظات" icon={FileText}>
+                    <Section title="ملاحظات وملفات" icon={FileText}>
+                         <div className="grid grid-cols-2 gap-2 mb-2">
                             <Field label="رابط البطاقة (وجه)" name="id_front_url" value={formData.id_front_url} onChange={handleChange} disabled={!isEditable} />
                             <Field label="رابط البطاقة (ظهر)" name="id_back_url" value={formData.id_back_url} onChange={handleChange} disabled={!isEditable} />
-                            <Field label="ملاحظات إضافية" name="notes" value={formData.notes} onChange={handleChange} disabled={!isEditable} as="textarea" />
-                        </Section>
-                    </div>
+                         </div>
+                        <Field label="ملاحظات إضافية" name="notes" value={formData.notes} onChange={handleChange} disabled={!isEditable} as="textarea" />
+                    </Section>
                 </div>
 
             </div>
@@ -357,56 +311,42 @@ export default function StaffProfile({ employee, isEditable = false, onUpdate }:
     );
 }
 
-// Sub-components (Reused)
+// Compact Sub-components
 const Section = ({ title, icon: Icon, children }: any) => (
-    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-md transition-shadow h-full">
-        <h4 className="font-bold text-gray-800 mb-6 flex items-center gap-2 pb-3 border-b border-gray-50">
-            <div className="p-2 bg-gray-50 rounded-xl text-gray-600"><Icon className="w-5 h-5"/></div>
+    <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-[0_2px_8px_rgba(0,0,0,0.02)] h-full">
+        <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2 pb-2 border-b border-gray-50 text-sm">
+            <div className="p-1.5 bg-blue-50 rounded-lg text-blue-600"><Icon className="w-4 h-4"/></div>
             {title}
         </h4>
-        <div className="space-y-4">{children}</div>
+        <div className="space-y-0">{children}</div>
     </div>
 );
 
-const Field = ({ label, as = 'input', options, ...props }: any) => (
-    <div>
-        <label className="block text-xs font-bold text-gray-400 mb-1.5 mr-1">{label}</label>
+const Field = ({ label, as = 'input', options, className = "", icon, ...props }: any) => (
+    <div className={className}>
+        <label className="flex items-center gap-1 text-[10px] font-bold text-gray-400 mb-1">
+            {icon} {label}
+        </label>
         {as === 'select' ? (
-            <select className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-gray-700 text-sm" {...props}>
+            <select className="w-full p-2.5 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-gray-700 text-xs" {...props}>
                 <option value="">اختر...</option>
                 {options?.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
             </select>
         ) : as === 'textarea' ? (
-            <textarea className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-medium text-sm min-h-[80px]" {...props} />
+            <textarea className="w-full p-2.5 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-medium text-xs min-h-[60px]" {...props} />
         ) : (
-            <input className="w-full p-3 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-gray-700 text-sm disabled:opacity-60" {...props} />
+            <input className="w-full p-2.5 rounded-xl border bg-gray-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-gray-700 text-xs disabled:opacity-70 disabled:bg-gray-50" {...props} />
         )}
     </div>
 );
 
 const BalanceCard = ({ label, value, name, onChange, editable, color }: any) => (
-    <div className={`p-4 rounded-2xl border ${editable ? 'bg-white' : 'bg-gray-50'} border-${color}-100 relative overflow-hidden group`}>
-        <div className={`absolute top-0 right-0 w-1 h-full bg-${color}-500`}></div>
-        <span className="text-[10px] font-bold text-gray-400 block mb-1">{label}</span>
+    <div className={`p-2.5 rounded-xl border ${editable ? 'bg-white' : 'bg-gray-50'} border-${color}-100 relative overflow-hidden text-center`}>
+        <span className="text-[9px] font-bold text-gray-400 block mb-0.5">{label}</span>
         {editable ? (
-            <input 
-                type="number" 
-                name={name} 
-                value={value} 
-                onChange={onChange} 
-                className="w-full bg-transparent font-black text-2xl text-gray-800 outline-none border-b border-transparent focus:border-gray-300"
-            />
+            <input type="number" name={name} value={value} onChange={onChange} className="w-full bg-transparent font-black text-lg text-center text-gray-800 outline-none border-b border-transparent focus:border-gray-200 p-0" />
         ) : (
-            <span className="font-black text-2xl text-gray-800">{value}</span>
+            <span className={`font-black text-lg text-${color}-600`}>{value}</span>
         )}
     </div>
-);
-
-// Simple Info Icon Component
-const InfoIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="16" x2="12" y2="12"></line>
-        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-    </svg>
 );
