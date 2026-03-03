@@ -55,8 +55,42 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     
     // Timer States
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
+    const autoDeleteTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // --- Timer Logic ---
+    // --- Auto Delete Logic ---
+    useEffect(() => {
+        // إذا كنت أنا صاحب الغرفة وهي في حالة انتظار
+        if (currentMatch && currentMatch.status === 'waiting' && currentMatch.created_by === employee.employee_id) {
+            // حساب الوقت المتبقي من الـ 3 دقائق
+            const createdAt = new Date(currentMatch.created_at).getTime();
+            const now = Date.now();
+            const elapsed = now - createdAt;
+            const remainingTime = 3 * 60 * 1000 - elapsed; // 3 دقائق
+
+            if (remainingTime > 0) {
+                if (autoDeleteTimerRef.current) clearTimeout(autoDeleteTimerRef.current);
+                
+                autoDeleteTimerRef.current = setTimeout(() => {
+                    handleDeleteMatch(currentMatch.id, true); // true تعني حذف تلقائي
+                }, remainingTime);
+            } else {
+                // الوقت انتهى بالفعل
+                handleDeleteMatch(currentMatch.id, true);
+            }
+        } else {
+            // تنظيف التايمر إذا تغيرت الحالة (دخل لاعب) أو خرجت
+            if (autoDeleteTimerRef.current) {
+                clearTimeout(autoDeleteTimerRef.current);
+                autoDeleteTimerRef.current = null;
+            }
+        }
+
+        return () => {
+            if (autoDeleteTimerRef.current) clearTimeout(autoDeleteTimerRef.current);
+        };
+    }, [currentMatch]);
+
+    // --- Timer Logic (Game & Questions) ---
     useEffect(() => {
         if (timeLeft === null || timeLeft <= 0) return;
         const timerId = setInterval(() => {
@@ -88,8 +122,18 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
                 if (payload.eventType === 'DELETE') {
                     setMatches(prev => prev.filter(m => m.id !== payload.old.id));
-                    setCurrentMatch(prev => prev?.id === payload.old.id ? null : prev);
-                    if (currentMatch?.id === payload.old.id) setView('lobby');
+                    setCurrentMatch(prev => {
+                        // إذا تم حذف غرفتي الحالية (سواء بواسطتي أو تلقائياً)
+                        if (prev?.id === payload.old.id) {
+                            return null;
+                        }
+                        return prev;
+                    });
+                    // العودة للصالة فقط إذا كنت في الغرفة المحذوفة
+                    if (currentMatch?.id === payload.old.id) {
+                        setView('lobby');
+                        toast('تم إغلاق الغرفة', { icon: '🚪' });
+                    }
                     return;
                 }
                 
@@ -101,9 +145,11 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
                 setCurrentMatch((prev: any) => {
                     if (prev && prev.id === updatedMatch.id) {
+                        // ✅ تشغيل الصوت عند دخول المنافس
                         if (prev.status === 'waiting' && updatedMatch.status === 'playing' && updatedMatch.created_by === employee.employee_id) {
-                            toast.success('انضم منافس! اللعبة بدأت 🎮', { icon: '🔥', duration: 3000 });
-                            new Audio('/notification.mp3').play().catch(() => {});
+                            toast.success('انضم منافس! اللعبة بدأت 🎮', { icon: '🔥', duration: 4000 });
+                            const audio = new Audio('/notification.mp3'); 
+                            audio.play().catch(e => console.log('Audio play failed', e));
                         }
                         if (updatedMatch.status === 'answering_reward' && prev.status !== 'answering_reward' && updatedMatch.winner_id === employee.employee_id) {
                             setTimeLeft(updatedMatch.final_question?.timeLimit || 15);
@@ -118,13 +164,15 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     }, [employee.employee_id, currentMatch?.id]);
 
     const fetchWaitingMatches = async () => {
+        // تنظيف الغرف القديمة جداً المعلقة (أكثر من 10 دقائق مثلاً) كنوع من الصيانة
+        /* اختياري: يمكن تفعيل هذا الجزء في وظيفة Edge Function منفصلة */
+        
         const { data } = await supabase.from('live_matches').select('*').eq('status', 'waiting').order('created_at', { ascending: false });
         if (data) setMatches(data);
     };
 
     // --- Question Fetching & Logic ---
     const checkCooldown = async () => {
-        // التحقق من آخر مرة حصل فيها على نقاط من الأونلاين (ساعة واحدة)
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
         const { data } = await supabase.from('points_ledger')
             .select('id')
@@ -145,15 +193,9 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         if (rawQ.source === 'standard_quiz') {
             try { 
                 let parsed = rawQ.options;
-                // التعامل مع التنسيقات المختلفة للـ JSON في قاعدة البيانات
                 if (typeof parsed === 'string') {
-                    // إزالة علامات الاقتباس الزائدة إذا وجدت
-                    if (parsed.startsWith('"') && parsed.endsWith('"')) {
-                        parsed = JSON.parse(parsed);
-                    }
-                    if (typeof parsed === 'string') {
-                        parsed = JSON.parse(parsed);
-                    }
+                    if (parsed.startsWith('"') && parsed.endsWith('"')) parsed = JSON.parse(parsed);
+                    if (typeof parsed === 'string') parsed = JSON.parse(parsed);
                 }
                 opts = Array.isArray(parsed) ? parsed : [];
             } catch (e) { 
@@ -162,7 +204,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
             }
             correctAns = rawQ.correct_answer;
         } else {
-            // تجميع الخيارات من الأعمدة المنفصلة
             opts = [rawQ.option_a, rawQ.option_b, rawQ.option_c, rawQ.option_d].filter(opt => opt && String(opt).trim() !== '' && opt !== 'null');
             
             if (rawQ.correct_index !== undefined && rawQ.correct_index !== null) {
@@ -177,8 +218,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
             }
         }
 
-        // تنظيف نهائي للإجابة الصحيحة للتأكد من وجودها في الخيارات
-        if (!correctAns || opts.length < 2) return null; // سؤال غير صالح
+        if (!correctAns || opts.length < 2) return null; 
 
         return {
             id: rawQ.id,
@@ -194,7 +234,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
         let questionsPool: any[] = [];
 
-        // جلب الأسئلة من الجداول الثلاثة مع فلتر التخصص
         const [res1, res2, res3] = await Promise.all([
             supabase.from('arcade_quiz_questions').select('*').or(orFilter),
             supabase.from('arcade_dose_scenarios').select('*').or(orFilter),
@@ -205,13 +244,11 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         if (res2.data) questionsPool.push(...res2.data.map(q => ({ ...q, source: 'arcade_dose' })));
         if (res3.data) questionsPool.push(...res3.data.map(q => ({ ...q, source: 'standard_quiz' })));
 
-        // إذا لم نجد أسئلة للتخصص، نجلب أسئلة عامة (الكل)
         if (questionsPool.length === 0) {
             const { data: anyData } = await supabase.from('arcade_quiz_questions').select('*').limit(30);
             if (anyData) questionsPool = anyData.map(q => ({ ...q, source: 'arcade_quiz' }));
         }
 
-        // الفلترة بالصعوبة
         if (difficulty) {
             const diffPool = questionsPool.filter(q => q.difficulty === difficulty || (q.source === 'standard_quiz' && difficulty === 'medium')); 
             if (diffPool.length > 0) questionsPool = diffPool;
@@ -219,8 +256,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
         if (questionsPool.length === 0) return null;
 
-        // محاولة العثور على سؤال صالح (يحتوي على إجابات)
-        for (let i = 0; i < 5; i++) { // 5 محاولات
+        for (let i = 0; i < 5; i++) { 
             const randomRaw = questionsPool[Math.floor(Math.random() * questionsPool.length)];
             const normalized = normalizeQuestionFormat(randomRaw);
             if (normalized) return normalized;
@@ -267,11 +303,27 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         setCurrentMatch(updatedMatch); setView('playing');
     };
 
-    const handleDeleteMatch = async (matchId: string) => {
-        setLoading(true);
-        await supabase.from('live_matches').delete().eq('id', matchId);
-        setLoading(false);
-        if (currentMatch?.id === matchId) { setCurrentMatch(null); setView('lobby'); }
+    // ✅ دالة الحذف المعدلة (يدوي وتلقائي)
+    const handleDeleteMatch = async (matchId: string, isAuto = false) => {
+        if (!isAuto) setLoading(true); // إظهار لودنج فقط إذا كان الحذف يدوياً
+        
+        const { error } = await supabase.from('live_matches').delete().eq('id', matchId);
+        
+        if (!isAuto) setLoading(false);
+
+        if (error) {
+            if (!isAuto) toast.error('فشل حذف الغرفة');
+        } else {
+            if (isAuto) {
+                toast('تم إغلاق الغرفة لعدم انضمام أحد (3 دقائق)', { icon: '⏳' });
+            } else {
+                toast.success('تم حذف الغرفة');
+            }
+            if (currentMatch?.id === matchId) {
+                setCurrentMatch(null);
+                setView('lobby');
+            }
+        }
     };
 
     const checkWinner = (board: string[]) => {
@@ -296,7 +348,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         let newStatus = 'playing'; let winnerId = null;
 
         if (winnerSymbol === 'draw') {
-            // ✅ طلبك: التعادل ينهي اللعبة بدون أسئلة وبدون فائز
             newStatus = 'finished';
             winnerId = null; 
         } else if (winnerSymbol) {
@@ -311,12 +362,10 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
     const handleRewardSelection = async (difficulty: 'easy'|'medium'|'hard', points: number, timeLimit: number) => {
         setLoading(true);
-        // ✅ جلب سؤال مضمون يحتوي على إجابات
         const randomQ = await fetchUnifiedQuestion(difficulty);
         
         if (!randomQ) {
             setLoading(false);
-            // في حالة نادرة جداً عدم وجود أسئلة، ننهي اللعبة مع إعطاء النقاط مباشرة
             toast.success(`لعدم توفر أسئلة، ربحت ${points} نقطة مباشرة!`);
             await grantPoints(points);
             await supabase.from('live_matches').update({ status: 'finished' }).eq('id', currentMatch.id);
@@ -344,10 +393,9 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     const handleRewardAnswer = async (answerText: string) => {
         setLoading(true); setTimeLeft(null);
         
-        // مقارنة ذكية للإجابة
         const correct = currentMatch.final_question?.correctAnswer || '';
         const selected = answerText.trim().toLowerCase();
-        const isCorrect = correct === selected || correct.includes(selected) || selected.includes(correct); // تساهل بسيط في المقارنة
+        const isCorrect = correct === selected || correct.includes(selected) || selected.includes(correct);
         const rewardPoints = currentMatch.final_question?.rewardPoints || 0;
 
         if (isCorrect) {
@@ -369,14 +417,12 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     return (
         <div className="bg-gray-50 h-full flex flex-col relative font-sans text-right overflow-hidden" dir="rtl">
             
-            {/* Header Removed as requested, just a close button if needed */}
             {onClose && (
                 <button onClick={onClose} className="absolute top-4 left-4 z-50 p-2 bg-black/10 hover:bg-black/20 rounded-full transition-colors text-gray-700">
                     <X className="w-6 h-6"/>
                 </button>
             )}
 
-            {/* --- View: LOBBY --- */}
             {view === 'lobby' && (
                 <div className="p-4 flex-1 overflow-y-auto space-y-6 pt-12">
                     <div className="bg-gradient-to-br from-indigo-600 to-violet-600 rounded-3xl p-6 text-white text-center shadow-lg relative overflow-hidden mx-auto max-w-md">
@@ -429,18 +475,15 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                 </div>
             )}
 
-            {/* --- View: IDENTITY --- */}
             {view === 'identity_setup' && (
                 <div className="p-6 flex-1 flex flex-col items-center justify-center animate-in zoom-in-95 max-w-md mx-auto w-full">
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 w-full text-center">
                         <UserX className="w-16 h-16 text-indigo-500 mx-auto mb-4"/>
                         <h3 className="text-2xl font-black text-gray-800 mb-2">اختر هويتك</h3>
-                        
                         <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6">
                             <button onClick={() => setUseAlias(false)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${!useAlias ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>صورتي</button>
                             <button onClick={() => setUseAlias(true)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${useAlias ? 'bg-indigo-600 shadow-sm text-white' : 'text-gray-500'}`}>مجهول 🥷</button>
                         </div>
-
                         {useAlias && (
                             <div className="grid grid-cols-2 gap-3 mb-6 max-h-[250px] overflow-y-auto p-1">
                                 {ALIASES.map(alias => (
@@ -458,10 +501,8 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                 </div>
             )}
 
-            {/* --- View: PLAYING --- */}
             {view === 'playing' && currentMatch && (
                 <div className="flex-1 flex flex-col animate-in fade-in h-full">
-                    {/* Game Header */}
                     <div className="px-4 py-4 flex justify-between items-center">
                         <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border-2 transition-all ${currentMatch.game_state.current_turn === me?.id ? 'border-green-500 bg-white shadow-md scale-105' : 'border-transparent opacity-60'}`}>
                             <div className="w-10 h-10 rounded-full border overflow-hidden"><AvatarDisplay avatar={me?.avatar} /></div>
@@ -474,7 +515,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                         </div>
                     </div>
 
-                    {/* Game Board Area */}
                     <div className="flex-1 flex items-center justify-center p-4">
                         {currentMatch.status === 'waiting' ? (
                             <div className="text-center">
