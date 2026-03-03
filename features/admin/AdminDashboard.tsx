@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
@@ -8,9 +8,14 @@ import {
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
-    LayoutDashboard, UserCog, ShieldCheck, BarChart3, MapPin, Swords 
+    LayoutDashboard, UserCog, ShieldCheck, BarChart3, MapPin, Swords,
+    Check, Trash2
 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
+import 'dayjs/locale/ar';
 
+// Imports (Components)
 import HomeTab from './components/HomeTab';
 import DoctorsTab from './components/DoctorsTab';
 import AttendanceTab from './components/AttendanceTab';
@@ -23,7 +28,6 @@ import SendReportsTab from './components/SendReportsTab';
 import NewsManagementTab from './components/NewsManagementTab';
 import BirthdayWidget from './components/BirthdayWidget';
 import EOMManager from './components/EOMManager';
-import NotificationBell from '../../components/ui/NotificationBell';
 import AdminMessagesTab from './components/AdminMessagesTab';
 import QualityDashboard from './components/QualityDashboard'; 
 import AdminLibraryManager from './components/AdminLibraryManager'; 
@@ -34,14 +38,15 @@ import VaccinationsTab from './components/VaccinationsTab';
 import GamificationManager from './components/GamificationManager';
 import TrainingManager from './components/TrainingManager';
 import { BookOpen } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AssetsManager from './components/AssetsManager'; 
-
 import AdministrationTab from '../staff/components/AdministrationTab';
 import SupervisorsManager from './components/SupervisorsManager';
 import StatisticsManager from './components/StatisticsManager';
 import CompetitionsManager from './components/CompetitionsManager';
 import AdminSupervisorRounds from './components/AdminSupervisorRounds';
+
+dayjs.locale('ar');
+
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
     const queryClient = useQueryClient();
@@ -49,9 +54,21 @@ export default function AdminDashboard() {
     // UI State
     const [activeTab, setActiveTab] = useState('home');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [testResult, setTestResult] = useState('');
+    const [showNotifications, setShowNotifications] = useState(false);
+    const notifRef = useRef<HTMLDivElement>(null);
 
-    // --- 1. جلب الموظفين ---
+    // إغلاق قائمة الإشعارات عند النقر خارجها
+    useEffect(() => {
+        function handleClickOutside(event: any) {
+            if (notifRef.current && !notifRef.current.contains(event.target)) {
+                setShowNotifications(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [notifRef]);
+
+    // --- Data Queries ---
     const { data: employees = [], isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
         queryKey: ['admin_employees'],
         queryFn: async () => {
@@ -62,7 +79,6 @@ export default function AdminDashboard() {
         staleTime: 1000 * 60 * 2, 
     });
 
-    // --- 2. جلب المشرفين (للدمج مع المتصلين) ---
     const { data: supervisors = [] } = useQuery({
         queryKey: ['active_supervisors'],
         queryFn: async () => {
@@ -72,38 +88,45 @@ export default function AdminDashboard() {
         staleTime: 1000 * 60 * 5
     });
 
-    // --- 3. دمج القائمة (لإرسالها لـ HomeTab) ---
-    // هذه القائمة تحتوي على الموظفين والمشرفين مرتبين حسب آخر ظهور
     const allActiveUsers = useMemo(() => {
-        // تحويل المشرفين لنفس هيكل الموظفين للعرض الموحد
         const formattedSupervisors = supervisors.map((s: any) => ({
-            ...s,
-            role: 'supervisor', // تمييزهم
-            specialty: s.role_title || 'مشرف' // عرض المسمى الوظيفي
+            ...s, role: 'supervisor', specialty: s.role_title || 'مشرف'
         }));
-
-        // دمج المصفوفتين
         const combined = [...employees, ...formattedSupervisors];
-
-        // الترتيب حسب last_seen من الأحدث للأقدم
-        return combined.sort((a, b) => {
-            const timeA = new Date(a.last_seen || 0).getTime();
-            const timeB = new Date(b.last_seen || 0).getTime();
-            return timeB - timeA;
-        });
+        return combined.sort((a, b) => new Date(b.last_seen || 0).getTime() - new Date(a.last_seen || 0).getTime());
     }, [employees, supervisors]);
 
     const currentAdminEmployee = employees.find(e => e.id === user?.id) || ({} as Employee);
 
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const tabParam = params.get('tab');
-        if (tabParam) {
-            setActiveTab(tabParam); 
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    }, []);
+    // --- Notifications Query ---
+    const { data: notifications = [] } = useQuery({
+        queryKey: ['admin_notifications_list'],
+        queryFn: async () => {
+            const { data } = await supabase.from('notifications')
+                .select('*')
+                .eq('user_id', user?.id)
+                .order('created_at', { ascending: false })
+                .limit(20);
+            return data || [];
+        },
+        enabled: showNotifications // Fetch only when opened
+    });
 
+    const markAsReadMutation = useMutation({
+        mutationFn: async (id: string) => {
+            await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin_notifications_list'] })
+    });
+
+    const clearNotificationsMutation = useMutation({
+        mutationFn: async () => {
+            await supabase.from('notifications').delete().eq('user_id', user?.id);
+        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin_notifications_list'] })
+    });
+
+    // --- Badges & Settings ---
     const { data: settings } = useQuery({
         queryKey: ['general_settings'],
         queryFn: async () => {
@@ -113,53 +136,27 @@ export default function AdminDashboard() {
         staleTime: Infinity,
     });
 
-    const { data: badges = { messages: 0, leaves: 0, ovr: 0, tasks: 0, supervisors: 0 } } = useQuery({
+    const { data: badges = { messages: 0, leaves: 0, ovr: 0, tasks: 0, supervisors: 0, notifs: 0 } } = useQuery({
         queryKey: ['admin_badges'],
         queryFn: async () => {
-            try {
-                const [msg, leaves, ovr, taskUpdates, pendingSupervisors] = await Promise.all([
-                    supabase.from('messages').select('*', { count: 'exact', head: true }).eq('to_user', 'admin').eq('is_read', false),
-                    supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'قيد الانتظار'),
-                    supabase.from('ovr_reports').select('*', { count: 'exact', head: true }).eq('status', 'new'),
-                    supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('type', 'task_update').eq('is_read', false),
-                    supabase.from('supervisors').select('*', { count: 'exact', head: true }).eq('status', 'pending') 
-                ]);
-                return {
-                    messages: msg.count || 0,
-                    leaves: leaves.count || 0,
-                    ovr: ovr.count || 0,
-                    tasks: taskUpdates.count || 0,
-                    supervisors: pendingSupervisors.count || 0 
-                };
-            } catch (err) {
-                console.error("Error fetching badges:", err);
-                return { messages: 0, leaves: 0, ovr: 0, tasks: 0, supervisors: 0 };
-            }
-        },
-        refetchInterval: 60000, 
-    });
-
-    useEffect(() => {
-        if (activeTab === 'tasks' && badges.tasks > 0) {
-            const markTasksAsRead = async () => {
-                await supabase.from('notifications').update({ is_read: true }).eq('type', 'task_update').eq('is_read', false);
-                queryClient.invalidateQueries({ queryKey: ['admin_badges'] });
+            const [msg, leaves, ovr, taskUpdates, pendingSupervisors, unreadNotifs] = await Promise.all([
+                supabase.from('messages').select('*', { count: 'exact', head: true }).eq('to_user', 'admin').eq('is_read', false),
+                supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'قيد الانتظار'),
+                supabase.from('ovr_reports').select('*', { count: 'exact', head: true }).eq('status', 'new'),
+                supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('type', 'task_update').eq('is_read', false),
+                supabase.from('supervisors').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+                supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('user_id', user?.id).eq('is_read', false)
+            ]);
+            return {
+                messages: msg.count || 0,
+                leaves: leaves.count || 0,
+                ovr: ovr.count || 0,
+                tasks: taskUpdates.count || 0,
+                supervisors: pendingSupervisors.count || 0,
+                notifs: unreadNotifs.count || 0
             };
-            markTasksAsRead();
-        }
-    }, [activeTab, badges.tasks, queryClient]);
-
-    const testPushMutation = useMutation({
-        mutationFn: async () => {
-            if (!user) throw new Error("User not found");
-            const { data, error } = await supabase.functions.invoke('send-push-notification', {
-                body: { userId: user.id, title: '🔔 تنبيه تجريبي', body: `تم إرسال هذا التنبيه في: ${new Date().toLocaleTimeString('ar-EG')}`, url: '/admin' }
-            });
-            if (error) throw error;
-            return data;
         },
-        onSuccess: () => setTestResult('✅ تم الإرسال بنجاح! راقب هاتفك الآن.'),
-        onError: (err: any) => setTestResult(`❌ فشل الإرسال: ${err.message}`)
+        refetchInterval: 30000, 
     });
 
     const swipeHandlers = useSwipeable({
@@ -168,41 +165,44 @@ export default function AdminDashboard() {
         trackMouse: true, delta: 50,
     });
 
-    const menuItems = [
-        { id: 'home', label: 'الرئيسية', icon: Home },
-        { id: 'doctors', label: 'شئون الموظفين', icon: Users },
-        { id: 'supervisors', label: 'إدارة المشرفين', icon: ShieldCheck, badge: badges?.supervisors || 0 }, 
-        { id: 'staff_admin', label: 'إدارة الموظف', icon: UserCog },
-        { id: 'news', label: 'إدارة الأخبار', icon: Newspaper },
-        { id: 'competitions', label: 'المسابقات والتحديات', icon: Swords }, 
-        { id: 'motivation', label: 'التحفيز والجوائز', icon: Trophy },
-        { id: 'all_messages', label: 'المحادثات والرسائل', icon: MessageCircle, badge: badges?.messages || 0 },
-        { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: badges?.leaves || 0 },
-        { id: 'quality', label: 'إدارة الجودة (OVR)', icon: AlertTriangle, badge: badges?.ovr || 0 },
-        { id: 'tasks', label: 'التكليفات والإشارات', icon: CheckSquare, badge: badges?.tasks || 0 }, 
-        { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
-        { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
-        { id: 'supervisor-rounds', label: 'مرور المشرفين', icon: MapPin },
-        { id: 'reports', label: 'التقارير والإحصائيات', icon: FileBarChart },
-        { id: 'statistics', label: 'إحصائيات العمل', icon: BarChart3 },
-        { id: 'evaluations', label: 'التقييمات الطبية', icon: Activity },
-        { id: 'data-reports', label: 'بيانات وتقارير', icon: Database }, 
-        { id: 'library-manager', label: 'إدارة المكتبة والسياسات', icon: FileArchive },
-        { id: 'absence-report', label: 'تقرير الغياب', icon: FileX },
-        { id: 'assets', label: 'العهد والأجهزة', icon: Box },
-        { id: 'gamification', label: 'النقاط والجوائز', icon: Trophy },
-        { id: 'vaccinations', label: 'التطعيمات (Virus B)', icon: Syringe },
-        { id: 'training', label: 'إدارة التدريب', icon: BookOpen },
-        { id: 'send_reports', label: 'إرسال بالبريد', icon: Mail },
-        { id: 'test_push', label: 'اختبار التنبيهات', icon: BellRing },
-        { id: 'settings', label: 'إعدادات النظام', icon: Settings },
-    ];
+    // --- Content Renderer (To clean up return) ---
+    const renderContent = () => {
+        switch (activeTab) {
+            case 'home': return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
+            case 'doctors': return <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />;
+            case 'supervisors': return <SupervisorsManager />;
+            case 'staff_admin': return <AdministrationTab employee={currentAdminEmployee} />;
+            case 'attendance': return <AttendanceTab onRefresh={()=>{}} />;
+            case 'schedules': return <EveningSchedulesTab employees={employees || []} />;
+            case 'leaves': return <LeavesTab onRefresh={()=>{}} />;
+            case 'evaluations': return <EvaluationsTab employees={employees || []} />;
+            case 'settings': return <SettingsTab onUpdateName={() => queryClient.invalidateQueries({ queryKey: ['general_settings'] })} />;
+            case 'reports': return <ReportsTab />;
+            case 'statistics': return <StatisticsManager />;
+            case 'send_reports': return <SendReportsTab />;
+            case 'news': return <NewsManagementTab />;
+            case 'supervisor-rounds': return <AdminSupervisorRounds />;
+            case 'competitions': return <CompetitionsManager />;
+            case 'motivation': return <div className="space-y-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div>;
+            case 'all_messages': return <AdminMessagesTab employees={employees || []} />;
+            case 'quality': return <QualityDashboard />;
+            case 'assets': return <AssetsManager />;
+            case 'training': return <TrainingManager />;
+            case 'library-manager': return <AdminLibraryManager />;
+            case 'data-reports': return <AdminDataReports employees={employees || []} />;
+            case 'absence-report': return <AbsenceReportTab />;
+            case 'tasks': return <TasksManager employees={employees || []} />;
+            case 'vaccinations': return <VaccinationsTab employees={employees || []} />;
+            case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
+            default: return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
+        }
+    };
 
     if (isLoadingEmployees) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
-                <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
-                <p className="text-gray-500 font-bold">جاري تحميل لوحة التحكم...</p>
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <p className="text-gray-500 text-sm font-bold">جاري تحميل النظام...</p>
             </div>
         );
     }
@@ -211,34 +211,32 @@ export default function AdminDashboard() {
         <div {...swipeHandlers} className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
             
             {isSidebarOpen && (
-                <div 
-                    className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" 
-                    onClick={() => setIsSidebarOpen(false)} 
-                />
+                <div className="fixed inset-0 bg-black/50 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" onClick={() => setIsSidebarOpen(false)} />
             )}
 
+            {/* --- Compact Sidebar --- */}
             <aside className={`
-                fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl 
+                fixed inset-y-0 right-0 z-[70] w-[80vw] max-w-[260px] bg-white border-l shadow-xl 
                 transform transition-transform duration-300 ease-in-out flex flex-col 
                 ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
-                md:translate-x-0 md:static md:w-72 md:shadow-none h-[100dvh]
+                md:translate-x-0 md:static md:w-64 md:shadow-none h-[100dvh]
             `}>
-                <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-gradient-to-r from-blue-50 to-white">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-white p-1.5 rounded-xl shadow-sm border border-blue-100">
-                            <img src="/pwa-192x192.png" className="w-8 h-8 rounded-lg" alt="Logo" />
+                <div className="h-16 flex items-center justify-between px-4 border-b shrink-0 bg-gradient-to-l from-gray-50 to-white">
+                    <div className="flex items-center gap-2">
+                        <div className="bg-white p-1 rounded-lg shadow-sm border border-blue-100">
+                            <img src="/pwa-192x192.png" className="w-7 h-7 rounded-md" alt="Logo" />
                         </div>
                         <div>
-                            <h1 className="font-black text-gray-800 text-base">لوحة الإدارة</h1>
-                            <p className="text-[10px] text-gray-500 font-bold">مركز غرب المطار</p>
+                            <h1 className="font-black text-gray-800 text-sm">لوحة الإدارة</h1>
+                            <p className="text-[9px] text-gray-500 font-bold truncate max-w-[120px]">{settings?.center_name}</p>
                         </div>
                     </div>
-                    <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                        <X className="w-6 h-6"/>
+                    <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-1.5 text-gray-400 hover:text-red-500 bg-gray-50 rounded-full transition-colors">
+                        <X className="w-5 h-5"/>
                     </button>
                 </div>
 
-                <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
+                <nav className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 custom-scrollbar pb-safe">
                     {menuItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = activeTab === item.id;
@@ -247,182 +245,159 @@ export default function AdminDashboard() {
                                 key={item.id}
                                 onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
                                 className={`
-                                    w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group relative
-                                    ${isActive 
-                                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 font-bold translate-x-[-5px]' 
-                                        : 'text-gray-600 hover:bg-blue-50 hover:text-blue-700 font-medium'
-                                    }
+                                    w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative text-right
+                                    ${isActive ? 'bg-blue-600 text-white shadow-md shadow-blue-100 font-bold' : 'text-gray-600 hover:bg-gray-50 hover:text-blue-700 font-medium'}
                                 `}
                             >
-                                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-blue-600'}`} />
-                                <span className="text-sm">{item.label}</span>
+                                <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-blue-600'}`} />
+                                <span className="text-xs">{item.label}</span>
                                 {item.badge && item.badge > 0 && (
-                                    <span className="absolute left-4 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-sm border border-white">
+                                    <span className="absolute left-3 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm border border-white">
                                         {item.badge}
                                     </span>
                                 )}
                             </button>
                         );
                     })}
-                    <div className="h-4 md:h-0"></div>
                 </nav>
 
-                <div className="p-4 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold border-2 border-white shadow-sm">
-                            AD
-                        </div>
+                <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs border border-white shadow-sm">AD</div>
                         <div className="text-right">
-                            <p className="text-xs font-bold text-gray-800">Admin User</p>
-                            <p className="text-[10px] text-gray-500">System Administrator</p>
+                            <p className="text-xs font-bold text-gray-800">Admin</p>
                         </div>
                     </div>
-                    <button onClick={signOut} className="p-2.5 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors bg-white shadow-sm border border-gray-100">
-                        <LogOut className="w-5 h-5" />
+                    <button onClick={signOut} title="تسجيل الخروج" className="p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors bg-white shadow-sm border border-gray-100">
+                        <LogOut className="w-4 h-4" />
                     </button>
                 </div>
             </aside>
 
-            <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
+            {/* --- Main Content --- */}
+            <div className="flex-1 flex flex-col min-w-0 bg-gray-100/30 relative">
                 
-                <header className="h-20 bg-white border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 shadow-sm shrink-0">
+                {/* Header */}
+                <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-[0_1px_3px_rgba(0,0,0,0.02)] shrink-0">
                     <div className="flex items-center gap-3">
-                        <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2.5 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors active:scale-95 border border-gray-200">
-                            <Menu className="w-6 h-6 text-gray-700"/>
+                        <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors active:scale-95 border border-gray-200">
+                            <Menu className="w-5 h-5 text-gray-700"/>
                         </button>
-                        <div>
-                            <h2 className="text-lg font-black text-gray-800 hidden md:block">لوحة التحكم المركزية</h2>
-                            <h2 className="text-lg font-black text-gray-800 md:hidden">{settings?.center_name}</h2>
-                        </div>
+                        <h2 className="text-base font-black text-gray-800">{menuItems.find(i => i.id === activeTab)?.label || 'الرئيسية'}</h2>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                        <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
+                    <div className="flex items-center gap-3" ref={notifRef}>
+                        {/* زر الإشعارات الفعال */}
+                        <div className="relative">
+                            <button 
+                                onClick={() => setShowNotifications(!showNotifications)}
+                                className={`p-2 rounded-full transition-colors relative ${showNotifications ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-50 text-gray-500'}`}
+                            >
+                                <BellRing className="w-5 h-5" />
+                                {badges.notifs > 0 && (
+                                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white"></span>
+                                )}
+                            </button>
+
+                            {/* قائمة الإشعارات المنسدلة */}
+                            {showNotifications && (
+                                <div className="absolute left-0 mt-3 w-80 md:w-96 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-in slide-in-from-top-2">
+                                    <div className="p-3 border-b bg-gray-50/50 flex justify-between items-center">
+                                        <h4 className="text-sm font-bold text-gray-700">الإشعارات</h4>
+                                        {notifications.length > 0 && (
+                                            <button onClick={() => clearNotificationsMutation.mutate()} className="text-[10px] text-red-500 hover:underline flex items-center gap-1">
+                                                <Trash2 className="w-3 h-3"/> مسح الكل
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                                        {notifications.length === 0 ? (
+                                            <div className="py-8 text-center text-gray-400 text-xs font-bold">لا توجد إشعارات جديدة</div>
+                                        ) : (
+                                            notifications.map((notif: any) => (
+                                                <div 
+                                                    key={notif.id} 
+                                                    onClick={() => !notif.is_read && markAsReadMutation.mutate(notif.id)}
+                                                    className={`p-3 border-b last:border-0 hover:bg-gray-50 transition-colors cursor-pointer ${notif.is_read ? 'opacity-60' : 'bg-blue-50/30'}`}
+                                                >
+                                                    <div className="flex gap-3">
+                                                        <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${notif.is_read ? 'bg-gray-300' : 'bg-blue-500'}`}></div>
+                                                        <div>
+                                                            <h5 className="text-xs font-bold text-gray-800">{notif.title}</h5>
+                                                            <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{notif.message}</p>
+                                                            <span className="text-[9px] text-gray-400 mt-1 block">{dayjs(notif.created_at).fromNow()}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </header>
 
-                <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24">
-                    <div className="max-w-7xl mx-auto space-y-6">
-                        {/* ✅ هنا نمرر allActiveUsers بدلاً من employees فقط ليشمل المشرفين */}
-                        {activeTab === 'home' && <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />}
-                        {activeTab === 'doctors' && <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />}
-                        {activeTab === 'supervisors' && <SupervisorsManager />} 
-                        {activeTab === 'staff_admin' && <AdministrationTab employee={currentAdminEmployee} />} 
-                        {activeTab === 'attendance' && <AttendanceTab onRefresh={()=>{}} />}
-                        {activeTab === 'schedules' && <EveningSchedulesTab employees={employees || []} />}
-                        {activeTab === 'leaves' && <LeavesTab onRefresh={()=>{}} />}
-                        {activeTab === 'evaluations' && <EvaluationsTab employees={employees || []} />}
-                        {activeTab === 'settings' && <SettingsTab onUpdateName={() => queryClient.invalidateQueries({ queryKey: ['general_settings'] })} />}
-                        {activeTab === 'reports' && <ReportsTab />}
-                        {activeTab === 'statistics' && <StatisticsManager />} 
-                        {activeTab === 'send_reports' && <SendReportsTab />}
-                        {activeTab === 'news' && <NewsManagementTab />}
-                        {activeTab === 'supervisor-rounds' && <AdminSupervisorRounds />}
-                        {activeTab === 'competitions' && <CompetitionsManager />} 
-                        {activeTab === 'motivation' && (
-                            <div className="space-y-6">
-                                <BirthdayWidget employees={employees || []} />
-                                <EOMManager />
-                            </div>
-                        )}
-                        {activeTab === 'all_messages' && <AdminMessagesTab employees={employees || []} />}
-                        {activeTab === 'quality' && <QualityDashboard />}
-                        {activeTab === 'assets' && <AssetsManager />} 
-                        {activeTab === 'training' && <TrainingManager />}
-                        {activeTab === 'library-manager' && <AdminLibraryManager />} 
-                        {activeTab === 'data-reports' && <AdminDataReports employees={employees || []} />}
-                        {activeTab === 'absence-report' && <AbsenceReportTab />}      
-                        {activeTab === 'tasks' && <TasksManager employees={employees || []} />}
-                        {activeTab === 'vaccinations' && <VaccinationsTab employees={employees || []} />}
-                        {activeTab === 'gamification' && (
-                            <div className="space-y-6">
-                                 <GamificationManager />
-                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                     <BirthdayWidget employees={employees || []} />
-                                     <EOMManager />
-                                 </div>
-                            </div>
-                        )}
-                        {activeTab === 'test_push' && (
-                            <div className="max-w-md mx-auto bg-white p-8 rounded-[30px] shadow-sm border border-gray-100 text-center space-y-6 mt-10">
-                                <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto text-blue-600 shadow-inner">
-                                    <Smartphone className="w-10 h-10" />
-                                </div>
-                                <div>
-                                    <h2 className="text-2xl font-black text-gray-800">اختبار الإشعارات</h2>
-                                    <p className="text-gray-500 mt-2 text-sm leading-relaxed">
-                                        إرسال إشعار تجريبي فوري لجميع الأجهزة المتصلة بحسابك للتحقق من الخدمة.
-                                    </p>
-                                </div>
-                                <button 
-                                    onClick={() => { setTestResult(''); testPushMutation.mutate(); }} 
-                                    disabled={testPushMutation.isPending}
-                                    className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-200 hover:shadow-xl active:scale-95 transition-all disabled:opacity-50 flex justify-center items-center gap-2"
-                                >
-                                    {testPushMutation.isPending ? <><Loader2 className="animate-spin w-5 h-5"/> جاري الإرسال...</> : '🚀 إرسال الآن'}
-                                </button>
-                                {testResult && (
-                                    <div className={`p-4 rounded-xl text-sm font-bold animate-in fade-in zoom-in ${testResult.includes('نجح') ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-                                        {testResult}
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                <main className="flex-1 overflow-y-auto p-3 md:p-6 custom-scrollbar pb-20 scroll-smooth">
+                    <div className="max-w-7xl mx-auto space-y-4">
+                        {renderContent()}
                     </div>
                 </main>
 
-                {/* ✅ Bottom Navbar (للموبايل فقط) */}
-                <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2 flex justify-between items-center z-50 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-                    <button 
-                        onClick={() => setActiveTab('home')}
-                        className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'home' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                        <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'home' ? 'bg-blue-50' : ''}`}>
-                            <LayoutDashboard className={`w-6 h-6 ${activeTab === 'home' ? 'fill-current' : ''}`} />
-                        </div>
-                        <span className="text-[10px] font-bold">الرئيسية</span>
+                {/* Bottom Navbar (Mobile Only) */}
+                <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-1.5 flex justify-between items-center z-50 pb-safe shadow-[0_-4px_15px_rgba(0,0,0,0.03)]">
+                    <MobileNavItem icon={LayoutDashboard} label="الرئيسية" active={activeTab === 'home'} onClick={() => setActiveTab('home')} />
+                    <MobileNavItem icon={Users} label="الموظفين" active={activeTab === 'doctors'} onClick={() => setActiveTab('doctors')} />
+                    
+                    <button onClick={() => setActiveTab('reports')} className="relative -top-5 bg-blue-600 text-white p-3.5 rounded-2xl shadow-lg shadow-blue-200 border-4 border-gray-50 flex items-center justify-center transform active:scale-95 transition-transform">
+                        <FileBarChart className="w-5 h-5" />
                     </button>
 
-                    <button 
-                        onClick={() => setActiveTab('doctors')}
-                        className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'doctors' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                        <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'doctors' ? 'bg-blue-50' : ''}`}>
-                            <Users className="w-6 h-6" />
-                        </div>
-                        <span className="text-[10px] font-bold">الموظفين</span>
-                    </button>
-
-                    <button 
-                        onClick={() => setActiveTab('reports')}
-                        className="relative -top-6 bg-blue-600 text-white p-4 rounded-full shadow-xl shadow-blue-200 border-4 border-gray-50 flex items-center justify-center hover:scale-105 transition-transform"
-                    >
-                        <FileBarChart className="w-6 h-6" />
-                    </button>
-
-                    <button 
-                        onClick={() => setActiveTab('leaves')}
-                        className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'leaves' ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                        <div className={`p-1.5 rounded-xl transition-all ${activeTab === 'leaves' ? 'bg-blue-50' : ''} relative`}>
-                            <ClipboardList className="w-6 h-6" />
-                            {badges?.leaves > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
-                        </div>
-                        <span className="text-[10px] font-bold">الطلبات</span>
-                    </button>
-
-                    <button 
-                        onClick={() => setIsSidebarOpen(true)}
-                        className="flex flex-col items-center gap-1 text-gray-400 hover:text-gray-600"
-                    >
-                        <div className="p-1.5">
-                            <Menu className="w-6 h-6" />
-                        </div>
-                        <span className="text-[10px] font-bold">المزيد</span>
-                    </button>
+                    <MobileNavItem icon={ClipboardList} label="الطلبات" active={activeTab === 'leaves'} badge={badges?.leaves} onClick={() => setActiveTab('leaves')} />
+                    <MobileNavItem icon={Menu} label="المزيد" active={false} onClick={() => setIsSidebarOpen(true)} />
                 </div>
 
             </div>
         </div>
     );
 }
+
+// قائمة القائمة الجانبية (تم تقليص حجمها)
+const menuItems = [
+    { id: 'home', label: 'الرئيسية', icon: Home },
+    { id: 'doctors', label: 'شئون الموظفين', icon: Users },
+    { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
+    { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
+    { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: 0 }, // Badge value injected from state
+    { id: 'tasks', label: 'التكليفات', icon: CheckSquare, badge: 0 },
+    { id: 'all_messages', label: 'الرسائل', icon: MessageCircle, badge: 0 },
+    { id: 'quality', label: 'الجودة (OVR)', icon: AlertTriangle, badge: 0 },
+    { id: 'supervisors', label: 'المشرفين', icon: ShieldCheck, badge: 0 },
+    { id: 'supervisor-rounds', label: 'المرور', icon: MapPin },
+    { id: 'reports', label: 'التقارير', icon: FileBarChart },
+    { id: 'statistics', label: 'الإحصائيات', icon: BarChart3 },
+    { id: 'evaluations', label: 'التقييمات', icon: Activity },
+    { id: 'news', label: 'الأخبار', icon: Newspaper },
+    { id: 'competitions', label: 'المسابقات', icon: Swords },
+    { id: 'gamification', label: 'النقاط', icon: Trophy },
+    { id: 'vaccinations', label: 'التطعيمات', icon: Syringe },
+    { id: 'training', label: 'التدريب', icon: BookOpen },
+    { id: 'assets', label: 'العهد', icon: Box },
+    { id: 'absence-report', label: 'الغياب', icon: FileX },
+    { id: 'library-manager', label: 'المكتبة', icon: FileArchive },
+    { id: 'data-reports', label: 'البيانات', icon: Database },
+    { id: 'staff_admin', label: 'إدارة', icon: UserCog },
+    { id: 'send_reports', label: 'بريد', icon: Mail },
+    { id: 'settings', label: 'الإعدادات', icon: Settings },
+];
+
+// Helper Component for Mobile Nav
+const MobileNavItem = ({ icon: Icon, label, active, onClick, badge }: any) => (
+    <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-colors w-14 ${active ? 'text-blue-600' : 'text-gray-400'}`}>
+        <div className={`p-1 rounded-lg transition-all relative ${active ? 'bg-blue-50' : ''}`}>
+            <Icon className={`w-5 h-5 ${active ? 'fill-current' : ''}`} />
+            {badge > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
+        </div>
+        <span className="text-[9px] font-bold">{label}</span>
+    </button>
+);
