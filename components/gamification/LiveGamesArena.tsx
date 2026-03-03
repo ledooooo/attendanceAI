@@ -168,6 +168,13 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     }, [employee.employee_id, currentMatch?.id]);
 
     const fetchWaitingMatches = async () => {
+        // تنظيف الغرف القديمة جداً المعلقة (أكثر من 5 دقائق)
+        const now = new Date();
+        const cutoff = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+        
+        // محاولة تنظيف الغرف القديمة (سيعمل فقط إذا كانت السياسات تسمح)
+        await supabase.from('live_matches').delete().eq('status', 'waiting').lt('created_at', cutoff);
+        
         const { data } = await supabase.from('live_matches').select('*').eq('status', 'waiting').order('created_at', { ascending: false });
         if (data) setMatches(data);
     };
@@ -500,12 +507,10 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 w-full text-center">
                         <UserX className="w-16 h-16 text-indigo-500 mx-auto mb-4"/>
                         <h3 className="text-2xl font-black text-gray-800 mb-2">اختر هويتك</h3>
-                        
                         <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6">
                             <button onClick={() => setUseAlias(false)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${!useAlias ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>هويتي الحقيقية</button>
                             <button onClick={() => setUseAlias(true)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${useAlias ? 'bg-indigo-600 shadow-sm text-white' : 'text-gray-500'}`}>هوية مستعارة 🥷</button>
                         </div>
-
                         {useAlias && (
                             <div className="grid grid-cols-2 gap-3 mb-6 max-h-[250px] overflow-y-auto p-1">
                                 {ALIASES.map(alias => (
@@ -526,7 +531,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
             {/* --- View: PLAYING --- */}
             {view === 'playing' && currentMatch && (
                 <div className="flex-1 flex flex-col animate-in fade-in h-full">
-                    {/* Game Header */}
                     <div className="px-4 py-4 flex justify-between items-center">
                         <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border-2 transition-all ${currentMatch.game_state.current_turn === me?.id ? 'border-green-500 bg-white shadow-md scale-105' : 'border-transparent opacity-60'}`}>
                             <div className="w-10 h-10 rounded-full border overflow-hidden"><AvatarDisplay avatar={me?.avatar} /></div>
@@ -539,7 +543,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                         </div>
                     </div>
 
-                    {/* Game Board Area */}
                     <div className="flex-1 flex items-center justify-center p-4">
                         {currentMatch.status === 'waiting' ? (
                             <div className="text-center">
