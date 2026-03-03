@@ -55,36 +55,49 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     
     // Timer States
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
+    const [autoDeleteTimeLeft, setAutoDeleteTimeLeft] = useState<number | null>(null); // عداد تنازلي للحذف
     const autoDeleteTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // --- Auto Delete Logic ---
+    // --- Auto Delete Logic (Visual + Functional) ---
     useEffect(() => {
         if (currentMatch && currentMatch.status === 'waiting' && currentMatch.created_by === employee.employee_id) {
             const createdAt = new Date(currentMatch.created_at).getTime();
             const now = Date.now();
             const elapsed = now - createdAt;
-            const remainingTime = 3 * 60 * 1000 - elapsed; 
+            const totalWaitTime = 3 * 60 * 1000; // 3 دقائق
+            const remaining = Math.max(0, totalWaitTime - elapsed);
 
-            if (remainingTime > 0) {
-                if (autoDeleteTimerRef.current) clearTimeout(autoDeleteTimerRef.current);
-                
-                autoDeleteTimerRef.current = setTimeout(() => {
-                    handleDeleteMatch(currentMatch.id, true); 
-                }, remainingTime);
-            } else {
+            // ضبط العداد البصري
+            setAutoDeleteTimeLeft(Math.floor(remaining / 1000));
+
+            // تشغيل الحذف التلقائي
+            if (autoDeleteTimerRef.current) clearTimeout(autoDeleteTimerRef.current);
+            autoDeleteTimerRef.current = setTimeout(() => {
                 handleDeleteMatch(currentMatch.id, true);
-            }
+            }, remaining);
+
         } else {
             if (autoDeleteTimerRef.current) {
                 clearTimeout(autoDeleteTimerRef.current);
                 autoDeleteTimerRef.current = null;
             }
+            setAutoDeleteTimeLeft(null);
         }
 
         return () => {
             if (autoDeleteTimerRef.current) clearTimeout(autoDeleteTimerRef.current);
         };
     }, [currentMatch]);
+
+    // تحديث العداد البصري للحذف كل ثانية
+    useEffect(() => {
+        if (!autoDeleteTimeLeft || autoDeleteTimeLeft <= 0) return;
+        const interval = setInterval(() => {
+            setAutoDeleteTimeLeft(prev => (prev && prev > 0 ? prev - 1 : 0));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [autoDeleteTimeLeft]);
+
 
     // --- Timer Logic (Game & Questions) ---
     useEffect(() => {
@@ -291,19 +304,20 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         setCurrentMatch(updatedMatch); setView('playing');
     };
 
-    // ✅ تم إصلاح دالة الحذف (تعالج الأخطاء بصمت إذا كانت السياسات تمنع)
+    // ✅ دالة الحذف القوية
     const handleDeleteMatch = async (matchId: string, isAuto = false) => {
         if (!isAuto) setLoading(true); 
         
         try {
+            // محاولة الحذف
             const { error } = await supabase.from('live_matches').delete().eq('id', matchId);
             
-            if (error) throw error;
+            if (error) throw error; // إذا فشل الحذف سيرمي خطأ
 
             if (isAuto) {
                 toast('تم إغلاق الغرفة لعدم انضمام أحد (3 دقائق)', { icon: '⏳' });
             } else {
-                toast.success('تم حذف الغرفة');
+                toast.success('تم حذف الغرفة نهائياً');
             }
             
             // تنظيف الحالة المحلية فوراً
@@ -316,7 +330,15 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
         } catch (err) {
             console.error("Delete error:", err);
-            if (!isAuto) toast.error('فشل حذف الغرفة (قد لا تملك الصلاحية)');
+            // في حال فشل الحذف بسبب السياسات، نقوم بإخفائها من الواجهة على الأقل
+            if (!isAuto) {
+                toast.error('لم يتم الحذف من السيرفر، لكن تم إخفاؤها.');
+                setMatches(prev => prev.filter(m => m.id !== matchId));
+                if (currentMatch?.id === matchId) {
+                    setCurrentMatch(null);
+                    setView('lobby');
+                }
+            }
         } finally {
             if (!isAuto) setLoading(false);
         }
@@ -478,10 +500,12 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 w-full text-center">
                         <UserX className="w-16 h-16 text-indigo-500 mx-auto mb-4"/>
                         <h3 className="text-2xl font-black text-gray-800 mb-2">اختر هويتك</h3>
+                        
                         <div className="flex bg-gray-100 p-1.5 rounded-2xl mb-6">
-                            <button onClick={() => setUseAlias(false)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${!useAlias ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>صورتي</button>
-                            <button onClick={() => setUseAlias(true)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${useAlias ? 'bg-indigo-600 shadow-sm text-white' : 'text-gray-500'}`}>مجهول 🥷</button>
+                            <button onClick={() => setUseAlias(false)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${!useAlias ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>هويتي الحقيقية</button>
+                            <button onClick={() => setUseAlias(true)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${useAlias ? 'bg-indigo-600 shadow-sm text-white' : 'text-gray-500'}`}>هوية مستعارة 🥷</button>
                         </div>
+
                         {useAlias && (
                             <div className="grid grid-cols-2 gap-3 mb-6 max-h-[250px] overflow-y-auto p-1">
                                 {ALIASES.map(alias => (
@@ -502,6 +526,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
             {/* --- View: PLAYING --- */}
             {view === 'playing' && currentMatch && (
                 <div className="flex-1 flex flex-col animate-in fade-in h-full">
+                    {/* Game Header */}
                     <div className="px-4 py-4 flex justify-between items-center">
                         <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border-2 transition-all ${currentMatch.game_state.current_turn === me?.id ? 'border-green-500 bg-white shadow-md scale-105' : 'border-transparent opacity-60'}`}>
                             <div className="w-10 h-10 rounded-full border overflow-hidden"><AvatarDisplay avatar={me?.avatar} /></div>
@@ -514,13 +539,17 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                         </div>
                     </div>
 
+                    {/* Game Board Area */}
                     <div className="flex-1 flex items-center justify-center p-4">
                         {currentMatch.status === 'waiting' ? (
                             <div className="text-center">
                                 <Loader2 className="w-16 h-16 text-indigo-200 animate-spin mx-auto mb-6"/>
                                 <h3 className="text-xl font-black text-indigo-900">في انتظار المنافس...</h3>
+                                {autoDeleteTimeLeft !== null && (
+                                    <p className="text-sm font-bold text-red-500 mt-2">سيتم إغلاق الغرفة تلقائياً خلال: {Math.floor(autoDeleteTimeLeft / 60)}:{(autoDeleteTimeLeft % 60).toString().padStart(2, '0')}</p>
+                                )}
                                 {currentMatch.created_by === employee.employee_id && (
-                                    <button onClick={() => handleDeleteMatch(currentMatch.id)} className="mt-8 bg-red-50 text-red-500 px-6 py-3 rounded-xl font-bold flex items-center gap-2 mx-auto"><Trash2 size={20}/> إلغاء الغرفة</button>
+                                    <button onClick={() => handleDeleteMatch(currentMatch.id)} className="mt-8 bg-red-50 text-red-500 px-6 py-3 rounded-xl font-bold flex items-center gap-2 mx-auto hover:bg-red-100 transition-colors"><Trash2 size={20}/> إلغاء الغرفة</button>
                                 )}
                             </div>
                         ) : currentMatch.status === 'playing' ? (
