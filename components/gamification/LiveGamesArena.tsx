@@ -59,26 +59,22 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
     // --- Auto Delete Logic ---
     useEffect(() => {
-        // إذا كنت أنا صاحب الغرفة وهي في حالة انتظار
         if (currentMatch && currentMatch.status === 'waiting' && currentMatch.created_by === employee.employee_id) {
-            // حساب الوقت المتبقي من الـ 3 دقائق
             const createdAt = new Date(currentMatch.created_at).getTime();
             const now = Date.now();
             const elapsed = now - createdAt;
-            const remainingTime = 3 * 60 * 1000 - elapsed; // 3 دقائق
+            const remainingTime = 3 * 60 * 1000 - elapsed; 
 
             if (remainingTime > 0) {
                 if (autoDeleteTimerRef.current) clearTimeout(autoDeleteTimerRef.current);
                 
                 autoDeleteTimerRef.current = setTimeout(() => {
-                    handleDeleteMatch(currentMatch.id, true); // true تعني حذف تلقائي
+                    handleDeleteMatch(currentMatch.id, true); 
                 }, remainingTime);
             } else {
-                // الوقت انتهى بالفعل
                 handleDeleteMatch(currentMatch.id, true);
             }
         } else {
-            // تنظيف التايمر إذا تغيرت الحالة (دخل لاعب) أو خرجت
             if (autoDeleteTimerRef.current) {
                 clearTimeout(autoDeleteTimerRef.current);
                 autoDeleteTimerRef.current = null;
@@ -123,13 +119,9 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                 if (payload.eventType === 'DELETE') {
                     setMatches(prev => prev.filter(m => m.id !== payload.old.id));
                     setCurrentMatch(prev => {
-                        // إذا تم حذف غرفتي الحالية (سواء بواسطتي أو تلقائياً)
-                        if (prev?.id === payload.old.id) {
-                            return null;
-                        }
+                        if (prev?.id === payload.old.id) return null;
                         return prev;
                     });
-                    // العودة للصالة فقط إذا كنت في الغرفة المحذوفة
                     if (currentMatch?.id === payload.old.id) {
                         setView('lobby');
                         toast('تم إغلاق الغرفة', { icon: '🚪' });
@@ -145,7 +137,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
 
                 setCurrentMatch((prev: any) => {
                     if (prev && prev.id === updatedMatch.id) {
-                        // ✅ تشغيل الصوت عند دخول المنافس
                         if (prev.status === 'waiting' && updatedMatch.status === 'playing' && updatedMatch.created_by === employee.employee_id) {
                             toast.success('انضم منافس! اللعبة بدأت 🎮', { icon: '🔥', duration: 4000 });
                             const audio = new Audio('/notification.mp3'); 
@@ -164,9 +155,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     }, [employee.employee_id, currentMatch?.id]);
 
     const fetchWaitingMatches = async () => {
-        // تنظيف الغرف القديمة جداً المعلقة (أكثر من 10 دقائق مثلاً) كنوع من الصيانة
-        /* اختياري: يمكن تفعيل هذا الجزء في وظيفة Edge Function منفصلة */
-        
         const { data } = await supabase.from('live_matches').select('*').eq('status', 'waiting').order('created_at', { ascending: false });
         if (data) setMatches(data);
     };
@@ -303,26 +291,34 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         setCurrentMatch(updatedMatch); setView('playing');
     };
 
-    // ✅ دالة الحذف المعدلة (يدوي وتلقائي)
+    // ✅ تم إصلاح دالة الحذف (تعالج الأخطاء بصمت إذا كانت السياسات تمنع)
     const handleDeleteMatch = async (matchId: string, isAuto = false) => {
-        if (!isAuto) setLoading(true); // إظهار لودنج فقط إذا كان الحذف يدوياً
+        if (!isAuto) setLoading(true); 
         
-        const { error } = await supabase.from('live_matches').delete().eq('id', matchId);
-        
-        if (!isAuto) setLoading(false);
+        try {
+            const { error } = await supabase.from('live_matches').delete().eq('id', matchId);
+            
+            if (error) throw error;
 
-        if (error) {
-            if (!isAuto) toast.error('فشل حذف الغرفة');
-        } else {
             if (isAuto) {
                 toast('تم إغلاق الغرفة لعدم انضمام أحد (3 دقائق)', { icon: '⏳' });
             } else {
                 toast.success('تم حذف الغرفة');
             }
+            
+            // تنظيف الحالة المحلية فوراً
             if (currentMatch?.id === matchId) {
                 setCurrentMatch(null);
                 setView('lobby');
             }
+            // تحديث القائمة فوراً
+            setMatches(prev => prev.filter(m => m.id !== matchId));
+
+        } catch (err) {
+            console.error("Delete error:", err);
+            if (!isAuto) toast.error('فشل حذف الغرفة (قد لا تملك الصلاحية)');
+        } finally {
+            if (!isAuto) setLoading(false);
         }
     };
 
@@ -395,7 +391,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         
         const correct = currentMatch.final_question?.correctAnswer || '';
         const selected = answerText.trim().toLowerCase();
-        const isCorrect = correct === selected || correct.includes(selected) || selected.includes(correct);
+        const isCorrect = correct === selected || correct.includes(selected) || selected.includes(correct); 
         const rewardPoints = currentMatch.final_question?.rewardPoints || 0;
 
         if (isCorrect) {
@@ -423,6 +419,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                 </button>
             )}
 
+            {/* --- View: LOBBY --- */}
             {view === 'lobby' && (
                 <div className="p-4 flex-1 overflow-y-auto space-y-6 pt-12">
                     <div className="bg-gradient-to-br from-indigo-600 to-violet-600 rounded-3xl p-6 text-white text-center shadow-lg relative overflow-hidden mx-auto max-w-md">
@@ -475,6 +472,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                 </div>
             )}
 
+            {/* --- View: IDENTITY --- */}
             {view === 'identity_setup' && (
                 <div className="p-6 flex-1 flex flex-col items-center justify-center animate-in zoom-in-95 max-w-md mx-auto w-full">
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 w-full text-center">
@@ -501,6 +499,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                 </div>
             )}
 
+            {/* --- View: PLAYING --- */}
             {view === 'playing' && currentMatch && (
                 <div className="flex-1 flex flex-col animate-in fade-in h-full">
                     <div className="px-4 py-4 flex justify-between items-center">
