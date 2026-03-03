@@ -9,11 +9,10 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, MapPin, Swords,
-    Check, Trash2
+    Trash2
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import dayjs from 'dayjs';
-import 'dayjs/locale/ar';
+import { BookOpen } from 'lucide-react';
 
 // Imports (Components)
 import HomeTab from './components/HomeTab';
@@ -37,7 +36,6 @@ import TasksManager from './components/TasksManager';
 import VaccinationsTab from './components/VaccinationsTab';
 import GamificationManager from './components/GamificationManager';
 import TrainingManager from './components/TrainingManager';
-import { BookOpen } from 'lucide-react';
 import AssetsManager from './components/AssetsManager'; 
 import AdministrationTab from '../staff/components/AdministrationTab';
 import SupervisorsManager from './components/SupervisorsManager';
@@ -45,7 +43,18 @@ import StatisticsManager from './components/StatisticsManager';
 import CompetitionsManager from './components/CompetitionsManager';
 import AdminSupervisorRounds from './components/AdminSupervisorRounds';
 
-dayjs.locale('ar');
+// ✅ دالة بديلة لـ dayjs لحساب "منذ متى" بالعربية
+const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return 'منذ لحظات';
+    if (diffInSeconds < 3600) return `منذ ${Math.floor(diffInSeconds / 60)} دقيقة`;
+    if (diffInSeconds < 86400) return `منذ ${Math.floor(diffInSeconds / 3600)} ساعة`;
+    if (diffInSeconds < 604800) return `منذ ${Math.floor(diffInSeconds / 86400)} يوم`;
+    return date.toLocaleDateString('ar-EG');
+};
 
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
@@ -165,7 +174,7 @@ export default function AdminDashboard() {
         trackMouse: true, delta: 50,
     });
 
-    // --- Content Renderer (To clean up return) ---
+    // --- Content Renderer ---
     const renderContent = () => {
         switch (activeTab) {
             case 'home': return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
@@ -325,7 +334,8 @@ export default function AdminDashboard() {
                                                         <div>
                                                             <h5 className="text-xs font-bold text-gray-800">{notif.title}</h5>
                                                             <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{notif.message}</p>
-                                                            <span className="text-[9px] text-gray-400 mt-1 block">{dayjs(notif.created_at).fromNow()}</span>
+                                                            {/* ✅ استخدام الدالة البديلة هنا */}
+                                                            <span className="text-[9px] text-gray-400 mt-1 block">{formatTimeAgo(notif.created_at)}</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -362,13 +372,13 @@ export default function AdminDashboard() {
     );
 }
 
-// قائمة القائمة الجانبية (تم تقليص حجمها)
+// قائمة القائمة الجانبية
 const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
-    { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: 0 }, // Badge value injected from state
+    { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: 0 },
     { id: 'tasks', label: 'التكليفات', icon: CheckSquare, badge: 0 },
     { id: 'all_messages', label: 'الرسائل', icon: MessageCircle, badge: 0 },
     { id: 'quality', label: 'الجودة (OVR)', icon: AlertTriangle, badge: 0 },
@@ -391,7 +401,6 @@ const menuItems = [
     { id: 'settings', label: 'الإعدادات', icon: Settings },
 ];
 
-// Helper Component for Mobile Nav
 const MobileNavItem = ({ icon: Icon, label, active, onClick, badge }: any) => (
     <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-colors w-14 ${active ? 'text-blue-600' : 'text-gray-400'}`}>
         <div className={`p-1 rounded-lg transition-all relative ${active ? 'bg-blue-50' : ''}`}>
