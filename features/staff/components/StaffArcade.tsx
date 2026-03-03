@@ -2,242 +2,306 @@ import React, { useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Target, Zap, Gamepad2, Tv2 } from 'lucide-react';
+import {
+    Loader2, Target, Zap, Gamepad2, Tv2,
+    ArrowRight, Star, Trophy, Timer,
+    Dices, Lock, Brain, Calculator, Flame, Hash, Eye, Scale, Grid3x3
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// Arcade Modules
-import { getDiffProfile, COOLDOWN_HOURS } from './arcade/types';
+import { getDiffProfile, COOLDOWN_HOURS, DiffProfile } from './arcade/types';
 import ArcadeHeader, { LevelBadge } from './arcade/ArcadeHeader';
 import ArcadeCooldown from './arcade/ArcadeCooldown';
-import ArcadeGameGrid from './arcade/ArcadeGameGrid';
 import ArcadeLeaderboard from './arcade/ArcadeLeaderboard';
+import BonusQuestion from './arcade/BonusQuestion';
 
-// Game Components
-import SpinAndAnswerGame from '../../../components/gamification/games/SpinAndAnswerGame';
-import WordScrambleGame from '../../../components/gamification/games/WordScrambleGame';
-import SafeCrackerGame from '../../../components/gamification/games/SafeCrackerGame';
-import MemoryMatchGame from '../../../components/gamification/games/MemoryMatchGame';
-import MedicalQuizRush from '../../../components/gamification/games/MedicalQuizRush';
+import SpinAndAnswerGame      from '../../../components/gamification/games/SpinAndAnswerGame';
+import WordScrambleGame       from '../../../components/gamification/games/WordScrambleGame';
+import SafeCrackerGame        from '../../../components/gamification/games/SafeCrackerGame';
+import MemoryMatchGame        from '../../../components/gamification/games/MemoryMatchGame';
+import MedicalQuizRush        from '../../../components/gamification/games/MedicalQuizRush';
 import DoseCalculatorChallenge from '../../../components/gamification/games/DoseCalculatorChallenge';
+import MoveTheMatch           from '../../../components/gamification/games/MoveTheMatch';
+import MissingNumber          from '../../../components/gamification/games/MissingNumber';
+import LogicGrid              from '../../../components/gamification/games/LogicGrid';
+import VisualPatternGame      from '../../../components/gamification/games/VisualPatternGame';
+import MathBalance            from '../../../components/gamification/games/MathBalance';
+import LiveGamesArena         from '../../../components/gamification/LiveGamesArena';
 
-// Live Arena
-import LiveGamesArena from '../../../components/gamification/LiveGamesArena';
+interface Props { employee: Employee; }
 
-interface Props {
-    employee: Employee;
+// ─── Game catalog ─────────────────────────────────────────────────────────────
+const GAME_CATALOG = [
+    // الألعاب الطبية
+    { key: 'spin',     category: 'medical', title: 'عجلة الحظ',      icon: Dices,       gradient: 'from-fuchsia-500 to-pink-600',   bg: 'from-fuchsia-50 to-pink-50',   border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30', tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
+    { key: 'scramble', category: 'medical', title: 'فك الشفرة',       icon: Timer,       gradient: 'from-blue-500 to-cyan-600',      bg: 'from-blue-50 to-cyan-50',      border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '5-20', tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
+    { key: 'safe',     category: 'medical', title: 'الخزنة السرية',   icon: Lock,        gradient: 'from-emerald-500 to-teal-600',   bg: 'from-emerald-50 to-teal-50',   border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق',  pts: '20',   tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
+    { key: 'memory',   category: 'medical', title: 'تطابق الذاكرة',   icon: Gamepad2,    gradient: 'from-orange-500 to-amber-600',   bg: 'from-orange-50 to-amber-50',   border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',  pts: '20',   tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
+    { key: 'quiz',     category: 'medical', title: 'سباق المعرفة',    icon: Brain,       gradient: 'from-indigo-500 to-purple-600',  bg: 'from-indigo-50 to-purple-50',  border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة',  pts: '5-25', tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
+    { key: 'dose',     category: 'medical', title: 'حساب الجرعات',    icon: Calculator,  gradient: 'from-rose-500 to-red-600',       bg: 'from-rose-50 to-red-50',       border: 'border-rose-100 hover:border-rose-300',       tag: 'دقة حسابية', pts: '10-30',tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
+    // ألعاب IQ
+    { key: 'match',    category: 'iq',      title: 'حرك عود ثقاب',   icon: Flame,       gradient: 'from-amber-500 to-orange-600',   bg: 'from-amber-50 to-orange-50',   border: 'border-amber-100 hover:border-amber-300',     tag: 'تحدي ذهني',  pts: '25',   tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
+    { key: 'missing',  category: 'iq',      title: 'الرقم الناقص',   icon: Hash,        gradient: 'from-cyan-500 to-blue-600',      bg: 'from-cyan-50 to-blue-50',      border: 'border-cyan-100 hover:border-cyan-300',       tag: 'أنماط رقمية', pts: '10-24',tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
+    { key: 'logic',    category: 'iq',      title: 'شبكة المنطق',    icon: Grid3x3,     gradient: 'from-violet-500 to-purple-600',  bg: 'from-violet-50 to-purple-50',  border: 'border-violet-100 hover:border-violet-300',   tag: 'منطق رياضي', pts: '30',   tagColor: 'text-violet-700',  ptsColor: 'text-violet-600'  },
+    { key: 'visual',   category: 'iq',      title: 'النمط البصري',   icon: Eye,         gradient: 'from-teal-500 to-cyan-600',      bg: 'from-teal-50 to-cyan-50',      border: 'border-teal-100 hover:border-teal-300',       tag: 'ملاحظة',     pts: '20',   tagColor: 'text-teal-700',    ptsColor: 'text-teal-600'    },
+    { key: 'balance',  category: 'iq',      title: 'ميزان الأرقام',  icon: Scale,       gradient: 'from-emerald-500 to-green-600',  bg: 'from-emerald-50 to-green-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'توازن رياضي', pts: '25',   tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
+];
+
+// ─── Game Section Component ───────────────────────────────────────────────────
+function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelect: (key: string) => void }) {
+    const [catTab, setCatTab] = useState<'medical' | 'iq'>('medical');
+    const filtered = GAME_CATALOG.filter(g => g.category === catTab);
+
+    return (
+        <div className="space-y-3">
+            {/* Level banner */}
+            <div className={`p-3 rounded-xl border-2 flex items-center gap-2 ${diffProfile.color}`}>
+                <span className="text-2xl">{diffProfile.emoji}</span>
+                <div className="flex-1 min-w-0">
+                    <p className="font-black text-xs">مستواك: {diffProfile.label}</p>
+                    <p className="text-[11px] font-bold opacity-80 truncate">{diffProfile.desc}</p>
+                </div>
+                <div className="text-left shrink-0">
+                    <p className="font-black text-base">×{diffProfile.multiplier.toFixed(1)}</p>
+                    <p className="text-[10px] font-bold opacity-70">مضاعف</p>
+                </div>
+            </div>
+
+            {/* Category tabs */}
+            <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
+                <button onClick={() => setCatTab('medical')}
+                    className={`flex-1 py-2 rounded-lg font-black text-xs transition-all ${catTab === 'medical' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>
+                    🏥 الألعاب الطبية
+                </button>
+                <button onClick={() => setCatTab('iq')}
+                    className={`flex-1 py-2 rounded-lg font-black text-xs transition-all ${catTab === 'iq' ? 'bg-white shadow text-amber-700' : 'text-gray-500'}`}>
+                    🧠 ألعاب الذكاء
+                </button>
+            </div>
+
+            {/* Cards */}
+            <div className="grid grid-cols-2 gap-2">
+                {filtered.map(g => {
+                    const Icon = g.icon;
+                    return (
+                        <button key={g.key} onClick={() => onSelect(g.key)}
+                            className={`group bg-gradient-to-br ${g.bg} border-2 ${g.border} p-3 rounded-2xl shadow-sm hover:shadow-lg transition-all text-right flex flex-col relative overflow-hidden hover:scale-105 active:scale-95`}>
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className={`w-9 h-9 bg-gradient-to-br ${g.gradient} text-white rounded-xl flex items-center justify-center mb-2 group-hover:scale-110 group-hover:rotate-6 transition-transform shadow-md`}>
+                                    <Icon className="w-5 h-5"/>
+                                </div>
+                                <h3 className="font-black text-gray-900 text-xs mb-0.5 leading-tight">{g.title}</h3>
+                                <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/50">
+                                    <span className={`text-[10px] bg-white ${g.tagColor} px-1.5 py-0.5 rounded-md font-black shadow-sm`}>{g.tag}</span>
+                                    <span className={`text-[10px] ${g.ptsColor} font-black flex items-center gap-0.5`}><Trophy className="w-2.5 h-2.5"/> {g.pts}</span>
+                                </div>
+                            </div>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
 }
 
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function StaffArcade({ employee }: Props) {
     const queryClient = useQueryClient();
     const [activeGame, setActiveGame] = useState<string | null>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [activeTab, setActiveTab] = useState<'games' | 'live'>('games');
+    // Bonus question state
+    const [bonusState, setBonusState] = useState<{ show: boolean; pts: number; gameName: string } | null>(null);
 
     const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
 
-    // جلب آخر محاولة
+    // Last play
     const { data: lastPlay, isLoading: loadingPlay } = useQuery({
         queryKey: ['last_arcade_play', employee.employee_id],
         queryFn: async () => {
-            const { data } = await supabase
-                .from('arcade_scores')
-                .select('played_at')
-                .eq('employee_id', employee.employee_id)
-                .order('played_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
+            const { data } = await supabase.from('arcade_scores').select('played_at')
+                .eq('employee_id', employee.employee_id).order('played_at', { ascending: false }).limit(1).maybeSingle();
             return data;
         }
     });
 
-    // حساب الوقت المتبقي
     const timeRemaining = useMemo(() => {
         if (!lastPlay?.played_at) return null;
         const diff = (Date.now() - new Date(lastPlay.played_at).getTime()) / (1000 * 60 * 60);
         if (diff >= COOLDOWN_HOURS) return null;
         const rem = COOLDOWN_HOURS * 3600000 - (Date.now() - new Date(lastPlay.played_at).getTime());
-        return {
-            hrs:  Math.floor(rem / 3600000),
-            mins: Math.floor((rem % 3600000) / 60000)
-        };
+        return { hrs: Math.floor(rem / 3600000), mins: Math.floor((rem % 3600000) / 60000) };
     }, [lastPlay]);
 
-    // خصم المحاولة
+    // Consume attempt
     const consumeAttempt = async (gameName: string) => {
         const { data, error } = await supabase.from('arcade_scores').insert({
-            employee_id: employee.employee_id,
-            game_name: gameName,
-            points_earned: 0,
-            is_win: false
+            employee_id: employee.employee_id, game_name: gameName, points_earned: 0, is_win: false
         }).select('id').single();
         if (error) throw error;
         setSessionId(data.id);
         queryClient.invalidateQueries({ queryKey: ['last_arcade_play'] });
     };
 
-    // تسجيل النتيجة
+    // Finish attempt — triggers bonus question on win
     const finishAttemptMutation = useMutation({
         mutationFn: async ({ points, isWin, gameName }: { points: number; isWin: boolean; gameName: string }) => {
             if (!sessionId) return;
             await supabase.from('arcade_scores').update({ points_earned: points, is_win: isWin }).eq('id', sessionId);
             if (isWin && points > 0) {
                 await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: points });
-                await supabase.from('points_ledger').insert({
-                    employee_id: employee.employee_id,
-                    points,
-                    reason: `فوز في لعبة: ${gameName} 🎮`
-                });
+                await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points, reason: `فوز في لعبة: ${gameName} 🎮` });
             }
+            return { isWin, points, gameName };
         },
-        onSuccess: (_, { points, isWin }) => {
-            if (isWin) {
-                toast.success(`بطل! كسبت ${points} نقطة 🎉`, {
-                    duration: 5000, icon: '🏆',
-                    style: { background: '#10b981', color: 'white', fontWeight: 'bold' }
-                });
+        onSuccess: (result) => {
+            if (!result) return;
+            const { isWin, points, gameName } = result;
+            if (isWin && points > 0) {
+                toast.success(`بطل! كسبت ${points} نقطة 🎉`, { duration: 4000, icon: '🏆', style: { background: '#10b981', color: 'white', fontWeight: 'bold' } });
+                // Show bonus question
+                const bonusPts = Math.max(5, Math.round(points * 0.5));
+                setBonusState({ show: true, pts: bonusPts, gameName });
             } else {
                 toast.error('حظ أوفر! تعال جرب تاني بعد 5 ساعات 💔', { duration: 4000 });
+                setActiveGame(null);
+                setSessionId(null);
             }
             queryClient.invalidateQueries({ queryKey: ['arcade_leaderboard'] });
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
-            setActiveGame(null);
-            setSessionId(null);
         }
     });
 
-    // خريطة الألعاب → اسم + مكوّن
-    const GAME_MAP: Record<string, { name: string; node: React.ReactNode }> = {
-        spin: {
-            name: 'عجلة الحظ',
-            node: <SpinAndAnswerGame employee={employee} diffProfile={diffProfile}
-                        onStart={() => consumeAttempt('عجلة الحظ')}
-                        onComplete={(p, w) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName: 'عجلة الحظ' })} />
-        },
-        scramble: {
-            name: 'فك الشفرة',
-            node: <WordScrambleGame employee={employee} diffProfile={diffProfile}
-                        onStart={() => consumeAttempt('فك الشفرة')}
-                        onComplete={(p, w) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName: 'فك الشفرة' })} />
-        },
-        safe: {
-            name: 'الخزنة السرية',
-            node: <SafeCrackerGame
-                        onStart={() => consumeAttempt('الخزنة السرية')}
-                        onComplete={(p, w) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName: 'الخزنة السرية' })} />
-        },
-        memory: {
-            name: 'تطابق الذاكرة',
-            node: <MemoryMatchGame
-                        onStart={() => consumeAttempt('تطابق الذاكرة')}
-                        onComplete={(p, w) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName: 'تطابق الذاكرة' })} />
-        },
-        quiz: {
-            name: 'سباق المعرفة الطبية',
-            node: <MedicalQuizRush employee={employee} diffProfile={diffProfile}
-                        onStart={() => consumeAttempt('سباق المعرفة الطبية')}
-                        onComplete={(p, w) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName: 'سباق المعرفة الطبية' })} />
-        },
-        dose: {
-            name: 'تحدي حساب الجرعات',
-            node: <DoseCalculatorChallenge employee={employee} diffProfile={diffProfile}
-                        onStart={() => consumeAttempt('تحدي حساب الجرعات')}
-                        onComplete={(p, w) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName: 'تحدي حساب الجرعات' })} />
-        },
+    // Handle bonus question result
+    const handleBonusFinish = async (earned: number) => {
+        if (earned > 0) {
+            await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: earned });
+            await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: earned, reason: `سؤال مكافأة 🎁` });
+            queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
+        }
+        setBonusState(null);
+        setActiveGame(null);
+        setSessionId(null);
+    };
+
+    // Game map
+    const gameNode = (key: string): React.ReactNode => {
+        const props = { employee, diffProfile, onStart: () => consumeAttempt(GAME_CATALOG.find(g => g.key === key)?.title || key), onComplete: (p: number, w: boolean) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName: GAME_CATALOG.find(g => g.key === key)?.title || key }) };
+        const simpleProps = { onStart: props.onStart, onComplete: props.onComplete };
+        switch (key) {
+            case 'spin':    return <SpinAndAnswerGame {...props}/>;
+            case 'scramble':return <WordScrambleGame {...props}/>;
+            case 'safe':    return <SafeCrackerGame {...simpleProps}/>;
+            case 'memory':  return <MemoryMatchGame {...simpleProps}/>;
+            case 'quiz':    return <MedicalQuizRush {...props}/>;
+            case 'dose':    return <DoseCalculatorChallenge {...props}/>;
+            case 'match':   return <MoveTheMatch {...simpleProps}/>;
+            case 'missing': return <MissingNumber {...simpleProps}/>;
+            case 'logic':   return <LogicGrid {...simpleProps}/>;
+            case 'visual':  return <VisualPatternGame {...simpleProps}/>;
+            case 'balance': return <MathBalance {...simpleProps}/>;
+            default: return null;
+        }
     };
 
     return (
-        <div className="space-y-4 animate-in fade-in pb-10">
+        <div className="space-y-3 animate-in fade-in pb-6">
 
             {/* Header */}
-            <ArcadeHeader employee={employee} onShowLeaderboard={() => setShowLeaderboard(true)} />
+            <ArcadeHeader employee={employee} onShowLeaderboard={() => setShowLeaderboard(true)}/>
 
             {/* Tabs */}
-            <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100 gap-1">
-                <button
-                    onClick={() => setActiveTab('games')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black text-sm transition-all ${activeTab === 'games' ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                    <Gamepad2 className="w-4 h-4"/> الألعاب الفردية
+            <div className="flex bg-white rounded-xl p-1 shadow-sm border border-gray-100 gap-1">
+                <button onClick={() => setActiveTab('games')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg font-black text-xs transition-all ${activeTab === 'games' ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <Gamepad2 className="w-3.5 h-3.5"/> الألعاب الفردية
                 </button>
-                <button
-                    onClick={() => setActiveTab('live')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black text-sm transition-all ${activeTab === 'live' ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50'}`}
-                >
-                    <Tv2 className="w-4 h-4"/>
-                    <span>الألعاب المباشرة</span>
-                    <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></span>
+                <button onClick={() => setActiveTab('live')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg font-black text-xs transition-all ${activeTab === 'live' ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <Tv2 className="w-3.5 h-3.5"/> المباشر
+                    <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse"/>
                 </button>
             </div>
 
-            {/* Live Tab */}
+            {/* ── LIVE TAB ── */}
             {activeTab === 'live' && (
-                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden animate-in fade-in">
-                    <div className="bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 px-6 py-4 flex items-center gap-3">
-                        <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
-                            <Tv2 className="w-5 h-5 text-white" />
-                        </div>
+                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden animate-in fade-in">
+                    <div className="bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 px-4 py-3 flex items-center gap-2">
+                        <Tv2 className="w-5 h-5 text-white"/>
                         <div>
-                            <h2 className="text-white font-black text-lg">ساحة الألعاب المباشرة</h2>
-                            <p className="text-sky-100 text-xs font-bold">تحدى زملائك أونلاين الآن!</p>
+                            <h2 className="text-white font-black text-sm">ساحة الألعاب المباشرة</h2>
+                            <p className="text-sky-100 text-[11px] font-bold">تحدى زملائك أونلاين!</p>
                         </div>
-                        <span className="mr-auto flex items-center gap-1 bg-white/20 px-3 py-1 rounded-full text-xs font-black text-white">
-                            <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></span> LIVE
+                        <span className="mr-auto flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-black text-white">
+                            <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse"/> LIVE
                         </span>
                     </div>
-                    <div className="p-4 md:p-6">
-                        <LiveGamesArena employee={employee} />
+                    <div className="p-3">
+                        <LiveGamesArena employee={employee}/>
                     </div>
                 </div>
             )}
 
-            {/* Games Tab */}
-            {activeTab === 'games' && loadingPlay ? (
-                <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
-                    <Loader2 className="w-12 h-12 animate-spin mx-auto text-fuchsia-600 mb-4"/>
-                    <p className="text-gray-500 font-bold">جاري التحميل...</p>
-                </div>
+            {/* ── GAMES TAB ── */}
+            {activeTab === 'games' && (
+                <>
+                    {loadingPlay ? (
+                        <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
+                            <Loader2 className="w-10 h-10 animate-spin mx-auto text-fuchsia-600 mb-3"/>
+                            <p className="text-gray-500 font-bold text-sm">جاري التحميل...</p>
+                        </div>
 
-            ) : activeGame !== null ? (
-                /* شاشة اللعب */
-                <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-100 p-4 md:p-10">
-                    <div className="flex justify-between items-center mb-6 pb-4 border-b-2 border-gray-100">
-                        <h3 className="font-black text-lg md:text-2xl text-violet-700 flex items-center gap-2">
-                            <Target className="w-5 h-5 md:w-6 md:h-6"/> تحدي قيد التنفيذ
-                        </h3>
-                        <div className="flex items-center gap-2">
-                            <LevelBadge employee={employee} />
-                            <div className="flex items-center gap-1 bg-violet-50 px-3 py-2 rounded-xl">
-                                <Zap className="w-4 h-4 text-violet-600"/>
-                                <span className="text-xs font-bold text-violet-700 hidden sm:inline">جاري اللعب...</span>
+                    ) : bonusState?.show ? (
+                        /* ── BONUS QUESTION ── */
+                        <div className="bg-white rounded-2xl shadow-xl border-2 border-amber-200 p-4">
+                            <BonusQuestion
+                                employee={employee}
+                                bonusPoints={bonusState.pts}
+                                onFinish={handleBonusFinish}
+                            />
+                        </div>
+
+                    ) : activeGame !== null ? (
+                        /* ── ACTIVE GAME ── */
+                        <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-100">
+                            {/* Back bar */}
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                                <button onClick={() => { setActiveGame(null); setSessionId(null); }}
+                                    className="flex items-center gap-1.5 text-gray-500 hover:text-gray-800 font-bold text-sm transition-colors">
+                                    <ArrowRight className="w-4 h-4"/> رجوع للقائمة
+                                </button>
+                                <div className="flex items-center gap-2">
+                                    <LevelBadge employee={employee}/>
+                                    <div className="flex items-center gap-1 bg-violet-50 px-2.5 py-1.5 rounded-lg">
+                                        <Zap className="w-3.5 h-3.5 text-violet-600"/>
+                                        <span className="text-[11px] font-bold text-violet-700">جاري اللعب</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="p-3 md:p-6">
+                                {finishAttemptMutation.isPending ? (
+                                    <div className="text-center py-20">
+                                        <Loader2 className="w-14 h-14 animate-spin mx-auto text-violet-600 mb-4"/>
+                                        <p className="text-lg font-black text-gray-700">جاري تسجيل نتيجتك...</p>
+                                    </div>
+                                ) : gameNode(activeGame)}
                             </div>
                         </div>
-                    </div>
-                    {finishAttemptMutation.isPending ? (
-                        <div className="text-center py-24">
-                            <Loader2 className="w-16 h-16 animate-spin mx-auto text-violet-600 mb-6"/>
-                            <p className="text-xl font-black text-gray-700 mb-2">جاري تسجيل نتيجتك...</p>
-                        </div>
+
+                    ) : timeRemaining ? (
+                        /* ── COOLDOWN ── */
+                        <ArcadeCooldown hrs={timeRemaining.hrs} mins={timeRemaining.mins}/>
+
                     ) : (
-                        GAME_MAP[activeGame]?.node ?? null
+                        /* ── GAME GRID ── */
+                        <GameGrid diffProfile={diffProfile} onSelect={setActiveGame}/>
                     )}
-                </div>
-
-            ) : timeRemaining ? (
-                /* شاشة الانتظار */
-                <ArcadeCooldown hrs={timeRemaining.hrs} mins={timeRemaining.mins} />
-
-            ) : (
-                /* قائمة الألعاب */
-                <ArcadeGameGrid diffProfile={diffProfile} onSelectGame={setActiveGame} />
+                </>
             )}
 
-
-
-            {/* Leaderboard Modal */}
-            {showLeaderboard && (
-                <ArcadeLeaderboard onClose={() => setShowLeaderboard(false)} />
-            )}
+            {/* Leaderboard modal */}
+            {showLeaderboard && <ArcadeLeaderboard onClose={() => setShowLeaderboard(false)}/>}
         </div>
     );
 }
