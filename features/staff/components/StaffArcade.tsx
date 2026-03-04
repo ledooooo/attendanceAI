@@ -5,8 +5,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Loader2, Target, Zap, Gamepad2, Tv2,
     ArrowRight, Star, Trophy, Timer,
-    Dices, Lock, Brain, Calculator, Flame, Hash, Eye, Scale, Grid3x3
+    Dices, Lock, Brain, Calculator, Flame, KeyRound, ArrowUpDown,  Hash, Eye, Scale, Grid3x3
 } from 'lucide-react';
+
 import toast from 'react-hot-toast';
 
 import { getDiffProfile, COOLDOWN_HOURS, DiffProfile } from './arcade/types';
@@ -22,29 +23,90 @@ import MemoryMatchGame        from '../../../components/gamification/games/Memor
 import MedicalQuizRush        from '../../../components/gamification/games/MedicalQuizRush';
 import DoseCalculatorChallenge from '../../../components/gamification/games/DoseCalculatorChallenge';
 import MoveTheMatch           from '../../../components/gamification/games/MoveTheMatch';
-import MissingNumber          from '../../../components/gamification/games/MissingNumber';
 import LogicGrid              from '../../../components/gamification/games/LogicGrid';
-import VisualPatternGame      from '../../../components/gamification/games/VisualPatternGame';
 import MathBalance            from '../../../components/gamification/games/MathBalance';
 import LiveGamesArena         from '../../../components/gamification/LiveGamesArena';
+
+import CipherDecode           from '../../../components/gamification/games/CipherDecode';
+import SortingChain           from '../../../components/gamification/games/SortingChain';
+
+
+
 
 interface Props { employee: Employee; }
 
 // ─── Game catalog ─────────────────────────────────────────────────────────────
-const GAME_CATALOG = [
-    // الألعاب الطبية
-    { key: 'spin',     category: 'medical', title: 'عجلة الحظ',      icon: Dices,       gradient: 'from-fuchsia-500 to-pink-600',   bg: 'from-fuchsia-50 to-pink-50',   border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30', tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
-    { key: 'scramble', category: 'medical', title: 'فك الشفرة',       icon: Timer,       gradient: 'from-blue-500 to-cyan-600',      bg: 'from-blue-50 to-cyan-50',      border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '5-20', tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
-    { key: 'safe',     category: 'medical', title: 'الخزنة السرية',   icon: Lock,        gradient: 'from-emerald-500 to-teal-600',   bg: 'from-emerald-50 to-teal-50',   border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق',  pts: '20',   tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
-    { key: 'memory',   category: 'medical', title: 'تطابق الذاكرة',   icon: Gamepad2,    gradient: 'from-orange-500 to-amber-600',   bg: 'from-orange-50 to-amber-50',   border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',  pts: '20',   tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
-    { key: 'quiz',     category: 'medical', title: 'سباق المعرفة',    icon: Brain,       gradient: 'from-indigo-500 to-purple-600',  bg: 'from-indigo-50 to-purple-50',  border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة',  pts: '5-25', tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
-    { key: 'dose',     category: 'medical', title: 'حساب الجرعات',    icon: Calculator,  gradient: 'from-rose-500 to-red-600',       bg: 'from-rose-50 to-red-50',       border: 'border-rose-100 hover:border-rose-300',       tag: 'دقة حسابية', pts: '10-30',tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
-    // ألعاب IQ
-    { key: 'match',    category: 'iq',      title: 'حرك عود ثقاب',   icon: Flame,       gradient: 'from-amber-500 to-orange-600',   bg: 'from-amber-50 to-orange-50',   border: 'border-amber-100 hover:border-amber-300',     tag: 'تحدي ذهني',  pts: '25',   tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
-    { key: 'missing',  category: 'iq',      title: 'الرقم الناقص',   icon: Hash,        gradient: 'from-cyan-500 to-blue-600',      bg: 'from-cyan-50 to-blue-50',      border: 'border-cyan-100 hover:border-cyan-300',       tag: 'أنماط رقمية', pts: '10-24',tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
-    { key: 'logic',    category: 'iq',      title: 'شبكة المنطق',    icon: Grid3x3,     gradient: 'from-violet-500 to-purple-600',  bg: 'from-violet-50 to-purple-50',  border: 'border-violet-100 hover:border-violet-300',   tag: 'منطق رياضي', pts: '30',   tagColor: 'text-violet-700',  ptsColor: 'text-violet-600'  },
-    { key: 'visual',   category: 'iq',      title: 'النمط البصري',   icon: Eye,         gradient: 'from-teal-500 to-cyan-600',      bg: 'from-teal-50 to-cyan-50',      border: 'border-teal-100 hover:border-teal-300',       tag: 'ملاحظة',     pts: '20',   tagColor: 'text-teal-700',    ptsColor: 'text-teal-600'    },
-    { key: 'balance',  category: 'iq',      title: 'ميزان الأرقام',  icon: Scale,       gradient: 'from-emerald-500 to-green-600',  bg: 'from-emerald-50 to-green-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'توازن رياضي', pts: '25',   tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
+const IQ_GAMES_UPDATED = [
+    {
+        key: 'match',
+        category: 'iq',
+        title: 'عود الثقاب',
+        icon: 'Flame',
+        gradient: 'from-amber-500 to-orange-600',
+        bg: 'from-amber-50 to-orange-50',
+        border: 'border-amber-100 hover:border-amber-300',
+        tag: 'تفاعلي 🔥',
+        pts: '15-48',
+        tagColor: 'text-amber-700',
+        ptsColor: 'text-amber-600',
+        description: 'غير الأرقام بالسهام لتصحح المعادلة - 12+ لغزاً مختلفاً'
+    },
+    {
+        key: 'cipher',
+        category: 'iq',
+        title: 'فك الشفرة',
+        icon: 'KeyRound',
+        gradient: 'from-indigo-500 to-blue-600',
+        bg: 'from-indigo-50 to-blue-50',
+        border: 'border-indigo-100 hover:border-indigo-300',
+        tag: 'ذكاء 🔐',
+        pts: '10-30',
+        tagColor: 'text-indigo-700',
+        ptsColor: 'text-indigo-600',
+        description: 'اكتشف قاعدة الشفرة وفكها - 25+ شفرة متنوعة'
+    },
+    {
+        key: 'logic',
+        category: 'iq',
+        title: 'شبكة المنطق',
+        icon: 'Grid3x3',
+        gradient: 'from-violet-500 to-purple-600',
+        bg: 'from-violet-50 to-purple-50',
+        border: 'border-violet-100 hover:border-violet-300',
+        tag: 'منطق 🧩',
+        pts: '18-45',
+        tagColor: 'text-violet-700',
+        ptsColor: 'text-violet-600',
+        description: 'اضغط الخلية واكتب الرقم لإكمال الشبكة - 12+ لغزاً'
+    },
+    {
+        key: 'sort',
+        category: 'iq',
+        title: 'سلسلة الترتيب',
+        icon: 'ArrowUpDown',
+        gradient: 'from-rose-500 to-pink-600',
+        bg: 'from-rose-50 to-pink-50',
+        border: 'border-rose-100 hover:border-rose-300',
+        tag: 'ترتيب 🔗',
+        pts: '15-40',
+        tagColor: 'text-rose-700',
+        ptsColor: 'text-rose-600',
+        description: 'اضغط عنصرين لتبادلهما حتى يكتمل الترتيب - 23+ تحدياً'
+    },
+    {
+        key: 'balance',
+        category: 'iq',
+        title: 'ميزان الأرقام',
+        icon: 'Scale',
+        gradient: 'from-emerald-500 to-green-600',
+        bg: 'from-emerald-50 to-green-50',
+        border: 'border-emerald-100 hover:border-emerald-300',
+        tag: 'توازن ⚖️',
+        pts: '15-36',
+        tagColor: 'text-emerald-700',
+        ptsColor: 'text-emerald-600',
+        description: 'وزع الأرقام على الكفتين حتى يتوازن الميزان - 10+ ألغاز'
+    },
 ];
 
 // ─── Game Section Component ───────────────────────────────────────────────────
@@ -197,10 +259,10 @@ export default function StaffArcade({ employee }: Props) {
             case 'quiz':    return <MedicalQuizRush {...props}/>;
             case 'dose':    return <DoseCalculatorChallenge {...props}/>;
             case 'match':   return <MoveTheMatch {...simpleProps}/>;
-            case 'missing': return <MissingNumber {...simpleProps}/>;
             case 'logic':   return <LogicGrid {...simpleProps}/>;
-            case 'visual':  return <VisualPatternGame {...simpleProps}/>;
             case 'balance': return <MathBalance {...simpleProps}/>;
+            case 'cipher':  return <CipherDecode {...simpleProps}/>;
+            case 'sort':    return <SortingChain {...simpleProps}/>;  
             default: return null;
         }
     };
