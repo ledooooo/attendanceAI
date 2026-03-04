@@ -3,10 +3,9 @@ import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-    Loader2, Target, Zap, Gamepad2, Tv2,
-    ArrowRight, Star, Trophy, Timer,
-    Dices, Lock, Brain, Calculator, Flame, Eye, Scale, Grid3x3,
-    KeyRound, ArrowUpDown
+    Loader2, Zap, Gamepad2, Tv2,
+    ArrowRight, Trophy, Timer,
+    Dices, Lock, Brain, Calculator, Flame,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -23,36 +22,23 @@ import MemoryMatchGame          from '../../../components/gamification/games/Mem
 import MedicalQuizRush          from '../../../components/gamification/games/MedicalQuizRush';
 import DoseCalculatorChallenge  from '../../../components/gamification/games/DoseCalculatorChallenge';
 import MoveTheMatch             from '../../../components/gamification/games/MoveTheMatch';
-import CipherDecode             from '../../../components/gamification/games/CipherDecode';
-import LogicGrid                from '../../../components/gamification/games/LogicGrid';
-import SortingChain             from '../../../components/gamification/games/SortingChain';
-import MathBalance              from '../../../components/gamification/games/MathBalance';
 import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
 
 interface Props { employee: Employee; }
 
-// ─── Game catalog ─────────────────────────────────────────────────────────────
+// ─── 7 Solo Games ─────────────────────────────────────────────────────────────
 const GAME_CATALOG = [
-    // الألعاب الطبية
-    { key: 'spin',     category: 'medical', title: 'عجلة الحظ',      icon: Dices,       gradient: 'from-fuchsia-500 to-pink-600',   bg: 'from-fuchsia-50 to-pink-50',   border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',    pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
-    { key: 'scramble', category: 'medical', title: 'فك الكلمة',       icon: Timer,       gradient: 'from-blue-500 to-cyan-600',      bg: 'from-blue-50 to-cyan-50',      border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة',  pts: '5-20',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
-    { key: 'safe',     category: 'medical', title: 'الخزنة السرية',   icon: Lock,        gradient: 'from-emerald-500 to-teal-600',   bg: 'from-emerald-50 to-teal-50',   border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق',  pts: '20',    tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
-    { key: 'memory',   category: 'medical', title: 'تطابق الذاكرة',   icon: Gamepad2,    gradient: 'from-orange-500 to-amber-600',   bg: 'from-orange-50 to-amber-50',   border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',   pts: '20',    tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
-    { key: 'quiz',     category: 'medical', title: 'سباق المعرفة',    icon: Brain,       gradient: 'from-indigo-500 to-purple-600',  bg: 'from-indigo-50 to-purple-50',  border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة',  pts: '5-25',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
-    { key: 'dose',     category: 'medical', title: 'حساب الجرعات',    icon: Calculator,  gradient: 'from-rose-500 to-red-600',       bg: 'from-rose-50 to-red-50',       border: 'border-rose-100 hover:border-rose-300',       tag: 'دقة حسابية',  pts: '10-30', tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
-    // ألعاب الذكاء
-    { key: 'match',    category: 'iq',      title: 'عود الثقاب',      icon: Flame,       gradient: 'from-amber-500 to-orange-600',   bg: 'from-amber-50 to-orange-50',   border: 'border-amber-100 hover:border-amber-300',     tag: 'تفاعلي 🔥',   pts: '15-48', tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
-    { key: 'cipher',   category: 'iq',      title: 'فك الشفرة',       icon: KeyRound,    gradient: 'from-indigo-500 to-blue-600',    bg: 'from-indigo-50 to-blue-50',    border: 'border-indigo-100 hover:border-indigo-300',   tag: 'ذكاء 🔐',     pts: '10-30', tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
-    { key: 'logic',    category: 'iq',      title: 'شبكة المنطق',     icon: Grid3x3,     gradient: 'from-violet-500 to-purple-600',  bg: 'from-violet-50 to-purple-50',  border: 'border-violet-100 hover:border-violet-300',   tag: 'منطق 🧩',     pts: '18-45', tagColor: 'text-violet-700',  ptsColor: 'text-violet-600'  },
-    { key: 'sort',     category: 'iq',      title: 'سلسلة الترتيب',   icon: ArrowUpDown, gradient: 'from-rose-500 to-pink-600',      bg: 'from-rose-50 to-pink-50',      border: 'border-rose-100 hover:border-rose-300',       tag: 'ترتيب 🔗',    pts: '15-40', tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
-    { key: 'balance',  category: 'iq',      title: 'ميزان الأرقام',   icon: Scale,       gradient: 'from-emerald-500 to-green-600',  bg: 'from-emerald-50 to-green-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'توازن ⚖️',    pts: '15-36', tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
+    { key: 'spin',     title: 'عجلة الحظ',      icon: Dices,      gradient: 'from-fuchsia-500 to-pink-600',  bg: 'from-fuchsia-50 to-pink-50',  border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
+    { key: 'scramble', title: 'فك الكلمة',       icon: Timer,      gradient: 'from-blue-500 to-cyan-600',     bg: 'from-blue-50 to-cyan-50',     border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '5-20',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
+    { key: 'safe',     title: 'الخزنة السرية',   icon: Lock,       gradient: 'from-emerald-500 to-teal-600',  bg: 'from-emerald-50 to-teal-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق', pts: '20',    tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
+    { key: 'memory',   title: 'تطابق الذاكرة',   icon: Gamepad2,   gradient: 'from-orange-500 to-amber-600',  bg: 'from-orange-50 to-amber-50',  border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',  pts: '20',    tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
+    { key: 'quiz',     title: 'سباق المعرفة',    icon: Brain,      gradient: 'from-indigo-500 to-purple-600', bg: 'from-indigo-50 to-purple-50', border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة', pts: '5-25',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
+    { key: 'dose',     title: 'حساب الجرعات',    icon: Calculator, gradient: 'from-rose-500 to-red-600',      bg: 'from-rose-50 to-red-50',      border: 'border-rose-100 hover:border-rose-300',       tag: 'دقة حسابية', pts: '10-30', tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
+    { key: 'match',    title: 'عود الثقاب',      icon: Flame,      gradient: 'from-amber-500 to-orange-600',  bg: 'from-amber-50 to-orange-50',  border: 'border-amber-100 hover:border-amber-300',     tag: 'تفاعلي 🔥',  pts: '15-48', tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
 ];
 
-// ─── Game Section Component ───────────────────────────────────────────────────
+// ─── Game Grid ────────────────────────────────────────────────────────────────
 function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelect: (key: string) => void }) {
-    const [catTab, setCatTab] = useState<'medical' | 'iq'>('medical');
-    const filtered = GAME_CATALOG.filter(g => g.category === catTab);
-
     return (
         <div className="space-y-3">
             {/* Level banner */}
@@ -68,21 +54,9 @@ function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelec
                 </div>
             </div>
 
-            {/* Category tabs */}
-            <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
-                <button onClick={() => setCatTab('medical')}
-                    className={`flex-1 py-2 rounded-lg font-black text-xs transition-all ${catTab === 'medical' ? 'bg-white shadow text-violet-700' : 'text-gray-500'}`}>
-                    🏥 الألعاب الطبية
-                </button>
-                <button onClick={() => setCatTab('iq')}
-                    className={`flex-1 py-2 rounded-lg font-black text-xs transition-all ${catTab === 'iq' ? 'bg-white shadow text-amber-700' : 'text-gray-500'}`}>
-                    🧠 ألعاب الذكاء
-                </button>
-            </div>
-
-            {/* Cards */}
+            {/* 7-game grid */}
             <div className="grid grid-cols-2 gap-2">
-                {filtered.map(g => {
+                {GAME_CATALOG.map(g => {
                     const Icon = g.icon;
                     return (
                         <button key={g.key} onClick={() => onSelect(g.key)}
@@ -108,11 +82,11 @@ function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelec
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function StaffArcade({ employee }: Props) {
     const queryClient = useQueryClient();
-    const [activeGame, setActiveGame] = useState<string | null>(null);
-    const [sessionId, setSessionId] = useState<string | null>(null);
+    const [activeGame, setActiveGame]   = useState<string | null>(null);
+    const [sessionId, setSessionId]     = useState<string | null>(null);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
-    const [activeTab, setActiveTab] = useState<'games' | 'live'>('games');
-    const [bonusState, setBonusState] = useState<{ show: boolean; pts: number; gameName: string } | null>(null);
+    const [activeTab, setActiveTab]     = useState<'games' | 'live'>('games');
+    const [bonusState, setBonusState]   = useState<{ show: boolean; pts: number; gameName: string } | null>(null);
 
     const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
 
@@ -181,29 +155,22 @@ export default function StaffArcade({ employee }: Props) {
     };
 
     const gameNode = (key: string): React.ReactNode => {
-        const gameMeta = GAME_CATALOG.find(g => g.key === key);
-        const gameName = gameMeta?.title || key;
+        const gameName = GAME_CATALOG.find(g => g.key === key)?.title || key;
         const props = {
-            employee,
-            diffProfile,
-            onStart: () => consumeAttempt(gameName),
-            onComplete: (p: number, w: boolean) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName })
+            employee, diffProfile,
+            onStart:    () => consumeAttempt(gameName),
+            onComplete: (p: number, w: boolean) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName }),
         };
-        const simpleProps = { onStart: props.onStart, onComplete: props.onComplete };
-
+        const simple = { onStart: props.onStart, onComplete: props.onComplete };
         switch (key) {
-            case 'spin':    return <SpinAndAnswerGame {...props}/>;
-            case 'scramble':return <WordScrambleGame {...props}/>;
-            case 'safe':    return <SafeCrackerGame {...simpleProps}/>;
-            case 'memory':  return <MemoryMatchGame {...simpleProps}/>;
-            case 'quiz':    return <MedicalQuizRush {...props}/>;
-            case 'dose':    return <DoseCalculatorChallenge {...props}/>;
-            case 'match':   return <MoveTheMatch {...simpleProps}/>;
-            case 'cipher':  return <CipherDecode {...simpleProps}/>;
-            case 'logic':   return <LogicGrid {...simpleProps}/>;
-            case 'sort':    return <SortingChain {...simpleProps}/>;
-            case 'balance': return <MathBalance {...simpleProps}/>;
-            default:        return null;
+            case 'spin':     return <SpinAndAnswerGame {...props}/>;
+            case 'scramble': return <WordScrambleGame {...props}/>;
+            case 'safe':     return <SafeCrackerGame {...simple}/>;
+            case 'memory':   return <MemoryMatchGame {...simple}/>;
+            case 'quiz':     return <MedicalQuizRush {...props}/>;
+            case 'dose':     return <DoseCalculatorChallenge {...props}/>;
+            case 'match':    return <MoveTheMatch {...simple}/>;
+            default:         return null;
         }
     };
 
@@ -255,11 +222,7 @@ export default function StaffArcade({ employee }: Props) {
 
                     ) : bonusState?.show ? (
                         <div className="bg-white rounded-2xl shadow-xl border-2 border-amber-200 p-4">
-                            <BonusQuestion
-                                employee={employee}
-                                bonusPoints={bonusState.pts}
-                                onFinish={handleBonusFinish}
-                            />
+                            <BonusQuestion employee={employee} bonusPoints={bonusState.pts} onFinish={handleBonusFinish}/>
                         </div>
 
                     ) : activeGame !== null ? (
