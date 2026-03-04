@@ -10,7 +10,7 @@ interface Props {
 // ─── Layout constants — bigger digits ─────────────────────────────────────────
 const DW = 72, DH = 118, OY = 10, OP_W = 40;
 const SNAP_R    = 26;
-const TIME_LIMIT = 60;
+const TIME_LIMIT = 90;
 const SW         = 10;           // stick stroke width
 
 // Colours — very dark on warm-cream background
@@ -147,6 +147,11 @@ const PUZZLES = [
     { id:8,  eq:[0,'+',7,'=',1],  sol:'8-7=1'  },
     { id:9,  eq:[2,'+',6,'=',9],  sol:'3+6=9'  },
     { id:10, eq:[0,'+',3,'=',9],  sol:'6+3=9'  },
+    { id:11, eq:[8,'-',7,'=',7],  sol:'0+7=7'  },
+    { id:12, eq:[9,'+',5,'=',0],  sol:'9-9=0'  },
+    { id:13, eq:[4,'+',3,'=',9],  sol:'4+5=9'  },
+    { id:14, eq:[9,'-',7,'=',6],  sol:'9-1=8'  },
+    { id:15, eq:[1,'-',1,'=',8],  sol:'7-1=6'  },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -263,7 +268,7 @@ export default function MoveTheMatch({ onStart, onComplete }: Props) {
                         if (ev && isValid(ev)) {
                             setAnswered(true); setIsCorrect(true); setIsActive(false);
                             const pts = Math.max(20, Math.floor(timeLeft * 0.85));
-                            setTimeout(() => { toast.success(`🔥 عبقري! +${pts} نقطة`); onComplete(pts, true); }, 300);
+                            toast.success(`🔥 عبقري! +${pts} نقطة`); setTimeout(() => { onComplete(pts, true); }, 3000);
                         }
                         return cur;
                     });
