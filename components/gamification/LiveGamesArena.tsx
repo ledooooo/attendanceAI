@@ -129,7 +129,7 @@ interface LiveGamesArenaProps {
     initialRoomId?: string | null;
 }
 
-export default function LiveGamesArena({ employee, onClose, initialRoomId }: { employee: Employee; onClose?: () => void }) {
+export default function LiveGamesArena({ employee, onClose, initialRoomId }: LiveGamesArenaProps) {
     const queryClient = useQueryClient();
 
     const [matches, setMatches] = useState<any[]>([]);
