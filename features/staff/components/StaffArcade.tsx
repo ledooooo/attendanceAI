@@ -24,7 +24,7 @@ import DoseCalculatorChallenge  from '../../../components/gamification/games/Dos
 import MoveTheMatch             from '../../../components/gamification/games/MoveTheMatch';
 import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
 
-interface Props { employee: Employee; }
+interface Props { employee: Employee; deepLinkRoomId?: string | null; }
 
 // ─── 7 Solo Games ─────────────────────────────────────────────────────────────
 const GAME_CATALOG = [
@@ -80,7 +80,7 @@ function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelec
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-export default function StaffArcade({ employee }: Props) {
+export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
     const queryClient = useQueryClient();
     const [activeGame, setActiveGame]   = useState<string | null>(null);
     const [sessionId, setSessionId]     = useState<string | null>(null);
@@ -206,7 +206,7 @@ export default function StaffArcade({ employee }: Props) {
                         </span>
                     </div>
                     <div className="p-3">
-                        <LiveGamesArena employee={employee}/>
+                        <LiveGamesArena employee={employee} initialRoomId={deepLinkRoomId}/>
                     </div>
                 </div>
             )}
