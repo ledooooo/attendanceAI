@@ -6,7 +6,8 @@ import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import {
     Swords, UserX, Trophy, Users, Clock,
-    Play, X, CheckCircle2, BrainCircuit, Loader2, Trash2, Timer, Hand, Grid3x3, Bus
+    Play, X, CheckCircle2, BrainCircuit, Loader2, Trash2, Timer, Hand, Grid3x3, Bus,
+    Link2, Share2
 } from 'lucide-react';
 import Connect4Game from './games/Connect4Game';
 import XOGame from './games/XOGame';
@@ -25,6 +26,29 @@ const GAME_TYPES = [
     { key: 'connect4',   label: 'Connect 4',         icon: '🔴🟡', desc: 'أربعة في صف',        color: 'from-blue-500 to-cyan-600',    minPlayers: 2, maxPlayers: 2  },
     { key: 'stopthebus', label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',   color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
 ];
+
+// ─── Room sharing ─────────────────────────────────────────────────────────────
+// ✏️  Change this to your real app URL
+const BASE_URL = 'https://gharb-alpha.vercel.app';
+
+function getRoomLink(matchId: string) {
+    return `${BASE_URL}${window.location.pathname}#room=${matchId}`;
+}
+
+function copyRoomLink(matchId: string) {
+    const link = getRoomLink(matchId);
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(link).then(() => {});
+    } else {
+        // Fallback for older browsers
+        const el = document.createElement('textarea');
+        el.value = link;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+    }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const AvatarDisplay = ({ avatar, className = '' }: { avatar: string; className?: string }) => {
@@ -154,6 +178,20 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     };
 
     // ── Realtime ──
+    // ── Read room hash on mount (deep link support) ──────────────────────────
+    useEffect(() => {
+        const hash = window.location.hash; // e.g. #room=abc-123
+        if (hash.startsWith('#room=')) {
+            const roomId = hash.replace('#room=', '').trim();
+            if (roomId) {
+                setJoiningMatchId(roomId);
+                setView('identity_setup');
+                // Clean the hash so it doesn't re-trigger on re-render
+                window.history.replaceState(null, '', window.location.pathname);
+            }
+        }
+    }, []);
+
     useEffect(() => {
         fetchWaitingMatches();
         const channel = supabase.channel('live_arena_v2')
@@ -374,11 +412,15 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                             {isMyRoom ? (
                                                 <div className="flex gap-1.5">
                                                     <button onClick={() => handleDeleteMatch(m.id)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
+                                                    <button onClick={() => { copyRoomLink(m.id); toast.success('تم نسخ الرابط! 🔗', { icon: '📋', duration: 2500 }); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100" title="شارك الرابط"><Share2 size={16}/></button>
                                                     <button onClick={() => { setCurrentMatch(m); setView('playing'); }} className="px-3 py-1.5 bg-indigo-100 text-indigo-600 rounded-lg font-bold text-xs">دخول</button>
                                                 </div>
                                             ) : (
-                                                <button onClick={() => { setJoiningMatchId(m.id); setJoiningGameType(m.game_type); setView('identity_setup'); }}
-                                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm shadow-md hover:bg-indigo-700">انضمام</button>
+                                                <div className="flex gap-1.5">
+                                                    <button onClick={() => { copyRoomLink(m.id); toast.success('تم نسخ الرابط! 🔗', { icon: '📋', duration: 2500 }); }} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100" title="شارك الرابط"><Share2 size={16}/></button>
+                                                    <button onClick={() => { setJoiningMatchId(m.id); setJoiningGameType(m.game_type); setView('identity_setup'); }}
+                                                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm shadow-md hover:bg-indigo-700">انضمام</button>
+                                                </div>
                                             )}
                                         </div>
                                     );
