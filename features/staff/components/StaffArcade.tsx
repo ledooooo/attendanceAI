@@ -5,9 +5,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Loader2, Target, Zap, Gamepad2, Tv2,
     ArrowRight, Star, Trophy, Timer,
-    Dices, Lock, Brain, Calculator, Flame, KeyRound, ArrowUpDown,  Hash, Eye, Scale, Grid3x3
+    Dices, Lock, Brain, Calculator, Flame, Eye, Scale, Grid3x3,
+    KeyRound, ArrowUpDown
 } from 'lucide-react';
-
 import toast from 'react-hot-toast';
 
 import { getDiffProfile, COOLDOWN_HOURS, DiffProfile } from './arcade/types';
@@ -16,97 +16,36 @@ import ArcadeCooldown from './arcade/ArcadeCooldown';
 import ArcadeLeaderboard from './arcade/ArcadeLeaderboard';
 import BonusQuestion from './arcade/BonusQuestion';
 
-import SpinAndAnswerGame      from '../../../components/gamification/games/SpinAndAnswerGame';
-import WordScrambleGame       from '../../../components/gamification/games/WordScrambleGame';
-import SafeCrackerGame        from '../../../components/gamification/games/SafeCrackerGame';
-import MemoryMatchGame        from '../../../components/gamification/games/MemoryMatchGame';
-import MedicalQuizRush        from '../../../components/gamification/games/MedicalQuizRush';
-import DoseCalculatorChallenge from '../../../components/gamification/games/DoseCalculatorChallenge';
-import MoveTheMatch           from '../../../components/gamification/games/MoveTheMatch';
-import LogicGrid              from '../../../components/gamification/games/LogicGrid';
-import MathBalance            from '../../../components/gamification/games/MathBalance';
-import LiveGamesArena         from '../../../components/gamification/LiveGamesArena';
-
-import CipherDecode           from '../../../components/gamification/games/CipherDecode';
-import SortingChain           from '../../../components/gamification/games/SortingChain';
-
-
-
+import SpinAndAnswerGame        from '../../../components/gamification/games/SpinAndAnswerGame';
+import WordScrambleGame         from '../../../components/gamification/games/WordScrambleGame';
+import SafeCrackerGame          from '../../../components/gamification/games/SafeCrackerGame';
+import MemoryMatchGame          from '../../../components/gamification/games/MemoryMatchGame';
+import MedicalQuizRush          from '../../../components/gamification/games/MedicalQuizRush';
+import DoseCalculatorChallenge  from '../../../components/gamification/games/DoseCalculatorChallenge';
+import MoveTheMatch             from '../../../components/gamification/games/MoveTheMatch';
+import CipherDecode             from '../../../components/gamification/games/CipherDecode';
+import LogicGrid                from '../../../components/gamification/games/LogicGrid';
+import SortingChain             from '../../../components/gamification/games/SortingChain';
+import MathBalance              from '../../../components/gamification/games/MathBalance';
+import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
 
 interface Props { employee: Employee; }
 
 // ─── Game catalog ─────────────────────────────────────────────────────────────
-const IQ_GAMES_UPDATED = [
-    {
-        key: 'match',
-        category: 'iq',
-        title: 'عود الثقاب',
-        icon: 'Flame',
-        gradient: 'from-amber-500 to-orange-600',
-        bg: 'from-amber-50 to-orange-50',
-        border: 'border-amber-100 hover:border-amber-300',
-        tag: 'تفاعلي 🔥',
-        pts: '15-48',
-        tagColor: 'text-amber-700',
-        ptsColor: 'text-amber-600',
-        description: 'غير الأرقام بالسهام لتصحح المعادلة - 12+ لغزاً مختلفاً'
-    },
-    {
-        key: 'cipher',
-        category: 'iq',
-        title: 'فك الشفرة',
-        icon: 'KeyRound',
-        gradient: 'from-indigo-500 to-blue-600',
-        bg: 'from-indigo-50 to-blue-50',
-        border: 'border-indigo-100 hover:border-indigo-300',
-        tag: 'ذكاء 🔐',
-        pts: '10-30',
-        tagColor: 'text-indigo-700',
-        ptsColor: 'text-indigo-600',
-        description: 'اكتشف قاعدة الشفرة وفكها - 25+ شفرة متنوعة'
-    },
-    {
-        key: 'logic',
-        category: 'iq',
-        title: 'شبكة المنطق',
-        icon: 'Grid3x3',
-        gradient: 'from-violet-500 to-purple-600',
-        bg: 'from-violet-50 to-purple-50',
-        border: 'border-violet-100 hover:border-violet-300',
-        tag: 'منطق 🧩',
-        pts: '18-45',
-        tagColor: 'text-violet-700',
-        ptsColor: 'text-violet-600',
-        description: 'اضغط الخلية واكتب الرقم لإكمال الشبكة - 12+ لغزاً'
-    },
-    {
-        key: 'sort',
-        category: 'iq',
-        title: 'سلسلة الترتيب',
-        icon: 'ArrowUpDown',
-        gradient: 'from-rose-500 to-pink-600',
-        bg: 'from-rose-50 to-pink-50',
-        border: 'border-rose-100 hover:border-rose-300',
-        tag: 'ترتيب 🔗',
-        pts: '15-40',
-        tagColor: 'text-rose-700',
-        ptsColor: 'text-rose-600',
-        description: 'اضغط عنصرين لتبادلهما حتى يكتمل الترتيب - 23+ تحدياً'
-    },
-    {
-        key: 'balance',
-        category: 'iq',
-        title: 'ميزان الأرقام',
-        icon: 'Scale',
-        gradient: 'from-emerald-500 to-green-600',
-        bg: 'from-emerald-50 to-green-50',
-        border: 'border-emerald-100 hover:border-emerald-300',
-        tag: 'توازن ⚖️',
-        pts: '15-36',
-        tagColor: 'text-emerald-700',
-        ptsColor: 'text-emerald-600',
-        description: 'وزع الأرقام على الكفتين حتى يتوازن الميزان - 10+ ألغاز'
-    },
+const GAME_CATALOG = [
+    // الألعاب الطبية
+    { key: 'spin',     category: 'medical', title: 'عجلة الحظ',      icon: Dices,       gradient: 'from-fuchsia-500 to-pink-600',   bg: 'from-fuchsia-50 to-pink-50',   border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',    pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
+    { key: 'scramble', category: 'medical', title: 'فك الكلمة',       icon: Timer,       gradient: 'from-blue-500 to-cyan-600',      bg: 'from-blue-50 to-cyan-50',      border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة',  pts: '5-20',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
+    { key: 'safe',     category: 'medical', title: 'الخزنة السرية',   icon: Lock,        gradient: 'from-emerald-500 to-teal-600',   bg: 'from-emerald-50 to-teal-50',   border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق',  pts: '20',    tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
+    { key: 'memory',   category: 'medical', title: 'تطابق الذاكرة',   icon: Gamepad2,    gradient: 'from-orange-500 to-amber-600',   bg: 'from-orange-50 to-amber-50',   border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',   pts: '20',    tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
+    { key: 'quiz',     category: 'medical', title: 'سباق المعرفة',    icon: Brain,       gradient: 'from-indigo-500 to-purple-600',  bg: 'from-indigo-50 to-purple-50',  border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة',  pts: '5-25',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
+    { key: 'dose',     category: 'medical', title: 'حساب الجرعات',    icon: Calculator,  gradient: 'from-rose-500 to-red-600',       bg: 'from-rose-50 to-red-50',       border: 'border-rose-100 hover:border-rose-300',       tag: 'دقة حسابية',  pts: '10-30', tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
+    // ألعاب الذكاء
+    { key: 'match',    category: 'iq',      title: 'عود الثقاب',      icon: Flame,       gradient: 'from-amber-500 to-orange-600',   bg: 'from-amber-50 to-orange-50',   border: 'border-amber-100 hover:border-amber-300',     tag: 'تفاعلي 🔥',   pts: '15-48', tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
+    { key: 'cipher',   category: 'iq',      title: 'فك الشفرة',       icon: KeyRound,    gradient: 'from-indigo-500 to-blue-600',    bg: 'from-indigo-50 to-blue-50',    border: 'border-indigo-100 hover:border-indigo-300',   tag: 'ذكاء 🔐',     pts: '10-30', tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
+    { key: 'logic',    category: 'iq',      title: 'شبكة المنطق',     icon: Grid3x3,     gradient: 'from-violet-500 to-purple-600',  bg: 'from-violet-50 to-purple-50',  border: 'border-violet-100 hover:border-violet-300',   tag: 'منطق 🧩',     pts: '18-45', tagColor: 'text-violet-700',  ptsColor: 'text-violet-600'  },
+    { key: 'sort',     category: 'iq',      title: 'سلسلة الترتيب',   icon: ArrowUpDown, gradient: 'from-rose-500 to-pink-600',      bg: 'from-rose-50 to-pink-50',      border: 'border-rose-100 hover:border-rose-300',       tag: 'ترتيب 🔗',    pts: '15-40', tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
+    { key: 'balance',  category: 'iq',      title: 'ميزان الأرقام',   icon: Scale,       gradient: 'from-emerald-500 to-green-600',  bg: 'from-emerald-50 to-green-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'توازن ⚖️',    pts: '15-36', tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
 ];
 
 // ─── Game Section Component ───────────────────────────────────────────────────
@@ -173,12 +112,10 @@ export default function StaffArcade({ employee }: Props) {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
     const [activeTab, setActiveTab] = useState<'games' | 'live'>('games');
-    // Bonus question state
     const [bonusState, setBonusState] = useState<{ show: boolean; pts: number; gameName: string } | null>(null);
 
     const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
 
-    // Last play
     const { data: lastPlay, isLoading: loadingPlay } = useQuery({
         queryKey: ['last_arcade_play', employee.employee_id],
         queryFn: async () => {
@@ -196,7 +133,6 @@ export default function StaffArcade({ employee }: Props) {
         return { hrs: Math.floor(rem / 3600000), mins: Math.floor((rem % 3600000) / 60000) };
     }, [lastPlay]);
 
-    // Consume attempt
     const consumeAttempt = async (gameName: string) => {
         const { data, error } = await supabase.from('arcade_scores').insert({
             employee_id: employee.employee_id, game_name: gameName, points_earned: 0, is_win: false
@@ -206,7 +142,6 @@ export default function StaffArcade({ employee }: Props) {
         queryClient.invalidateQueries({ queryKey: ['last_arcade_play'] });
     };
 
-    // Finish attempt — triggers bonus question on win
     const finishAttemptMutation = useMutation({
         mutationFn: async ({ points, isWin, gameName }: { points: number; isWin: boolean; gameName: string }) => {
             if (!sessionId) return;
@@ -222,7 +157,6 @@ export default function StaffArcade({ employee }: Props) {
             const { isWin, points, gameName } = result;
             if (isWin && points > 0) {
                 toast.success(`بطل! كسبت ${points} نقطة 🎉`, { duration: 4000, icon: '🏆', style: { background: '#10b981', color: 'white', fontWeight: 'bold' } });
-                // Show bonus question
                 const bonusPts = Math.max(5, Math.round(points * 0.5));
                 setBonusState({ show: true, pts: bonusPts, gameName });
             } else {
@@ -235,7 +169,6 @@ export default function StaffArcade({ employee }: Props) {
         }
     });
 
-    // Handle bonus question result
     const handleBonusFinish = async (earned: number) => {
         if (earned > 0) {
             await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: earned });
@@ -247,10 +180,17 @@ export default function StaffArcade({ employee }: Props) {
         setSessionId(null);
     };
 
-    // Game map
     const gameNode = (key: string): React.ReactNode => {
-        const props = { employee, diffProfile, onStart: () => consumeAttempt(GAME_CATALOG.find(g => g.key === key)?.title || key), onComplete: (p: number, w: boolean) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName: GAME_CATALOG.find(g => g.key === key)?.title || key }) };
+        const gameMeta = GAME_CATALOG.find(g => g.key === key);
+        const gameName = gameMeta?.title || key;
+        const props = {
+            employee,
+            diffProfile,
+            onStart: () => consumeAttempt(gameName),
+            onComplete: (p: number, w: boolean) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName })
+        };
         const simpleProps = { onStart: props.onStart, onComplete: props.onComplete };
+
         switch (key) {
             case 'spin':    return <SpinAndAnswerGame {...props}/>;
             case 'scramble':return <WordScrambleGame {...props}/>;
@@ -259,18 +199,17 @@ export default function StaffArcade({ employee }: Props) {
             case 'quiz':    return <MedicalQuizRush {...props}/>;
             case 'dose':    return <DoseCalculatorChallenge {...props}/>;
             case 'match':   return <MoveTheMatch {...simpleProps}/>;
-            case 'logic':   return <LogicGrid {...simpleProps}/>;
-            case 'balance': return <MathBalance {...simpleProps}/>;
             case 'cipher':  return <CipherDecode {...simpleProps}/>;
-            case 'sort':    return <SortingChain {...simpleProps}/>;  
-            default: return null;
+            case 'logic':   return <LogicGrid {...simpleProps}/>;
+            case 'sort':    return <SortingChain {...simpleProps}/>;
+            case 'balance': return <MathBalance {...simpleProps}/>;
+            default:        return null;
         }
     };
 
     return (
         <div className="space-y-3 animate-in fade-in pb-6">
 
-            {/* Header */}
             <ArcadeHeader employee={employee} onShowLeaderboard={() => setShowLeaderboard(true)}/>
 
             {/* Tabs */}
@@ -315,7 +254,6 @@ export default function StaffArcade({ employee }: Props) {
                         </div>
 
                     ) : bonusState?.show ? (
-                        /* ── BONUS QUESTION ── */
                         <div className="bg-white rounded-2xl shadow-xl border-2 border-amber-200 p-4">
                             <BonusQuestion
                                 employee={employee}
@@ -325,9 +263,7 @@ export default function StaffArcade({ employee }: Props) {
                         </div>
 
                     ) : activeGame !== null ? (
-                        /* ── ACTIVE GAME ── */
                         <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-100">
-                            {/* Back bar */}
                             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                                 <button onClick={() => { setActiveGame(null); setSessionId(null); }}
                                     className="flex items-center gap-1.5 text-gray-500 hover:text-gray-800 font-bold text-sm transition-colors">
@@ -352,17 +288,14 @@ export default function StaffArcade({ employee }: Props) {
                         </div>
 
                     ) : timeRemaining ? (
-                        /* ── COOLDOWN ── */
                         <ArcadeCooldown hrs={timeRemaining.hrs} mins={timeRemaining.mins}/>
 
                     ) : (
-                        /* ── GAME GRID ── */
                         <GameGrid diffProfile={diffProfile} onSelect={setActiveGame}/>
                     )}
                 </>
             )}
 
-            {/* Leaderboard modal */}
             {showLeaderboard && <ArcadeLeaderboard onClose={() => setShowLeaderboard(false)}/>}
         </div>
     );
