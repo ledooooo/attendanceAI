@@ -123,7 +123,13 @@ const fetchUnifiedQuestion = async (employee: Employee, difficulty?: string) => 
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function LiveGamesArena({ employee, onClose }: { employee: Employee; onClose?: () => void }) {
+interface LiveGamesArenaProps {
+    employee: Employee;
+    onClose?: () => void;
+    initialRoomId?: string | null;
+}
+
+export default function LiveGamesArena({ employee, onClose, initialRoomId }: { employee: Employee; onClose?: () => void }) {
     const queryClient = useQueryClient();
 
     const [matches, setMatches] = useState<any[]>([]);
@@ -178,20 +184,6 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     };
 
     // ── Realtime ──
-    // ── Read room hash on mount (deep link support) ──────────────────────────
-    useEffect(() => {
-        const hash = window.location.hash; // e.g. #room=abc-123
-        if (hash.startsWith('#room=')) {
-            const roomId = hash.replace('#room=', '').trim();
-            if (roomId) {
-                setJoiningMatchId(roomId);
-                setView('identity_setup');
-                // Clean the hash so it doesn't re-trigger on re-render
-                window.history.replaceState(null, '', window.location.pathname);
-            }
-        }
-    }, []);
-
     useEffect(() => {
         fetchWaitingMatches();
         const channel = supabase.channel('live_arena_v2')
@@ -502,10 +494,20 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                     </p>
                                 )}
                                 {currentMatch.created_by === employee.employee_id && (
-                                    <button onClick={() => handleDeleteMatch(currentMatch.id)}
-                                        className="mt-6 bg-red-50 text-red-500 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 mx-auto hover:bg-red-100 text-sm">
-                                        <Trash2 size={16}/> إلغاء الغرفة
-                                    </button>
+                                    <div className="mt-6 flex items-center gap-3 justify-center flex-wrap">
+                                        {/* Share room link */}
+                                        <button onClick={() => {
+                                            copyRoomLink(currentMatch.id);
+                                            toast.success('تم نسخ رابط الغرفة! أرسله لزميلك 🔗', { icon: '📋', duration: 3000 });
+                                        }} className="bg-green-50 text-green-600 border border-green-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-green-100 active:scale-95 transition-all text-sm shadow-sm">
+                                            <Share2 size={16}/> شارك الرابط
+                                        </button>
+                                        {/* Cancel room */}
+                                        <button onClick={() => handleDeleteMatch(currentMatch.id)}
+                                            className="bg-red-50 text-red-500 border border-red-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-red-100 active:scale-95 transition-all text-sm shadow-sm">
+                                            <Trash2 size={16}/> إلغاء الغرفة
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         )}
