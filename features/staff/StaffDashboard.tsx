@@ -55,6 +55,7 @@ export default function StaffDashboard({ employee }: Props) {
   
   const [activeTab, setActiveTab] = useState('news');
   const [deepLinkTrainingId, setDeepLinkTrainingId] = useState<string | null>(null);
+  const [deepLinkRoomId, setDeepLinkRoomId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [ovrCount, setOvrCount] = useState(0);
 
@@ -114,6 +115,16 @@ const [showNotifPrompt, setShowNotifPrompt] = useState(true);
         setDeepLinkTrainingId(trainingIdParam); 
         window.history.replaceState({}, document.title, window.location.pathname);
     }
+      const hash = window.location.hash;
+if (hash.startsWith('#room=')) {
+    const roomId = hash.replace('#room=', '').trim();
+    if (roomId) {
+        setDeepLinkRoomId(roomId);
+        setActiveTab('arcade');
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+}
+
   }, []);
   
   useEffect(() => {
@@ -640,7 +651,7 @@ const [showNotifPrompt, setShowNotifPrompt] = useState(true);
                     {activeTab === 'stats' && <StaffStats attendance={attendanceData} evals={evaluations} requests={leaveRequests} month={selectedMonth} employee={employee} />}
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={fetchAllData} />}
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
-                    {activeTab === 'arcade' && <StaffArcade employee={employee} />}
+                    {activeTab === 'arcade' && <StaffArcade employee={employee} deepLinkRoomId={deepLinkRoomId} />}
                     {activeTab === 'templates' && <StaffTemplatesTab employee={employee} />}
                     {activeTab === 'store' && <RewardsStore employee={employee} />}
                     {activeTab === 'training' && <StaffTrainingCenter employee={employee} deepLinkTrainingId={deepLinkTrainingId} />}
