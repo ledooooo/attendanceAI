@@ -1,75 +1,138 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Loader2, Trophy, Handshake, LogOut, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
+// ─── Board geometry — all relative, scales to container ──────────────────────
 const ROWS = 6;
 const COLS = 7;
-const CELL = 54;        // cell size px
-const GAP  = 6;         // gap between cells
-const PAD  = 12;        // board padding
-const R    = (CELL - GAP * 2) / 2;   // circle radius
-const BW   = COLS * CELL + (COLS - 1) * GAP + PAD * 2;
-const BH   = ROWS * CELL + (ROWS - 1) * GAP + PAD * 2;
+// We use a fixed viewBox and let SVG scale to fill width
+const VB_PAD  = 10;
+const VB_CELL = 52;
+const VB_GAP  = 6;
+const VB_W    = COLS * VB_CELL + (COLS - 1) * VB_GAP + VB_PAD * 2;  // 388
+const VB_H    = ROWS * VB_CELL + (ROWS - 1) * VB_GAP + VB_PAD * 2;  // 352
+const VB_R    = VB_CELL / 2 - 5;   // piece radius
 
 type Cell = 'R' | 'Y' | null;
 type Board = Cell[][];
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// ─── Audio ────────────────────────────────────────────────────────────────────
+function useSound() {
+    const ctx = useRef<AudioContext | null>(null);
+
+    const getCtx = () => {
+        if (!ctx.current) ctx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        return ctx.current;
+    };
+
+    const play = useCallback((type: 'drop' | 'win' | 'draw' | 'invalid') => {
+        try {
+            const ac = getCtx();
+            const now = ac.currentTime;
+
+            if (type === 'drop') {
+                // Short click + soft thud
+                const osc = ac.createOscillator();
+                const gain = ac.createGain();
+                osc.connect(gain); gain.connect(ac.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(180, now + 0.18);
+                gain.gain.setValueAtTime(0.35, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+                osc.start(now); osc.stop(now + 0.22);
+            }
+
+            if (type === 'win') {
+                // Ascending fanfare
+                const notes = [523, 659, 784, 1047];
+                notes.forEach((freq, i) => {
+                    const osc = ac.createOscillator();
+                    const gain = ac.createGain();
+                    osc.connect(gain); gain.connect(ac.destination);
+                    osc.type = 'triangle';
+                    const t = now + i * 0.13;
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0, t);
+                    gain.gain.linearRampToValueAtTime(0.3, t + 0.04);
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+                    osc.start(t); osc.stop(t + 0.35);
+                });
+            }
+
+            if (type === 'draw') {
+                // Two descending notes
+                [440, 330].forEach((freq, i) => {
+                    const osc = ac.createOscillator();
+                    const gain = ac.createGain();
+                    osc.connect(gain); gain.connect(ac.destination);
+                    osc.type = 'sine';
+                    const t = now + i * 0.2;
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0.25, t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+                    osc.start(t); osc.stop(t + 0.3);
+                });
+            }
+
+            if (type === 'invalid') {
+                const osc = ac.createOscillator();
+                const gain = ac.createGain();
+                osc.connect(gain); gain.connect(ac.destination);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(120, now);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                osc.start(now); osc.stop(now + 0.15);
+            }
+        } catch (_) {}
+    }, []);
+
+    return play;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function emptyBoard(): Board {
     return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
 }
 
-function dropPiece(board: Board, col: number, symbol: Cell): Board | null {
+function dropPiece(board: Board, col: number, symbol: Cell): { board: Board; row: number } | null {
     for (let r = ROWS - 1; r >= 0; r--) {
         if (!board[r][col]) {
             const next = board.map(row => [...row]);
             next[r][col] = symbol;
-            return next;
+            return { board: next, row: r };
         }
     }
     return null;
 }
 
 function getDropRow(board: Board, col: number): number {
-    for (let r = ROWS - 1; r >= 0; r--) {
-        if (!board[r][col]) return r;
-    }
+    for (let r = ROWS - 1; r >= 0; r--) if (!board[r][col]) return r;
     return -1;
 }
 
 function checkWinner(board: Board): Cell | 'draw' | null {
-    for (let r = 0; r < ROWS; r++)
-        for (let c = 0; c <= COLS - 4; c++) {
-            const cell = board[r][c];
-            if (cell && [1,2,3].every(i => board[r][c+i] === cell)) return cell;
-        }
-    for (let r = 0; r <= ROWS - 4; r++)
-        for (let c = 0; c < COLS; c++) {
-            const cell = board[r][c];
-            if (cell && [1,2,3].every(i => board[r+i][c] === cell)) return cell;
-        }
-    for (let r = 0; r <= ROWS - 4; r++)
-        for (let c = 0; c <= COLS - 4; c++) {
-            const cell = board[r][c];
-            if (cell && [1,2,3].every(i => board[r+i][c+i] === cell)) return cell;
-        }
-    for (let r = 3; r < ROWS; r++)
-        for (let c = 0; c <= COLS - 4; c++) {
-            const cell = board[r][c];
-            if (cell && [1,2,3].every(i => board[r-i][c+i] === cell)) return cell;
+    const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    for (const [dr,dc] of dirs)
+        for (let r=0; r<ROWS; r++) for (let c=0; c<COLS; c++) {
+            const cell = board[r][c]; if (!cell) continue;
+            if ([1,2,3].every(k => {
+                const nr=r+dr*k, nc=c+dc*k;
+                return nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&board[nr][nc]===cell;
+            })) return cell;
         }
     if (board[0].every(c => c !== null)) return 'draw';
     return null;
 }
 
-function getWinningCells(board: Board): [number,number][] {
+function getWinCells(board: Board): [number,number][] {
     const dirs = [[0,1],[1,0],[1,1],[1,-1]];
-    for (const [dr,dc] of dirs) {
+    for (const [dr,dc] of dirs)
         for (let r=0; r<ROWS; r++) for (let c=0; c<COLS; c++) {
-            const cell = board[r][c];
-            if (!cell) continue;
+            const cell = board[r][c]; if (!cell) continue;
             const cells: [number,number][] = [[r,c]];
             for (let k=1; k<4; k++) {
                 const nr=r+dr*k, nc=c+dc*k;
@@ -78,219 +141,246 @@ function getWinningCells(board: Board): [number,number][] {
             }
             if (cells.length===4) return cells;
         }
-    }
     return [];
 }
 
-// Cell center (x,y) in SVG coords
-function cellCenter(r: number, c: number): [number,number] {
-    const x = PAD + c * (CELL + GAP) + CELL / 2;
-    const y = PAD + r * (CELL + GAP) + CELL / 2;
-    return [x, y];
+// viewBox cell center
+function vbCenter(r: number, c: number): [number, number] {
+    return [
+        VB_PAD + c * (VB_CELL + VB_GAP) + VB_CELL / 2,
+        VB_PAD + r * (VB_CELL + VB_GAP) + VB_CELL / 2,
+    ];
 }
 
-// ─── Animated Piece ────────────────────────────────────────────────────────────
-function Piece({ r, c, symbol, isNew, isWin }: {
-    r: number; c: number; symbol: Cell; isNew: boolean; isWin: boolean;
+// Convert client coords to column index using SVG hit-testing
+function clientToCol(svgEl: SVGSVGElement, clientX: number): number {
+    const rect = svgEl.getBoundingClientRect();
+    const svgX = (clientX - rect.left) / rect.width * VB_W;
+    for (let c = 0; c < COLS; c++) {
+        const left  = VB_PAD + c * (VB_CELL + VB_GAP);
+        const right = left + VB_CELL;
+        if (svgX >= left && svgX <= right) return c;
+    }
+    // clamp to nearest column edge
+    if (svgX < VB_PAD) return 0;
+    return COLS - 1;
+}
+
+// ─── Piece with drop animation ────────────────────────────────────────────────
+function Piece({ r, c, symbol, isNew, isWin, winPulse }: {
+    r: number; c: number; symbol: Cell;
+    isNew: boolean; isWin: boolean; winPulse: boolean;
 }) {
-    const [cx, cy] = cellCenter(r, c);
-    const [startY] = useState(() => PAD + CELL / 2 - (r + 1) * (CELL + GAP));
-    const [animY, setAnimY] = useState(isNew ? startY : cy);
-    const [pulse, setPulse] = useState(false);
+    const [cx, cy] = vbCenter(r, c);
+    const startCy  = VB_PAD + VB_CELL / 2;   // top of board
+    const [curY, setCurY] = useState(isNew ? startCy - cy : 0);  // offset from final pos
 
     useEffect(() => {
-        if (isNew) {
-            const timeout = setTimeout(() => setAnimY(cy), 20);
-            return () => clearTimeout(timeout);
-        }
-    }, [isNew, cy]);
-
-    useEffect(() => {
-        if (isWin) {
-            const t = setInterval(() => setPulse(p => !p), 400);
-            return () => clearInterval(t);
-        }
-    }, [isWin]);
+        if (!isNew) return;
+        setCurY(startCy - cy);
+        const id = requestAnimationFrame(() => setCurY(0));
+        return () => cancelAnimationFrame(id);
+    }, []);
 
     const isRed = symbol === 'R';
-    const baseColor  = isRed ? '#ef4444' : '#facc15';
-    const glowColor  = isRed ? '#fca5a5' : '#fde68a';
-    const darkColor  = isRed ? '#991b1b' : '#854d0e';
-    const pulseColor = isRed ? '#fbbf24' : '#f97316';
+    const base  = isRed ? '#ef4444' : '#facc15';
+    const light = isRed ? '#fca5a5' : '#fef08a';
+    const dark  = isRed ? '#7f1d1d' : '#713f12';
+    const glow  = isRed ? '#fbbf24' : '#f97316';
 
     return (
-        <g style={{ transition: isNew ? `transform 0.45s cubic-bezier(0.25, 1.6, 0.5, 1)` : undefined,
-                    transform: `translateY(${animY - cy}px)` }}>
+        <g style={{
+            transform: `translateY(${curY}px)`,
+            transition: isNew ? 'transform 0.38s cubic-bezier(0.22, 1.8, 0.45, 1)' : undefined,
+        }}>
+            {/* outer glow */}
+            <circle cx={cx} cy={cy} r={VB_R + 5}
+                fill={isWin && winPulse ? glow : base}
+                opacity={isWin ? (winPulse ? 0.5 : 0.2) : 0.2}
+            />
             <defs>
-                <radialGradient id={`pg-${r}-${c}`} cx="35%" cy="30%" r="65%">
-                    <stop offset="0%" stopColor={glowColor}/>
-                    <stop offset="60%" stopColor={baseColor}/>
-                    <stop offset="100%" stopColor={darkColor}/>
+                <radialGradient id={`g${r}${c}`} cx="33%" cy="28%" r="68%">
+                    <stop offset="0%"   stopColor={light}/>
+                    <stop offset="55%"  stopColor={base}/>
+                    <stop offset="100%" stopColor={dark}/>
                 </radialGradient>
-                <filter id={`glow-${r}-${c}`}>
-                    <feGaussianBlur stdDeviation={isWin && pulse ? "6" : "3"} result="blur"/>
-                    <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                </filter>
             </defs>
-            {/* glow ring */}
-            <circle cx={cx} cy={cy} r={R + 4}
-                fill="none"
-                stroke={isWin && pulse ? pulseColor : baseColor}
-                strokeWidth={isWin ? 3 : 1.5}
-                opacity={isWin ? (pulse ? 0.9 : 0.4) : 0.35}
-            />
-            {/* main piece */}
-            <circle cx={cx} cy={cy} r={R}
-                fill={`url(#pg-${r}-${c})`}
-                filter={`url(#glow-${r}-${c})`}
-            />
+            <circle cx={cx} cy={cy} r={VB_R} fill={`url(#g${r}${c})`}/>
             {/* shine */}
-            <ellipse cx={cx - R*0.2} cy={cy - R*0.28} rx={R*0.32} ry={R*0.18}
-                fill="white" opacity={0.45}/>
+            <ellipse cx={cx - VB_R*0.22} cy={cy - VB_R*0.28}
+                rx={VB_R*0.3} ry={VB_R*0.17} fill="white" opacity={0.5}/>
         </g>
     );
 }
 
-// ─── SVG Board ─────────────────────────────────────────────────────────────────
+// ─── SVG Board — single pointer event surface ─────────────────────────────────
 function BoardSVG({ board, onColClick, disabled, mySymbol, lastMove }: {
-    board: Board;
-    onColClick: (col: number) => void;
-    disabled: boolean;
-    mySymbol: Cell;
-    lastMove: [number,number] | null;
+    board: Board; onColClick: (col: number) => void;
+    disabled: boolean; mySymbol: Cell; lastMove: [number,number] | null;
 }) {
+    const svgRef  = useRef<SVGSVGElement>(null);
     const [hoverCol, setHoverCol] = useState<number | null>(null);
-    const winCells = useMemo(() => getWinningCells(board), [board]);
+    const [winPulse, setWinPulse] = useState(false);
+    const winCells = useMemo(() => getWinCells(board), [board]);
 
-    const isRed = mySymbol === 'R';
-    const hoverColor = isRed ? '#ef4444' : '#facc15';
+    useEffect(() => {
+        if (!winCells.length) return;
+        const t = setInterval(() => setWinPulse(p => !p), 420);
+        return () => clearInterval(t);
+    }, [winCells.length]);
 
-    // Preview drop row
+    const isRed     = mySymbol === 'R';
+    const accentClr = isRed ? '#ef4444' : '#facc15';
+
+    // ── unified pointer → column ──────────────────────────────────────────────
+    const resolveCol = (e: React.PointerEvent<SVGSVGElement>) => {
+        if (!svgRef.current) return -1;
+        return clientToCol(svgRef.current, e.clientX);
+    };
+
+    const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+        if (disabled) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const col = resolveCol(e);
+        if (col >= 0) setHoverCol(col);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+        if (disabled) { setHoverCol(null); return; }
+        const col = resolveCol(e);
+        setHoverCol(col >= 0 ? col : null);
+    };
+
+    const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+        if (disabled) return;
+        const col = resolveCol(e);
+        if (col >= 0) onColClick(col);
+        setHoverCol(null);
+    };
+
+    const handlePointerLeave = () => setHoverCol(null);
+
     const previewRow = hoverCol !== null && !disabled ? getDropRow(board, hoverCol) : -1;
+    const PREVIEW_Y  = VB_PAD - VB_CELL * 0.7;
 
     return (
-        <div className="relative" style={{ width: BW }}>
-            {/* Column hover zones */}
-            <div className="absolute inset-0 grid z-10" style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)` }}>
-                {Array.from({ length: COLS }, (_, c) => (
-                    <button key={c}
-                        disabled={disabled}
-                        onClick={() => onColClick(c)}
-                        onMouseEnter={() => setHoverCol(c)}
-                        onMouseLeave={() => setHoverCol(null)}
-                        onTouchStart={() => setHoverCol(c)}
-                        className="h-full disabled:cursor-not-allowed"
-                        style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}
+        <svg
+            ref={svgRef}
+            viewBox={`0 ${PREVIEW_Y} ${VB_W} ${VB_H - PREVIEW_Y}`}
+            style={{ width:'100%', display:'block', touchAction:'none', userSelect:'none', cursor: disabled ? 'not-allowed' : 'pointer' }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
+            onPointerCancel={handlePointerLeave}
+        >
+            <defs>
+                <linearGradient id="board-grad" x1="0" y1="0" x2="0.3" y2="1">
+                    <stop offset="0%"   stopColor="#1d4ed8"/>
+                    <stop offset="100%" stopColor="#1e3a8a"/>
+                </linearGradient>
+                <filter id="inset-shadow" x="-10%" y="-10%" width="120%" height="120%">
+                    <feComposite in="SourceGraphic" in2="SourceGraphic" operator="over"/>
+                    <feGaussianBlur stdDeviation="2" result="blur"/>
+                    <feComposite in="blur" in2="SourceGraphic" operator="in" result="inner"/>
+                    <feColorMatrix in="inner" type="matrix"
+                        values="0 0 0 0 0   0 0 0 0 0   0 0 0 0 0   0 0 0 0.6 0"/>
+                </filter>
+                <filter id="drop-shadow">
+                    <feDropShadow dx="0" dy="6" stdDeviation="10" floodColor="#1e3a8a" floodOpacity="0.7"/>
+                </filter>
+            </defs>
+
+            {/* Hover preview piece */}
+            {hoverCol !== null && !disabled && (
+                <g opacity={0.75}>
+                    <defs>
+                        <radialGradient id="prev-g" cx="33%" cy="28%" r="68%">
+                            <stop offset="0%" stopColor={isRed ? '#fca5a5' : '#fef08a'}/>
+                            <stop offset="100%" stopColor={accentClr}/>
+                        </radialGradient>
+                    </defs>
+                    <circle
+                        cx={VB_PAD + hoverCol * (VB_CELL + VB_GAP) + VB_CELL / 2}
+                        cy={PREVIEW_Y + (VB_CELL * 0.7) / 2}
+                        r={VB_R * 0.85}
+                        fill="url(#prev-g)"
                     />
-                ))}
-            </div>
+                    {/* arrow */}
+                    <text
+                        x={VB_PAD + hoverCol * (VB_CELL + VB_GAP) + VB_CELL / 2}
+                        y={VB_PAD - 3}
+                        textAnchor="middle"
+                        fontSize={13}
+                        fill={accentClr}
+                        fontWeight="bold"
+                    >▼</text>
+                </g>
+            )}
 
-            <svg width={BW} height={BH + 56} viewBox={`0 -56 ${BW} ${BH + 56}`} style={{ display:'block', overflow:'visible' }}>
-                <defs>
-                    <filter id="board-shadow">
-                        <feDropShadow dx="0" dy="8" stdDeviation="12" floodColor="#1e3a8a" floodOpacity="0.6"/>
-                    </filter>
-                    <linearGradient id="board-bg" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#1d4ed8"/>
-                        <stop offset="100%" stopColor="#1e40af"/>
-                    </linearGradient>
-                    <filter id="cell-inset">
-                        <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.5"/>
-                    </filter>
-                </defs>
+            {/* Board background */}
+            <rect x={0} y={0} width={VB_W} height={VB_H}
+                rx={18} ry={18}
+                fill="url(#board-grad)"
+                filter="url(#drop-shadow)"
+            />
 
-                {/* Hover preview piece (above board) */}
-                {hoverCol !== null && !disabled && (
-                    <g opacity={0.7}>
-                        <defs>
-                            <radialGradient id="prev-grad" cx="35%" cy="30%" r="65%">
-                                <stop offset="0%" stopColor={isRed ? '#fca5a5' : '#fde68a'}/>
-                                <stop offset="100%" stopColor={hoverColor}/>
-                            </radialGradient>
-                        </defs>
-                        <circle
-                            cx={PAD + hoverCol * (CELL + GAP) + CELL / 2}
-                            cy={-56 + CELL / 2}
-                            r={R}
-                            fill="url(#prev-grad)"
+            {/* Slot holes */}
+            {Array.from({ length: ROWS }, (_, r) =>
+                Array.from({ length: COLS }, (_, c) => {
+                    const [cx, cy] = vbCenter(r, c);
+                    const isPreview = hoverCol === c && previewRow === r && !disabled;
+                    return (
+                        <circle key={`h${r}${c}`}
+                            cx={cx} cy={cy} r={VB_R}
+                            fill={isPreview
+                                ? (isRed ? 'rgba(239,68,68,0.22)' : 'rgba(250,204,21,0.22)')
+                                : '#172554'}
+                            style={{ transition: 'fill 0.12s' }}
                         />
-                        {/* drop arrow */}
-                        <text
-                            x={PAD + hoverCol * (CELL + GAP) + CELL / 2}
-                            y={-56 + CELL + 4}
-                            textAnchor="middle"
-                            fontSize={14}
-                            fill={hoverColor}
-                            opacity={0.8}
-                        >▼</text>
-                    </g>
-                )}
+                    );
+                })
+            )}
 
-                {/* Board frame */}
-                <rect x={0} y={0} width={BW} height={BH}
-                    rx={20} ry={20}
-                    fill="url(#board-bg)"
-                    filter="url(#board-shadow)"
-                />
+            {/* Pieces */}
+            {board.map((row, r) => row.map((cell, c) => {
+                if (!cell) return null;
+                const isNew = !!(lastMove && lastMove[0]===r && lastMove[1]===c);
+                const isWin = winCells.some(([wr,wc]) => wr===r && wc===c);
+                return <Piece key={`p${r}${c}`} r={r} c={c} symbol={cell} isNew={isNew} isWin={isWin} winPulse={winPulse}/>;
+            }))}
 
-                {/* Slot holes */}
-                {Array.from({ length: ROWS }, (_, r) =>
-                    Array.from({ length: COLS }, (_, c) => {
-                        const [cx, cy] = cellCenter(r, c);
-                        const isPreview = !disabled && hoverCol === c && previewRow === r;
-                        return (
-                            <circle key={`h-${r}-${c}`}
-                                cx={cx} cy={cy} r={R}
-                                fill={isPreview ? (isRed ? '#7f1d1d' : '#713f12') : '#1e3a8a'}
-                                filter="url(#cell-inset)"
-                                style={{ transition: 'fill 0.15s' }}
-                            />
-                        );
-                    })
-                )}
-
-                {/* Pieces */}
-                {board.map((row, r) => row.map((cell, c) => {
-                    if (!cell) return null;
-                    const isNew = lastMove?.[0] === r && lastMove?.[1] === c;
-                    const isWin = winCells.some(([wr,wc]) => wr===r && wc===c);
-                    return <Piece key={`p-${r}-${c}`} r={r} c={c} symbol={cell} isNew={!!isNew} isWin={isWin}/>;
-                }))}
-
-                {/* Bolt decorations */}
-                {[[8,8],[BW-8,8],[8,BH-8],[BW-8,BH-8]].map(([bx,by],i) => (
-                    <circle key={i} cx={bx} cy={by} r={5} fill="#1e40af" stroke="#3b82f6" strokeWidth={1.5} opacity={0.7}/>
-                ))}
-            </svg>
-        </div>
+            {/* Corner bolts */}
+            {[[14,14],[VB_W-14,14],[14,VB_H-14],[VB_W-14,VB_H-14]].map(([bx,by],i) => (
+                <circle key={`bolt${i}`} cx={bx} cy={by} r={4.5}
+                    fill="#1e3a8a" stroke="#3b82f6" strokeWidth={1.5} opacity={0.65}/>
+            ))}
+        </svg>
     );
 }
 
-// ─── Player Card ───────────────────────────────────────────────────────────────
-function PlayerCard({ name, symbol, isMyTurn, isMe }: { name: string; symbol: 'R'|'Y'; isMyTurn: boolean; isMe: boolean }) {
+// ─── Player chip ──────────────────────────────────────────────────────────────
+function PlayerChip({ name, symbol, active, isMe }: { name:string; symbol:'R'|'Y'; active:boolean; isMe:boolean }) {
     const isRed = symbol === 'R';
     return (
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all duration-300 ${
-            isMyTurn
-                ? isRed ? 'bg-red-50 border-red-400 shadow-lg shadow-red-200' : 'bg-yellow-50 border-yellow-400 shadow-lg shadow-yellow-200'
-                : 'bg-gray-50 border-gray-200 opacity-60'
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all duration-300 min-w-0 flex-1 ${
+            active
+                ? isRed ? 'bg-red-50 border-red-400 shadow-md' : 'bg-yellow-50 border-yellow-400 shadow-md'
+                : 'bg-gray-50 border-gray-200 opacity-55'
         }`}>
-            {/* piece icon */}
-            <div className={`w-7 h-7 rounded-full shadow-md flex-shrink-0 ${
+            <div className={`w-6 h-6 flex-shrink-0 rounded-full ${
                 isRed ? 'bg-gradient-to-br from-red-300 to-red-600' : 'bg-gradient-to-br from-yellow-200 to-yellow-500'
-            } ${isMyTurn ? 'ring-2 ring-offset-1 ' + (isRed ? 'ring-red-500' : 'ring-yellow-500') : ''}`}/>
-            <div className="min-w-0">
+            } ${active ? 'ring-2 ring-offset-1 ' + (isRed ? 'ring-red-500' : 'ring-yellow-500') : ''}`}/>
+            <div className="min-w-0 flex-1">
                 <p className="font-black text-xs text-gray-800 truncate">{name}</p>
-                {isMe && <p className="text-[10px] font-bold text-gray-400">أنت</p>}
+                {isMe && <p className="text-[10px] font-bold text-gray-400 leading-none">أنت</p>}
             </div>
-            {isMyTurn && (
-                <Zap className={`w-4 h-4 flex-shrink-0 ${isRed ? 'text-red-500' : 'text-yellow-500'} animate-pulse`}/>
-            )}
+            {active && <Zap className={`w-3.5 h-3.5 flex-shrink-0 animate-pulse ${isRed ? 'text-red-500' : 'text-yellow-500'}`}/>}
         </div>
     );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 interface Props {
     match: any;
     employee: Employee;
@@ -299,31 +389,51 @@ interface Props {
 }
 
 export default function Connect4Game({ match, employee, onExit, grantPoints }: Props) {
+    const play     = useSound();
     const me       = match.players?.find((p: any) => p.id === employee.employee_id);
     const opponent = match.players?.find((p: any) => p.id !== employee.employee_id);
     const [lastMove, setLastMove] = useState<[number,number] | null>(null);
-    const prevBoard = useRef<Board>(emptyBoard());
+    const prevBoardRef = useRef<Board>(emptyBoard());
+    const soundedWin   = useRef(false);
+    const soundedDraw  = useRef(false);
 
     const board: Board = useMemo(() => match.game_state?.board ?? emptyBoard(), [match.game_state?.board]);
 
-    // Detect new piece
+    // Detect last placed piece & play drop sound
     useEffect(() => {
-        const prev = prevBoard.current;
-        for (let r=0; r<ROWS; r++) for (let c=0; c<COLS; c++) {
-            if (!prev[r][c] && board[r][c]) { setLastMove([r,c]); }
+        const prev = prevBoardRef.current;
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+            if (!prev[r][c] && board[r][c]) {
+                setLastMove([r, c]);
+                play('drop');
+            }
         }
-        prevBoard.current = board;
+        prevBoardRef.current = board;
     }, [board]);
 
-    const isMyTurn = match.game_state?.current_turn === employee.employee_id;
+    // Win / draw sound
+    useEffect(() => {
+        const status = match.status;
+        if ((status === 'reward_time' || status === 'finished') && match.winner_id && !soundedWin.current) {
+            soundedWin.current = true;
+            play('win');
+        }
+        if (status === 'finished' && !match.winner_id && !soundedDraw.current) {
+            soundedDraw.current = true;
+            play('draw');
+        }
+    }, [match.status, match.winner_id]);
+
+    const isMyTurn  = match.game_state?.current_turn === employee.employee_id;
     const status: string = match.status;
     const amIWinner = match.winner_id === employee.employee_id;
 
     const handleColClick = async (col: number) => {
         if (!isMyTurn || status !== 'playing') return;
-        const nextBoard = dropPiece(board, col, me?.symbol as Cell);
-        if (!nextBoard) return toast.error('العمود ممتلئ!');
+        const result = dropPiece(board, col, me?.symbol as Cell);
+        if (!result) { play('invalid'); return toast.error('العمود ممتلئ!'); }
 
+        const { board: nextBoard } = result;
         const winnerSymbol = checkWinner(nextBoard);
         let newStatus = 'playing';
         let winnerId: string | null = null;
@@ -332,7 +442,7 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
             newStatus = 'finished';
         } else if (winnerSymbol) {
             newStatus = 'reward_time';
-            winnerId = winnerSymbol === me?.symbol ? me?.id : opponent?.id;
+            winnerId  = winnerSymbol === me?.symbol ? me?.id : opponent?.id;
         }
 
         await supabase.from('live_matches').update({
@@ -347,46 +457,42 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
         await supabase.from('live_matches').update({ status: 'finished' }).eq('id', match.id);
     };
 
-    // ── WAITING ──────────────────────────────────────────────────────────────
+    // ── WAITING ───────────────────────────────────────────────────────────────
     if (status === 'waiting') return (
-        <div className="text-center py-12 px-4">
-            <div className="relative w-20 h-20 mx-auto mb-5">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-blue-700 flex items-center justify-center shadow-2xl">
-                    <Loader2 className="w-10 h-10 text-white animate-spin"/>
+        <div className="text-center py-10 px-4">
+            <div className="relative w-18 h-18 mx-auto mb-5" style={{width:72,height:72}}>
+                <div className="w-full h-full rounded-full bg-gradient-to-br from-blue-400 to-blue-700 flex items-center justify-center shadow-2xl">
+                    <Loader2 className="w-9 h-9 text-white animate-spin"/>
                 </div>
-                <div className="absolute -top-1 -right-1 w-6 h-6 bg-amber-400 rounded-full border-2 border-white animate-ping"/>
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-amber-400 rounded-full border-2 border-white animate-ping"/>
             </div>
-            <h3 className="text-xl font-black text-gray-800 mb-1">في انتظار المنافس...</h3>
-            <p className="text-sm font-bold text-gray-400">أرسل لزميلك رابط الغرفة وانتظر!</p>
+            <h3 className="text-lg font-black text-gray-800 mb-1">في انتظار المنافس...</h3>
+            <p className="text-sm font-bold text-gray-400">أرسل لزميلك رابط الغرفة!</p>
         </div>
     );
 
-    // ── PLAYING ──────────────────────────────────────────────────────────────
+    // ── PLAYING ───────────────────────────────────────────────────────────────
     if (status === 'playing') return (
-        <div className="flex flex-col items-center gap-3 py-2 px-1">
+        <div className="flex flex-col gap-2 py-2 px-3">
             {/* Turn banner */}
-            <div className={`w-full max-w-sm text-center text-sm font-black py-2 px-4 rounded-xl border-2 transition-all duration-500 ${
+            <div className={`text-center text-xs font-black py-2 px-3 rounded-xl border-2 transition-all duration-400 ${
                 isMyTurn
-                    ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-400 text-green-800 shadow-md shadow-green-100'
+                    ? 'bg-green-50 border-green-400 text-green-800'
                     : 'bg-gray-50 border-gray-200 text-gray-500'
             }`}>
                 {isMyTurn
-                    ? <><Zap className="inline w-4 h-4 mb-0.5 ml-1 text-green-600"/>دورك — اختر عموداً!</>
+                    ? <><Zap className="inline w-3.5 h-3.5 mb-0.5 ml-1 text-green-600"/>دورك — المس عموداً!</>
                     : `⏳ دور ${opponent?.name || 'المنافس'}...`}
             </div>
 
             {/* Players */}
-            <div className="flex gap-2 w-full max-w-sm">
-                <div className="flex-1">
-                    <PlayerCard name={me?.name || 'أنت'} symbol={me?.symbol || 'R'} isMyTurn={isMyTurn} isMe={true}/>
-                </div>
-                <div className="flex-1">
-                    <PlayerCard name={opponent?.name || 'المنافس'} symbol={opponent?.symbol || 'Y'} isMyTurn={!isMyTurn} isMe={false}/>
-                </div>
+            <div className="flex gap-2">
+                <PlayerChip name={me?.name || 'أنت'} symbol={me?.symbol || 'R'} active={isMyTurn} isMe={true}/>
+                <PlayerChip name={opponent?.name || 'المنافس'} symbol={opponent?.symbol || 'Y'} active={!isMyTurn} isMe={false}/>
             </div>
 
-            {/* Board */}
-            <div className="overflow-x-auto w-full flex justify-center pb-1">
+            {/* Board — fills width with side margins */}
+            <div className="w-full">
                 <BoardSVG
                     board={board}
                     onColClick={handleColClick}
@@ -396,58 +502,50 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
                 />
             </div>
 
-            {/* Exit */}
             <button onClick={onExit}
-                className="flex items-center gap-1.5 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors py-1">
-                <LogOut className="w-3.5 h-3.5"/> مغادرة اللعبة
+                className="flex items-center justify-center gap-1.5 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors py-1 mt-1">
+                <LogOut className="w-3.5 h-3.5"/> مغادرة
             </button>
         </div>
     );
 
     // ── REWARD TIME ───────────────────────────────────────────────────────────
     if (status === 'reward_time') return (
-        <div className="text-center py-6 px-4 animate-in zoom-in-95 duration-500">
+        <div className="text-center py-5 px-4 animate-in zoom-in-95 duration-400">
             {amIWinner ? (
                 <>
-                    {/* Trophy */}
-                    <div className="relative w-28 h-28 mx-auto mb-4">
-                        <div className="absolute inset-0 rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 animate-pulse opacity-30 scale-110"/>
-                        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 flex items-center justify-center shadow-2xl">
-                            <Trophy className="w-14 h-14 text-white drop-shadow-xl"/>
+                    <div className="relative w-24 h-24 mx-auto mb-3">
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 opacity-25 scale-125 animate-pulse"/>
+                        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-yellow-300 to-amber-500 flex items-center justify-center shadow-2xl relative">
+                            <Trophy className="w-12 h-12 text-white"/>
                         </div>
-                        {['🎉','⭐','✨','🏅'].map((e,i)=>(
-                            <span key={i} className="absolute text-xl animate-bounce"
-                                style={{top:`${[-12,-8,85,88][i]}%`,left:`${[80,5,80,8][i]}%`,animationDelay:`${i*0.15}s`}}>{e}</span>
+                        {['🎉','⭐','✨','🏅'].map((e, i) => (
+                            <span key={i} className="absolute text-lg animate-bounce"
+                                style={{ top:`${[-14,-6,88,90][i]}%`, left:`${[78,4,78,4][i]}%`, animationDelay:`${i*0.15}s` }}>{e}</span>
                         ))}
                     </div>
-
-                    <h3 className="text-2xl font-black text-gray-800 mb-1">فزت! 🎉</h3>
-                    <p className="text-gray-500 font-bold text-sm mb-5">اختر مستوى السؤال لربح النقاط:</p>
-
-                    <div className="space-y-3 max-w-xs mx-auto">
+                    <h3 className="text-xl font-black text-gray-800 mb-0.5">فزت! 🎉</h3>
+                    <p className="text-gray-500 font-bold text-xs mb-4">اختر مستوى السؤال لربح النقاط</p>
+                    <div className="space-y-2.5 max-w-xs mx-auto">
                         {[
-                            { label:'سهل',   pts:5,  from:'from-emerald-400', to:'to-green-600',  shadow:'shadow-green-200',  emoji:'🟢' },
-                            { label:'متوسط', pts:10, from:'from-amber-400',   to:'to-orange-500', shadow:'shadow-orange-200', emoji:'🟡' },
-                            { label:'صعب',   pts:15, from:'from-rose-400',    to:'to-red-600',    shadow:'shadow-red-200',    emoji:'🔴' },
-                        ].map(({ label, pts, from, to, shadow, emoji }) => (
-                            <button key={pts}
-                                onClick={() => handleRewardSelection(pts)}
-                                className={`w-full bg-gradient-to-r ${from} ${to} text-white py-3.5 px-5 rounded-2xl font-black text-sm shadow-lg ${shadow} hover:scale-105 active:scale-95 transition-all flex items-center justify-between`}>
-                                <span>{emoji} {label}</span>
-                                <span className="bg-white/20 px-2.5 py-1 rounded-lg">+{pts} نقطة</span>
+                            { label:'سهل',   pts:5,  g:'from-emerald-400 to-green-600',  e:'🟢' },
+                            { label:'متوسط', pts:10, g:'from-amber-400 to-orange-500',   e:'🟡' },
+                            { label:'صعب',   pts:15, g:'from-rose-400 to-red-600',       e:'🔴' },
+                        ].map(({ label, pts, g, e }) => (
+                            <button key={pts} onClick={() => handleRewardSelection(pts)}
+                                className={`w-full bg-gradient-to-r ${g} text-white py-3 px-5 rounded-2xl font-black text-sm shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-between`}>
+                                <span>{e} {label}</span>
+                                <span className="bg-white/20 px-2.5 py-0.5 rounded-lg">+{pts} نقطة</span>
                             </button>
                         ))}
                     </div>
                 </>
             ) : (
-                <div className="py-6">
-                    <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center shadow-inner">
-                        <span className="text-5xl">😞</span>
-                    </div>
+                <div className="py-4">
+                    <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center shadow-inner text-5xl">😞</div>
                     <h3 className="text-xl font-black text-gray-800 mb-1">خسرت هذه الجولة</h3>
-                    <p className="text-sm font-bold text-gray-400 mb-6">لا تستسلم، حاول مرة أخرى!</p>
-                    <button onClick={onExit}
-                        className="bg-gradient-to-r from-gray-600 to-gray-800 text-white px-10 py-3 rounded-2xl font-black w-full max-w-xs shadow-lg hover:scale-105 active:scale-95 transition-all">
+                    <p className="text-sm font-bold text-gray-400 mb-5">لا تستسلم!</p>
+                    <button onClick={onExit} className="bg-gradient-to-r from-gray-600 to-gray-800 text-white px-10 py-3 rounded-2xl font-black w-full max-w-xs shadow-lg hover:scale-105 active:scale-95 transition-all">
                         خروج
                     </button>
                 </div>
@@ -455,27 +553,27 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
         </div>
     );
 
-    // ── FINISHED ─────────────────────────────────────────────────────────────
+    // ── FINISHED ──────────────────────────────────────────────────────────────
     if (status === 'finished') return (
-        <div className="text-center py-8 px-4 animate-in zoom-in-95 duration-500">
+        <div className="text-center py-6 px-4 animate-in zoom-in-95 duration-400">
             {match.winner_id ? (
-                <div>
-                    <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shadow-2xl">
+                <>
+                    <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shadow-2xl">
                         <Trophy className="w-10 h-10 text-white"/>
                     </div>
                     <h3 className="text-2xl font-black text-gray-800 mb-1">انتهت اللعبة!</h3>
-                    <p className="text-sm font-bold text-gray-400 mb-6">
+                    <p className="text-sm font-bold text-gray-400 mb-5">
                         {amIWinner ? 'أحسنت، فزت بالجولة! 🏆' : `فاز ${opponent?.name || 'المنافس'} 🎖️`}
                     </p>
-                </div>
+                </>
             ) : (
-                <div>
-                    <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-gray-300 to-gray-500 flex items-center justify-center shadow-2xl">
+                <>
+                    <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-gray-300 to-gray-500 flex items-center justify-center shadow-2xl">
                         <Handshake className="w-10 h-10 text-white"/>
                     </div>
                     <h3 className="text-2xl font-black text-gray-800 mb-1">تعادل! 🤝</h3>
-                    <p className="text-sm font-bold text-gray-400 mb-6">مباراة رائعة من الطرفين</p>
-                </div>
+                    <p className="text-sm font-bold text-gray-400 mb-5">مباراة رائعة</p>
+                </>
             )}
             <button onClick={onExit}
                 className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white w-full max-w-xs py-3.5 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all">
