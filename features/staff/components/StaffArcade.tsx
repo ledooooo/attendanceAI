@@ -85,7 +85,7 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
     const [activeGame, setActiveGame]   = useState<string | null>(null);
     const [sessionId, setSessionId]     = useState<string | null>(null);
     const [showLeaderboard, setShowLeaderboard] = useState(false);
-    const [activeTab, setActiveTab]     = useState<'games' | 'live'>('games');
+    const [activeTab, setActiveTab]     = useState<'games' | 'live'>(deepLinkRoomId ? 'live' : 'games');
     const [bonusState, setBonusState]   = useState<{ show: boolean; pts: number; gameName: string } | null>(null);
 
     const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
