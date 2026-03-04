@@ -175,8 +175,9 @@ function AnswerForm({ letter, answers, onChange, disabled }: {
 }
 
 // ─── Results + Voting View ────────────────────────────────────────────────────
-function ResultsView({ allAnswers, letter, myId, onExit, onVote, myVote, grantingPoints }: {
+function ResultsView({ allAnswers, localAnswers, letter, myId, onExit, onVote, myVote, grantingPoints }: {
     allAnswers:     PlayerAnswers[];
+    localAnswers:   Answers;
     letter:         string;
     myId:           string;
     onExit:         () => void;
@@ -184,6 +185,16 @@ function ResultsView({ allAnswers, letter, myId, onExit, onVote, myVote, grantin
     myVote:         boolean | null;   // null = not voted yet
     grantingPoints: boolean;
 }) {
+    // If my record isn't in DB yet (stopper ended game before I saved),
+    // inject my local answers so they show in the comparison table
+    const myDbRecord = allAnswers.find(p => p.playerId === myId);
+    const mergedAnswers: PlayerAnswers[] = myDbRecord
+        ? allAnswers
+        : [
+            ...allAnswers,
+            { playerId: myId, playerName: 'أنت', answers: localAnswers, finishedAt: null },
+          ];
+
     const stopper = allAnswers.find(p => p.finishedAt !== null);   // who pressed "خلصت"
 
     return (
@@ -214,7 +225,7 @@ function ResultsView({ allAnswers, letter, myId, onExit, onVote, myVote, grantin
                             <span className="text-base">{cat.emoji}</span>
                             <span className="text-xs font-black text-gray-600">{cat.label}</span>
                         </div>
-                        {allAnswers.map(p => {
+                        {mergedAnswers.map(p => {
                             const val   = p.answers[cat.key]?.trim() ?? '';
                             const valid = val.startsWith(letter) && val.length > 1;
                             const isMe  = p.playerId === myId;
@@ -356,40 +367,67 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
         return () => clearInterval(t);
     }, [status, startedAt]);
 
-    // Sound when someone stops the bus
+    // When someone else stops the bus → save MY current answers immediately
+    // so they are preserved before the game transitions to 'finished'
     useEffect(() => {
-        if (stopperRecord && !soundedStop.current) {
+        if (!stopperRecord) return;
+        if (stopperRecord.playerId === myId) return; // I was the one who stopped
+        if (iFinished) return;                        // already saved
+        if (!soundedStop.current) {
             soundedStop.current = true;
             play('stop');
         }
+        // Save my current local answers (whatever I typed so far)
+        saveMyAnswers();
     }, [stopperRecord]);
 
-    // Auto-submit when time runs out (save empty/partial answers)
+    // Auto-submit when time runs out
     useEffect(() => {
         if (timeLeft === 0 && status === 'playing' && !iFinished) {
-            submitAnswers(true);
+            saveMyAnswers();
         }
     }, [timeLeft]);
 
-    // ── Submit answers ─────────────────────────────────────────────────────────
-    // Pressing "خلصت" ends the game IMMEDIATELY for everyone:
-    //   1. Save my answers with finishedAt timestamp
-    //   2. Snapshot every OTHER player's current answers (empty if not saved yet)
-    //   3. Set status = 'finished' atomically — no waiting
-    const submitAnswers = async (byTimeout = false) => {
+    // ── saveMyAnswers — persists local answers to DB without ending game ───────
+    // Used by non-stopper players to preserve what they typed
+    const saveMyAnswers = async () => {
         if (submitting || iFinished) return;
         setSubmitting(true);
-        if (!byTimeout) play('stop');
+        setSubmitted(true);
+
+        const myRecord: PlayerAnswers = {
+            playerId:   myId,
+            playerName: myName,
+            answers,                  // whatever the player typed locally
+            finishedAt: null,         // null = didn't press خلصت
+        };
+
+        const updated = [...allAnswers.filter((a: PlayerAnswers) => a.playerId !== myId), myRecord];
+
+        await supabase.from('live_matches').update({
+            game_state: { ...gs, allAnswers: updated },
+        }).eq('id', match.id);
+
+        setSubmitting(false);
+    };
+
+    // ── submitAnswers — called by the player who presses "خلصت" ──────────────
+    // Saves their answers + snapshots others who haven't saved + ends game NOW
+    const submitAnswers = async () => {
+        if (submitting || iFinished) return;
+        setSubmitting(true);
+        play('stop');
         setSubmitted(true);
 
         const myRecord: PlayerAnswers = {
             playerId:   myId,
             playerName: myName,
             answers,
-            finishedAt: byTimeout ? null : Date.now(),
+            finishedAt: Date.now(),   // marks this player as the stopper
         };
 
-        // Players who haven't submitted yet get empty snapshots
+        // Players who haven't saved yet: snapshot with empty answers
+        // (they will have saved their own via the useEffect above if they had any)
         const otherRecords: PlayerAnswers[] = players
             .filter(p => p.id !== myId && !allAnswers.find((a: PlayerAnswers) => a.playerId === p.id))
             .map(p => ({
@@ -405,7 +443,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             ...otherRecords,
         ];
 
-        // Single update: save answers + end game immediately
+        // Atomic: save all answers + end game immediately
         await supabase.from('live_matches').update({
             status:     'finished',
             game_state: { ...gs, allAnswers: finalAnswers },
@@ -481,6 +519,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     if (status === 'finished') return (
         <ResultsView
             allAnswers={allAnswers}
+            localAnswers={answers}
             letter={letter}
             myId={myId}
             onExit={onExit}
