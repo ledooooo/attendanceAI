@@ -371,42 +371,49 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
         }
     }, [timeLeft]);
 
-    // Host transitions to 'finished' once all players have saved answers
-    useEffect(() => {
-        if (status !== 'playing') return;
-        const hostId = [...players].sort((a,b) => a.id.localeCompare(b.id))[0]?.id;
-        if (myId !== hostId) return;
-
-        // Transition when someone pressed "خلصت" (has finishedAt) AND all players have answered
-        const someone_stopped = allAnswers.some(p => p.finishedAt !== null);
-        const all_saved       = players.every(p => allAnswers.find(a => a.playerId === p.id));
-        if (someone_stopped && all_saved) {
-            supabase.from('live_matches').update({ status: 'finished' }).eq('id', match.id);
-        }
-    }, [allAnswers, status]);
-
-    // ── Submit answers ────────────────────────────────────────────────────────
+    // ── Submit answers ─────────────────────────────────────────────────────────
+    // Pressing "خلصت" ends the game IMMEDIATELY for everyone:
+    //   1. Save my answers with finishedAt timestamp
+    //   2. Snapshot every OTHER player's current answers (empty if not saved yet)
+    //   3. Set status = 'finished' atomically — no waiting
     const submitAnswers = async (byTimeout = false) => {
         if (submitting || iFinished) return;
         setSubmitting(true);
         if (!byTimeout) play('stop');
         setSubmitted(true);
 
-        const record: PlayerAnswers = {
+        const myRecord: PlayerAnswers = {
             playerId:   myId,
             playerName: myName,
             answers,
             finishedAt: byTimeout ? null : Date.now(),
         };
 
-        const updated = [...allAnswers.filter(a => a.playerId !== myId), record];
+        // Players who haven't submitted yet get empty snapshots
+        const otherRecords: PlayerAnswers[] = players
+            .filter(p => p.id !== myId && !allAnswers.find((a: PlayerAnswers) => a.playerId === p.id))
+            .map(p => ({
+                playerId:   p.id,
+                playerName: p.name,
+                answers:    Object.fromEntries(CATEGORIES.map(c => [c.key, ''])),
+                finishedAt: null,
+            }));
 
+        const finalAnswers: PlayerAnswers[] = [
+            ...allAnswers.filter((a: PlayerAnswers) => a.playerId !== myId),
+            myRecord,
+            ...otherRecords,
+        ];
+
+        // Single update: save answers + end game immediately
         await supabase.from('live_matches').update({
-            game_state: { ...gs, allAnswers: updated },
+            status:     'finished',
+            game_state: { ...gs, allAnswers: finalAnswers },
         }).eq('id', match.id);
 
         setSubmitting(false);
     };
+
 
     // ── Vote (win / lose) ─────────────────────────────────────────────────────
     const handleVote = async (won: boolean) => {
