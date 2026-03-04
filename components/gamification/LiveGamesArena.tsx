@@ -6,9 +6,11 @@ import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import {
     Swords, UserX, Trophy, Users, Clock,
-    Play, X, CheckCircle2, BrainCircuit, Loader2, Trash2, Timer, Hand, Grid3x3
+    Play, X, CheckCircle2, BrainCircuit, Loader2, Trash2, Timer, Hand, Grid3x3, Bus
 } from 'lucide-react';
 import Connect4Game from './games/Connect4Game';
+import XOGame from './games/XOGame';
+import StopTheBusGame from './games/StopTheBusGame';
 
 // ─── Aliases ──────────────────────────────────────────────────────────────────
 const ALIASES = [
@@ -19,8 +21,9 @@ const ALIASES = [
 ];
 
 const GAME_TYPES = [
-    { key: 'xo',       label: 'XO', icon: '✕⭕', desc: 'إكس أو الكلاسيكية', color: 'from-indigo-500 to-violet-600' },
-    { key: 'connect4', label: 'Connect 4', icon: '🔴🟡', desc: 'أربعة في صف', color: 'from-blue-500 to-cyan-600' },
+    { key: 'xo',         label: 'XO',               icon: '✕⭕',  desc: 'إكس أو الكلاسيكية',  color: 'from-indigo-500 to-violet-600', minPlayers: 2, maxPlayers: 2  },
+    { key: 'connect4',   label: 'Connect 4',         icon: '🔴🟡', desc: 'أربعة في صف',        color: 'from-blue-500 to-cyan-600',    minPlayers: 2, maxPlayers: 2  },
+    { key: 'stopthebus', label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',   color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -42,7 +45,7 @@ const getSpecialtyVariations = (spec: string) => {
     return [spec, 'الكل'];
 };
 
-// ─── Question helpers (same as before) ───────────────────────────────────────
+// ─── Question helpers ─────────────────────────────────────────────────────────
 const normalizeQuestion = (rawQ: any) => {
     let questionText = rawQ.question || rawQ.question_text || '';
     if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`;
@@ -95,14 +98,6 @@ const fetchUnifiedQuestion = async (employee: Employee, difficulty?: string) => 
     return null;
 };
 
-// ─── XO helpers ───────────────────────────────────────────────────────────────
-const checkXOWinner = (board: string[]) => {
-    const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-    for (const [a,b,c] of lines) { if (board[a] && board[a]===board[b] && board[a]===board[c]) return board[a]; }
-    if (!board.includes(null as any)) return 'draw';
-    return null;
-};
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function LiveGamesArena({ employee, onClose }: { employee: Employee; onClose?: () => void }) {
     const queryClient = useQueryClient();
@@ -147,11 +142,16 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     // ── Question timer ──
     useEffect(() => {
         if (timeLeft === null || timeLeft <= 0) return;
-        const iv = setInterval(() => setTimeLeft(p => { if (p && p <= 1) { clearInterval(iv); handleTimeOut(); return 0; } return p ? p - 1 : 0; }), 1000);
+        const iv = setInterval(() => setTimeLeft(p => {
+            if (p && p <= 1) { clearInterval(iv); handleTimeOut(); return 0; }
+            return p ? p - 1 : 0;
+        }), 1000);
         return () => clearInterval(iv);
     }, [timeLeft]);
 
-    const handleTimeOut = () => { if (currentMatch?.status === 'answering_reward') handleRewardAnswer('TIMEOUT_WRONG_ANSWER'); };
+    const handleTimeOut = () => {
+        if (currentMatch?.status === 'answering_reward') handleRewardAnswer('TIMEOUT_WRONG_ANSWER');
+    };
 
     // ── Realtime ──
     useEffect(() => {
@@ -195,6 +195,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     };
 
     const grantPoints = async (pts: number) => {
+        if (pts <= 0) return;
         const onCooldown = await checkCooldown();
         if (onCooldown) { toast.success('فوز رائع! (النقاط تضاف مرة كل ساعة)', { icon: '🎮' }); return; }
         await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: pts });
@@ -214,10 +215,13 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     // ── Create match ──
     const handleCreateMatch = async () => {
         setLoading(true);
-        const player = { ...getMyPlayerInfo(), symbol: selectedGameType === 'xo' ? 'X' : 'R' };
-        const initialState = selectedGameType === 'xo'
-            ? { board: Array(9).fill(null), current_turn: player.id }
-            : { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: player.id };
+        const player = { ...getMyPlayerInfo(), symbol: selectedGameType === 'xo' ? 'X' : selectedGameType === 'connect4' ? 'R' : undefined };
+
+        let initialState: any = {};
+        if (selectedGameType === 'xo')       initialState = { board: Array(9).fill(null), current_turn: player.id };
+        else if (selectedGameType === 'connect4') initialState = { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: player.id };
+        else if (selectedGameType === 'stopthebus') initialState = { letter: '', startedAt: 0, allAnswers: [] };
+
         const { data, error } = await supabase.from('live_matches').insert({
             game_type: selectedGameType, status: 'waiting', players: [player],
             game_state: initialState, created_by: employee.employee_id,
@@ -233,9 +237,20 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         setLoading(true);
         const { data: match } = await supabase.from('live_matches').select('*').eq('id', joiningMatchId).single();
         if (!match || match.status !== 'waiting') { setLoading(false); return toast.error('الغرفة غير متاحة'); }
-        const symbol = match.game_type === 'xo' ? 'O' : 'Y';
-        const player = { ...getMyPlayerInfo(), symbol };
-        const { data: updated, error } = await supabase.from('live_matches').update({ players: [...match.players, player], status: 'playing' }).eq('id', joiningMatchId).select().single();
+
+        const player = {
+            ...getMyPlayerInfo(),
+            symbol: match.game_type === 'xo' ? 'O' : match.game_type === 'connect4' ? 'Y' : undefined,
+        };
+
+        // stopthebus stays 'waiting' until host starts — others go 'playing'
+        const newStatus = match.game_type === 'stopthebus' ? 'waiting' : 'playing';
+        const updatedPlayers = [...match.players, player];
+
+        const { data: updated, error } = await supabase.from('live_matches').update({
+            players: updatedPlayers,
+            status: newStatus,
+        }).eq('id', joiningMatchId).select().single();
         setLoading(false);
         if (error) return toast.error('فشل الانضمام');
         setCurrentMatch(updated); setView('playing');
@@ -254,23 +269,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
         if (!isAuto) setLoading(false);
     };
 
-    // ── XO cell click ──
-    const handleXOCellClick = async (index: number) => {
-        if (!currentMatch || currentMatch.status !== 'playing') return;
-        const state = currentMatch.game_state;
-        const myPlayer = currentMatch.players.find((p: any) => p.id === employee.employee_id);
-        if (state.current_turn !== employee.employee_id) return toast.error('ليس دورك!');
-        if (state.board[index] !== null) return;
-        const opponent = currentMatch.players.find((p: any) => p.id !== employee.employee_id);
-        const newBoard = [...state.board]; newBoard[index] = myPlayer.symbol;
-        const winner = checkXOWinner(newBoard);
-        let newStatus = 'playing', winnerId = null;
-        if (winner === 'draw') newStatus = 'finished';
-        else if (winner) { newStatus = 'reward_time'; winnerId = winner === myPlayer.symbol ? myPlayer.id : opponent.id; }
-        await supabase.from('live_matches').update({ game_state: { board: newBoard, current_turn: opponent.id }, status: newStatus, winner_id: winnerId }).eq('id', currentMatch.id);
-    };
-
-    // ── Reward selection ──
+    // ── XO / Reward helpers (passed down to XOGame) ──
     const handleRewardSelection = async (difficulty: 'easy' | 'medium' | 'hard', pts: number, timeLimit: number) => {
         setLoading(true);
         const q = await fetchUnifiedQuestion(employee, difficulty);
@@ -298,7 +297,7 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
     const exitMatch = () => { setCurrentMatch(null); setView('lobby'); setJoiningMatchId(null); setTimeLeft(null); };
 
     const amIWinner = currentMatch?.winner_id === employee.employee_id;
-    const me = currentMatch?.players?.find((p: any) => p.id === employee.employee_id);
+    const me       = currentMatch?.players?.find((p: any) => p.id === employee.employee_id);
     const opponent = currentMatch?.players?.find((p: any) => p.id !== employee.employee_id);
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -321,12 +320,12 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                         <p className="text-indigo-100 text-xs mb-4">اختر لعبة وتحدى زميلك أونلاين</p>
 
                         {/* Game type selector */}
-                        <div className="flex gap-2 mb-4">
+                        <div className="grid grid-cols-3 gap-2 mb-4">
                             {GAME_TYPES.map(g => (
                                 <button key={g.key} onClick={() => setSelectedGameType(g.key)}
-                                    className={`flex-1 py-2 px-3 rounded-xl font-black text-sm transition-all border-2 ${selectedGameType === g.key ? 'bg-white text-indigo-700 border-white' : 'bg-white/20 text-white border-white/30 hover:bg-white/30'}`}>
-                                    <span className="text-lg block">{g.icon}</span>
-                                    <span className="text-xs">{g.label}</span>
+                                    className={`py-2 px-1 rounded-xl font-black text-xs transition-all border-2 ${selectedGameType === g.key ? 'bg-white text-indigo-700 border-white' : 'bg-white/20 text-white border-white/30 hover:bg-white/30'}`}>
+                                    <span className="text-xl block mb-0.5">{g.icon}</span>
+                                    <span>{g.label}</span>
                                 </button>
                             ))}
                         </div>
@@ -351,7 +350,9 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                             <div className="space-y-2">
                                 {matches.map((m: any) => {
                                     const isMyRoom = m.created_by === employee.employee_id;
-                                    const gameLabel = GAME_TYPES.find(g => g.key === m.game_type)?.label || m.game_type;
+                                    const gameInfo = GAME_TYPES.find(g => g.key === m.game_type);
+                                    const isBus = m.game_type === 'stopthebus';
+                                    const playerCount = m.players?.length ?? 1;
                                     return (
                                         <div key={m.id} className={`bg-white p-3 rounded-xl shadow-sm border flex justify-between items-center ${isMyRoom ? 'border-indigo-200 bg-indigo-50/50' : 'border-gray-100'}`}>
                                             <div className="flex items-center gap-2">
@@ -359,12 +360,15 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                                                     <AvatarDisplay avatar={m.players[0]?.avatar}/>
                                                 </div>
                                                 <div>
-                                                    <div className="flex items-center gap-1.5">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
                                                         <p className="font-bold text-gray-800 text-sm">{m.players[0]?.name}</p>
-                                                        <span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">{gameLabel}</span>
+                                                        <span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">{gameInfo?.icon} {gameInfo?.label}</span>
                                                         {isMyRoom && <span className="bg-green-100 text-green-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">غرفتك</span>}
+                                                        {isBus && <span className="bg-purple-100 text-purple-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">{playerCount} لاعب</span>}
                                                     </div>
-                                                    <p className="text-[11px] text-gray-400 font-bold">في انتظار منافس...</p>
+                                                    <p className="text-[11px] text-gray-400 font-bold">
+                                                        {isBus ? `في انتظار اللاعبين... (${playerCount}/${gameInfo?.maxPlayers})` : 'في انتظار منافس...'}
+                                                    </p>
                                                 </div>
                                             </div>
                                             {isMyRoom ? (
@@ -392,7 +396,9 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                         <UserX className="w-12 h-12 text-indigo-500 mx-auto mb-3"/>
                         <h3 className="text-xl font-black text-gray-800 mb-1">اختر هويتك</h3>
                         <p className="text-xs text-gray-400 font-bold mb-4">
-                            {joiningMatchId ? `الانضمام للعبة: ${GAME_TYPES.find(g => g.key === joiningGameType)?.label}` : `إنشاء: ${GAME_TYPES.find(g => g.key === selectedGameType)?.label}`}
+                            {joiningMatchId
+                                ? `الانضمام: ${GAME_TYPES.find(g => g.key === joiningGameType)?.label}`
+                                : `إنشاء: ${GAME_TYPES.find(g => g.key === selectedGameType)?.label}`}
                         </p>
                         <div className="flex bg-gray-100 p-1 rounded-xl mb-4">
                             <button onClick={() => setUseAlias(false)} className={`flex-1 py-2 rounded-lg font-bold text-sm transition-all ${!useAlias ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>هويتي الحقيقية</button>
@@ -421,28 +427,30 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
             {view === 'playing' && currentMatch && (
                 <div className="flex-1 flex flex-col">
 
-                    {/* Players header */}
-                    <div className="px-3 py-3 flex justify-between items-center border-b border-gray-100">
-                        {/* Me */}
-                        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all ${currentMatch.game_state?.current_turn === me?.id ? 'border-green-500 bg-white shadow-md scale-105' : 'border-transparent opacity-60'}`}>
-                            <div className="w-9 h-9 rounded-full border overflow-hidden bg-gray-100 flex items-center justify-center"><AvatarDisplay avatar={me?.avatar}/></div>
-                            <div><p className="text-xs font-black text-gray-800">أنت</p><p className="text-sm font-bold text-green-600">{me?.symbol}</p></div>
-                        </div>
-                        <div className="font-black text-gray-300 text-base">VS</div>
-                        {/* Opponent */}
-                        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all flex-row-reverse ${currentMatch.game_state?.current_turn === opponent?.id ? 'border-red-500 bg-white shadow-md scale-105' : 'border-transparent opacity-60'}`}>
-                            <div className="w-9 h-9 rounded-full border overflow-hidden bg-white flex items-center justify-center">
-                                {opponent ? <AvatarDisplay avatar={opponent.avatar}/> : <Loader2 className="w-4 h-4 animate-spin text-gray-400"/>}
+                    {/* Players header — hidden for stopthebus (has its own) */}
+                    {currentMatch.game_type !== 'stopthebus' && (
+                        <div className="px-3 py-3 flex justify-between items-center border-b border-gray-100">
+                            {/* Me */}
+                            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all ${currentMatch.game_state?.current_turn === me?.id ? 'border-green-500 bg-white shadow-md scale-105' : 'border-transparent opacity-60'}`}>
+                                <div className="w-9 h-9 rounded-full border overflow-hidden bg-gray-100 flex items-center justify-center"><AvatarDisplay avatar={me?.avatar}/></div>
+                                <div><p className="text-xs font-black text-gray-800">أنت</p><p className="text-sm font-bold text-green-600">{me?.symbol}</p></div>
                             </div>
-                            <div className="text-left"><p className="text-xs font-black text-gray-800 truncate max-w-[70px]">{opponent?.name || 'انتظار...'}</p><p className="text-sm font-bold text-red-500">{opponent?.symbol || '?'}</p></div>
+                            <div className="font-black text-gray-300 text-base">VS</div>
+                            {/* Opponent */}
+                            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all flex-row-reverse ${currentMatch.game_state?.current_turn === opponent?.id ? 'border-red-500 bg-white shadow-md scale-105' : 'border-transparent opacity-60'}`}>
+                                <div className="w-9 h-9 rounded-full border overflow-hidden bg-white flex items-center justify-center">
+                                    {opponent ? <AvatarDisplay avatar={opponent.avatar}/> : <Loader2 className="w-4 h-4 animate-spin text-gray-400"/>}
+                                </div>
+                                <div className="text-left"><p className="text-xs font-black text-gray-800 truncate max-w-[70px]">{opponent?.name || 'انتظار...'}</p><p className="text-sm font-bold text-red-500">{opponent?.symbol || '?'}</p></div>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Game area */}
-                    <div className="flex-1 flex items-center justify-center p-3">
+                    <div className={`flex-1 flex flex-col ${currentMatch.game_type !== 'stopthebus' ? 'items-center justify-center p-3' : ''}`}>
 
-                        {/* WAITING */}
-                        {currentMatch.status === 'waiting' && (
+                        {/* WAITING (non-stopthebus) */}
+                        {currentMatch.status === 'waiting' && currentMatch.game_type !== 'stopthebus' && (
                             <div className="text-center">
                                 <Loader2 className="w-14 h-14 text-indigo-200 animate-spin mx-auto mb-4"/>
                                 <h3 className="text-lg font-black text-indigo-900">في انتظار المنافس...</h3>
@@ -460,86 +468,28 @@ export default function LiveGamesArena({ employee, onClose }: { employee: Employ
                             </div>
                         )}
 
-                        {/* XO PLAYING */}
-                        {currentMatch.status === 'playing' && currentMatch.game_type === 'xo' && (
-                            <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-3xl shadow-2xl border border-gray-100 w-full max-w-[280px] aspect-square">
-                                {currentMatch.game_state.board.map((cell: string, idx: number) => (
-                                    <button key={idx} onClick={() => handleXOCellClick(idx)}
-                                        disabled={cell !== null || currentMatch.game_state.current_turn !== employee.employee_id}
-                                        className={`rounded-xl text-4xl font-black flex items-center justify-center transition-all ${!cell ? 'bg-gray-50 hover:bg-gray-100' : cell==='X' ? 'bg-indigo-50 text-indigo-600' : 'bg-rose-50 text-rose-500'}`}>
-                                        {cell && <span className="animate-in zoom-in spin-in-12">{cell}</span>}
-                                    </button>
-                                ))}
-                            </div>
+                        {/* ── XO ── */}
+                        {currentMatch.game_type === 'xo' && ['playing','reward_time','answering_reward','finished'].includes(currentMatch.status) && (
+                            <XOGame
+                                match={currentMatch}
+                                employee={employee}
+                                onExit={exitMatch}
+                                grantPoints={grantPoints}
+                                handleRewardSelection={handleRewardSelection}
+                                handleRewardAnswer={handleRewardAnswer}
+                                timeLeft={timeLeft}
+                                loading={loading}
+                            />
                         )}
 
-                        {/* CONNECT4 PLAYING */}
-                        {currentMatch.status === 'playing' && currentMatch.game_type === 'connect4' && (
+                        {/* ── CONNECT 4 ── */}
+                        {currentMatch.game_type === 'connect4' && (
                             <Connect4Game match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
 
-                        {/* REWARD TIME */}
-                        {currentMatch.status === 'reward_time' && (
-                            <div className="bg-white w-full max-w-sm rounded-3xl p-5 text-center shadow-2xl animate-in zoom-in mx-2">
-                                {amIWinner ? (
-                                    <>
-                                        <Trophy className="w-20 h-20 text-yellow-400 mx-auto mb-4 drop-shadow-xl animate-bounce"/>
-                                        <h3 className="text-2xl font-black text-gray-800 mb-1">أنت الفائز! 🎉</h3>
-                                        <p className="text-gray-500 font-bold text-sm mb-5">اختر تحدي السؤال:</p>
-                                        <div className="space-y-2">
-                                            <button onClick={() => handleRewardSelection('easy', 5, 10)} disabled={loading} className="w-full bg-green-50 border-2 border-green-100 text-green-700 p-3 rounded-xl font-bold flex justify-between items-center hover:bg-green-100 transition-all text-sm"><span>سهل (10ث)</span><span>+5 نقاط</span></button>
-                                            <button onClick={() => handleRewardSelection('medium', 10, 20)} disabled={loading} className="w-full bg-yellow-50 border-2 border-yellow-100 text-yellow-700 p-3 rounded-xl font-bold flex justify-between items-center hover:bg-yellow-100 transition-all text-sm"><span>متوسط (20ث)</span><span>+10 نقاط</span></button>
-                                            <button onClick={() => handleRewardSelection('hard', 15, 30)} disabled={loading} className="w-full bg-red-50 border-2 border-red-100 text-red-700 p-3 rounded-xl font-bold flex justify-between items-center hover:bg-red-100 transition-all text-sm"><span>صعب (30ث)</span><span>+15 نقطة</span></button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="py-8">
-                                        <span className="text-6xl mb-4 block grayscale">😞</span>
-                                        <h3 className="text-xl font-black text-gray-800">حظ أوفر!</h3>
-                                        <button onClick={exitMatch} className="mt-8 bg-gray-100 px-8 py-3 rounded-xl font-bold text-gray-600 w-full">خروج</button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* ANSWERING REWARD */}
-                        {currentMatch.status === 'answering_reward' && (
-                            <div className="bg-white w-full max-w-sm rounded-3xl p-5 text-center shadow-2xl animate-in zoom-in mx-2 relative">
-                                {amIWinner ? (
-                                    <>
-                                        <div className="absolute top-4 left-4 flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full font-black text-sm">
-                                            <Timer size={14}/> {timeLeft}
-                                        </div>
-                                        <BrainCircuit className="w-14 h-14 text-indigo-500 mx-auto mb-4 mt-2"/>
-                                        <h3 className="text-base font-black text-gray-800 mb-4 px-2">{currentMatch.final_question?.questionText}</h3>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            {currentMatch.final_question?.options.map((opt: string, idx: number) => (
-                                                <button key={idx} onClick={() => handleRewardAnswer(opt)} disabled={loading}
-                                                    className="w-full bg-white border-2 border-gray-100 p-3 rounded-xl font-bold text-gray-700 hover:border-indigo-500 hover:bg-indigo-50 active:scale-95 transition-all text-sm">
-                                                    {opt}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="py-10">
-                                        <Loader2 className="w-10 h-10 text-indigo-300 animate-spin mx-auto mb-4"/>
-                                        <h3 className="text-lg font-black text-gray-800">الفائز يجيب الآن...</h3>
-                                        <button onClick={exitMatch} className="mt-6 bg-gray-100 px-8 py-2.5 rounded-xl font-bold text-gray-600 text-sm">خروج</button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* FINISHED */}
-                        {currentMatch.status === 'finished' && (
-                            <div className="bg-white w-full max-w-xs rounded-3xl p-8 text-center shadow-2xl animate-in zoom-in mx-2">
-                                {currentMatch.winner_id
-                                    ? <><CheckCircle2 className="w-20 h-20 text-green-500 mx-auto mb-4"/><h3 className="text-xl font-black text-gray-800 mb-2">انتهت اللعبة!</h3></>
-                                    : <><Hand className="w-20 h-20 text-gray-400 mx-auto mb-4"/><h3 className="text-xl font-black text-gray-800 mb-2">تعادل! 🤝</h3><p className="text-gray-500 font-bold text-sm mb-4">لا فائز ولا أسئلة في التعادل.</p></>
-                                }
-                                <button onClick={exitMatch} className="mt-4 bg-indigo-600 text-white w-full py-3 rounded-xl font-black hover:bg-indigo-700 shadow-xl">العودة للصالة</button>
-                            </div>
+                        {/* ── STOP THE BUS ── */}
+                        {currentMatch.game_type === 'stopthebus' && (
+                            <StopTheBusGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
                     </div>
                 </div>
