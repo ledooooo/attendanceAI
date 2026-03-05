@@ -73,15 +73,6 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
     }
 
     const registration = await navigator.serviceWorker.ready;
-    
-    try {
-        const existingSub = await registration.pushManager.getSubscription();
-        if (existingSub) {
-            console.log("🧹 جاري مسح الاشتراك القديم...");
-            await existingSub.unsubscribe();
-        }
-    } catch(e) {}
-
     console.log("4️⃣ جاري طلب الاشتراك من سيرفرات جوجل...");
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
