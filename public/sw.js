@@ -13,13 +13,6 @@ self.addEventListener('activate', (event) => {
       caches.keys().then(keys =>
         Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
       ),
-      // إلغاء اشتراك Push القديم حتى يتم إعادة التسجيل بالمفتاح الجديد
-      self.registration.pushManager.getSubscription().then(sub => {
-        if (sub) {
-          console.log('🧹 مسح اشتراك Push القديم من SW...');
-          return sub.unsubscribe();
-        }
-      })
     ]).then(() => {
       console.log('✅ SW جاهز تماماً');
       return self.clients.claim();
