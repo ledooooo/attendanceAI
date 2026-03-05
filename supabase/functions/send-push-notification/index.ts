@@ -22,7 +22,7 @@ serve(async (req) => {
     const supabaseUrl = "https://dyrolfnfuaifzguaxtgs.supabase.co";
     const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5cm9sZm5mdWFpZnpndWF4dGdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjQ0OTQxMSwiZXhwIjoyMDgyMDI1NDExfQ.SjrEt5JxFtWhqVNILi5SMMGHiv_lB5kp-fxq3L4oYWQ";
     const publicKey = "BIkRpd6ma443zGKy3FqGVxXMT4JyARFx36pcc-NAYVdPiB1WTEw9m6XKJq4OXO70Vnyh0zYnE_NkjK3p3VZIINw";
-    const privateKey = "AcMe_VBBlFn1fBghQNiN2CXgXVB-xDo6N-PQL84n44I";
+    const privateKey = "ZQJS87_IIuB1Uwg85yclChBtgPrWsrdm6-AIAW53l6U";
 
     if (!supabaseUrl || !supabaseKey || !publicKey || !privateKey) {
       throw new Error("Server Misconfiguration: Missing Secrets");
