@@ -5,21 +5,6 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
-  console.log('✅ SW activated');
-  event.waitUntil(
-    Promise.all([
-      // مسح كل الـ caches القديمة
-      caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-      ),
-    ]).then(() => {
-      console.log('✅ SW جاهز تماماً');
-      return self.clients.claim();
-    })
-  );
-});
-
 self.addEventListener('push', (event) => {
   console.log('🔔 Push received');
 
