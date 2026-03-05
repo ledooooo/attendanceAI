@@ -13,7 +13,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
-let isSubscribing = false; 
+let isSubscribing = false;
 
 export async function requestNotificationPermission(_ignoredUserId?: string | number) {
   if (isSubscribing) return false;
@@ -22,47 +22,47 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user;
-    
+
     if (!user) {
-        console.error("❌ لا يوجد مستخدم مسجل الدخول");
-        isSubscribing = false;
-        return false;
+      console.error("❌ لا يوجد مستخدم مسجل الدخول");
+      isSubscribing = false;
+      return false;
     }
 
     console.log("🔍 جاري توحيد الهوية من قاعدة البيانات مباشرة...");
     let finalUserId = user.id;
 
     const { data: empData } = await supabase
-        .from('employees')
-        .select('role, employee_id')
+      .from('employees')
+      .select('role, employee_id')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (empData) {
+      if (empData.role === 'admin') {
+        finalUserId = 'admin';
+      } else {
+        finalUserId = String(empData.employee_id);
+      }
+    } else {
+      const { data: supData } = await supabase
+        .from('supervisors')
+        .select('id')
         .eq('id', user.id)
         .maybeSingle();
 
-    if (empData) {
-        if (empData.role === 'admin') {
-            finalUserId = 'admin';
-        } else {
-            finalUserId = String(empData.employee_id);
-        }
-    } else {
-        const { data: supData } = await supabase
-            .from('supervisors')
-            .select('id')
-            .eq('id', user.id)
-            .maybeSingle();
-        
-        if (supData) {
-            finalUserId = user.id;
-        }
+      if (supData) {
+        finalUserId = user.id;
+      }
     }
 
     const validUserId = String(finalUserId);
     console.log("1️⃣ الهوية الموحدة النهائية للتسجيل هي:", validUserId);
 
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.error("❌ المتصفح لا يدعم الإشعارات");
-        isSubscribing = false;
-        return false;
+      console.error("❌ المتصفح لا يدعم الإشعارات");
+      isSubscribing = false;
+      return false;
     }
 
     const permission = await Notification.requestPermission();
@@ -73,38 +73,53 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
     }
 
     const registration = await navigator.serviceWorker.ready;
-    console.log("4️⃣ جاري طلب الاشتراك من سيرفرات جوجل...");
+
+    // ✅ مسح الاشتراك القديم من المتصفح أولاً لضمان إنشاء اشتراك جديد بالمفتاح الصحيح
+    try {
+      const existingSub = await registration.pushManager.getSubscription();
+      if (existingSub) {
+        await existingSub.unsubscribe();
+        console.log("🧹 تم مسح الاشتراك القديم من المتصفح بنجاح");
+      }
+    } catch (e) {
+      console.warn("⚠️ تجاهل خطأ مسح الاشتراك القديم:", e);
+    }
+
+    console.log("4️⃣ جاري طلب اشتراك جديد من سيرفرات جوجل...");
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     });
 
-    console.log("5️⃣ تم الحصول على الاشتراك بنجاح! جاري الحفظ في الداتابيز...");
+    console.log("5️⃣ تم الحصول على الاشتراك الجديد! جاري الحفظ في الداتابيز...");
 
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    // ✅ الحل: حذف أي اشتراك قديم بنفس الـ endpoint لتجنب التكرار بدلاً من استخدام upsert
+    // حذف أي اشتراك قديم بنفس الـ endpoint من الداتابيز
     await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
 
-    // ✅ إدخال الاشتراك الجديد بشكل آمن
+    // حذف أي اشتراك قديم لنفس المستخدم على نفس الجهاز
+    await supabase.from('push_subscriptions').delete().eq('user_id', validUserId);
+
+    // إدخال الاشتراك الجديد
     const { error } = await supabase
-        .from('push_subscriptions')
-        .insert({
-            user_id: validUserId, 
-            subscription_data: JSON.stringify(subscriptionJson), 
-            endpoint: endpoint,
-            device_info: JSON.stringify({ 
-              userAgent: navigator.userAgent,
-              platform: navigator.platform
-            }),
-            updated_at: new Date().toISOString()
-        });
+      .from('push_subscriptions')
+      .insert({
+        user_id: validUserId,
+        subscription_data: JSON.stringify(subscriptionJson),
+        endpoint: endpoint,
+        device_info: JSON.stringify({
+          userAgent: navigator.userAgent,
+          platform: navigator.platform
+        }),
+        updated_at: new Date().toISOString()
+      });
 
     if (error) {
-        console.error("❌ خطأ أثناء الحفظ في قاعدة البيانات:", error);
-        isSubscribing = false;
-        return false;
+      console.error("❌ خطأ أثناء الحفظ في قاعدة البيانات:", error);
+      isSubscribing = false;
+      return false;
     }
 
     console.log("✅ تمت العملية بالكامل بنجاح للمستخدم رقم:", validUserId);
@@ -119,7 +134,7 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
 }
 
 export const sendSystemNotification = async (
-  userId: string | number, 
+  userId: string | number,
   title: string,
   message: string,
   type: 'task' | 'task_update' | 'general' | 'competition' = 'general'
@@ -138,7 +153,7 @@ export const sendSystemNotification = async (
     try {
       await supabase.functions.invoke('send-push-notification', {
         body: {
-          userId: validUserId, 
+          userId: validUserId,
           title: title,
           body: message,
           url: type.includes('task') ? '/staff?tab=tasks' : '/admin?tab=tasks'
