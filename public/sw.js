@@ -17,7 +17,7 @@ self.addEventListener('push', (event) => {
       data.body = event.data.text();
     }
   }
-
+   
   const options = {
     body: data.body,
     icon: '/pwa-192x192.png',
