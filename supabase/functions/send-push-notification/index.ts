@@ -21,7 +21,7 @@ serve(async (req) => {
     // 2. ✅ التصحيح: إزالة Deno.env.get ووضع القيم مباشرة داخل علامات التنصيص
     const supabaseUrl = "https://dyrolfnfuaifzguaxtgs.supabase.co";
     const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5cm9sZm5mdWFpZnpndWF4dGdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjQ0OTQxMSwiZXhwIjoyMDgyMDI1NDExfQ.SjrEt5JxFtWhqVNILi5SMMGHiv_lB5kp-fxq3L4oYWQ";
-    const publicKey = "BCfkHLkVvggptfebLWL9gCfwxED51dmSXmRWya-jbiWbHVsylcgZx6-QDftZXs2NVzkftU6uKqvguVRcc8yfb_Y";
+    const publicKey = "BIkRpd6ma443zGKy3FqGVxXMT4JyARFx36pcc-NAYVdPiB1WTEw9m6XKJq4OXO70Vnyh0zYnE_NkjK3p3VZIINw";
     const privateKey = "AcMe_VBBlFn1fBghQNiN2CXgXVB-xDo6N-PQL84n44I";
 
     if (!supabaseUrl || !supabaseKey || !publicKey || !privateKey) {
