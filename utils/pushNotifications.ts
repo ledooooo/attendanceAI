@@ -29,7 +29,7 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
       return false;
     }
 
-    console.log("🔍 جاري توحيد الهوية من قاعدة البيانات مباشرة...");
+    // تحديد هوية المستخدم
     let finalUserId = user.id;
 
     const { data: empData } = await supabase
@@ -39,28 +39,27 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
       .maybeSingle();
 
     if (empData) {
-      if (empData.role === 'admin') {
-        finalUserId = 'admin';
-      } else {
-        finalUserId = String(empData.employee_id);
-      }
+      finalUserId = empData.role === 'admin' ? 'admin' : String(empData.employee_id);
     } else {
       const { data: supData } = await supabase
         .from('supervisors')
         .select('id')
         .eq('id', user.id)
         .maybeSingle();
-
-      if (supData) {
-        finalUserId = user.id;
-      }
+      if (supData) finalUserId = user.id;
     }
 
     const validUserId = String(finalUserId);
-    console.log("1️⃣ الهوية الموحدة النهائية للتسجيل هي:", validUserId);
 
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.error("❌ المتصفح لا يدعم الإشعارات");
+      isSubscribing = false;
+      return false;
+    }
+
+    // تحقق من إذن الإشعارات - لو مرفوض مش نسأل تاني
+    if (Notification.permission === 'denied') {
+      console.warn("⚠️ الإشعارات مرفوضة من المستخدم");
       isSubscribing = false;
       return false;
     }
@@ -73,36 +72,43 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
     }
 
     const registration = await navigator.serviceWorker.ready;
+    const existingSub = await registration.pushManager.getSubscription();
 
-    // ✅ مسح الاشتراك القديم من المتصفح أولاً لضمان إنشاء اشتراك جديد بالمفتاح الصحيح
-    try {
-      const existingSub = await registration.pushManager.getSubscription();
-      if (existingSub) {
-        await existingSub.unsubscribe();
-        console.log("🧹 تم مسح الاشتراك القديم من المتصفح بنجاح");
+    // ✅ لو في اشتراك موجود في المتصفح، تحقق لو محفوظ في الداتابيز
+    if (existingSub) {
+      const { data: existingInDb } = await supabase
+        .from('push_subscriptions')
+        .select('id')
+        .eq('endpoint', existingSub.endpoint)
+        .eq('user_id', validUserId)
+        .maybeSingle();
+
+      if (existingInDb) {
+        // ✅ الاشتراك موجود وصح — مش محتاج نعمل حاجة
+        console.log("✅ الاشتراك موجود ومحفوظ بالفعل للمستخدم:", validUserId);
+        isSubscribing = false;
+        return true;
       }
-    } catch (e) {
-      console.warn("⚠️ تجاهل خطأ مسح الاشتراك القديم:", e);
+
+      // لو مش موجود في الداتابيز — امسح وأعد التسجيل
+      console.log("🔄 الاشتراك موجود في المتصفح لكن مش في الداتابيز، جاري إعادة التسجيل...");
+      await existingSub.unsubscribe();
     }
 
-    console.log("4️⃣ جاري طلب اشتراك جديد من سيرفرات جوجل...");
+    // إنشاء اشتراك جديد
+    console.log("📡 جاري إنشاء اشتراك جديد...");
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
     });
 
-    console.log("5️⃣ تم الحصول على الاشتراك الجديد! جاري الحفظ في الداتابيز...");
-
     const subscriptionJson = subscription.toJSON();
     const endpoint = subscription.endpoint;
 
-    // حذف أي اشتراك قديم بنفس الـ endpoint من الداتابيز
-    await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
-
-    // حذف أي اشتراك قديم لنفس المستخدم على نفس الجهاز
+    // تنظيف أي اشتراكات قديمة لنفس المستخدم
     await supabase.from('push_subscriptions').delete().eq('user_id', validUserId);
 
-    // إدخال الاشتراك الجديد
+    // حفظ الاشتراك الجديد
     const { error } = await supabase
       .from('push_subscriptions')
       .insert({
@@ -122,7 +128,7 @@ export async function requestNotificationPermission(_ignoredUserId?: string | nu
       return false;
     }
 
-    console.log("✅ تمت العملية بالكامل بنجاح للمستخدم رقم:", validUserId);
+    console.log("✅ تم تسجيل الاشتراك بنجاح للمستخدم:", validUserId);
     isSubscribing = false;
     return true;
 
