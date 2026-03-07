@@ -45,7 +45,8 @@ import StaffArcade from './components/StaffArcade';
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
-import CalculatorsMenu from '../../attendanceAI/calculators/CalculatorsMenu';
+import CalculatorsMenu from '../../calculators/CalculatorsMenu';
+
 interface Props {
   employee: Employee;
 }
