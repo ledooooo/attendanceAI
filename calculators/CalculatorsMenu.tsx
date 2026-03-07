@@ -8,7 +8,7 @@ import {
   Thermometer, Droplets, ShieldAlert, FileText
 } from 'lucide-react';
 
-// استيراد الحاسبات (تأكد من صحة المسارات في مشروعك)
+// استيراد الحاسبات
 import BMICalculator from './BMICalculator';
 import IVFCalculator from './IVFCalculator';
 import PregnancyTracker from './PregnancyTracker';
@@ -47,11 +47,11 @@ export default function CalculatorsMenu() {
   ];
 
   const calculators = [
-    // --- حاسبات الأطباء (مع التمييز البصري) ---
+    // حاسبات الأطباء
     { id: 'gfr', category: 'general', title: 'وظائف الكلى (CrCl)', description: 'تقدير معدل التصفية لتعديل الجرعات.', icon: Activity, color: 'bg-purple-50 text-purple-600 border-purple-100', isDoctorOnly: true },
-    { id: 'ivf', category: 'general', title: 'المحاليل الوريدية', description: 'حساب سرعة التنقيط واحتياجات السوائل.', icon: Droplets, color: 'bg-purple-50 text-purple-600 border-purple-100', isDoctorOnly: true },
+    { id: 'ivf', category: 'general', title: 'المحاليل الوريدية', description: 'حساب سرعة التنقيط واحتياجات السوائل.', icon: Droplets, color: 'bg-blue-50 text-blue-600 border-blue-100', isDoctorOnly: true },
     
-    // --- باقي الحاسبات ---
+    // باقي الحاسبات
     { id: 'bmi', category: 'general', title: 'مؤشر كتلة الجسم', description: 'تقييم حالة السمنة أو النحافة.', icon: Scale, color: 'bg-blue-50 text-blue-600 border-blue-100' },
     { id: 'bri', category: 'general', title: 'مؤشر استدارة الجسم', description: 'مقياس دقيق لمخاطر دهون الخصر.', icon: Activity, color: 'bg-cyan-50 text-cyan-600 border-cyan-100' },
     { id: 'heart-rate', category: 'general', title: 'نبضات القلب', description: 'النطاقات المثالية لحرق الدهون.', icon: Heart, color: 'bg-rose-50 text-rose-600 border-rose-100' },
@@ -81,7 +81,6 @@ export default function CalculatorsMenu() {
 
   const handleBack = () => setActiveCalc(null);
 
-  // منطق العرض (Render Logic)
   if (activeCalc === 'bmi') return <BMICalculator onBack={handleBack} />;
   if (activeCalc === 'ivf') return <IVFCalculator onBack={handleBack} />;
   if (activeCalc === 'pregnancy') return <PregnancyTracker onBack={handleBack} />;
@@ -105,7 +104,7 @@ export default function CalculatorsMenu() {
   if (activeCalc === 'cvd-risk') return <CVDRiskCalculator onBack={handleBack} />;
 
   return (
-    <div className="font-sans animate-in fade-in duration-500 pb-10 px-1">
+    <div className="font-sans animate-in fade-in duration-500 pb-10 px-1 text-right" dir="rtl">
       {/* Header */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 mb-4 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
         <div className="w-full text-right z-10">
@@ -136,7 +135,7 @@ export default function CalculatorsMenu() {
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border-2 ${
               activeCategory === cat.id
                 ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                : 'bg-white text-gray-600 border-gray-100 hover:border-gray-200'
+                : 'bg-white text-gray-600 border-gray-100 hover:bg-gray-50 hover:border-gray-200'
             }`}
           >
             {cat.label}
@@ -154,37 +153,38 @@ export default function CalculatorsMenu() {
               onClick={() => setActiveCalc(calc.id)} 
               className="group h-full text-right outline-none w-full relative"
             >
-              {/* البطاقة الرئيسية */}
               <div className={`
-                bg-white p-3 md:p-5 rounded-2xl border-2 transition-all duration-300 h-full flex flex-col overflow-hidden
+                bg-white p-3 md:p-5 rounded-2xl border-2 transition-all duration-300 h-full flex flex-col
                 ${calc.isDoctorOnly 
-                  ? 'border-purple-200 bg-purple-50/20 shadow-purple-50 hover:border-purple-400' 
+                  ? 'border-red-100 bg-red-50/10 shadow-red-50 hover:border-red-300' 
                   : 'border-transparent shadow-sm hover:border-blue-100 hover:shadow-md'
                 }
               `}>
                 
-                {/* علامة الشريط (Ribbon) للأطباء */}
-                {calc.isDoctorOnly && (
-                  <div className="absolute -left-7 top-3 -rotate-45 bg-red-600 text-white text-[8px] font-black py-0.5 px-8 shadow-sm z-20">
-                    طبي ⚕️
-                  </div>
-                )}
-
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${calc.color}`}>
+                <div className="mb-2">
+                  <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center shrink-0 border mb-2 ${calc.color}`}>
                     <Icon className="w-4 h-4 md:w-5 md:h-5" />
                   </div>
-                  <h3 className={`text-[11px] md:text-sm font-black transition-colors line-clamp-2 leading-tight ${calc.isDoctorOnly ? 'text-purple-800' : 'text-gray-800 group-hover:text-blue-600'}`}>
-                    {calc.title}
-                  </h3>
+                  
+                  <div className="flex flex-wrap items-center gap-1.5 min-h-[2.5rem]">
+                    <h3 className={`text-[11px] md:text-sm font-black transition-colors leading-tight ${calc.isDoctorOnly ? 'text-red-800' : 'text-gray-800 group-hover:text-blue-600'}`}>
+                      {calc.title}
+                    </h3>
+                    {/* البادج الجديد للأطباء */}
+                    {calc.isDoctorOnly && (
+                      <span className="bg-red-600 text-white text-[7px] md:text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5">
+                        <ShieldAlert size={8} /> طبي
+                      </span>
+                    )}
+                  </div>
                 </div>
                 
-                <p className="text-[9px] md:text-xs font-bold text-gray-500 leading-relaxed mb-3 flex-1 line-clamp-2">
+                <p className="text-[9px] md:text-xs font-bold text-gray-400 leading-relaxed mb-3 flex-1 line-clamp-2">
                   {calc.description}
                 </p>
 
-                <div className={`flex items-center justify-between text-[9px] md:text-[10px] font-black mt-auto pt-2.5 border-t border-gray-50 ${calc.isDoctorOnly ? 'text-purple-600' : 'text-gray-400 group-hover:text-blue-600'}`}>
-                  <span>{calc.isDoctorOnly ? 'للأطباء فقط' : 'افتح الأداة'}</span>
+                <div className={`flex items-center justify-between text-[9px] md:text-[10px] font-black mt-auto pt-2.5 border-t border-gray-50 ${calc.isDoctorOnly ? 'text-red-600' : 'text-gray-400 group-hover:text-blue-600'}`}>
+                  <span>{calc.isDoctorOnly ? 'دخول الأطباء' : 'افتح الأداة'}</span>
                   <ArrowRight className="w-3 h-3 mr-auto group-hover:-translate-x-1 transition-transform"/>
                 </div>
               </div>
