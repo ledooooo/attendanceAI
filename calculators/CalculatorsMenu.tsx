@@ -5,7 +5,7 @@ import {
   Scale, Baby, Calendar, Utensils, Brain, Heart, 
   Activity, Dna, Syringe, TrendingUp, AlertCircle, 
   Smile, Bone, Search, ArrowRight, Stethoscope, 
-  Thermometer, Droplets, ShieldAlert
+  Thermometer, Droplets, ShieldAlert, FileText
 } from 'lucide-react';
 
 // استيراد الحاسبات (تأكد من صحة المسارات في مشروعك)
