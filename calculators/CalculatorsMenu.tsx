@@ -8,33 +8,33 @@ import {
   Thermometer, Droplets, ShieldAlert, FileText
 } from 'lucide-react';
 
-// استيراد الحاسبات
+// --- استيراد جميع الحاسبات بناءً على قائمة ملفاتك ---
 import BMICalculator from './BMICalculator';
-import IVFCalculator from './IVFCalculator';
-import PregnancyTracker from './PregnancyTracker';
-import PediatricDoseCalculator from './PediatricDoseCalculator';
-import GFRCalculator from './GFRCalculator';
+import BRICalculator from './BRICalculator';
+import CHADSVASCCalculator from './CHADSVASCCalculator';
+import CURB65Calculator from './CURB65Calculator';
+import CVDRiskCalculator from './CVDRiskCalculator';
+import CentorScoreCalculator from './CentorScoreCalculator';
+import ChildMilestones from './ChildMilestones';
 import DiabetesRiskCalculator from './DiabetesRiskCalculator';
+import FIB4Calculator from './FIB4Calculator';
 import FoodCaloriesDict from './FoodCaloriesDict';
 import GAD7Calculator from './GAD7Calculator';
+import GFRCalculator from './GFRCalculator';
 import GrowthChartsCalculator from './GrowthChartsCalculator';
 import HeartRateCalculator from './HeartRateCalculator';
+import IVFCalculator from './IVFCalculator';
 import LabValuesDict from './LabValuesDict';
 import OsteoporosisCalculator from './OsteoporosisCalculator';
 import OvulationCalculator from './OvulationCalculator';
-import PainScaleCalculator from './PainScaleCalculator';
-import QuickPediatricDose from './QuickPediatricDose';
 import PHQ9Calculator from './PHQ9Calculator';
+import PainScaleCalculator from './PainScaleCalculator';
+import PediatricDoseCalculator from './PediatricDoseCalculator';
+import PregnancyCalculator from './PregnancyCalculator';
+import PregnancyTracker from './PregnancyTracker';
+import QuickPediatricDose from './QuickPediatricDose';
 import ScreeningCalculator from './ScreeningCalculator';
 import VaccinesSchedule from './VaccinesSchedule';
-import BRICalculator from './BRICalculator';
-import ChildMilestones from './ChildMilestones';
-import CVDRiskCalculator from './CVDRiskCalculator';
-// الحاسبات الجديدة للأطباء
-import CentorScoreCalculator from './CentorScoreCalculator';
-import CURB65Calculator from './CURB65Calculator';
-import FIB4Calculator from './FIB4Calculator';
-import CHADSVASCCalculator from './CHADSVASCCalculator';
 
 export default function CalculatorsMenu() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,33 +53,44 @@ export default function CalculatorsMenu() {
   ];
 
   const calculators = [
-    // --- حاسبات الأطباء (مع علامة طبي) ---
+    // --- حاسبات الأطباء (Medical Only) ---
     { id: 'centor', category: 'doctors', title: 'مقياس Centor', description: 'تقييم احتمالية التهاب الحلق البكتيري لاتخاذ قرار المضاد الحيوي.', icon: Stethoscope, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
     { id: 'curb65', category: 'doctors', title: 'مقياس CURB-65', description: 'تقييم خطورة الالتهاب الرئوي المكتسب وتحديد مكان العلاج.', icon: Activity, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
     { id: 'fib4', category: 'doctors', title: 'مؤشر تليف الكبد', description: 'تقييم درجة تليف الكبد (FIB-4) لمرضى الكبد الدهني.', icon: Activity, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
     { id: 'chadsvasc', category: 'doctors', title: 'السكتة الدماغية', description: 'مقياس CHA2DS2-VASc لمرضى الرفرفة الأذينية.', icon: Heart, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
     { id: 'gfr', category: 'doctors', title: 'وظائف الكلى (CrCl)', description: 'تقدير معدل التصفية لتعديل جرعات الأدوية بدقة.', icon: Activity, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
-    { id: 'ivf', category: 'doctors', title: 'المحاليل الوريدية', description: 'حساب سرعة تنقيط المحاليل الوريدية واحتياجات السوائل.', icon: Droplets, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
+    { id: 'ivf', category: 'doctors', title: 'المحاليل الوريدية', description: 'حساب سرعة تنقيط المحاليل واحتياجات السوائل.', icon: Droplets, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
     
-    // --- الحاسبات العامة ---
+    // --- عامة وباطنة ---
     { id: 'bmi', category: 'general', title: 'مؤشر كتلة الجسم', description: 'تقييم حالة السمنة أو النحافة والوزن المثالي.', icon: Scale, color: 'bg-blue-50 text-blue-600 border-blue-100' },
     { id: 'bri', category: 'general', title: 'مؤشر استدارة الجسم', description: 'مقياس دقيق لمخاطر دهون الخصر والشكل الجسدي.', icon: Activity, color: 'bg-cyan-50 text-cyan-600 border-cyan-100' },
-    { id: 'heart-rate', category: 'general', title: 'نبضات القلب', description: 'النطاقات المثالية للنبض أثناء الرياضة وحرق الدهون.', icon: Heart, color: 'bg-rose-50 text-rose-600 border-rose-100' },
-    { id: 'lab-values', category: 'general', title: 'دليل التحاليل', description: 'النسب الطبيعية والمعدلات المرجعية لأشهر التحاليل.', icon: Dna, color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
+    { id: 'heart-rate', category: 'general', title: 'نبضات القلب', description: 'نطاقات النبض المثالية لحرق الدهون.', icon: Heart, color: 'bg-rose-50 text-rose-600 border-rose-100' },
+    { id: 'lab-values', category: 'general', title: 'دليل التحاليل', description: 'النسب الطبيعية لأشهر التحاليل الطبية.', icon: Dna, color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
     { id: 'screening', category: 'general', title: 'الفحص الشامل', description: 'الفحوصات الدورية المطلوبة حسب السن والجنس.', icon: Stethoscope, color: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
-    { id: 'pregnancy', category: 'obgyn', title: 'تتبع الحمل (EDD)', description: 'حساب موعد الولادة وعمر الحمل ومراحل التطور.', icon: Baby, color: 'bg-pink-50 text-pink-600 border-pink-100' },
-    { id: 'ovulation', category: 'obgyn', title: 'حاسبة التبويض', description: 'تحديد أيام التبويض وأفضل أوقات الخصوبة للحمل.', icon: Calendar, color: 'bg-purple-50 text-purple-600 border-purple-100' },
-    { id: 'pediatric-quick', category: 'peds', title: 'جرعات سريعة', description: 'حساب جرعات خافض الحرارة والمضادات للأطفال.', icon: Thermometer, color: 'bg-orange-50 text-orange-600 border-orange-100' },
+
+    // --- نساء وتوليد ---
+    { id: 'pregnancy-calc', category: 'obgyn', title: 'حاسبة الحمل', description: 'تقدير موعد الولادة وعمر الجنين بالأسابيع.', icon: Baby, color: 'bg-pink-50 text-pink-600 border-pink-100' },
+    { id: 'pregnancy-track', category: 'obgyn', title: 'تتبع الحمل (EDD)', description: 'متابعة مراحل تطور الجنين أسبوعياً.', icon: Calendar, color: 'bg-pink-50 text-pink-700 border-pink-200' },
+    { id: 'ovulation', category: 'obgyn', title: 'حاسبة التبويض', description: 'تحديد أيام التبويض وأفضل أوقات الخصوبة.', icon: Calendar, color: 'bg-purple-50 text-purple-600 border-purple-100' },
+
+    // --- أطفال ---
+    { id: 'pediatric-quick', category: 'peds', title: 'جرعات سريعة', description: 'حساب خافض الحرارة والمضادات للأطفال.', icon: Thermometer, color: 'bg-orange-50 text-orange-600 border-orange-100' },
     { id: 'pediatric-dose', category: 'peds', title: 'الجرعات المتقدمة', description: 'حساب دقيق لأي دواء حسب الوزن والتركيز.', icon: Syringe, color: 'bg-violet-50 text-violet-600 border-violet-100' },
-    { id: 'vaccines', category: 'peds', title: 'جدول التطعيمات', description: 'مواعيد التطعيمات الإجبارية بوزارة الصحة (مصر).', icon: Syringe, color: 'bg-teal-50 text-teal-600 border-teal-100' },
-    { id: 'growth-charts', category: 'peds', title: 'منحنيات النمو', description: 'مقارنة نمو وزن وطول الطفل بمعدلات WHO.', icon: TrendingUp, color: 'bg-lime-50 text-lime-600 border-lime-100' },
-    { id: 'child-development', category: 'peds', title: 'تطورات الطفل', description: 'المهارات الحركية واللغوية المتوقعة حسب العمر.', icon: Baby, color: 'bg-sky-50 text-sky-600 border-sky-100' },
+    { id: 'vaccines', category: 'peds', title: 'جدول التطعيمات', description: 'مواعيد التطعيمات الإجبارية بمصر.', icon: Syringe, color: 'bg-teal-50 text-teal-600 border-teal-100' },
+    { id: 'growth-charts', category: 'peds', title: 'منحنيات النمو', description: 'مقارنة نمو الطفل بمعدلات WHO العالمية.', icon: TrendingUp, color: 'bg-lime-50 text-lime-600 border-lime-100' },
+    { id: 'child-development', category: 'peds', title: 'تطورات الطفل', description: 'المهارات المتوقعة (حركية، لغوية) حسب العمر.', icon: Baby, color: 'bg-sky-50 text-sky-600 border-sky-100' },
+
+    // --- مخاطر وأمراض ---
     { id: 'cvd-risk', category: 'risks', title: 'مخاطر القلب', description: 'احتمالية الجلطات والأزمات خلال 10 سنوات.', icon: Heart, color: 'bg-rose-50 text-rose-700 border-rose-200' },
     { id: 'diabetes-risk', category: 'risks', title: 'مخاطر السكري', description: 'تقييم احتمالية الإصابة بالنوع الثاني (FindRisk).', icon: Activity, color: 'bg-sky-50 text-sky-600 border-sky-100' },
     { id: 'osteoporosis', category: 'risks', title: 'هشاشة العظام', description: 'فحص سريع لعوامل خطر الكسور وضعف العظام.', icon: Bone, color: 'bg-slate-100 text-slate-700 border-slate-200' },
+
+    // --- نفسية وألم ---
     { id: 'gad7', category: 'mental', title: 'مقياس القلق', description: 'تقييم حدة أعراض القلق والتوتر (GAD-7).', icon: Brain, color: 'bg-teal-50 text-teal-600 border-teal-100' },
-    { id: 'phq9', category: 'mental', title: 'استبيان الاكتئاب', description: 'تقييم الصحة النفسية وتشخيص الاكتئاب (PHQ-9).', icon: Smile, color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
-    { id: 'pain-scale', category: 'mental', title: 'مقياس الألم', description: 'أداة بصرية لتقييم حدة الألم لتسهيل التشخيص.', icon: AlertCircle, color: 'bg-red-50 text-red-600 border-red-100' },
+    { id: 'phq9', category: 'mental', title: 'استبيان الاكتئاب', description: 'تقييم الصحة النفسية والكتئاب (PHQ-9).', icon: Smile, color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
+    { id: 'pain-scale', category: 'mental', title: 'مقياس الألم', description: 'أداة بصرية لتقييم حدة الألم السريري.', icon: AlertCircle, color: 'bg-red-50 text-red-600 border-red-100' },
+
+    // --- تغذية ---
     { id: 'food-calories', category: 'nutrition', title: 'دليل السعرات', description: 'جدول سعرات لأشهر الأكلات المصرية المحلية.', icon: FileText, color: 'bg-yellow-50 text-yellow-600 border-yellow-100' },
   ];
 
@@ -91,10 +102,12 @@ export default function CalculatorsMenu() {
 
   const handleBack = () => setActiveCalc(null);
 
-  // منطق العرض
+  // منطق العرض بناءً على الـ ID
   if (activeCalc === 'bmi') return <BMICalculator onBack={handleBack} />;
+  if (activeCalc === 'bri') return <BRICalculator onBack={handleBack} />;
   if (activeCalc === 'ivf') return <IVFCalculator onBack={handleBack} />;
-  if (activeCalc === 'pregnancy') return <PregnancyTracker onBack={handleBack} />;
+  if (activeCalc === 'pregnancy-calc') return <PregnancyCalculator onBack={handleBack} />;
+  if (activeCalc === 'pregnancy-track') return <PregnancyTracker onBack={handleBack} />;
   if (activeCalc === 'pediatric-dose') return <PediatricDoseCalculator onBack={handleBack} />;
   if (activeCalc === 'pediatric-quick') return <QuickPediatricDose onBack={handleBack} />;
   if (activeCalc === 'gfr') return <GFRCalculator onBack={handleBack} />;
@@ -110,7 +123,6 @@ export default function CalculatorsMenu() {
   if (activeCalc === 'pain-scale') return <PainScaleCalculator onBack={handleBack} />;
   if (activeCalc === 'screening') return <ScreeningCalculator onBack={handleBack} />;
   if (activeCalc === 'vaccines') return <VaccinesSchedule onBack={handleBack} />;
-  if (activeCalc === 'bri') return <BRICalculator onBack={handleBack} />;
   if (activeCalc === 'child-development') return <ChildMilestones onBack={handleBack} />;
   if (activeCalc === 'cvd-risk') return <CVDRiskCalculator onBack={handleBack} />;
   if (activeCalc === 'centor') return <CentorScoreCalculator onBack={handleBack} />;
@@ -141,8 +153,8 @@ export default function CalculatorsMenu() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex overflow-x-auto gap-2 pb-3 mb-4 custom-scrollbar no-scrollbar">
+      {/* Tabs Menu */}
+      <div className="flex overflow-x-auto gap-2 pb-3 mb-4 custom-scrollbar no-scrollbar scroll-smooth">
         {categories.map(cat => (
           <button
             key={cat.id}
@@ -158,7 +170,7 @@ export default function CalculatorsMenu() {
         ))}
       </div>
 
-      {/* Grid */}
+      {/* Grid Display */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {filteredCalculators.map((calc, idx) => {
           const Icon = calc.icon;
