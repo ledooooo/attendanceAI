@@ -1,0 +1,11 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.gharb_alpha.twa",
+      "sha256_cert_fingerprints":
+        ["A1:51:D5:52:18:33:05:FC:93:60:78:67:C0:26:F6:C9:C1:2E:81:A3:FE:1F:A0:47:E1:34:9C:C4:32:81:1C:0E"]
+    }
+  }
+]
