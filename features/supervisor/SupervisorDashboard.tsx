@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
@@ -7,7 +9,8 @@ import {
     LogOut, Menu, X, Home, BookOpen, Library as LibraryIcon, 
     Gamepad2, CalendarRange, Gift, BarChart3, Loader2, Sparkles, 
     Award, ShieldCheck, Bell, ShoppingBag, Trophy, Share2, Info, 
-    Users, User, CheckSquare, Swords, Smartphone, BellRing, DownloadCloud, Star, MapPin, Check
+    Users, User, CheckSquare, Swords, Smartphone, BellRing, DownloadCloud, Star, MapPin, Check,
+    Calculator // تم إضافة أيقونة الحاسبة
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -26,6 +29,11 @@ import SupervisorSchedules from './components/SupervisorSchedules';
 import SupervisorStatistics from './components/SupervisorStatistics';
 import SupervisorTasks from './components/SupervisorTasks';
 import CompetitionsManager from '../admin/components/CompetitionsManager'; 
+
+// ✅ تم إضافة استيراد صالة الألعاب المفقود لحل الخطأ
+import StaffArcade from '../staff/components/StaffArcade';
+// ✅ تم إضافة استيراد الحاسبات الطبية
+import CalculatorsMenu from '../../calculators/CalculatorsMenu';
 
 import { requestNotificationPermission } from '../../utils/pushNotifications';
 
@@ -97,19 +105,13 @@ export default function SupervisorDashboard() {
         queryFn: async () => {
             if (!user?.id) return { rounds: 0, tasks: 0, training: 0 };
 
-            // استخدام Promise.all للسرعة
             const [roundsRes, tasksRes, availableTrainings, myCompleted] = await Promise.all([
-                // 1. جلب عدد المرورات التي تم الرد عليها من قبل الإدارة ولم يرها المشرف بعد (افتراضاً بناءً على الإشعارات أو status)
                 supabase.from('supervisor_rounds').select('*', { count: 'exact', head: true }).eq('supervisor_id', user.id).eq('status', 'replied'),
-                // 2. جلب عدد المهام المعلقة التي أصدرها المشرف ولم تُنجز
                 supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('created_by', user.id).eq('status', 'pending'),
-                // 3. جلب التدريبات المتاحة
                 supabase.from('trainings').select('id, target_specialties'),
-                // 4. جلب التدريبات المكتملة
                 supabase.from('employee_trainings').select('training_id').eq('employee_id', user.id).eq('status', 'completed')
             ]);
 
-            // حساب التدريبات المتبقية
             const targetedTrainings = availableTrainings.data?.filter(t => 
                !t.target_specialties || 
                t.target_specialties.length === 0 || 
@@ -119,13 +121,13 @@ export default function SupervisorDashboard() {
             const pendingTrainingsCount = targetedTrainings.filter(t => !completedIds.includes(t.id)).length;
 
             return {
-                rounds: roundsRes.count || 0, // مرورات تم الرد عليها
-                tasks: tasksRes.count || 0,   // تكليفات قيد التنفيذ
+                rounds: roundsRes.count || 0,
+                tasks: tasksRes.count || 0,   
                 training: pendingTrainingsCount
             };
         },
         enabled: !!user?.id && !!supervisor,
-        refetchInterval: 30000, // تحديث كل 30 ثانية
+        refetchInterval: 30000,
     });
 
     useEffect(() => {
@@ -207,7 +209,6 @@ export default function SupervisorDashboard() {
         fetchNotifications();
     }, [fetchNotifications]);
 
-    // مراقبة الإشعارات في الوقت الفعلي
     useEffect(() => {
         if (!supervisor?.id) return;
         const channel = supabase.channel('supervisor_dashboard_updates')
@@ -285,7 +286,7 @@ export default function SupervisorDashboard() {
          return <div className="h-screen flex items-center justify-center font-black text-red-500">حدث خطأ في تحميل البيانات</div>;
     }
 
-    // 🌟 مصفوفة القائمة الجانبية مدمجة مع العدادات
+    // 🌟 مصفوفة القائمة الجانبية مدمجة مع العدادات والحاسبات
     const menuItems = [
         { id: 'home', label: 'الرئيسية', icon: Home },
         { id: 'profile', label: 'الملف الشخصي', icon: User },
@@ -297,6 +298,7 @@ export default function SupervisorDashboard() {
         { id: 'competitions', label: 'المسابقات', icon: Swords },
         { id: 'training', label: 'مركز التدريب', icon: BookOpen, badge: supervisorBadges.training },
         { id: 'library', label: 'السياسات والأدلة', icon: LibraryIcon },
+        { id: 'calculators', label: 'حاسبات هامة', icon: Calculator, isNew: true }, // ✅ قسم الحاسبات
         { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, isNew: true },
         { id: 'rewards', label: 'متجر الجوائز', icon: Gift },
     ];
@@ -449,6 +451,9 @@ export default function SupervisorDashboard() {
                         {activeTab === 'competitions' && <CompetitionsManager />}
                         {activeTab === 'training' && <StaffTrainingCenter employee={mockEmployee} />}
                         {activeTab === 'library' && <StaffLibrary employee={mockEmployee} />}
+                        {/* ✅ عرض تبويب الحاسبات الجديد */}
+                        {activeTab === 'calculators' && <CalculatorsMenu />}
+                        {/* ✅ عرض صالة الألعاب (التي كانت تسبب الخطأ) */}
                         {activeTab === 'arcade' && <StaffArcade employee={mockEmployee} />}
                         {activeTab === 'rewards' && <RewardsStore employee={mockEmployee} />}
                     </div>
