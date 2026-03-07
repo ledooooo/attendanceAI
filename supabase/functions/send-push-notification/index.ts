@@ -22,7 +22,7 @@ serve(async (req) => {
     const privateKey = "ZQJS87_IIuB1Uwg85yclChBtgPrWsrdm6-AIAW53l6U";
 
     // ✅ ضع دومين موقعك الحقيقي هنا بدل example.com
-    const subject = "https://gharb-alpha.vercel.app";
+    const subject = "https://dyrolfnfuaifzguaxtgs.supabase.co";
 
     if (!supabaseUrl || !supabaseKey || !publicKey || !privateKey) {
       throw new Error("Server Misconfiguration: Missing Secrets");
