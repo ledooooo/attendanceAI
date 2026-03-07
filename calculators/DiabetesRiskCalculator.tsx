@@ -3,6 +3,7 @@ import { Activity, ArrowRight, Save, Loader2, RefreshCw } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
 
+
 interface Props { onBack?: () => void; }
 
 export default function DiabetesRiskCalculator({ onBack }: Props) {
