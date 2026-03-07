@@ -302,7 +302,7 @@ if (hash.startsWith('#room=')) {
 
     const channel = supabase.channel('staff_dashboard_updates')
       .on('postgres_changes', { 
-        event: '*', schema: 'public', table: 'notifications', 
+        event: 'INSERT', schema: 'public', table: 'notifications', 
         filter: `user_id=eq.${employee.employee_id}` 
       }, (payload) => {
           fetchNotifications();
