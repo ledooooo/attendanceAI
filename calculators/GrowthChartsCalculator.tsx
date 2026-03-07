@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TrendingUp, ArrowRight, AlertTriangle, Save, Loader2 } from 'lucide-react';
-import { supabase } from '../../supabaseClient';
+import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
 
 interface Props { onBack?: () => void; }
