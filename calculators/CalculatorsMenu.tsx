@@ -8,7 +8,7 @@ import {
   Thermometer, Droplets, ShieldAlert, FileText
 } from 'lucide-react';
 
-// --- استيراد جميع الحاسبات بناءً على قائمة ملفاتك ---
+// --- استيراد جميع الحاسبات من مجلدك ---
 import BMICalculator from './BMICalculator';
 import BRICalculator from './BRICalculator';
 import CHADSVASCCalculator from './CHADSVASCCalculator';
@@ -41,57 +41,55 @@ export default function CalculatorsMenu() {
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeCalc, setActiveCalc] = useState<string | null>(null);
 
+  // الأقسام حسب الوظيفة الطبية
   const categories = [
     { id: 'all', label: 'الكل' },
-    { id: 'doctors', label: 'أدوات الطبيب ⚕️' },
-    { id: 'general', label: 'عامة وباطنة' },
+    { id: 'general', label: 'باطنة وعامة' },
     { id: 'obgyn', label: 'نساء وتوليد' },
-    { id: 'peds', label: 'أطفال' },
+    { id: 'peds', label: 'طب الأطفال' },
     { id: 'risks', label: 'مخاطر وأمراض' },
     { id: 'mental', label: 'نفسية وألم' },
     { id: 'nutrition', label: 'تغذية' },
   ];
 
   const calculators = [
-    // --- حاسبات الأطباء (Medical Only) ---
-    { id: 'centor', category: 'doctors', title: 'مقياس Centor', description: 'تقييم احتمالية التهاب الحلق البكتيري لاتخاذ قرار المضاد الحيوي.', icon: Stethoscope, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
-    { id: 'curb65', category: 'doctors', title: 'مقياس CURB-65', description: 'تقييم خطورة الالتهاب الرئوي المكتسب وتحديد مكان العلاج.', icon: Activity, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
-    { id: 'fib4', category: 'doctors', title: 'مؤشر تليف الكبد', description: 'تقييم درجة تليف الكبد (FIB-4) لمرضى الكبد الدهني.', icon: Activity, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
-    { id: 'chadsvasc', category: 'doctors', title: 'السكتة الدماغية', description: 'مقياس CHA2DS2-VASc لمرضى الرفرفة الأذينية.', icon: Heart, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
-    { id: 'gfr', category: 'doctors', title: 'وظائف الكلى (CrCl)', description: 'تقدير معدل التصفية لتعديل جرعات الأدوية بدقة.', icon: Activity, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
-    { id: 'ivf', category: 'doctors', title: 'المحاليل الوريدية', description: 'حساب سرعة تنقيط المحاليل واحتياجات السوائل.', icon: Droplets, color: 'bg-red-50 text-red-600 border-red-100', isDoctorOnly: true },
-    
-    // --- عامة وباطنة ---
-    { id: 'bmi', category: 'general', title: 'مؤشر كتلة الجسم', description: 'تقييم حالة السمنة أو النحافة والوزن المثالي.', icon: Scale, color: 'bg-blue-50 text-blue-600 border-blue-100' },
-    { id: 'bri', category: 'general', title: 'مؤشر استدارة الجسم', description: 'مقياس دقيق لمخاطر دهون الخصر والشكل الجسدي.', icon: Activity, color: 'bg-cyan-50 text-cyan-600 border-cyan-100' },
-    { id: 'heart-rate', category: 'general', title: 'نبضات القلب', description: 'نطاقات النبض المثالية لحرق الدهون.', icon: Heart, color: 'bg-rose-50 text-rose-600 border-rose-100' },
-    { id: 'lab-values', category: 'general', title: 'دليل التحاليل', description: 'النسب الطبيعية لأشهر التحاليل الطبية.', icon: Dna, color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
-    { id: 'screening', category: 'general', title: 'الفحص الشامل', description: 'الفحوصات الدورية المطلوبة حسب السن والجنس.', icon: Stethoscope, color: 'bg-emerald-50 text-emerald-600 border-emerald-100' },
+    // --- باطنة وعامة ---
+    { id: 'centor', category: 'general', title: 'مقياس Centor', description: 'تقييم التهاب الحلق البكتيري.', icon: Stethoscope, color: 'bg-red-50 text-red-600', isDoctorOnly: true },
+    { id: 'curb65', category: 'general', title: 'مقياس CURB-65', description: 'تقييم خطورة الالتهاب الرئوي.', icon: Activity, color: 'bg-red-50 text-red-600', isDoctorOnly: true },
+    { id: 'fib4', category: 'general', title: 'مؤشر تليف الكبد', description: 'تقييم التليف لمرضى الكبد الدهني.', icon: Activity, color: 'bg-red-50 text-red-600', isDoctorOnly: true },
+    { id: 'gfr', category: 'general', title: 'وظائف الكلى (CrCl)', description: 'تقدير معدل التصفية لتعديل الجرعات.', icon: Activity, color: 'bg-red-50 text-red-600', isDoctorOnly: true },
+    { id: 'ivf', category: 'general', title: 'المحاليل الوريدية', description: 'حساب سرعة التنقيط واحتياجات السوائل.', icon: Droplets, color: 'bg-red-50 text-red-600', isDoctorOnly: true },
+    { id: 'bmi', category: 'general', title: 'مؤشر كتلة الجسم', description: 'تقييم حالة السمنة أو النحافة.', icon: Scale, color: 'bg-blue-50 text-blue-600' },
+    { id: 'bri', category: 'general', title: 'مؤشر استدارة الجسم', description: 'مقياس دقيق لمخاطر دهون الخصر.', icon: Activity, color: 'bg-cyan-50 text-cyan-600' },
+    { id: 'heart-rate', category: 'general', title: 'نبضات القلب', description: 'النطاقات المثالية لحرق الدهون.', icon: Heart, color: 'bg-rose-50 text-rose-600' },
+    { id: 'lab-values', category: 'general', title: 'دليل التحاليل', description: 'النسب الطبيعية لأشهر التحاليل.', icon: Dna, color: 'bg-indigo-50 text-indigo-600' },
+    { id: 'screening', category: 'general', title: 'الفحص الشامل', description: 'الفحوصات المطلوبة حسب السن.', icon: Stethoscope, color: 'bg-emerald-50 text-emerald-600' },
 
     // --- نساء وتوليد ---
-    { id: 'pregnancy-calc', category: 'obgyn', title: 'حاسبة الحمل', description: 'تقدير موعد الولادة وعمر الجنين بالأسابيع.', icon: Baby, color: 'bg-pink-50 text-pink-600 border-pink-100' },
-    { id: 'pregnancy-track', category: 'obgyn', title: 'تتبع الحمل (EDD)', description: 'متابعة مراحل تطور الجنين أسبوعياً.', icon: Calendar, color: 'bg-pink-50 text-pink-700 border-pink-200' },
-    { id: 'ovulation', category: 'obgyn', title: 'حاسبة التبويض', description: 'تحديد أيام التبويض وأفضل أوقات الخصوبة.', icon: Calendar, color: 'bg-purple-50 text-purple-600 border-purple-100' },
+    { id: 'pregnancy-calc', category: 'obgyn', title: 'حاسبة الحمل', description: 'موعد الولادة وعمر الجنين بالأسابيع.', icon: Baby, color: 'bg-pink-50 text-pink-600' },
+    { id: 'pregnancy-track', category: 'obgyn', title: 'تتبع الحمل (EDD)', description: 'متابعة مراحل تطور الجنين أسبوعياً.', icon: Calendar, color: 'bg-pink-50 text-pink-700' },
+    { id: 'ovulation', category: 'obgyn', title: 'حاسبة التبويض', description: 'تحديد أيام التبويض والخصوبة.', icon: Calendar, color: 'bg-purple-50 text-purple-600' },
+    { id: 'chadsvasc', category: 'obgyn', title: 'السكتة الدماغية', description: 'مقياس CHA2DS2-VASc للسيولة.', icon: Heart, color: 'bg-red-50 text-red-600', isDoctorOnly: true },
 
     // --- أطفال ---
-    { id: 'pediatric-quick', category: 'peds', title: 'جرعات سريعة', description: 'حساب خافض الحرارة والمضادات للأطفال.', icon: Thermometer, color: 'bg-orange-50 text-orange-600 border-orange-100' },
-    { id: 'pediatric-dose', category: 'peds', title: 'الجرعات المتقدمة', description: 'حساب دقيق لأي دواء حسب الوزن والتركيز.', icon: Syringe, color: 'bg-violet-50 text-violet-600 border-violet-100' },
-    { id: 'vaccines', category: 'peds', title: 'جدول التطعيمات', description: 'مواعيد التطعيمات الإجبارية بمصر.', icon: Syringe, color: 'bg-teal-50 text-teal-600 border-teal-100' },
-    { id: 'growth-charts', category: 'peds', title: 'منحنيات النمو', description: 'مقارنة نمو الطفل بمعدلات WHO العالمية.', icon: TrendingUp, color: 'bg-lime-50 text-lime-600 border-lime-100' },
-    { id: 'child-development', category: 'peds', title: 'تطورات الطفل', description: 'المهارات المتوقعة (حركية، لغوية) حسب العمر.', icon: Baby, color: 'bg-sky-50 text-sky-600 border-sky-100' },
+    { id: 'pediatric-quick', category: 'peds', title: 'جرعات سريعة', description: 'حساب خافض الحرارة والمضادات.', icon: Thermometer, color: 'bg-orange-50 text-orange-600' },
+    { id: 'pediatric-dose', category: 'peds', title: 'الجرعات المتقدمة', description: 'حساب دقيق حسب الوزن والتركيز.', icon: Syringe, color: 'bg-violet-50 text-violet-600' },
+    { id: 'vaccines', category: 'peds', title: 'جدول التطعيمات', description: 'مواعيد التطعيمات الإجبارية بمصر.', icon: Syringe, color: 'bg-teal-50 text-teal-600' },
+    { id: 'growth-charts', category: 'peds', title: 'منحنيات النمو', description: 'مقارنة نمو الطفل بمعدلات WHO.', icon: TrendingUp, color: 'bg-lime-50 text-lime-600' },
+    { id: 'child-development', category: 'peds', title: 'تطورات الطفل', description: 'المهارات المتوقعة حسب العمر.', icon: Baby, color: 'bg-sky-50 text-sky-600' },
 
     // --- مخاطر وأمراض ---
-    { id: 'cvd-risk', category: 'risks', title: 'مخاطر القلب', description: 'احتمالية الجلطات والأزمات خلال 10 سنوات.', icon: Heart, color: 'bg-rose-50 text-rose-700 border-rose-200' },
-    { id: 'diabetes-risk', category: 'risks', title: 'مخاطر السكري', description: 'تقييم احتمالية الإصابة بالنوع الثاني (FindRisk).', icon: Activity, color: 'bg-sky-50 text-sky-600 border-sky-100' },
-    { id: 'osteoporosis', category: 'risks', title: 'هشاشة العظام', description: 'فحص سريع لعوامل خطر الكسور وضعف العظام.', icon: Bone, color: 'bg-slate-100 text-slate-700 border-slate-200' },
+    { id: 'cvd-risk', category: 'risks', title: 'مخاطر القلب', description: 'احتمالية الجلطات خلال 10 سنوات.', icon: Heart, color: 'bg-rose-50 text-rose-700' },
+    { id: 'diabetes-risk', category: 'risks', title: 'مخاطر السكري', description: 'تقييم احتمالية الإصابة بالسكري.', icon: Activity, color: 'bg-sky-50 text-sky-600' },
+    { id: 'osteoporosis', category: 'risks', title: 'هشاشة العظام', description: 'عوامل خطر الكسور وضعف العظام.', icon: Bone, color: 'bg-slate-100 text-slate-700' },
 
     // --- نفسية وألم ---
-    { id: 'gad7', category: 'mental', title: 'مقياس القلق', description: 'تقييم حدة أعراض القلق والتوتر (GAD-7).', icon: Brain, color: 'bg-teal-50 text-teal-600 border-teal-100' },
-    { id: 'phq9', category: 'mental', title: 'استبيان الاكتئاب', description: 'تقييم الصحة النفسية والكتئاب (PHQ-9).', icon: Smile, color: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
-    { id: 'pain-scale', category: 'mental', title: 'مقياس الألم', description: 'أداة بصرية لتقييم حدة الألم السريري.', icon: AlertCircle, color: 'bg-red-50 text-red-600 border-red-100' },
+    { id: 'gad7', category: 'mental', title: 'مقياس القلق', description: 'تقييم أعراض القلق (GAD-7).', icon: Brain, color: 'bg-teal-50 text-teal-600' },
+    { id: 'phq9', category: 'mental', title: 'استبيان الاكتئاب', description: 'تقييم الصحة النفسية (PHQ-9).', icon: Smile, color: 'bg-indigo-50 text-indigo-600' },
+    { id: 'pain-scale', category: 'mental', title: 'مقياس الألم', description: 'تقييم حدة الألم السريري.', icon: AlertCircle, color: 'bg-red-50 text-red-600' },
 
     // --- تغذية ---
-    { id: 'food-calories', category: 'nutrition', title: 'دليل السعرات', description: 'جدول سعرات لأشهر الأكلات المصرية المحلية.', icon: FileText, color: 'bg-yellow-50 text-yellow-600 border-yellow-100' },
+    { id: 'food-calories', category: 'nutrition', title: 'دليل السعرات', description: 'سعرات الأكلات المصرية المحلية.', icon: FileText, color: 'bg-yellow-50 text-yellow-600' },
   ];
 
   const filteredCalculators = calculators.filter(calc => {
@@ -102,7 +100,6 @@ export default function CalculatorsMenu() {
 
   const handleBack = () => setActiveCalc(null);
 
-  // منطق العرض بناءً على الـ ID
   if (activeCalc === 'bmi') return <BMICalculator onBack={handleBack} />;
   if (activeCalc === 'bri') return <BRICalculator onBack={handleBack} />;
   if (activeCalc === 'ivf') return <IVFCalculator onBack={handleBack} />;
@@ -139,7 +136,7 @@ export default function CalculatorsMenu() {
             <Activity className="w-6 h-6 text-blue-600"/>
             العيادة الذكية <span className="text-[10px] md:text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">الحاسبات</span>
           </h1>
-          <p className="text-[10px] md:text-xs font-bold text-gray-500">أدوات طبية للمساعدة في التشخيص السريري</p>
+          <p className="text-[10px] md:text-xs font-bold text-gray-500">أدوات طبية منظمة حسب التخصص الوظيفي</p>
         </div>
         <div className="relative w-full md:w-80 z-10">
           <Search className="absolute right-3.5 top-3 text-gray-400 w-4 h-4"/>
@@ -153,8 +150,8 @@ export default function CalculatorsMenu() {
         </div>
       </div>
 
-      {/* Tabs Menu */}
-      <div className="flex overflow-x-auto gap-2 pb-3 mb-4 custom-scrollbar no-scrollbar scroll-smooth">
+      {/* Tabs */}
+      <div className="flex overflow-x-auto gap-2 pb-3 mb-4 no-scrollbar">
         {categories.map(cat => (
           <button
             key={cat.id}
@@ -162,7 +159,7 @@ export default function CalculatorsMenu() {
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border-2 ${
               activeCategory === cat.id
                 ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                : 'bg-white text-gray-600 border-gray-100 hover:bg-gray-50 hover:border-gray-200'
+                : 'bg-white text-gray-600 border-gray-100 hover:border-gray-200'
             }`}
           >
             {cat.label}
@@ -175,26 +172,14 @@ export default function CalculatorsMenu() {
         {filteredCalculators.map((calc, idx) => {
           const Icon = calc.icon;
           return (
-            <button 
-              key={idx} 
-              onClick={() => setActiveCalc(calc.id)} 
-              className="group h-full text-right outline-none w-full relative"
-            >
-              <div className={`
-                bg-white p-3 md:p-5 rounded-2xl border-2 transition-all duration-300 h-full flex flex-col
-                ${calc.isDoctorOnly 
-                  ? 'border-red-100 bg-red-50/10 shadow-red-50 hover:border-red-300' 
-                  : 'border-transparent shadow-sm hover:border-blue-100 hover:shadow-md'
-                }
-              `}>
-                
+            <button key={idx} onClick={() => setActiveCalc(calc.id)} className="group h-full text-right outline-none w-full relative">
+              <div className={`bg-white p-3 md:p-5 rounded-2xl border-2 transition-all duration-300 h-full flex flex-col ${calc.isDoctorOnly ? 'border-red-100 bg-red-50/10' : 'border-transparent shadow-sm hover:border-blue-100 hover:shadow-md'}`}>
                 <div className="mb-2">
                   <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center shrink-0 border mb-2 ${calc.color}`}>
                     <Icon className="w-4 h-4 md:w-5 md:h-5" />
                   </div>
-                  
                   <div className="flex flex-wrap items-center gap-1.5 min-h-[2.5rem]">
-                    <h3 className={`text-[11px] md:text-sm font-black transition-colors leading-tight ${calc.isDoctorOnly ? 'text-red-900' : 'text-gray-800 group-hover:text-blue-600'}`}>
+                    <h3 className={`text-[11px] md:text-sm font-black leading-tight ${calc.isDoctorOnly ? 'text-red-900' : 'text-gray-800 group-hover:text-blue-600'}`}>
                       {calc.title}
                     </h3>
                     {calc.isDoctorOnly && (
@@ -204,13 +189,11 @@ export default function CalculatorsMenu() {
                     )}
                   </div>
                 </div>
-                
                 <p className="text-[9px] md:text-xs font-bold text-gray-400 leading-relaxed mb-3 flex-1 line-clamp-2">
                   {calc.description}
                 </p>
-
                 <div className={`flex items-center justify-between text-[9px] md:text-[10px] font-black mt-auto pt-2.5 border-t border-gray-50 ${calc.isDoctorOnly ? 'text-red-600' : 'text-gray-400 group-hover:text-blue-600'}`}>
-                  <span>{calc.isDoctorOnly ? 'دخول الأطباء' : 'افتح الأداة'}</span>
+                  <span>{calc.isDoctorOnly ? 'للاستخدام الطبي' : 'افتح الأداة'}</span>
                   <ArrowRight className="w-3 h-3 mr-auto group-hover:-translate-x-1 transition-transform"/>
                 </div>
               </div>
