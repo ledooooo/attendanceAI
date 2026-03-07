@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Activity, Save, ArrowRight, Loader2 } from 'lucide-react';
-import { supabase } from '../../supabaseClient'; // تأكد من صحة مسار ملف supabase
+import { supabase } from '../supabaseClient'; // تأكد من صحة مسار ملف supabase
 import toast from 'react-hot-toast';
 
 interface Props {
