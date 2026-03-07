@@ -5,7 +5,8 @@ import {
   Scale, Baby, Calendar, Utensils, Brain, Heart, 
   Activity, Dna, Syringe, TrendingUp, AlertCircle, 
   Smile, Bone, Search, ArrowRight, Stethoscope, 
-  Thermometer, Droplets, ShieldAlert, FileText, Eye, Footprints
+  Thermometer, Droplets, ShieldAlert, FileText, Eye, Footprints,
+  LayoutGrid, List // ✅ تم إضافة أيقونات العرض
 } from 'lucide-react';
 
 // --- استيراد الحاسبات الحالية ---
@@ -36,7 +37,7 @@ import QuickPediatricDose from './QuickPediatricDose';
 import ScreeningCalculator from './ScreeningCalculator';
 import VaccinesSchedule from './VaccinesSchedule';
 
-// --- استيراد الحاسبات المعتمدة الجديدة (تأكد من وجود الملفات) ---
+// --- استيراد الحاسبات المعتمدة الجديدة ---
 import FRAXCalculator from './FRAXCalculator';
 import CAMBRACalculator from './CAMBRACalculator';
 import PeriodontalStaging from './PeriodontalStaging';
@@ -52,6 +53,7 @@ export default function CalculatorsMenu() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeCalc, setActiveCalc] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // ✅ حالة طريقة العرض الجديدة
 
   const categories = [
     { id: 'all', label: 'الكل' },
@@ -168,32 +170,52 @@ export default function CalculatorsMenu() {
     <div className="font-sans animate-in fade-in duration-500 pb-10 px-1 text-right" dir="rtl">
       {/* Header */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 mb-4 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
-        <div className="w-full text-right z-10">
+        <div className="w-full text-right z-10 flex-shrink-0">
           <h1 className="text-xl md:text-2xl font-black text-gray-800 flex items-center gap-2 mb-1">
             <Activity className="w-6 h-6 text-blue-600"/>
-            العيادة الذكية <span className="text-[10px] md:text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">الحاسبات المعتمدة</span>
+            العيادة الذكية <span className="text-[10px] md:text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-lg">الحاسبات</span>
           </h1>
-          <p className="text-[10px] md:text-xs font-bold text-gray-500">أدوات طبية منظمة حسب التخصص والمصادر العلمية</p>
+          <p className="text-[10px] md:text-xs font-bold text-gray-500">أدوات طبية منظمة حسب التخصص</p>
         </div>
-        <div className="relative w-full md:w-80 z-10">
-          <Search className="absolute right-3.5 top-3 text-gray-400 w-4 h-4"/>
-          <input 
-            type="text" 
-            placeholder="ابحث عن حاسبة..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pr-10 pl-4 py-2.5 bg-gray-50 border border-gray-100 focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all font-bold text-gray-700 text-xs md:text-sm"
-          />
+        
+        {/* ✅ شريط البحث + أزرار التبديل */}
+        <div className="flex items-center gap-2 relative w-full md:w-auto z-10 flex-1 md:flex-none">
+          <div className="relative flex-1 md:w-64 lg:w-80">
+            <Search className="absolute right-3.5 top-3 text-gray-400 w-4 h-4"/>
+            <input 
+              type="text" 
+              placeholder="ابحث عن حاسبة..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pr-10 pl-4 py-2.5 bg-gray-50 border border-gray-100 focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all font-bold text-gray-700 text-xs md:text-sm"
+            />
+          </div>
+          <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
+            <button 
+              onClick={() => setViewMode('grid')} 
+              className={`p-1.5 md:p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+              title="عرض شبكي"
+            >
+              <LayoutGrid size={16} />
+            </button>
+            <button 
+              onClick={() => setViewMode('list')} 
+              className={`p-1.5 md:p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+              title="عرض قائمة مضغوطة"
+            >
+              <List size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex overflow-x-auto gap-2 pb-3 mb-4 no-scrollbar">
+      <div className="flex overflow-x-auto gap-2 pb-3 mb-4 no-scrollbar scroll-smooth">
         {categories.map(cat => (
           <button
             key={cat.id}
             onClick={() => setActiveCategory(cat.id)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border-2 ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border-2 flex-shrink-0 ${
               activeCategory === cat.id
                 ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                 : 'bg-white text-gray-600 border-gray-100 hover:border-gray-200'
@@ -204,34 +226,58 @@ export default function CalculatorsMenu() {
         ))}
       </div>
 
-      {/* Grid Display */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      {/* ✅ Grid / List Display */}
+      <div className={viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3" : "flex flex-col gap-2"}>
         {filteredCalculators.map((calc, idx) => {
           const Icon = calc.icon;
           return (
-            <button key={idx} onClick={() => setActiveCalc(calc.id)} className="group h-full text-right outline-none w-full relative">
-              <div className={`bg-white p-3 md:p-5 rounded-2xl border-2 transition-all duration-300 h-full flex flex-col ${calc.isDoctorOnly ? 'border-red-100 bg-red-50/10' : 'border-transparent shadow-sm hover:border-blue-100 hover:shadow-md'}`}>
-                <div className="mb-2">
-                  <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center shrink-0 border mb-2 ${calc.color}`}>
-                    <Icon className="w-4 h-4 md:w-5 md:h-5" />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5 min-h-[2.5rem]">
-                    <h3 className={`text-[11px] md:text-sm font-black leading-tight ${calc.isDoctorOnly ? 'text-red-900' : 'text-gray-800 group-hover:text-blue-600'}`}>
-                      {calc.title}
-                    </h3>
-                    {calc.isDoctorOnly && (
-                      <span className="bg-red-600 text-white text-[7px] md:text-[9px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5">
-                        <ShieldAlert size={8} /> طبي ⚕️
-                      </span>
-                    )}
-                  </div>
+            <button 
+              key={idx} 
+              onClick={() => setActiveCalc(calc.id)} 
+              className="group text-right outline-none w-full relative"
+            >
+              <div className={`
+                bg-white rounded-2xl border-2 transition-all duration-300 w-full overflow-hidden
+                ${calc.isDoctorOnly ? 'border-red-100 bg-red-50/20 hover:border-red-300' : 'border-transparent shadow-sm hover:border-blue-100 hover:shadow-md'}
+                ${viewMode === 'grid' ? 'flex flex-col p-3 md:p-5 h-full' : 'flex flex-row items-center p-2.5 md:p-3 gap-3 h-auto'}
+              `}>
+                
+                {/* Icon */}
+                <div className={`
+                  shrink-0 flex items-center justify-center rounded-xl border ${calc.color}
+                  ${viewMode === 'grid' ? 'w-8 h-8 md:w-10 md:h-10 mb-2' : 'w-10 h-10 shadow-sm'}
+                `}>
+                  <Icon className={viewMode === 'grid' ? 'w-4 h-4 md:w-5 md:h-5' : 'w-5 h-5'} />
                 </div>
-                <p className="text-[9px] md:text-xs font-bold text-gray-400 leading-relaxed mb-3 flex-1 line-clamp-2">
-                  {calc.description}
-                </p>
-                <div className={`flex items-center justify-between text-[9px] md:text-[10px] font-black mt-auto pt-2.5 border-t border-gray-50 ${calc.isDoctorOnly ? 'text-red-600' : 'text-gray-400 group-hover:text-blue-600'}`}>
-                  <span>{calc.isDoctorOnly ? 'للممارس الصحي' : 'افتح الأداة'}</span>
-                  <ArrowRight className="w-3 h-3 mr-auto group-hover:-translate-x-1 transition-transform"/>
+                
+                {/* Content */}
+                <div className={`flex flex-1 min-w-0 ${viewMode === 'grid' ? 'flex-col h-full' : 'items-center justify-between gap-2'}`}>
+                  
+                  <div className={`flex flex-col min-w-0 ${viewMode === 'grid' ? '' : 'flex-1'}`}>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                      <h3 className={`text-[11px] md:text-sm font-black truncate leading-tight ${calc.isDoctorOnly ? 'text-red-900' : 'text-gray-800 group-hover:text-blue-600'}`}>
+                        {calc.title}
+                      </h3>
+                      {calc.isDoctorOnly && (
+                        <span className="bg-red-600 text-white text-[7px] md:text-[8px] px-1.5 py-0.5 rounded-md font-bold flex items-center gap-0.5 shrink-0">
+                          <ShieldAlert size={8} /> {viewMode === 'grid' ? 'طبي ⚕️' : 'طبي'}
+                        </span>
+                      )}
+                    </div>
+                    {/* Description - Normal in Grid, Truncated in List */}
+                    <p className={`text-[9px] md:text-xs font-bold text-gray-400 ${viewMode === 'grid' ? 'leading-relaxed mb-3 flex-1 line-clamp-2' : 'truncate'}`}>
+                      {calc.description}
+                    </p>
+                  </div>
+
+                  {/* Action Area / Arrow */}
+                  <div className={`flex items-center font-black ${calc.isDoctorOnly ? 'text-red-600' : 'text-gray-400 group-hover:text-blue-600'}
+                    ${viewMode === 'grid' ? 'text-[9px] md:text-[10px] mt-auto pt-2.5 border-t border-gray-50 justify-between w-full' : 'shrink-0 pl-1'}
+                  `}>
+                    {viewMode === 'grid' && <span>{calc.isDoctorOnly ? 'للممارس الصحي' : 'افتح الأداة'}</span>}
+                    <ArrowRight className={`w-4 h-4 transition-transform ${viewMode === 'grid' ? 'group-hover:-translate-x-1' : 'group-hover:-translate-x-1 opacity-50 group-hover:opacity-100'}`} />
+                  </div>
+
                 </div>
               </div>
             </button>
