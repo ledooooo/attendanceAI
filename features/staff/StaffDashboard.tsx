@@ -13,7 +13,7 @@ import {
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
     Settings, ShoppingBag, Trophy, Star, Check, CheckSquare, ShoppingCart, Gamepad2, Sparkles,
-    Smartphone, BellRing, DownloadCloud
+    Smartphone, BellRing, Calculator, DownloadCloud
 } from 'lucide-react';
 
 // استيراد المكونات الفرعية
@@ -44,6 +44,7 @@ import StaffArcade from './components/StaffArcade';
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
+import CalculatorsMenu from './components/calculators/CalculatorsMenu';
 
 interface Props {
   employee: Employee;
@@ -381,6 +382,7 @@ if (hash.startsWith('#room=')) {
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
     { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, isNew: true },
+    { id: 'calculators', label: 'حاسبات هامة', icon: Calculator, isNew: true },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     { id: 'store', label: 'متجر الجوائز', icon: ShoppingBag },
     ...(employee.role === 'head_of_dept' ? [{ id: 'dept-requests', label: 'إدارة القسم', icon: FileText }] : []),
@@ -648,6 +650,7 @@ if (hash.startsWith('#room=')) {
                     {activeTab === 'shift-requests' && <ShiftRequestsTab employee={employee} />}
                     {activeTab === 'dept-requests' && employee.role === 'head_of_dept' && <DepartmentRequests hod={employee} />}
                     {activeTab === 'quality-manager-tab' && employee.role === 'quality_manager' && <QualityDashboard />}
+                    {activeTab === 'calculators' && <CalculatorsMenu />}
                     {activeTab === 'stats' && <StaffStats attendance={attendanceData} evals={evaluations} requests={leaveRequests} month={selectedMonth} employee={employee} />}
                     {activeTab === 'new-request' && <StaffNewRequest employee={employee} refresh={fetchAllData} />}
                     {activeTab === 'ovr' && <StaffOVR employee={employee} />}
