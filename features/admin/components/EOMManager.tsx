@@ -91,21 +91,6 @@ export default function EOMManager() {
     const totalVotes = nomineesStats.reduce((sum: number, item: any) => sum + (item.vote_count || 0), 0);
 
     // ----------------------------------------------------------------
-    // 2. ⚡ التحديث اللحظي (Realtime Subscription)
-    // ----------------------------------------------------------------
-    useEffect(() => {
-        if (activeCycle?.id) {
-            const channel = supabase.channel('realtime_votes')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'eom_votes' }, () => {
-                    // عند حدوث أي تغيير، نجبر الكاش على التحديث
-                    queryClient.invalidateQueries({ queryKey: ['eom_stats', activeCycle.id] });
-                })
-                .subscribe();
-            return () => { supabase.removeChannel(channel); };
-        }
-    }, [activeCycle?.id, queryClient]);
-
-    // ----------------------------------------------------------------
     // 3. 🛠️ العمليات (Mutations)
     // ----------------------------------------------------------------
 
