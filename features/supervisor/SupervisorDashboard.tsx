@@ -211,7 +211,7 @@ export default function SupervisorDashboard() {
     useEffect(() => {
         if (!supervisor?.id) return;
         const channel = supabase.channel('supervisor_dashboard_updates')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${supervisor.id}` }, (payload) => {
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${supervisor.id}` }, (payload) => {
               fetchNotifications();
               queryClient.invalidateQueries({ queryKey: ['supervisor_badges'] });
               if (payload.eventType === 'INSERT') {
