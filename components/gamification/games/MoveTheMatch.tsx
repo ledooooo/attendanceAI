@@ -267,7 +267,7 @@ export default function MoveTheMatch({ onStart, onComplete }: Props) {
                         const ev = readEq(cur, puzzle.eq);
                         if (ev && isValid(ev)) {
                             setAnswered(true); setIsCorrect(true); setIsActive(false);
-                            const pts = Math.max(20, Math.floor(timeLeft * 0.85));
+                            const pts = Math.max(10, Math.floor(timeLeft * 0.85));
                             toast.success(`🔥 عبقري! +${pts} نقطة`); setTimeout(() => { onComplete(pts, true); }, 3000);
                         }
                         return cur;
