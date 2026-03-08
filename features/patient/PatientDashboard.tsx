@@ -7,15 +7,20 @@ import toast from 'react-hot-toast';
 import { 
   Menu, X, Bell, User, Home, FileText, Users, Activity, 
   Calendar, MessageSquare, Calculator, Stethoscope, BookOpen, 
-  Phone, Share2, Heart, ArrowLeft, Loader2, ChevronLeft
+  Phone, Share2, Heart, ArrowLeft, Loader2, ChevronLeft, Baby, HeartPulse
 } from 'lucide-react';
 
-// ✅ استيراد معالج الملف الطبي والمكونات الجديدة التي أنشأناها
+// استيراد معالج الملف الطبي والمكونات
 import MedicalProfileWizard from './components/MedicalProfileWizard';
 import PatientAppointments from './tabs/PatientAppointments';
 import ChronicLogs from './tabs/ChronicLogs';
 import PatientComplaints from './tabs/PatientComplaints';
 import PatientConsultations from './tabs/PatientConsultations';
+
+// ✅ استيراد الصفحات الجديدة
+import PatientProfile from './tabs/PatientProfile';
+import ChildGrowthLogs from './tabs/ChildGrowthLogs';
+import PregnancyLogs from './tabs/PregnancyLogs';
 
 // تعريف واجهة المقال
 interface Article {
@@ -33,23 +38,19 @@ interface Article {
 export default function PatientDashboard() {
   const { user, signOut } = useAuth();
   
-  // 🌟 حالات الفحص (هل لديه ملف طبي أم لا؟ وما هو الـ ID الخاص به؟)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
-  const [patientId, setPatientId] = useState<string | null>(null); // ✅ ضروري لتمريره للمكونات الفرعية
+  const [patientId, setPatientId] = useState<string | null>(null);
   const [checkingProfile, setCheckingProfile] = useState(true);
 
   const [activeTab, setActiveTab] = useState('home');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  // حالات المقالات
   const [articles, setArticles] = useState<Article[]>([]);
   const [loadingArticles, setLoadingArticles] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('الكل');
 
-  // تبويبات المقالات
   const articleCategories = ['الكل', 'تغذية', 'صحة الطفل', 'أمراض مزمنة', 'صحة المرأة', 'نصائح عامة'];
 
-  // 1. 🌟 فحص وجود الملف الطبي وجلب الـ patientId
   useEffect(() => {
     const checkPatientProfile = async () => {
       if (!user?.id) return;
@@ -66,7 +67,7 @@ export default function PatientDashboard() {
         
         if (data) {
           setHasProfile(true);
-          setPatientId(data.id); // ✅ حفظ الـ ID لاستخدامه في باقي التبويبات
+          setPatientId(data.id);
         } else {
           setHasProfile(false);
         }
@@ -80,7 +81,6 @@ export default function PatientDashboard() {
     checkPatientProfile();
   }, [user?.id]);
 
-  // 2. جلب المقالات من قاعدة البيانات
   useEffect(() => {
     if (!hasProfile) return;
 
@@ -118,31 +118,28 @@ export default function PatientDashboard() {
     } catch (err) {}
   };
 
-  // ✅ القائمة الجانبية (تحديث المعرفات لتطابق التبويبات)
+  // ✅ تحديث القائمة الجانبية لإضافة الأقسام الجديدة
   const menuItems = [
     { id: 'profile', label: 'البروفايل والملف الطبي', icon: User },
-    // { id: 'family', label: 'أسرتي', icon: Users },
-    { id: 'chronic_logs', label: 'سجل الأمراض المزمنة', icon: Activity },
     { id: 'appointments', label: 'مواعيدي', icon: Calendar },
-    { id: 'consultations', label: 'الاستشارات الإلكترونية', icon: MessageSquare }, // ✅ تبويب الاستشارات
+    { id: 'consultations', label: 'الاستشارات الإلكترونية', icon: MessageSquare },
+    { id: 'chronic_logs', label: 'سجل الأمراض المزمنة', icon: Activity },
+    { id: 'child_logs', label: 'سجل نمو الطفل', icon: Baby }, // ✅ جديد
+    { id: 'pregnancy_logs', label: 'سجل متابعة الحمل', icon: HeartPulse }, // ✅ جديد
     { id: 'complaints', label: 'الشكاوى والاقتراحات', icon: MessageSquare },
     { id: 'calculators', label: 'حاسبات طبية', icon: Calculator },
-    // { id: 'doctors', label: 'ساحة الأطباء', icon: Stethoscope },
     { id: 'policies', label: 'سياسات المركز', icon: BookOpen },
     { id: 'contact', label: 'تواصل معنا', icon: Phone },
   ];
 
-  // البار السفلي للموبايل
   const bottomNavItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
     { id: 'appointments', label: 'مواعيدي', icon: Calendar },
-    { id: 'consultations', label: 'استشارات', icon: MessageSquare }, // ✅ استبدلنا "سجلاتي" بالاستشارات كأولوية للمريض
+    { id: 'consultations', label: 'استشارات', icon: MessageSquare },
     { id: 'profile', label: 'حسابي', icon: User },
   ];
 
-  // ─── دالة لعرض المحتوى الديناميكي بناءً على التبويب النشط ───
   const renderActiveTabContent = () => {
-    // 1. الرئيسية (المقالات)
     if (activeTab === 'home') {
       return (
         <div className="max-w-4xl mx-auto p-4 md:p-6">
@@ -224,39 +221,30 @@ export default function PatientDashboard() {
       );
     }
 
-    // 2. المواعيد
-    if (activeTab === 'appointments' && patientId) {
-      return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientAppointments patientId={patientId} /></div>;
-    }
+    // ✅ استدعاء المكونات الفرعية بناءً على التبويب
+    if (!patientId) return null;
 
-    // 3. الأمراض المزمنة
-    if (activeTab === 'chronic_logs' && patientId) {
-      return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientId} /></div>;
+    switch (activeTab) {
+      case 'profile': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientProfile patientId={patientId} /></div>;
+      case 'appointments': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientAppointments patientId={patientId} /></div>;
+      case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientId} /></div>;
+      case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientId} /></div>;
+      case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientId} /></div>;
+      case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientId} /></div>;
+      case 'consultations': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientConsultations patientId={patientId} /></div>;
+      default:
+        return (
+          <div className="h-full flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-4">
+              <Activity className="w-10 h-10 text-blue-400" />
+            </div>
+            <h2 className="text-xl font-black text-gray-800 mb-2">جاري تجهيز قسم {menuItems.find(m => m.id === activeTab)?.label}</h2>
+            <p className="text-sm font-bold text-gray-500">هذه الصفحة قيد التطوير وسيتم إضافتها قريباً.</p>
+          </div>
+        );
     }
-
-    // 4. الشكاوى والاقتراحات
-    if (activeTab === 'complaints' && patientId) {
-      return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientId} /></div>;
-    }
-
-    // 5. الاستشارات الطبية
-    if (activeTab === 'consultations' && patientId) {
-      return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientConsultations patientId={patientId} /></div>;
-    }
-
-    // 6. إذا كان القسم قيد التطوير
-    return (
-      <div className="h-full flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
-        <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-4">
-          <Activity className="w-10 h-10 text-blue-400" />
-        </div>
-        <h2 className="text-xl font-black text-gray-800 mb-2">جاري تجهيز قسم {menuItems.find(m => m.id === activeTab)?.label}</h2>
-        <p className="text-sm font-bold text-gray-500">هذه الصفحة قيد التطوير وسيتم إضافتها قريباً.</p>
-      </div>
-    );
   };
 
-  // ─── شاشة التحميل الأولية ───
   if (checkingProfile) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-gray-50">
@@ -266,12 +254,10 @@ export default function PatientDashboard() {
     );
   }
 
-  // ─── التوجيه الذكي للمعالج (Wizard) ───
   if (hasProfile === false) {
-    return <MedicalProfileWizard onComplete={() => window.location.reload()} />; // نعيد تحميل الصفحة للتأكد من جلب الـ patientId
+    return <MedicalProfileWizard onComplete={() => window.location.reload()} />;
   }
 
-  // ─── واجهة المريض الرئيسية ───
   return (
     <div className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
@@ -329,7 +315,6 @@ export default function PatientDashboard() {
         </header>
 
         <main className="flex-1 overflow-y-auto bg-gray-50/50 pb-20 custom-scrollbar">
-          {/* ✅ استدعاء الدالة المسؤولة عن عرض المحتوى الديناميكي */}
           {renderActiveTabContent()}
         </main>
 
