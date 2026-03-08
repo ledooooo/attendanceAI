@@ -8,23 +8,25 @@ import StaffDashboard from './features/staff/StaffDashboard';
 // ✅ 1. استيراد واجهة المشرف الجديدة
 import SupervisorDashboard from './features/supervisor/SupervisorDashboard'; 
 
+// 🌟 2. استيراد واجهة المريض (الجديدة)
+import PatientDashboard from './features/patient/PatientDashboard'; 
+
 import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications';
 import { Toaster } from 'react-hot-toast';
 
-
-// 2. استيراد مكتبات React Query والـ Persister
-import { QueryClient, useQuery } from '@tanstack/react-query'; // ✅ تأكد من إضافة useQuery هنا
+// استيراد مكتبات React Query والـ Persister
+import { QueryClient, useQuery } from '@tanstack/react-query'; 
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
-// 3. استيراد المكونات الإضافية
+// استيراد المكونات الإضافية
 import OfflineBanner from './components/ui/OfflineBanner';
 import OnlineTracker from './components/OnlineTracker';
 import MandatoryTrainingGuard from './components/MandatoryTrainingGuard';
 
-// 4. إعداد عميل التخزين والـ Persister
+// إعداد عميل التخزين والـ Persister
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -44,7 +46,7 @@ const persister = createSyncStoragePersister({
 const AppContent = () => {
   const { user, employeeProfile, loading, isAdmin } = useAuth();
 
-  // ✅ استعلام للتحقق مما إذا كان المستخدم يمتلك حساب مشرف (يُنفذ فقط إذا لم يكن موظفاً)
+  // استعلام للتحقق مما إذا كان المستخدم يمتلك حساب مشرف (يُنفذ فقط إذا لم يكن موظفاً)
   const { data: supervisorData, isLoading: loadingSup } = useQuery({
       queryKey: ['check_supervisor_status', user?.id],
       queryFn: async () => {
@@ -92,7 +94,6 @@ const AppContent = () => {
     return () => clearTimeout(timer);
   }, [loading]);
 
-
   // شاشة التحميل (أثناء جلب بيانات الموظف أو المشرف)
   if (loading || loadingSup) {
     return (
@@ -110,7 +111,7 @@ const AppContent = () => {
   if (!user) return <LoginPage />;
 
   // ==========================================
-  // ✅ مسار المشرفين (Supervisors Routing)
+  // مسار المشرفين (Supervisors Routing)
   // ==========================================
   if (supervisorData) {
       if (supervisorData.status === 'pending') {
@@ -148,15 +149,15 @@ const AppContent = () => {
   }
 
   // ==========================================
-  // مسار الرفض العام (إذا لم يكن موظفاً ولا مشرفاً)
+  // 🌟 مسار المرضى / المنتفعين (التحويلة الجديدة الذكية)
+  // إذا لم يكن يملك حساب موظف (employeeProfile) ولا حساب مشرف، إذن هو منتفع!
   // ==========================================
   if (!employeeProfile) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center text-center p-6 bg-white" dir="rtl">
-        <h2 className="text-xl font-bold text-gray-800 mb-2">حساب غير مصرح به</h2>
-        <p className="text-gray-500 mb-6 text-sm">إيميلك ({user.email}) غير مرتبط بملف موظف أو حساب مشرف في النظام.</p>
-        <button onClick={() => supabase.auth.signOut()} className="bg-gray-800 text-white px-6 py-2 rounded-xl font-bold text-sm">تسجيل خروج</button>
-      </div>
+      <>
+        <OfflineBanner />
+        <PatientDashboard />
+      </>
     );
   }
 
