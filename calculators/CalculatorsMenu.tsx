@@ -32,7 +32,6 @@ import PHQ9Calculator from './PHQ9Calculator';
 import PainScaleCalculator from './PainScaleCalculator';
 import PediatricDoseCalculator from './PediatricDoseCalculator';
 import PregnancyCalculator from './PregnancyCalculator';
-import PregnancyTracker from './PregnancyTracker';
 import QuickPediatricDose from './QuickPediatricDose';
 import ScreeningCalculator from './ScreeningCalculator';
 import VaccinesSchedule from './VaccinesSchedule';
@@ -82,7 +81,6 @@ export default function CalculatorsMenu() {
     // --- نساء وتوليد ---
     { id: 'epds', category: 'obgyn', title: 'اكتئاب ما بعد الولادة', description: 'استبيان EPDS العالمي للكشف عن الاكتئاب.', icon: Smile, color: 'bg-purple-50 text-purple-600' },
     { id: 'pregnancy-calc', category: 'obgyn', title: 'حاسبة الحمل', description: 'موعد الولادة وعمر الجنين بالأسابيع.', icon: Baby, color: 'bg-pink-50 text-pink-600' },
-    { id: 'pregnancy-track', category: 'obgyn', title: 'تتبع الحمل (EDD)', description: 'متابعة مراحل تطور الجنين أسبوعياً.', icon: Calendar, color: 'bg-pink-50 text-pink-700' },
     { id: 'ovulation', category: 'obgyn', title: 'حاسبة التبويض', description: 'تحديد أيام التبويض وأفضل أوقات الخصوبة.', icon: Calendar, color: 'bg-purple-50 text-purple-600' },
     { id: 'chadsvasc', category: 'obgyn', title: 'السكتة الدماغية', description: 'مقياس CHA2DS2-VASc للسيولة.', icon: Heart, color: 'bg-red-50 text-red-600', isDoctorOnly: true },
 
@@ -133,7 +131,6 @@ export default function CalculatorsMenu() {
   if (activeCalc === 'bri') return <BRICalculator onBack={handleBack} />;
   if (activeCalc === 'ivf') return <IVFCalculator onBack={handleBack} />;
   if (activeCalc === 'pregnancy-calc') return <PregnancyCalculator onBack={handleBack} />;
-  if (activeCalc === 'pregnancy-track') return <PregnancyTracker onBack={handleBack} />;
   if (activeCalc === 'pediatric-dose') return <PediatricDoseCalculator onBack={handleBack} />;
   if (activeCalc === 'pediatric-quick') return <QuickPediatricDose onBack={handleBack} />;
   if (activeCalc === 'gfr') return <GFRCalculator onBack={handleBack} />;
