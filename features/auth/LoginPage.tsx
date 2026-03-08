@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
-import { Lock, Mail, Loader2, UserPlus, LogIn, ArrowRight, UserCheck, Phone, Building2, Briefcase, Image as ImageIcon } from 'lucide-react';
+import { Lock, Mail, Loader2, UserPlus, LogIn, ArrowRight, UserCheck, Phone, Building2, Briefcase, Image as ImageIcon, HeartPulse } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 // قائمة افتارات يختار منها المشرف
 const AVATARS = [
@@ -25,264 +26,288 @@ export default function LoginPage() {
   const [supRole, setSupRole] = useState('');
   const [supAvatar, setSupAvatar] = useState(AVATARS[0]);
 
+  // بيانات الموظف الإضافية (لشاشة تسجيل الموظف)
+  const [empName, setEmpName] = useState('');
+  const [empPhone, setEmpPhone] = useState('');
+  const [empSpecialty, setEmpSpecialty] = useState('');
+  const [empNationalId, setEmpNationalId] = useState('');
+  const [empShiftType, setEmpShiftType] = useState('morning');
+  const [empAvatar, setEmpAvatar] = useState(AVATARS[0]);
+
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false); // حالة تحميل الدخول بجوجل
   const [message, setMessage] = useState<{ text: string, type: 'error' | 'success' } | null>(null);
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
 
     try {
-      // ------------------------------------------------
-      // 1. حالة استعادة كلمة المرور
-      // ------------------------------------------------
-      if (mode === 'recovery') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: window.location.origin,
+      if (mode === 'signin') {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
         });
         if (error) throw error;
-        setMessage({ text: 'تم إرسال رابط الاستعادة إلى بريدك الإلكتروني، تفقد الرسائل (أو الـ Spam) 📧', type: 'success' });
-      } 
-      // ------------------------------------------------
-      // 2. حالة تفعيل حساب موظف (موجود مسبقاً في HR)
-      // ------------------------------------------------
-      else if (mode === 'signup_emp') {
-        const { data: exists, error: checkError } = await supabase.rpc('check_is_employee', { 
-          email_input: email.trim() 
-        });
-        if (checkError) throw new Error('خطأ في الاتصال بقاعدة البيانات.');
-        if (!exists) throw new Error('هذا البريد غير مسجل لدى الموارد البشرية كـ "موظف".');
-
-        const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+        // الدخول يوجه تلقائيا عبر App.tsx
+      } else if (mode === 'recovery') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email);
         if (error) throw error;
-
-        setMessage({ text: 'تم تفعيل الحساب! جاري الدخول...', type: 'success' });
-        await signIn(email, password);
-      } 
-      // ------------------------------------------------
-      // 3. حالة إنشاء حساب "مشرف" جديد
-      // ------------------------------------------------
-      else if (mode === 'signup_supervisor') {
-        // تحقق من رقم التليفون
-        if (supPhone.length !== 11 || !supPhone.startsWith('01')) {
-            throw new Error('رقم الموبايل يجب أن يتكون من 11 رقم ويبدأ بـ 01');
-        }
-
-        // أ. إنشاء الحساب في نظام المصادقة
+        setMessage({ text: 'تم إرسال رابط استعادة كلمة المرور لبريدك الإلكتروني.', type: 'success' });
+      } else if (mode === 'signup_supervisor') {
+        // 1. إنشاء حساب المصادقة للمشرف
         const { data: authData, error: authError } = await supabase.auth.signUp({
-            email: email.trim(),
-            password,
+          email,
+          password,
         });
         if (authError) throw authError;
 
         if (authData.user) {
-            // ب. إدخال بيانات المشرف في جدول المشرفين وحالته "معلق"
-            const { error: dbError } = await supabase.from('supervisors').insert({
-                id: authData.user.id,
-                name: supName,
-                email: email.trim(),
-                phone: supPhone,
-                organization: supOrg,
-                role_title: supRole,
-                avatar_url: supAvatar,
-                status: 'pending'
-            });
-
-            if (dbError) throw dbError;
-
-            // تنبيه الإدارة عبر جدول الإشعارات (اختياري)
-            await supabase.from('notifications').insert({
-                type: 'new_supervisor',
-                title: 'طلب حساب مشرف جديد',
-                message: `طلب المشرف ${supName} من جهة ${supOrg} الانضمام للنظام.`,
-                to_user: 'admin' // أو حسب هيكلة الإشعارات لديك
-            });
-
-            setMessage({ text: 'تم تسجيل طلبك بنجاح! يرجى الانتظار لحين موافقة الإدارة لتتمكن من الدخول.', type: 'success' });
-            // تفريغ الحقول وإعادته لشاشة الدخول
-            setMode('signin');
-            setEmail('');
-            setPassword('');
+          // 2. إدخال بيانات المشرف في جدول supervisors
+          const { error: dbError } = await supabase.from('supervisors').insert({
+            id: authData.user.id,
+            name: supName,
+            email: email,
+            phone: supPhone,
+            organization: supOrg,
+            role_title: supRole,
+            avatar_url: supAvatar,
+            status: 'active',
+            total_points: 0
+          });
+          
+          if (dbError) throw dbError;
+          
+          setMessage({ text: 'تم إنشاء حساب المشرف بنجاح! جاري تسجيل الدخول...', type: 'success' });
+          // إعادة توجيه بعد ثوانٍ أو تسجيل الدخول فوراً
+          setTimeout(() => {
+              window.location.reload();
+          }, 2000);
         }
+      } else if (mode === 'signup_emp') {
+          // تسجيل الموظف العادي
+          const { data: authData, error: authError } = await supabase.auth.signUp({
+            email,
+            password,
+          });
+          if (authError) throw authError;
+  
+          if (authData.user) {
+            const { error: dbError } = await supabase.from('employees').insert({
+              id: authData.user.id,
+              employee_id: empNationalId || authData.user.id.substring(0,8), // كمعرف مؤقت
+              name: empName,
+              email: email,
+              phone: empPhone,
+              specialty: empSpecialty,
+              shift_type: empShiftType,
+              photo_url: empAvatar,
+              role: 'staff',
+              status: 'active',
+              total_points: 0
+            });
+            
+            if (dbError) throw dbError;
+            
+            setMessage({ text: 'تم إنشاء حساب الموظف بنجاح! جاري تسجيل الدخول...', type: 'success' });
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+          }
       }
-      // ------------------------------------------------
-      // 4. حالة تسجيل الدخول العادي
-      // ------------------------------------------------
-      else {
-        await signIn(email, password);
-      }
-
-    } catch (err: any) {
-      let msg = err.message;
-      if (msg.includes('Invalid login credentials')) msg = 'بيانات الدخول غير صحيحة.';
-      if (msg.includes('User already registered')) msg = 'الحساب مفعل بالفعل، قم بتسجيل الدخول.';
-      if (msg.includes('Password should be at least')) msg = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل.';
-      
-      setMessage({ text: msg, type: 'error' });
+    } catch (error: any) {
+      setMessage({ text: error.message || 'حدث خطأ غير متوقع', type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
+  // 🌟 دالة تسجيل دخول المرضى بحساب جوجل
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin }
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      toast.error(error.message || 'حدث خطأ أثناء الاتصال بجوجل');
+      setGoogleLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans" dir="rtl">
-      <div className={`bg-white p-8 rounded-[30px] shadow-xl w-full ${mode === 'signup_supervisor' ? 'max-w-2xl' : 'max-w-md'} border border-gray-100 transition-all duration-500`}>
-        
-        {/* Header Section */}
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-             <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center border-2 border-emerald-100">
-                <span className="text-4xl">🏥</span>
-             </div>
-          </div>
-          <h1 className="text-2xl font-black text-gray-800">مركز غرب المطار</h1>
-          <p className="text-gray-400 font-bold mt-2 text-sm">
-            {mode === 'recovery' ? 'استعادة كلمة المرور' : 
-             mode === 'signup_emp' ? 'تفعيل حساب موظف' : 
-             mode === 'signup_supervisor' ? 'طلب انضمام مشرف إداري' : 'تسجيل الدخول للمتابعة'}
-          </p>
-        </div>
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 font-sans relative overflow-hidden text-right" dir="rtl">
+        {/* Animated Background Blobs */}
+        <div className="absolute top-[-10%] right-[-5%] w-96 h-96 bg-blue-100 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob"></div>
+        <div className="absolute bottom-[-10%] left-[-5%] w-96 h-96 bg-emerald-100 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000"></div>
+        <div className="absolute top-[40%] left-[20%] w-72 h-72 bg-purple-100 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-4000"></div>
 
-        {/* Tabs Section */}
-        {mode !== 'recovery' && mode !== 'signup_supervisor' && (
-            <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
-                <button 
-                    type="button"
-                    onClick={() => { setMode('signin'); setMessage(null); }} 
-                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${mode === 'signin' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                    <LogIn className="w-4 h-4"/> دخول
-                </button>
-                <button 
-                    type="button"
-                    onClick={() => { setMode('signup_emp'); setMessage(null); }} 
-                    className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${mode === 'signup_emp' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                    <UserPlus className="w-4 h-4"/> موظف جديد
-                </button>
-            </div>
-        )}
-
-        <form onSubmit={handleAuth} className="space-y-5">
+        <div className="w-full max-w-md bg-white/80 backdrop-blur-xl rounded-[2.5rem] p-8 shadow-2xl relative z-10 border border-white/40">
           
-          <div className={mode === 'signup_supervisor' ? 'grid grid-cols-1 md:grid-cols-2 gap-5' : 'space-y-5'}>
-              
-              {/* --- حقول المشرف الإضافية --- */}
-              {mode === 'signup_supervisor' && (
-                  <>
-                    <div className="md:col-span-2 mb-2">
-                        <label className="block text-xs font-bold text-gray-500 mb-2">اختر صورتك الرمزية (الأفاتار)</label>
-                        <div className="flex gap-2 justify-center bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                            {AVATARS.map(av => (
-                                <button key={av} type="button" onClick={() => setSupAvatar(av)} className={`w-10 h-10 text-2xl rounded-full transition-transform ${supAvatar === av ? 'scale-125 bg-emerald-100 ring-2 ring-emerald-500' : 'hover:scale-110 grayscale-[50%]'}`}>
-                                    {av}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-3xl mx-auto mb-6 flex items-center justify-center shadow-xl shadow-blue-500/30 rotate-3 hover:rotate-0 transition-transform duration-300">
+                <img src="/pwa-192x192.png" alt="Logo" className="w-14 h-14 rounded-2xl" />
+            </div>
+            <h1 className="text-3xl font-black text-gray-800 tracking-tight">
+                {mode === 'signin' ? 'أهلاً بك' : 
+                 mode === 'recovery' ? 'استعادة الحساب' :
+                 mode === 'signup_supervisor' ? 'حساب مشرف جديد' :
+                 'حساب موظف جديد'}
+            </h1>
+            <p className="text-sm font-bold text-gray-400 mt-2">
+                {mode === 'signin' ? 'سجل دخولك لمتابعة عملك' : 
+                 mode === 'recovery' ? 'أدخل بريدك الإلكتروني لاستعادة كلمة المرور' :
+                 mode === 'signup_supervisor' ? 'أدخل بياناتك لإنشاء حساب إداري جديد' :
+                 'أدخل بياناتك للانضمام لفريق العمل'}
+            </p>
+          </div>
 
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 mb-1.5">الاسم بالكامل</label>
-                        <div className="relative">
-                            <UserCheck className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input type="text" required value={supName} onChange={e => setSupName(e.target.value)} className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-gray-700" placeholder="مثال: أحمد محمود"/>
-                        </div>
-                    </div>
+          {/* Alert Message */}
+          {message && (
+            <div className={`p-4 rounded-2xl mb-6 text-sm font-bold flex items-center gap-3 animate-in slide-in-from-top-2 ${
+              message.type === 'error' ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${message.type === 'error' ? 'bg-red-500' : 'bg-emerald-500'} animate-pulse`}></div>
+              {message.text}
+            </div>
+          )}
 
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 mb-1.5">رقم الموبايل (11 رقم)</label>
-                        <div className="relative">
-                            <Phone className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input type="tel" required minLength={11} maxLength={11} value={supPhone} onChange={e => setSupPhone(e.target.value)} className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-gray-700 text-left" placeholder="01X XXXX XXXX" dir="ltr"/>
-                        </div>
-                    </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            
+            {/* Common Fields: Email */}
+            <div>
+              <div className="relative group">
+                <Mail className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                <input 
+                  type="email" 
+                  required 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3.5 pr-12 pl-4 text-sm font-bold text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all placeholder:text-gray-300"
+                  placeholder="البريد الإلكتروني"
+                  dir="ltr"
+                />
+              </div>
+            </div>
 
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 mb-1.5">الجهة التابع لها</label>
-                        <div className="relative">
-                            <Building2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input type="text" required value={supOrg} onChange={e => setSupOrg(e.target.value)} className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-gray-700" placeholder="مثال: الإدارة الصحية بشمال الجيزة"/>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 mb-1.5">الصفة الوظيفية (الإشرافية)</label>
-                        <div className="relative">
-                            <Briefcase className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input type="text" required value={supRole} onChange={e => setSupRole(e.target.value)} className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-gray-700" placeholder="مثال: مفتش مالي وإداري"/>
-                        </div>
-                    </div>
-                  </>
-              )}
-
-              {/* Email Field */}
+            {/* Password Field (Not needed for recovery) */}
+            {mode !== 'recovery' && (
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1.5">البريد الإلكتروني</label>
-                <div className="relative">
-                  <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <div className="relative group">
+                  <Lock className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
                   <input 
-                    type="email" required 
-                    value={email} onChange={e => setEmail(e.target.value)}
-                    className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-gray-700 text-left"
-                    placeholder="email@example.com"
+                    type="password" 
+                    required 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3.5 pr-12 pl-4 text-sm font-bold text-gray-800 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all placeholder:text-gray-300"
+                    placeholder="كلمة المرور"
                     dir="ltr"
                   />
                 </div>
               </div>
-
-              {/* Password Field (Hidden in Recovery Mode) */}
-              {mode !== 'recovery' && (
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                      <label className="block text-xs font-bold text-gray-500">كلمة المرور</label>
-                      {mode === 'signin' && (
-                          <button 
-                            type="button"
-                            onClick={() => { setMode('recovery'); setMessage(null); }}
-                            className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors"
-                          >
-                            نسيت كلمة المرور؟
-                          </button>
-                      )}
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input 
-                      type="password" required 
-                      value={password} onChange={e => setPassword(e.target.value)}
-                      className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-left"
-                      placeholder={mode !== 'signin' ? "أنشئ كلمة مرور قوية" : "••••••••"}
-                      minLength={6}
-                      dir="ltr"
-                    />
-                  </div>
-                </div>
-              )}
-          </div>
-
-          {/* Error/Success Messages */}
-          {message && (
-            <div className={`p-3 rounded-xl text-sm font-bold text-center ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                {message.text}
-            </div>
-          )}
-
-          {/* Submit Button */}
-          <button 
-            type="submit" disabled={loading}
-            className="w-full bg-emerald-600 text-white py-4 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all flex justify-center items-center gap-2 active:scale-95 disabled:bg-gray-400"
-          >
-            {loading ? <Loader2 className="animate-spin" /> : (
-                mode === 'recovery' ? 'إرسال رابط الاستعادة' : 
-                mode === 'signup_emp' ? 'تفعيل حساب الموظف' : 
-                mode === 'signup_supervisor' ? 'إرسال طلب الانضمام للإدارة' : 'دخول للنظام'
             )}
-          </button>
+
+            {/* Supervisor Specific Fields */}
+            {mode === 'signup_supervisor' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="relative group">
+                        <UserCheck className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500" />
+                        <input type="text" required value={supName} onChange={e => setSupName(e.target.value)} placeholder="الاسم رباعي" className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pr-12 pl-4 text-sm font-bold focus:border-blue-500 outline-none" />
+                    </div>
+                    <div className="relative group">
+                        <Phone className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500" />
+                        <input type="tel" required value={supPhone} onChange={e => setSupPhone(e.target.value)} placeholder="رقم الهاتف" className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pr-12 pl-4 text-sm font-bold focus:border-blue-500 outline-none" dir="ltr" />
+                    </div>
+                    <div className="relative group">
+                        <Building2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500" />
+                        <input type="text" value={supOrg} onChange={e => setSupOrg(e.target.value)} placeholder="اسم المركز / المنظمة" className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pr-12 pl-4 text-sm font-bold focus:border-blue-500 outline-none" />
+                    </div>
+                    <div className="relative group">
+                        <Briefcase className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500" />
+                        <input type="text" required value={supRole} onChange={e => setSupRole(e.target.value)} placeholder="المسمى الوظيفي (مثال: مدير المركز)" className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pr-12 pl-4 text-sm font-bold focus:border-blue-500 outline-none" />
+                    </div>
+                    
+                    <div className="pt-2">
+                        <label className="block text-xs font-bold text-gray-500 mb-2 flex items-center gap-2"><ImageIcon className="w-4 h-4"/> اختر صورة الملف الشخصي</label>
+                        <div className="flex gap-2 overflow-x-auto py-2 no-scrollbar">
+                            {AVATARS.map(avatar => (
+                                <button type="button" key={avatar} onClick={() => setSupAvatar(avatar)} className={`w-12 h-12 rounded-xl text-2xl shrink-0 flex items-center justify-center transition-all ${supAvatar === avatar ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-md' : 'bg-gray-50 border border-transparent hover:bg-gray-100 grayscale hover:grayscale-0'}`}>
+                                    {avatar}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Employee Specific Fields */}
+            {mode === 'signup_emp' && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="relative group">
+                        <UserCheck className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500" />
+                        <input type="text" required value={empName} onChange={e => setEmpName(e.target.value)} placeholder="الاسم رباعي" className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pr-12 pl-4 text-sm font-bold focus:border-blue-500 outline-none" />
+                    </div>
+                    <div className="relative group">
+                        <Briefcase className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500" />
+                        <input type="text" required value={empNationalId} onChange={e => setEmpNationalId(e.target.value)} placeholder="الرقم القومي / كود الموظف" className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pr-12 pl-4 text-sm font-bold focus:border-blue-500 outline-none" dir="ltr" />
+                    </div>
+                    <div className="relative group">
+                        <Phone className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500" />
+                        <input type="tel" required value={empPhone} onChange={e => setEmpPhone(e.target.value)} placeholder="رقم الهاتف" className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pr-12 pl-4 text-sm font-bold focus:border-blue-500 outline-none" dir="ltr" />
+                    </div>
+                    <div className="relative group">
+                        <Building2 className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500" />
+                        <input type="text" required value={empSpecialty} onChange={e => setEmpSpecialty(e.target.value)} placeholder="التخصص / القسم" className="w-full bg-white border-2 border-gray-100 rounded-2xl py-3 pr-12 pl-4 text-sm font-bold focus:border-blue-500 outline-none" />
+                    </div>
+                    
+                    <div className="pt-2">
+                        <label className="block text-xs font-bold text-gray-500 mb-2 flex items-center gap-2"><ImageIcon className="w-4 h-4"/> اختر صورة الملف الشخصي</label>
+                        <div className="flex gap-2 overflow-x-auto py-2 no-scrollbar">
+                            {AVATARS.map(avatar => (
+                                <button type="button" key={avatar} onClick={() => setEmpAvatar(avatar)} className={`w-12 h-12 rounded-xl text-2xl shrink-0 flex items-center justify-center transition-all ${empAvatar === avatar ? 'bg-blue-100 border-2 border-blue-500 scale-110 shadow-md' : 'bg-gray-50 border border-transparent hover:bg-gray-100 grayscale hover:grayscale-0'}`}>
+                                    {avatar}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Forgot Password Link */}
+            {mode === 'signin' && (
+              <div className="flex justify-start">
+                <button 
+                  type="button" 
+                  onClick={() => { setMode('recovery'); setMessage(null); }}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  نسيت كلمة المرور؟
+                </button>
+              </div>
+            )}
+
+            {/* Main Action Button */}
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl py-4 text-sm font-black shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 
+               mode === 'signin' ? <><LogIn className="w-5 h-5" /> تسجيل الدخول</> : 
+               mode === 'recovery' ? 'إرسال الرابط' : 
+               'إنشاء الحساب'}
+            </button>
+
+          </form>
 
           {/* Back/Toggle Buttons */}
           <div className="flex flex-col gap-2 mt-4">
-              {(mode === 'recovery' || mode === 'signup_supervisor') && (
+              {(mode !== 'signin') && (
                   <button 
                     type="button"
                     onClick={() => { setMode('signin'); setMessage(null); }}
@@ -292,23 +317,56 @@ export default function LoginPage() {
                   </button>
               )}
 
-              {/* زر إنشاء حساب مشرف جديد يظهر فقط في شاشة الدخول الرئيسية */}
+              {/* أزرار إنشاء حساب تظهر فقط في شاشة الدخول الرئيسية */}
               {mode === 'signin' && (
-                  <div className="mt-4 pt-4 border-t border-gray-100 text-center">
-                      <p className="text-xs text-gray-400 mb-2 font-bold">لست موظفاً بالمركز؟</p>
+                  <div className="mt-4 pt-4 border-t border-gray-100 text-center flex gap-2">
+                      <button 
+                          type="button"
+                          onClick={() => { setMode('signup_emp'); setMessage(null); setEmail(''); setPassword(''); }}
+                          className="flex-1 text-xs font-black text-gray-600 hover:text-gray-800 transition-colors bg-gray-100 hover:bg-gray-200 px-2 py-3 rounded-xl"
+                      >
+                          تسجيل موظف جديد
+                      </button>
                       <button 
                           type="button"
                           onClick={() => { setMode('signup_supervisor'); setMessage(null); setEmail(''); setPassword(''); }}
-                          className="text-sm font-black text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 px-4 py-2 rounded-xl"
+                          className="flex-1 text-xs font-black text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 hover:bg-indigo-100 px-2 py-3 rounded-xl"
                       >
-                          تسجيل حساب "مشرف إداري"
+                          تسجيل مشرف إداري
                       </button>
                   </div>
               )}
           </div>
 
-        </form>
-      </div>
+          {/* 🌟 القسم الجديد: دخول المرضى والمنتفعين */}
+          {mode === 'signin' && (
+              <div className="mt-6 relative">
+                  <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                      <span className="px-4 bg-white text-gray-400 font-bold">بوابة المنتفعين والمرضى</span>
+                  </div>
+                  
+                  <button 
+                      onClick={handleGoogleLogin} 
+                      disabled={googleLoading}
+                      className="mt-6 w-full bg-white border-2 border-gray-100 text-gray-700 rounded-2xl py-3.5 text-sm font-black shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                  >
+                      {googleLoading ? <Loader2 className="w-5 h-5 animate-spin text-red-500" /> : (
+                          <>
+                              <HeartPulse className="w-5 h-5 text-red-500" />
+                              دخول المنتفعين بحساب Google
+                          </>
+                      )}
+                  </button>
+                  <p className="text-[10px] text-center text-gray-400 mt-3 font-bold">
+                      الدخول مخصص للمرضى المسجلين لحجز المواعيد والاستشارات الطبية
+                  </p>
+              </div>
+          )}
+
+        </div>
     </div>
   );
 }
