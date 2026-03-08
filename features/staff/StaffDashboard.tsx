@@ -13,7 +13,7 @@ import {
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
     Settings, ShoppingBag, Trophy, Star, Check, CheckSquare, ShoppingCart, Gamepad2, Sparkles,
-    Smartphone, BellRing, Calculator, DownloadCloud
+    Smartphone, BellRing, Calculator, DownloadCloud, Stethoscope // ✅ تمت إضافة Stethoscope
 } from 'lucide-react';
 
 
@@ -41,6 +41,9 @@ import RewardsStore from './components/RewardsStore';
 import StaffTrainingCenter from './components/StaffTrainingCenter';
 import ThemeOverlay from './components/ThemeOverlay';
 import StaffArcade from './components/StaffArcade';
+
+// ✅ استيراد تبويب عيادتي الجديد للأطباء
+import DoctorClinic from './components/DoctorClinic';
 
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
@@ -73,6 +76,9 @@ export default function StaffDashboard({ employee }: Props) {
 
   const hasAdminAccess = employee.role === 'admin' || (employee.permissions && employee.permissions.length > 0);
   
+  // ✅ دالة بسيطة للتحقق مما إذا كان الموظف طبيباً (لعرض تبويب عيادتي)
+  const isDoctor = ['طب الأسرة', 'الأطفال', 'النساء والتوليد', 'الباطنة', 'الأسنان'].includes(employee.specialty || '');
+
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
@@ -87,7 +93,8 @@ export default function StaffDashboard({ employee }: Props) {
   const [notificationStatus, setNotificationStatus] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'default'
   );
-const [showNotifPrompt, setShowNotifPrompt] = useState(true);
+  const [showNotifPrompt, setShowNotifPrompt] = useState(true);
+
   useEffect(() => {
     if ('Notification' in window) {
       const interval = setInterval(() => {
@@ -118,15 +125,14 @@ const [showNotifPrompt, setShowNotifPrompt] = useState(true);
         window.history.replaceState({}, document.title, window.location.pathname);
     }
       const hash = window.location.hash;
-if (hash.startsWith('#room=')) {
-    const roomId = hash.replace('#room=', '').trim();
-    if (roomId) {
-        setDeepLinkRoomId(roomId);
-        setActiveTab('arcade');
-        window.history.replaceState({}, document.title, window.location.pathname);
+    if (hash.startsWith('#room=')) {
+        const roomId = hash.replace('#room=', '').trim();
+        if (roomId) {
+            setDeepLinkRoomId(roomId);
+            setActiveTab('arcade');
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
     }
-}
-
   }, []);
   
   useEffect(() => {
@@ -374,6 +380,7 @@ if (hash.startsWith('#room=')) {
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     ...(hasAdminAccess ? [{ id: 'admin', label: 'لوحة الإدارة', icon: Settings }] : []),
+    ...(isDoctor ? [{ id: 'clinic', label: 'عيادتي', icon: Stethoscope }] : []), // ✅ إضافة زر العيادة للأطباء فقط
     { id: 'tasks', label: 'التكليفات', icon: ListTodo, badge: staffBadges.tasks },
     { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight, badge: staffBadges.swaps },
     { id: 'messages', label: 'الرسائل', icon: Inbox, badge: staffBadges.messages },
@@ -393,7 +400,7 @@ if (hash.startsWith('#room=')) {
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
-  ], [staffBadges, hasAdminAccess, employee.role, ovrCount]);
+  ], [staffBadges, hasAdminAccess, employee.role, ovrCount, isDoctor]);
 
   const unreadNotifsCount = useMemo(() => 
     notifications.filter(n => !n.is_read).length, 
@@ -425,10 +432,8 @@ if (hash.startsWith('#room=')) {
             </div>
           )}
 
-{/* ✅ حث على تفعيل الإشعارات (قابل للإغلاق ولا يغطي الأزرار) */}
           {notificationStatus !== 'granted' && showNotifPrompt && (
             <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-orange-500 to-pink-500 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-4 duration-700 border border-white/20 relative mt-16 md:mt-20">
-                {/* زر الإغلاق */}
                 <button 
                     onClick={() => setShowNotifPrompt(false)} 
                     className="absolute -top-2 -right-2 bg-black/20 hover:bg-black/40 rounded-full p-1 transition-colors"
@@ -553,7 +558,6 @@ if (hash.startsWith('#room=')) {
           })}
         </nav>
 
-        {/* ✅ أزرار الشريط الجانبي السفلي تتضمن زر تسجيل الخروج */}
         <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe gap-1">
             <button onClick={handleShareApp} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-emerald-100 hover:text-emerald-600 transition-colors flex flex-col items-center gap-1">
                 <Share2 className="w-5 h-5" />
@@ -567,7 +571,6 @@ if (hash.startsWith('#room=')) {
                 <Sparkles className="w-5 h-5" />
                 <span className="text-[9px] font-bold">الثيم</span>
             </button>
-            {/* ✅ زر تسجيل الخروج المضاف للقائمة الجانبية */}
             <button onClick={signOut} className="flex-1 p-2 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1">
                 <LogOut className="w-5 h-5" />
                 <span className="text-[9px] font-bold">خروج</span>
@@ -645,6 +648,8 @@ if (hash.startsWith('#room=')) {
                     
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
                     {activeTab === 'admin' && hasAdminAccess && <AdministrationTab employee={employee} />}
+                    {/* ✅ إضافة عرض مكون العيادة */}
+                    {activeTab === 'clinic' && isDoctor && <DoctorClinic employee={employee} />}
                     {activeTab === 'library' && <StaffLibrary />}
                     {activeTab === 'attendance' && <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} />}
                     {activeTab === 'evening-schedule' && <EmployeeEveningSchedule employeeId={employee.id} employeeCode={employee.employee_id} employeeName={employee.name} specialty={employee.specialty} />}
@@ -712,7 +717,6 @@ if (hash.startsWith('#room=')) {
         </div>
       </div>
 
-      {/* ✅ مودال الإشعارات (إصلاح النقر) */}
       {showNotifMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowNotifMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -757,7 +761,6 @@ if (hash.startsWith('#room=')) {
           </div>
       )}
 
-      {/* ✅ مودال الملف الشخصي (بديل قائمة المستوى) */}
       {showProfileMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowProfileMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col" onClick={e => e.stopPropagation()}>
@@ -780,7 +783,6 @@ if (hash.startsWith('#room=')) {
                   </div>
 
                   <div className="p-5 pt-4 space-y-4">
-                      {/* حاوية المستوى */}
                       <div className="bg-emerald-50/80 rounded-2xl p-4 border border-emerald-100 shadow-sm relative overflow-hidden">
                           <LevelProgressBar employee={employee} />
                       </div>
@@ -804,7 +806,6 @@ if (hash.startsWith('#room=')) {
           </div>
       )}
 
-      {/* ✅ مودال لوحة الشرف المطور */}
       {showLeaderboardMenu && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
               <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
