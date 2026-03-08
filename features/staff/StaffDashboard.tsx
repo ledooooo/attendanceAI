@@ -77,7 +77,7 @@ export default function StaffDashboard({ employee }: Props) {
   const hasAdminAccess = employee.role === 'admin' || (employee.permissions && employee.permissions.length > 0);
   
   // ✅ دالة بسيطة للتحقق مما إذا كان الموظف طبيباً (لعرض تبويب عيادتي)
-  const isDoctor = ['طب الأسرة', 'الأطفال', 'النساء والتوليد', 'الباطنة', 'الأسنان'].includes(employee.specialty || '');
+  const isDoctor = ['طب الأسرة', 'طبيب بشرى', 'النساء والتوليد', 'الباطنة', 'الأسنان'].includes(employee.specialty || '');
 
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
