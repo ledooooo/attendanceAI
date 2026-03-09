@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer, Eye } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
@@ -28,8 +28,7 @@ type Answers = Record<string, string>;
 
 type PlayerRecord = {
     playerId:   string;
-    playerName: string;      // alias (or real if no alias)
-    realName?:  string;      // real name — revealed after game
+    playerName: string;      // alias or real name — never changes
     answers:    Answers;
     stopped:    boolean;
     vote:       'win' | 'lose' | 'draw' | null;
@@ -228,25 +227,17 @@ function AnswerForm({ letter, answers, onChange, disabled }: {
 }
 
 // ─── Answers Comparison Table (with alias reveal) ─────────────────────────────
-function AnswersTable({ records, letter, myId, revealIdentities }: {
-    records: PlayerRecord[]; letter: string; myId: string; revealIdentities: boolean;
+function AnswersTable({ records, letter, myId }: {
+    records: PlayerRecord[]; letter: string; myId: string;
 }) {
     const getName = (p: PlayerRecord) => {
         if (p.playerId === myId) return 'أنت';
-        if (revealIdentities && p.realName && p.realName !== p.playerName) {
-            return `${p.playerName} (${p.realName})`;
-        }
-        return p.playerName;
+        return p.playerName; // alias stays permanent — never revealed
     };
     return (
         <div className="space-y-2">
-            <div className="flex items-center justify-between px-1">
+            <div className="px-1">
                 <p className="text-xs font-black text-gray-500">إجابات اللاعبين:</p>
-                {revealIdentities && records.some(r => r.realName && r.realName !== r.playerName) && (
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full">
-                        <Eye className="w-3 h-3"/> تم كشف الهويات
-                    </div>
-                )}
             </div>
             {CATEGORIES.map(cat => (
                 <div key={cat.key} className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
@@ -555,7 +546,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
         const rec: PlayerRecord = {
             playerId:   myId,
             playerName: myDisplayName,
-            realName:   isAlias ? myName : undefined,
             answers,
             stopped:    iAmStopper,
             vote:       null,
@@ -617,9 +607,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     const allVoted = status === 'finished' && records.length === players.length &&
         records.every(r => r.vote !== null && r.voteRound === currentVoteRound);
     const outcome = allVoted ? resolveVotes(records, currentVoteRound) : null;
-
-    // Reveal identities once game is finished (status=finished)
-    const revealIdentities = status === 'finished';
 
     // ─────────────────────────────────────────────────────────────────────────
     // WAITING
@@ -735,16 +722,9 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         <p className="text-xs font-black">🏁 {stopper.playerName} أنهى أولاً!</p>
                     </div>
                 )}
-                {/* Alias reveal notice */}
-                {records.some(r => r.realName && r.realName !== r.playerName) && (
-                    <div className="mt-2 bg-white/20 rounded-xl px-3 py-1.5 flex items-center justify-center gap-2">
-                        <Eye className="w-4 h-4"/>
-                        <p className="text-xs font-black">تم كشف هويات اللاعبين المجهولين 🕵️</p>
-                    </div>
-                )}
             </div>
 
-            <AnswersTable records={records} letter={letter} myId={myId} revealIdentities={revealIdentities}/>
+            <AnswersTable records={records} letter={letter} myId={myId}/>
 
             {/* Voting section */}
             {(!allVoted || (outcome?.result === 'conflict' && currentVoteRound < MAX_VOTE_ROUNDS)) ? (
