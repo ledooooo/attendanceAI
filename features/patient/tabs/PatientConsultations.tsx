@@ -240,6 +240,14 @@ export default function PatientConsultations({ patientId }: { patientId: string 
                 <form onSubmit={handleSubmit} className="bg-white p-5 rounded-3xl shadow-md border border-indigo-100 space-y-4 mb-6">
                     <h3 className="font-black text-indigo-900 border-b pb-3 mb-4 text-lg">طلب استشارة إلكترونية</h3>
                     
+                    {/* ✅ إخلاء المسؤولية الطبي (ضروري لسياسات جوجل بلاي) */}
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-3 mb-4">
+                        <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                        <p className="text-xs font-bold text-red-800 leading-relaxed">
+                            <span className="font-black">تنبيه طبي هام:</span> هذا التطبيق غير مخصص لحالات الطوارئ أو الحالات المهددة للحياة. إذا كنت تعاني من حالة طارئة (مثل ألم شديد بالصدر، ضيق في التنفس، نزيف، إلخ)، يرجى التوجه لأقرب مستشفى أو الاتصال بالإسعاف فوراً.
+                        </p>
+                    </div>
+                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm font-bold">
                         <div>
                             <label className="block text-gray-600 mb-1">التخصص المطلوب *</label>
