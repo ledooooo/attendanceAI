@@ -272,21 +272,25 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* 🌟 قسم الزوار (دخول بجوجل) - تم نقله خارج الـ form */}
+{/* 🌟 قسم الزوار (دخول بجوجل) */}
         {mode === 'signin' && (
-            <div className="mt-8 relative">
-                <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-200"></div>
-                </div>
-                <div className="relative flex justify-center text-xs">
-                    <span className="px-4 bg-white text-gray-400 font-black">بوابة المواطنين والزوار</span>
+            <div className="mt-8">
+                {/* 1. الخط الفاصل (تم فصله لتجنب تغطية الزر) */}
+                <div className="relative mb-6">
+                    <div className="absolute inset-0 flex items-center pointer-events-none">
+                        <div className="w-full border-t border-gray-200"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs">
+                        <span className="px-4 bg-white text-gray-400 font-black">بوابة المواطنين والزوار</span>
+                    </div>
                 </div>
                 
+                {/* 2. زر الدخول بجوجل */}
                 <button 
                     type="button"
                     onClick={handleGoogleLogin} 
                     disabled={googleLoading}
-                    className="mt-6 w-full bg-white border-2 border-gray-100 text-gray-700 rounded-2xl py-3.5 text-sm font-black shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
+                    className="w-full bg-white border-2 border-gray-100 text-gray-700 rounded-2xl py-3.5 text-sm font-black shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50 cursor-pointer relative z-10"
                 >
                     {googleLoading ? <Loader2 className="w-5 h-5 animate-spin text-blue-500" /> : (
                         <>
@@ -301,6 +305,7 @@ export default function LoginPage() {
             </div>
         )}
 
+        
         {/* Back/Toggle Buttons */}
         <div className="flex flex-col gap-3 mt-6">
             {(mode === 'recovery' || mode === 'signup_supervisor') && (
@@ -333,3 +338,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
