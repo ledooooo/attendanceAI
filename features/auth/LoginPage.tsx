@@ -23,7 +23,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  // دالة الدخول بحساب جوجل للزوار
+  // دالة الدخول بحساب جوجل للزوار (مبسطة)
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     try {
@@ -31,10 +31,6 @@ export default function LoginPage() {
             provider: 'google',
             options: {
                 redirectTo: window.location.origin, // التوجيه للصفحة الرئيسية بعد الدخول
-                queryParams: {
-                    access_type: 'offline',
-                    prompt: 'consent',
-                },
             }
         });
         if (error) throw error;
@@ -274,64 +270,64 @@ export default function LoginPage() {
                 mode === 'signup_supervisor' ? 'إرسال طلب الانضمام' : 'دخول للنظام'
             )}
           </button>
-
-          {/* 🌟 قسم الزوار (دخول بجوجل) */}
-          {mode === 'signin' && (
-              <div className="mt-8 relative">
-                  <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-gray-200"></div>
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                      <span className="px-4 bg-white text-gray-400 font-black">بوابة المواطنين والزوار</span>
-                  </div>
-                  
-                  <button 
-                      type="button"
-                      onClick={handleGoogleLogin} 
-                      disabled={googleLoading}
-                      className="mt-6 w-full bg-white border-2 border-gray-100 text-gray-700 rounded-2xl py-3.5 text-sm font-black shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
-                  >
-                      {googleLoading ? <Loader2 className="w-5 h-5 animate-spin text-blue-500" /> : (
-                          <>
-                              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-                              تسجيل الدخول بحساب Google
-                          </>
-                      )}
-                  </button>
-                  <p className="text-[10px] text-center text-gray-400 mt-3 font-bold leading-relaxed">
-                      الدخول مخصص للزوار للتعرف على مواعيد العيادات، سياسات المركز، والمشاركة بآرائهم ومقترحاتهم.
-                  </p>
-              </div>
-          )}
-
-          {/* Back/Toggle Buttons */}
-          <div className="flex flex-col gap-3 mt-6">
-              {(mode === 'recovery' || mode === 'signup_supervisor') && (
-                  <button 
-                    type="button"
-                    onClick={() => { setMode('signin'); setEmail(''); setPassword(''); }}
-                    className="w-full py-2 text-gray-400 font-bold text-sm hover:text-gray-600 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <ArrowRight className="w-4 h-4"/> العودة لتسجيل الدخول
-                  </button>
-              )}
-
-              {/* زر إنشاء حساب مشرف جديد يظهر فقط في شاشة الدخول الرئيسية */}
-              {mode === 'signin' && (
-                  <div className="mt-2 pt-4 border-t border-gray-100 text-center">
-                      <p className="text-xs text-gray-400 mb-2 font-bold">هل أنت مفتش أو مشرف من الإدارة؟</p>
-                      <button 
-                          type="button"
-                          onClick={() => { setMode('signup_supervisor'); setEmail(''); setPassword(''); }}
-                          className="text-xs font-black text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 px-4 py-2 rounded-xl"
-                      >
-                          تسجيل حساب "مشرف إداري"
-                      </button>
-                  </div>
-              )}
-          </div>
-
         </form>
+
+        {/* 🌟 قسم الزوار (دخول بجوجل) - تم نقله خارج الـ form */}
+        {mode === 'signin' && (
+            <div className="mt-8 relative">
+                <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200"></div>
+                </div>
+                <div className="relative flex justify-center text-xs">
+                    <span className="px-4 bg-white text-gray-400 font-black">بوابة المواطنين والزوار</span>
+                </div>
+                
+                <button 
+                    type="button"
+                    onClick={handleGoogleLogin} 
+                    disabled={googleLoading}
+                    className="mt-6 w-full bg-white border-2 border-gray-100 text-gray-700 rounded-2xl py-3.5 text-sm font-black shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
+                >
+                    {googleLoading ? <Loader2 className="w-5 h-5 animate-spin text-blue-500" /> : (
+                        <>
+                            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                            تسجيل الدخول بحساب Google
+                        </>
+                    )}
+                </button>
+                <p className="text-[10px] text-center text-gray-400 mt-3 font-bold leading-relaxed">
+                    الدخول مخصص للزوار للتعرف على مواعيد العيادات، سياسات المركز، والمشاركة بآرائهم ومقترحاتهم.
+                </p>
+            </div>
+        )}
+
+        {/* Back/Toggle Buttons */}
+        <div className="flex flex-col gap-3 mt-6">
+            {(mode === 'recovery' || mode === 'signup_supervisor') && (
+                <button 
+                  type="button"
+                  onClick={() => { setMode('signin'); setEmail(''); setPassword(''); }}
+                  className="w-full py-2 text-gray-400 font-bold text-sm hover:text-gray-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <ArrowRight className="w-4 h-4"/> العودة لتسجيل الدخول
+                </button>
+            )}
+
+            {/* زر إنشاء حساب مشرف جديد يظهر فقط في شاشة الدخول الرئيسية */}
+            {mode === 'signin' && (
+                <div className="mt-2 pt-4 border-t border-gray-100 text-center">
+                    <p className="text-xs text-gray-400 mb-2 font-bold">هل أنت مفتش أو مشرف من الإدارة؟</p>
+                    <button 
+                        type="button"
+                        onClick={() => { setMode('signup_supervisor'); setEmail(''); setPassword(''); }}
+                        className="text-xs font-black text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 px-4 py-2 rounded-xl"
+                    >
+                        تسجيل حساب "مشرف إداري"
+                    </button>
+                </div>
+            )}
+        </div>
+
       </div>
       <Toaster />
     </div>
