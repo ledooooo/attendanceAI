@@ -11,6 +11,12 @@ import SupervisorDashboard from './features/supervisor/SupervisorDashboard';
 // 🌟 2. استيراد واجهة الزوار والمواطنين (الآمنة)
 import PatientDashboard from './features/patient/PatientDashboard'; 
 
+// 🌟 3. استيراد الصفحات العامة (Public Pages)
+import PricingPage from './pages/public/PricingPage';
+import ContactPage from './pages/public/ContactPage';
+import StaffDirectoryPage from './pages/public/StaffDirectoryPage';
+import SurveyPage from './pages/public/SurveyPage';
+
 import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications';
 import { Toaster } from 'react-hot-toast';
@@ -44,6 +50,15 @@ const persister = createSyncStoragePersister({
 });
 
 const AppContent = () => {
+  // 🌟 نظام التوجيه للصفحات العامة (بدون تسجيل دخول)
+  // نضعه في البداية لكي يعمل حتى لو لم يكن هناك User
+  const currentPath = window.location.pathname;
+
+  if (currentPath === '/pricing') return <PricingPage />;
+  if (currentPath === '/contact') return <ContactPage />;
+  if (currentPath === '/directory') return <StaffDirectoryPage />;
+  if (currentPath === '/survey') return <SurveyPage />;
+
   const { user, employeeProfile, loading, isAdmin } = useAuth();
 
   // استعلام للتحقق مما إذا كان المستخدم يمتلك حساب مشرف (يُنفذ فقط إذا لم يكن موظفاً)
