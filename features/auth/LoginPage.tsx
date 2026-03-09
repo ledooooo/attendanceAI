@@ -338,7 +338,7 @@ export default function LoginPage() {
               )}
           </div>
 
-          {/* 🌟 القسم الجديد: دخول المرضى والمنتفعين */}
+{/* 🌟 القسم الجديد: دخول المرضى والمنتفعين (تم تعطيله مؤقتاً لأسباب إدارية)
           {mode === 'signin' && (
               <div className="mt-6 relative">
                   <div className="absolute inset-0 flex items-center">
@@ -365,8 +365,9 @@ export default function LoginPage() {
                   </p>
               </div>
           )}
-
+          */}
         </div>
     </div>
   );
 }
+
