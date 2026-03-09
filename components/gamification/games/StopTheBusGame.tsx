@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer, Eye } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TIMER_SECS = 120;
+const MAX_VOTE_ROUNDS = 3; // max re-vote attempts on conflict
 
 const ARABIC_LETTERS = [
     'أ','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز','س','ش',
@@ -25,16 +26,17 @@ const CATEGORIES = [
 
 type Answers = Record<string, string>;
 
-// Stored per-player in game_state.allAnswers
 type PlayerRecord = {
     playerId:   string;
-    playerName: string;
+    playerName: string;      // alias (or real if no alias)
+    realName?:  string;      // real name — revealed after game
     answers:    Answers;
-    stopped:    boolean;   // true = pressed "خلصت"
+    stopped:    boolean;
     vote:       'win' | 'lose' | 'draw' | null;
+    voteRound:  number;      // which conflict round this vote belongs to
 };
 
-// ─── Question helpers (mirrored from LiveGamesArena) ──────────────────────────
+// ─── Question helpers ─────────────────────────────────────────────────────────
 const normalizeQuestion = (rawQ: any) => {
     let questionText = rawQ.question || rawQ.question_text || '';
     if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`;
@@ -153,30 +155,19 @@ function validCount(answers: Answers, letter: string) {
 }
 
 // ─── Resolve outcome from votes ───────────────────────────────────────────────
-// Returns: { result: 'valid'|'conflict'|'draw', winnerId?: string }
-function resolveVotes(records: PlayerRecord[]): { result: 'valid' | 'conflict' | 'draw'; winnerId?: string } {
-    const votes = records.map(r => ({ id: r.playerId, vote: r.vote }));
+function resolveVotes(records: PlayerRecord[], round: number): { result: 'valid' | 'conflict' | 'draw' | 'force_draw'; winnerId?: string } {
+    const votes = records.filter(r => r.voteRound === round).map(r => ({ id: r.playerId, vote: r.vote }));
     const winners = votes.filter(v => v.vote === 'win');
     const losers  = votes.filter(v => v.vote === 'lose');
     const draws   = votes.filter(v => v.vote === 'draw');
 
-    // All draw → draw
     if (draws.length === votes.length) return { result: 'draw' };
-
-    // All lose → draw
     if (losers.length === votes.length) return { result: 'draw' };
-
-    // All win → conflict
     if (winners.length === votes.length) return { result: 'conflict' };
-
-    // Exactly one winner + rest losers → valid
     if (winners.length === 1 && losers.length === votes.length - 1) {
         return { result: 'valid', winnerId: winners[0].id };
     }
-
-    // Mix with draws → not resolved yet or conflict
     if (draws.length > 0 && winners.length > 0) return { result: 'conflict' };
-
     return { result: 'conflict' };
 }
 
@@ -236,11 +227,27 @@ function AnswerForm({ letter, answers, onChange, disabled }: {
     );
 }
 
-// ─── Answers Comparison Table ─────────────────────────────────────────────────
-function AnswersTable({ records, letter, myId }: { records: PlayerRecord[]; letter: string; myId: string }) {
+// ─── Answers Comparison Table (with alias reveal) ─────────────────────────────
+function AnswersTable({ records, letter, myId, revealIdentities }: {
+    records: PlayerRecord[]; letter: string; myId: string; revealIdentities: boolean;
+}) {
+    const getName = (p: PlayerRecord) => {
+        if (p.playerId === myId) return 'أنت';
+        if (revealIdentities && p.realName && p.realName !== p.playerName) {
+            return `${p.playerName} (${p.realName})`;
+        }
+        return p.playerName;
+    };
     return (
         <div className="space-y-2">
-            <p className="text-xs font-black text-gray-500 px-1">إجابات اللاعبين:</p>
+            <div className="flex items-center justify-between px-1">
+                <p className="text-xs font-black text-gray-500">إجابات اللاعبين:</p>
+                {revealIdentities && records.some(r => r.realName && r.realName !== r.playerName) && (
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full">
+                        <Eye className="w-3 h-3"/> تم كشف الهويات
+                    </div>
+                )}
+            </div>
             {CATEGORIES.map(cat => (
                 <div key={cat.key} className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
                     <div className="bg-gray-50 px-3 py-1.5 flex items-center gap-1.5 border-b border-gray-100">
@@ -253,8 +260,9 @@ function AnswersTable({ records, letter, myId }: { records: PlayerRecord[]; lett
                         const isMe  = p.playerId === myId;
                         return (
                             <div key={p.playerId} className={`flex items-center gap-2 px-3 py-2 border-b border-gray-50 last:border-0 ${isMe ? 'bg-blue-50/60' : ''}`}>
-                                <span className={`text-[10px] font-black w-16 flex-shrink-0 truncate ${isMe ? 'text-blue-600' : 'text-gray-400'}`}>
-                                    {isMe ? 'أنت' : p.playerName}
+                                <span className={`text-[10px] font-black flex-shrink-0 truncate ${isMe ? 'text-blue-600' : 'text-gray-400'}`}
+                                    style={{ maxWidth: 80 }}>
+                                    {getName(p)}
                                     {p.stopped && <span className="text-green-600"> 🏁</span>}
                                 </span>
                                 {val ? (
@@ -276,25 +284,36 @@ function AnswersTable({ records, letter, myId }: { records: PlayerRecord[]; lett
     );
 }
 
-// ─── Voting Panel ─────────────────────────────────────────────────────────────
-function VotingPanel({ records, myId, onVote, myVote }: {
+// ─── Voting Panel with round tracking ─────────────────────────────────────────
+function VotingPanel({ records, myId, onVote, currentRound, maxRounds }: {
     records: PlayerRecord[]; myId: string;
     onVote: (v: 'win' | 'lose' | 'draw') => void;
-    myVote: 'win' | 'lose' | 'draw' | null;
+    currentRound: number;
+    maxRounds: number;
 }) {
-    const allVoted  = records.every(r => r.vote !== null);
-    const outcome   = allVoted ? resolveVotes(records) : null;
-
-    // Show other players' vote status (but not their actual vote)
+    const roundRecords = records.filter(r => r.voteRound === currentRound || r.playerId === myId);
+    const myRecord = records.find(r => r.playerId === myId);
+    const myVote = myRecord?.voteRound === currentRound ? myRecord.vote : null;
+    const allVoted = records.length > 0 && records.every(r => r.vote !== null && r.voteRound === currentRound);
+    const outcome  = allVoted ? resolveVotes(records, currentRound) : null;
     const others = records.filter(r => r.playerId !== myId);
+    const isConflictRound = currentRound > 1;
+    const roundsLeft = maxRounds - currentRound;
 
     return (
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 space-y-3">
-            <p className="text-sm font-black text-amber-900 text-center">
-                بعد مراجعة الإجابات... ما قرارك؟
+        <div className={`border-2 rounded-2xl p-4 space-y-3 ${isConflictRound ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'}`}>
+            {isConflictRound && (
+                <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-black text-red-700">⚠️ تعارض في الجولة {currentRound - 1}!</p>
+                    <span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                        {roundsLeft > 0 ? `${roundsLeft} فرصة متبقية` : 'آخر فرصة'}
+                    </span>
+                </div>
+            )}
+            <p className="text-sm font-black text-center" style={{ color: isConflictRound ? '#7f1d1d' : '#78350f' }}>
+                {isConflictRound ? 'أعد التصويت بعناية...' : 'بعد مراجعة الإجابات... ما قرارك؟'}
             </p>
 
-            {/* My vote buttons */}
             {myVote === null ? (
                 <div className="grid grid-cols-3 gap-2">
                     <button onClick={() => onVote('win')}
@@ -322,25 +341,29 @@ function VotingPanel({ records, myId, onVote, myVote }: {
                 </div>
             )}
 
-            {/* Others' vote status */}
             {others.length > 0 && (
                 <div className="flex gap-2 flex-wrap">
-                    {others.map(r => (
-                        <div key={r.playerId} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${r.vote ? 'bg-green-100 border-green-300 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
-                            {r.vote ? '✓ صوّت' : <><Loader2 className="w-3 h-3 animate-spin inline ml-1"/>ينتظر</>} {r.playerName}
-                        </div>
-                    ))}
+                    {others.map(r => {
+                        const voted = r.vote !== null && r.voteRound === currentRound;
+                        return (
+                            <div key={r.playerId} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${voted ? 'bg-green-100 border-green-300 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
+                                {voted ? '✓ صوّت' : <><Loader2 className="w-3 h-3 animate-spin inline ml-1"/>ينتظر</>} {r.playerName}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 
-            {/* Outcome after all voted */}
             {outcome && (
                 <div className={`rounded-xl p-3 text-center font-black text-sm border-2 ${
                     outcome.result === 'valid' ? 'bg-emerald-50 border-emerald-400 text-emerald-800' :
                     outcome.result === 'draw'  ? 'bg-blue-50 border-blue-400 text-blue-800' :
+                    outcome.result === 'force_draw' ? 'bg-gray-50 border-gray-400 text-gray-700' :
                     'bg-red-50 border-red-300 text-red-700'}`}>
-                    {outcome.result === 'conflict' && '⚠️ تعارض في القرارات — يرجى إعادة التصويت'}
+                    {outcome.result === 'conflict' && roundsLeft > 0 && '⚠️ تعارض — ستبدأ جولة تصويت جديدة'}
+                    {outcome.result === 'conflict' && roundsLeft <= 0 && '⚠️ انتهت الفرص — سيُعتبر تعادلاً'}
                     {outcome.result === 'draw'     && '🤝 تعادل! سيحصل الجميع على 5 نقاط'}
+                    {outcome.result === 'force_draw' && '🤝 تعادل إجباري بعد تكرار التعارض'}
                     {outcome.result === 'valid'    && (outcome.winnerId === myId ? '🏆 أنت الفائز! استعد للسؤال' : '🎖️ الفائز محدد — انتظر السؤال')}
                 </div>
             )}
@@ -401,14 +424,14 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     const letter:  string         = gs.letter    ?? '';
     const startedAt: number       = gs.startedAt ?? 0;
     const records: PlayerRecord[] = gs.records   ?? [];
+    const currentVoteRound: number = gs.voteRound ?? 1;
     const status:  string         = match.status  ?? 'waiting';
     const players: any[]          = match.players ?? [];
 
     // ── Local state ───────────────────────────────────────────────────────────
-    // answers is always local — we push to DB only on "خلصت" or when stopped externally
     const [answers, setAnswers]       = useState<Answers>(emptyAnswers);
     const [timeLeft, setTimeLeft]     = useState(TIMER_SECS);
-    const [stopped, setStopped]       = useState(false);   // I pressed "خلصت" or was stopped
+    const [stopped, setStopped]       = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
     // Question phase
@@ -420,24 +443,27 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
 
     const prevTickRef   = useRef(TIMER_SECS);
     const soundedStop   = useRef(false);
-    const savedOnStop   = useRef(false);  // prevent double-save when stopper fires
+    const savedOnStop   = useRef(false);
 
     // ── My DB record ──────────────────────────────────────────────────────────
     const myRecord  = records.find(r => r.playerId === myId);
-    const iStopped  = stopped || !!myRecord;  // I've submitted to DB
+    const iStopped  = stopped || !!myRecord;
+    const stopper   = records.find(r => r.stopped);
 
-    // ── Stopper detection ─────────────────────────────────────────────────────
-    const stopper = records.find(r => r.stopped);
+    // My player info from match (includes alias if set)
+    const myPlayerInfo = players.find((p: any) => p.id === myId);
+    const myDisplayName = myPlayerInfo?.name || myName;
+    const isAlias = myPlayerInfo?.isAlias ?? false;
 
-    // When someone else stops → immediately save MY current local answers to DB
+    // When someone else stops → save my answers
     useEffect(() => {
         if (!stopper) return;
-        if (stopper.playerId === myId) return;   // I was the stopper, already saved
+        if (stopper.playerId === myId) return;
         if (savedOnStop.current) return;
         if (iStopped) return;
         savedOnStop.current = true;
         if (!soundedStop.current) { soundedStop.current = true; play('stop'); }
-        saveMyAnswers(false);   // save with stopped=false
+        saveMyAnswers(false);
     }, [stopper?.playerId]);
 
     // ── Timer ─────────────────────────────────────────────────────────────────
@@ -472,12 +498,32 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     // ── Resolve votes → trigger question for winner ───────────────────────────
     useEffect(() => {
         if (status !== 'finished') return;
-        const allVoted = records.length === players.length && records.every(r => r.vote !== null);
+        const allVoted = records.length === players.length &&
+            records.every(r => r.vote !== null && r.voteRound === currentVoteRound);
         if (!allVoted) return;
 
-        const outcome = resolveVotes(records);
-        if (outcome.result === 'draw') {
-            // All get 5 pts — each client grants their own
+        const outcome = resolveVotes(records, currentVoteRound);
+
+        if (outcome.result === 'conflict') {
+            // If still have rounds left — bump voteRound and reset votes
+            if (currentVoteRound < MAX_VOTE_ROUNDS) {
+                const nextRound = currentVoteRound + 1;
+                const resetRecords = records.map(r => ({ ...r, vote: null, voteRound: nextRound }));
+                supabase.from('live_matches').update({
+                    game_state: { ...gs, records: resetRecords, voteRound: nextRound },
+                }).eq('id', match.id);
+            } else {
+                // Force draw after max rounds
+                if (!qAnswered && !question) {
+                    play('win');
+                    grantPoints(5).then(() => toast.success('تعادل إجباري بعد تكرار التعارض! +5 نقاط 🤝'));
+                    setQAnswered(true);
+                }
+            }
+            return;
+        }
+
+        if (outcome.result === 'draw' || outcome.result === 'force_draw') {
             if (!qAnswered && !question) {
                 play('win');
                 grantPoints(5).then(() => toast.success('تعادل! +5 نقاط 🤝'));
@@ -485,7 +531,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             }
             return;
         }
-        if (outcome.result === 'conflict') return;  // show conflict UI, no question
 
         // Valid result: winner gets question
         if (outcome.winnerId === myId && !question && !qAnswered) {
@@ -494,15 +539,14 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                 setQLoading(false);
                 if (q) { setQuestion(q); setQTime(20); }
                 else {
-                    // no question available — grant directly
                     grantPoints(15).then(() => toast.success('فزت! +15 نقطة 🏆'));
                     setQAnswered(true);
                 }
             });
         }
-    }, [records, status]);
+    }, [records, status, currentVoteRound]);
 
-    // ── Save my answers to DB (without ending game) ───────────────────────────
+    // ── Save my answers ───────────────────────────────────────────────────────
     const saveMyAnswers = async (iAmStopper: boolean) => {
         if (submitting) return;
         setSubmitting(true);
@@ -510,16 +554,16 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
 
         const rec: PlayerRecord = {
             playerId:   myId,
-            playerName: myName,
-            answers,          // current local state — whatever was typed
+            playerName: myDisplayName,
+            realName:   isAlias ? myName : undefined,
+            answers,
             stopped:    iAmStopper,
             vote:       null,
+            voteRound:  1,
         };
 
         const updatedRecords = [...records.filter(r => r.playerId !== myId), rec];
-
-        // Only the stopper sets status to 'finished'
-        const update: any = { game_state: { ...gs, records: updatedRecords } };
+        const update: any = { game_state: { ...gs, records: updatedRecords, voteRound: gs.voteRound ?? 1 } };
         if (iAmStopper) update.status = 'finished';
 
         await supabase.from('live_matches').update(update).eq('id', match.id);
@@ -533,11 +577,11 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
         await saveMyAnswers(true);
     };
 
-    // ── Vote ──────────────────────────────────────────────────────────────────
+    // ── Vote (with round tracking) ────────────────────────────────────────────
     const handleVote = async (vote: 'win' | 'lose' | 'draw') => {
         if (!myRecord) return;
         const updated = records.map(r =>
-            r.playerId === myId ? { ...r, vote } : r
+            r.playerId === myId ? { ...r, vote, voteRound: currentVoteRound } : r
         );
         await supabase.from('live_matches').update({
             game_state: { ...gs, records: updated },
@@ -565,16 +609,17 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     const handleStart = async () => {
         await supabase.from('live_matches').update({
             status:     'playing',
-            game_state: { letter: pickLetter(), startedAt: Date.now(), records: [] },
+            game_state: { letter: pickLetter(), startedAt: Date.now(), records: [], voteRound: 1 },
         }).eq('id', match.id);
     };
 
-    // ── My vote from DB ───────────────────────────────────────────────────────
-    const myVote = myRecord?.vote ?? null;
+    const myVote = (myRecord?.voteRound === currentVoteRound) ? (myRecord?.vote ?? null) : null;
+    const allVoted = status === 'finished' && records.length === players.length &&
+        records.every(r => r.vote !== null && r.voteRound === currentVoteRound);
+    const outcome = allVoted ? resolveVotes(records, currentVoteRound) : null;
 
-    // ── Outcome ───────────────────────────────────────────────────────────────
-    const allVoted  = status === 'finished' && records.length === players.length && records.every(r => r.vote !== null);
-    const outcome   = allVoted ? resolveVotes(records) : null;
+    // Reveal identities once game is finished (status=finished)
+    const revealIdentities = status === 'finished';
 
     // ─────────────────────────────────────────────────────────────────────────
     // WAITING
@@ -589,9 +634,10 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             <div className="flex flex-wrap gap-2 justify-center mb-6">
                 {players.map((p: any) => (
                     <div key={p.id} className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 px-3 py-1.5 rounded-full">
-                        <Users className="w-3 h-3 text-purple-500"/>
+                        <span className="text-sm">{p.avatar?.startsWith('http') ? '👤' : (p.avatar || '👤')}</span>
                         <span className="text-xs font-bold text-purple-700">{p.name}</span>
                         {p.id === myId && <span className="text-[10px] text-purple-400">(أنت)</span>}
+                        {p.isAlias && <span className="text-[10px] bg-purple-200 text-purple-600 px-1.5 rounded-full font-bold">🥷 مجهول</span>}
                     </div>
                 ))}
             </div>
@@ -616,7 +662,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     // ─────────────────────────────────────────────────────────────────────────
     if (status === 'playing') return (
         <div className="flex flex-col gap-2 py-2 px-3" dir="rtl">
-            {/* Header */}
             <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                     <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-700 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
@@ -632,7 +677,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                 <TimerRing seconds={timeLeft} total={TIMER_SECS}/>
             </div>
 
-            {/* Stopper alert */}
             {stopper && stopper.playerId !== myId && !iStopped && (
                 <div className="bg-red-50 border-2 border-red-300 rounded-xl px-3 py-2 flex items-center gap-2">
                     <Flag className="w-4 h-4 text-red-500 flex-shrink-0"/>
@@ -680,7 +724,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     if (status === 'finished') return (
         <div className="flex flex-col gap-3 py-2 px-3 animate-in fade-in duration-400" dir="rtl">
 
-            {/* Banner */}
             <div className="bg-gradient-to-br from-violet-500 to-purple-700 text-white rounded-2xl p-4 text-center">
                 <div className="text-3xl mb-1">🚌</div>
                 <h3 className="font-black text-lg">انتهت الجولة!</h3>
@@ -692,26 +735,39 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         <p className="text-xs font-black">🏁 {stopper.playerName} أنهى أولاً!</p>
                     </div>
                 )}
+                {/* Alias reveal notice */}
+                {records.some(r => r.realName && r.realName !== r.playerName) && (
+                    <div className="mt-2 bg-white/20 rounded-xl px-3 py-1.5 flex items-center justify-center gap-2">
+                        <Eye className="w-4 h-4"/>
+                        <p className="text-xs font-black">تم كشف هويات اللاعبين المجهولين 🕵️</p>
+                    </div>
+                )}
             </div>
 
-            {/* Answers table */}
-            <AnswersTable records={records} letter={letter} myId={myId}/>
+            <AnswersTable records={records} letter={letter} myId={myId} revealIdentities={revealIdentities}/>
 
-            {/* Voting */}
-            {!allVoted || outcome?.result === 'conflict' ? (
+            {/* Voting section */}
+            {(!allVoted || (outcome?.result === 'conflict' && currentVoteRound < MAX_VOTE_ROUNDS)) ? (
                 <VotingPanel
                     records={records}
                     myId={myId}
                     onVote={handleVote}
-                    myVote={myVote}
+                    currentRound={currentVoteRound}
+                    maxRounds={MAX_VOTE_ROUNDS}
                 />
             ) : (
-                /* After resolution */
                 <div className="space-y-3">
                     {outcome?.result === 'draw' && (
                         <div className="bg-blue-50 border-2 border-blue-400 rounded-2xl p-4 text-center">
                             <div className="text-3xl mb-1">🤝</div>
                             <p className="font-black text-blue-800">تعادل! حصل الجميع على 5 نقاط</p>
+                        </div>
+                    )}
+                    {(outcome?.result === 'conflict' && currentVoteRound >= MAX_VOTE_ROUNDS) && (
+                        <div className="bg-gray-50 border-2 border-gray-300 rounded-2xl p-4 text-center">
+                            <div className="text-3xl mb-1">🤝</div>
+                            <p className="font-black text-gray-700">تعادل إجباري — انتهت الفرص</p>
+                            <p className="text-xs text-gray-400 mt-1">حصل الجميع على 5 نقاط</p>
                         </div>
                     )}
                     {outcome?.result === 'valid' && (
@@ -724,7 +780,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         </div>
                     )}
 
-                    {/* Question for winner */}
                     {outcome?.result === 'valid' && outcome.winnerId === myId && (
                         qLoading ? (
                             <div className="text-center py-4">
