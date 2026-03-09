@@ -8,12 +8,15 @@ import StaffDashboard from './features/staff/StaffDashboard';
 // ✅ 1. استيراد واجهة المشرف الجديدة
 import SupervisorDashboard from './features/supervisor/SupervisorDashboard'; 
 
-// 🌟 2. استيراد واجهة المريض (الجديدة)
-import PatientDashboard from './features/patient/PatientDashboard'; 
+// 🌟 2. استيراد واجهة المريض (تم التعطيل مؤقتاً لأسباب إدارية)
+// import PatientDashboard from './features/patient/PatientDashboard'; 
 
 import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications';
 import { Toaster } from 'react-hot-toast';
+
+// استيراد أيقونة التنبيه
+import { AlertTriangle } from 'lucide-react';
 
 // استيراد مكتبات React Query والـ Persister
 import { QueryClient, useQuery } from '@tanstack/react-query'; 
@@ -149,15 +152,37 @@ const AppContent = () => {
   }
 
   // ==========================================
-  // 🌟 مسار المرضى / المنتفعين (التحويلة الجديدة الذكية)
-  // إذا لم يكن يملك حساب موظف (employeeProfile) ولا حساب مشرف، إذن هو منتفع!
+  // 🌟 مسار المرضى / المنتفعين (تم تعطيله مؤقتاً)
   // ==========================================
+  /*
   if (!employeeProfile) {
     return (
       <>
         <OfflineBanner />
         <PatientDashboard />
       </>
+    );
+  }
+  */
+
+  // ✅ التوجيه الجديد: منع أي مستخدم ليس له ملف موظف من الدخول
+  if (!employeeProfile) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center text-center p-6 bg-gray-50" dir="rtl">
+        <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4 shadow-sm border border-red-200">
+           <AlertTriangle size={32} />
+        </div>
+        <h2 className="text-xl font-black text-gray-800 mb-2">حساب غير مصرح به</h2>
+        <p className="text-gray-500 mb-6 text-sm max-w-md font-bold leading-relaxed">
+           إيميلك ({user.email}) غير مرتبط بملف موظف في النظام. هذا التطبيق مخصص حالياً لفريق العمل والكوادر الطبية فقط.
+        </p>
+        <button 
+           onClick={() => supabase.auth.signOut()} 
+           className="bg-gray-800 text-white px-8 py-3 rounded-xl font-black text-sm hover:bg-gray-900 transition-colors shadow-md"
+        >
+           تسجيل خروج والعودة
+        </button>
+      </div>
     );
   }
 
