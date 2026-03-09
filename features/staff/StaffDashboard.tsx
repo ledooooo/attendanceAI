@@ -13,7 +13,7 @@ import {
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
     Settings, ShoppingBag, Trophy, Star, Check, CheckSquare, ShoppingCart, Gamepad2, Sparkles,
-    Smartphone, BellRing, Calculator, DownloadCloud, Stethoscope // ✅ تمت إضافة Stethoscope
+    Smartphone, BellRing, Calculator, BookOpen, DownloadCloud, Stethoscope // ✅ تمت إضافة Stethoscope
 } from 'lucide-react';
 
 
