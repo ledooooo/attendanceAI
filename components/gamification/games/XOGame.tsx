@@ -1,8 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Trophy, Hand, Loader2 } from 'lucide-react';
+import { Trophy, Hand, Loader2, WifiOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const MOVE_TIMER_SECS = 30;
+const OFFLINE_CLOSE_SECS = 30;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 export function checkXOWinner(board: string[]): string | 'draw' | null {
@@ -12,6 +16,60 @@ export function checkXOWinner(board: string[]): string | 'draw' | null {
     }
     if (!board.includes(null as any)) return 'draw';
     return null;
+}
+
+// ─── Audio ────────────────────────────────────────────────────────────────────
+function useSound() {
+    const ctx = useRef<AudioContext | null>(null);
+    const get = () => {
+        if (!ctx.current) ctx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        return ctx.current;
+    };
+    return useCallback((type: 'tick' | 'timeout') => {
+        try {
+            const ac = get(), now = ac.currentTime;
+            if (type === 'tick') {
+                const o = ac.createOscillator(), g = ac.createGain();
+                o.connect(g); g.connect(ac.destination);
+                o.type = 'sine'; o.frequency.value = 880;
+                g.gain.setValueAtTime(0.1, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+                o.start(now); o.stop(now + 0.07);
+            }
+            if (type === 'timeout') {
+                [330, 220].forEach((f, i) => {
+                    const o = ac.createOscillator(), g = ac.createGain();
+                    o.connect(g); g.connect(ac.destination);
+                    o.type = 'sine'; o.frequency.value = f;
+                    const t = now + i * 0.2;
+                    g.gain.setValueAtTime(0.18, t);
+                    g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+                    o.start(t); o.stop(t + 0.25);
+                });
+            }
+        } catch (_) {}
+    }, []);
+}
+
+// ─── Move Timer Ring ──────────────────────────────────────────────────────────
+function MoveTimerRing({ seconds, urgent }: { seconds: number; urgent: boolean }) {
+    const r = 18, circ = 2 * Math.PI * r;
+    const color = seconds <= 5 ? '#ef4444' : seconds <= 10 ? '#f97316' : '#6366f1';
+    return (
+        <div className="relative w-10 h-10 flex items-center justify-center">
+            <svg width={40} height={40} viewBox="0 0 40 40" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx={20} cy={20} r={r} fill="none" stroke="#e5e7eb" strokeWidth={3}/>
+                <circle cx={20} cy={20} r={r} fill="none" stroke={color} strokeWidth={3}
+                    strokeDasharray={circ}
+                    strokeDashoffset={circ * (1 - seconds / MOVE_TIMER_SECS)}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}/>
+            </svg>
+            <span className={`absolute text-[10px] font-black ${urgent ? 'text-red-600 animate-pulse' : 'text-indigo-700'}`}>
+                {seconds}
+            </span>
+        </div>
+    );
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -31,10 +89,74 @@ export default function XOGame({
     handleRewardSelection, handleRewardAnswer,
     timeLeft, loading,
 }: Props) {
+    const play     = useSound();
     const me       = match.players?.find((p: any) => p.id === employee.employee_id);
     const opponent = match.players?.find((p: any) => p.id !== employee.employee_id);
     const amIWinner = match.winner_id === employee.employee_id;
     const status: string = match.status;
+
+    // ── Move timer ────────────────────────────────────────────────────────────
+    const [moveTimer, setMoveTimer] = useState(MOVE_TIMER_SECS);
+    const [offlineCountdown, setOfflineCountdown] = useState<number | null>(null);
+    const [opponentOffline, setOpponentOffline] = useState(false);
+    const prevTurnRef = useRef<string | null>(null);
+    const timerPlayedRef = useRef<Set<number>>(new Set());
+
+    // Reset timer on turn change
+    useEffect(() => {
+        const currentTurn = match.game_state?.current_turn;
+        if (currentTurn && currentTurn !== prevTurnRef.current) {
+            prevTurnRef.current = currentTurn;
+            setMoveTimer(MOVE_TIMER_SECS);
+            setOpponentOffline(false);
+            setOfflineCountdown(null);
+            timerPlayedRef.current.clear();
+        }
+    }, [match.game_state?.current_turn]);
+
+    // Countdown
+    useEffect(() => {
+        if (status !== 'playing') return;
+        const iv = setInterval(() => {
+            setMoveTimer(prev => {
+                const next = prev - 1;
+                if ([10, 5, 3, 2, 1].includes(next) && !timerPlayedRef.current.has(next)) {
+                    timerPlayedRef.current.add(next);
+                    play('tick');
+                }
+                if (next <= 0) {
+                    clearInterval(iv);
+                    play('timeout');
+                    const activeId = match.game_state?.current_turn;
+                    if (activeId !== employee.employee_id) {
+                        setOpponentOffline(true);
+                        setOfflineCountdown(OFFLINE_CLOSE_SECS);
+                    }
+                    return 0;
+                }
+                return next;
+            });
+        }, 1000);
+        return () => clearInterval(iv);
+    }, [match.game_state?.current_turn, status]);
+
+    // Offline close countdown
+    useEffect(() => {
+        if (offlineCountdown === null) return;
+        if (offlineCountdown <= 0) {
+            const activeId = match.game_state?.current_turn;
+            const winnerId = match.players?.find((p: any) => p.id !== activeId)?.id ?? null;
+            supabase.from('live_matches').update({
+                status: 'finished',
+                winner_id: winnerId,
+            }).eq('id', match.id);
+            return;
+        }
+        const iv = setInterval(() => setOfflineCountdown(p => (p ?? 1) - 1), 1000);
+        return () => clearInterval(iv);
+    }, [offlineCountdown]);
+
+    const isMyTurn = match.game_state?.current_turn === employee.employee_id;
 
     const handleCellClick = async (index: number) => {
         if (status !== 'playing') return;
@@ -57,17 +179,48 @@ export default function XOGame({
 
     // ── PLAYING ───────────────────────────────────────────────────────────────
     if (status === 'playing') return (
-        <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-3xl shadow-2xl border border-gray-100 w-full max-w-[280px] aspect-square">
-            {match.game_state.board.map((cell: string, idx: number) => (
-                <button key={idx} onClick={() => handleCellClick(idx)}
-                    disabled={cell !== null || match.game_state.current_turn !== employee.employee_id}
-                    className={`rounded-xl text-4xl font-black flex items-center justify-center transition-all ${
-                        !cell ? 'bg-gray-50 hover:bg-gray-100 active:scale-95' :
-                        cell === 'X' ? 'bg-indigo-50 text-indigo-600' : 'bg-rose-50 text-rose-500'
-                    }`}>
-                    {cell && <span className="animate-in zoom-in spin-in-12">{cell}</span>}
-                </button>
-            ))}
+        <div className="flex flex-col gap-2 w-full max-w-[300px] items-center">
+
+            {/* Offline alert */}
+            {opponentOffline && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-2xl px-3 py-2 flex items-center gap-2 w-full animate-in slide-in-from-top">
+                    <WifiOff className="w-4 h-4 text-red-500 flex-shrink-0"/>
+                    <div className="flex-1">
+                        <p className="text-xs font-black text-red-700">{opponent?.name || 'المنافس'} غير متصل!</p>
+                        <p className="text-[10px] text-red-400 font-bold">تغلق خلال {offlineCountdown}ث</p>
+                    </div>
+                    <span className="text-sm font-black text-red-600 bg-red-100 w-7 h-7 rounded-full flex items-center justify-center">{offlineCountdown}</span>
+                </div>
+            )}
+
+            {/* Turn + Timer row */}
+            <div className="flex items-center justify-between w-full px-1">
+                <div className={`text-xs font-black px-3 py-1.5 rounded-full border ${
+                    isMyTurn ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-gray-50 border-gray-200 text-gray-400'
+                }`}>
+                    {isMyTurn ? '← دورك!' : `دور ${opponent?.name || '...'}`}
+                </div>
+                <MoveTimerRing seconds={moveTimer} urgent={moveTimer <= 5}/>
+            </div>
+
+            {/* Board */}
+            <div className="grid grid-cols-3 gap-2 bg-white p-3 rounded-3xl shadow-2xl border border-gray-100 w-full aspect-square">
+                {match.game_state.board.map((cell: string, idx: number) => (
+                    <button key={idx} onClick={() => handleCellClick(idx)}
+                        disabled={cell !== null || match.game_state.current_turn !== employee.employee_id}
+                        className={`rounded-xl text-4xl font-black flex items-center justify-center transition-all ${
+                            !cell
+                                ? isMyTurn
+                                    ? 'bg-gray-50 hover:bg-indigo-50 hover:scale-105 active:scale-95'
+                                    : 'bg-gray-50'
+                                : cell === 'X'
+                                    ? 'bg-indigo-50 text-indigo-600'
+                                    : 'bg-rose-50 text-rose-500'
+                        }`}>
+                        {cell && <span className="animate-in zoom-in spin-in-12">{cell}</span>}
+                    </button>
+                ))}
+            </div>
         </div>
     );
 
