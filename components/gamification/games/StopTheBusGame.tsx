@@ -604,9 +604,12 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     };
 
     const myVote = (myRecord?.voteRound === currentVoteRound) ? (myRecord?.vote ?? null) : null;
-    const allVoted = status === 'finished' && records.length === players.length &&
+    // allVoted: everyone submitted a vote for the CURRENT round specifically
+    const allVoted = status === 'finished' && records.length >= players.length &&
         records.every(r => r.vote !== null && r.voteRound === currentVoteRound);
     const outcome = allVoted ? resolveVotes(records, currentVoteRound) : null;
+    // showVotingPanel: show whenever not everyone has voted in current round OR conflict needs re-vote
+    const showVotingPanel = status === 'finished' && !allVoted;
 
     // ─────────────────────────────────────────────────────────────────────────
     // WAITING
@@ -727,7 +730,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             <AnswersTable records={records} letter={letter} myId={myId}/>
 
             {/* Voting section */}
-            {(!allVoted || (outcome?.result === 'conflict' && currentVoteRound < MAX_VOTE_ROUNDS)) ? (
+            {showVotingPanel ? (
                 <VotingPanel
                     records={records}
                     myId={myId}
