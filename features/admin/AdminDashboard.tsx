@@ -8,7 +8,7 @@ import {
     Activity, Settings, LogOut, Menu, X, Mail, FileBarChart,
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
-    LayoutDashboard, UserCog, ShieldCheck, BarChart3, MapPin, Swords,
+    LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
     Trash2, UserPlus // تم استيراد أيقونة جديدة لبوابة الزائرين
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
