@@ -12,7 +12,7 @@ import {
     Trash2, UserPlus // تم استيراد أيقونة جديدة لبوابة الزائرين
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { BookOpen } from 'lucide-react';
+// import { BookOpen } from 'lucide-react';visitors_dashboard
 
 // Imports (Components)
 import HomeTab from './components/HomeTab';
@@ -206,7 +206,7 @@ export default function AdminDashboard() {
             case 'tasks': return <TasksManager employees={employees || []} />;
             case 'vaccinations': return <VaccinationsTab employees={employees || []} />;
             case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
-            case 'visitors_dashboard': return <AdminVisitorsDashboard />; // ✅ عرض بوابة الزائرين
+         // case 'visitors_dashboard': return <AdminVisitorsDashboard />; // ✅ عرض بوابة الزائرين
             default: return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
         }
     };
@@ -379,7 +379,7 @@ export default function AdminDashboard() {
 // قائمة القائمة الجانبية المحدثة
 const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
-    { id: 'visitors_dashboard', label: 'بوابة الزائرين', icon: UserPlus }, // ✅ تمت الإضافة هنا كأولوية للمدير
+ // { id: 'visitors_dashboard', label: 'بوابة الزائرين', icon: UserPlus }, // ✅ تمت الإضافة هنا كأولوية للمدير
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
