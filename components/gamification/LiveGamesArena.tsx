@@ -312,7 +312,6 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                 avatar: selectedAlias.emoji,
                 avatarBg: selectedAlias.bg,
                 isAlias: true,
-                realName: employee.name?.split(' ')[0],
                 symbol: selectedGameType === 'xo' ? 'X' : selectedGameType === 'connect4' ? 'R' : undefined,
             };
         }
@@ -562,14 +561,6 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                                         onClick={() => setSelectedAlias(alias)}
                                     />
                                 ))}
-                            </div>
-                        )}
-
-                        {/* Note for stopthebus */}
-                        {(joiningMatchId ? joiningGameType : selectedGameType) === 'stopthebus' && useAlias && (
-                            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3 text-right">
-                                <span className="text-base mt-0.5">💡</span>
-                                <p className="text-[11px] font-bold text-amber-700">هويتك الحقيقية ستُكشف تلقائياً للاعبين بعد انتهاء الجولة!</p>
                             </div>
                         )}
 
