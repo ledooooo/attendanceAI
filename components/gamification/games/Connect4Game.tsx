@@ -1,19 +1,22 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Loader2, Trophy, Handshake, LogOut, Zap } from 'lucide-react';
+import { Loader2, Trophy, Handshake, LogOut, Zap, Wifi, WifiOff, Timer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
 // ─── Board geometry — all relative, scales to container ──────────────────────
 const ROWS = 6;
 const COLS = 7;
-// We use a fixed viewBox and let SVG scale to fill width
 const VB_PAD  = 10;
 const VB_CELL = 52;
 const VB_GAP  = 6;
-const VB_W    = COLS * VB_CELL + (COLS - 1) * VB_GAP + VB_PAD * 2;  // 388
-const VB_H    = ROWS * VB_CELL + (ROWS - 1) * VB_GAP + VB_PAD * 2;  // 352
-const VB_R    = VB_CELL / 2 - 5;   // piece radius
+const VB_W    = COLS * VB_CELL + (COLS - 1) * VB_GAP + VB_PAD * 2;
+const VB_H    = ROWS * VB_CELL + (ROWS - 1) * VB_GAP + VB_PAD * 2;
+const VB_R    = VB_CELL / 2 - 5;
+
+// ─── Move timer duration ──────────────────────────────────────────────────────
+const MOVE_TIMER_SECS = 30;
+const OFFLINE_CLOSE_SECS = 30;
 
 type Cell = 'R' | 'Y' | null;
 type Board = Cell[][];
@@ -21,36 +24,44 @@ type Board = Cell[][];
 // ─── Audio ────────────────────────────────────────────────────────────────────
 function useSound() {
     const ctx = useRef<AudioContext | null>(null);
-
     const getCtx = () => {
         if (!ctx.current) ctx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         return ctx.current;
     };
-
-    const play = useCallback((type: 'drop' | 'win' | 'draw' | 'invalid') => {
+    return useCallback((type: 'drop' | 'win' | 'draw' | 'invalid' | 'tick' | 'timeout') => {
         try {
-            const ac = getCtx();
-            const now = ac.currentTime;
-
+            const ac = getCtx(), now = ac.currentTime;
             if (type === 'drop') {
-                // Short click + soft thud
-                const osc = ac.createOscillator();
-                const gain = ac.createGain();
+                const osc = ac.createOscillator(), gain = ac.createGain();
                 osc.connect(gain); gain.connect(ac.destination);
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(600, now);
+                osc.type = 'sine'; osc.frequency.setValueAtTime(600, now);
                 osc.frequency.exponentialRampToValueAtTime(180, now + 0.18);
                 gain.gain.setValueAtTime(0.35, now);
                 gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
                 osc.start(now); osc.stop(now + 0.22);
             }
-
+            if (type === 'tick') {
+                const osc = ac.createOscillator(), gain = ac.createGain();
+                osc.connect(gain); gain.connect(ac.destination);
+                osc.type = 'sine'; osc.frequency.value = 660;
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+                osc.start(now); osc.stop(now + 0.06);
+            }
+            if (type === 'timeout') {
+                [330, 220].forEach((f, i) => {
+                    const osc = ac.createOscillator(), gain = ac.createGain();
+                    osc.connect(gain); gain.connect(ac.destination);
+                    osc.type = 'sine'; osc.frequency.value = f;
+                    const t = now + i * 0.2;
+                    gain.gain.setValueAtTime(0.2, t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+                    osc.start(t); osc.stop(t + 0.3);
+                });
+            }
             if (type === 'win') {
-                // Ascending fanfare
-                const notes = [523, 659, 784, 1047];
-                notes.forEach((freq, i) => {
-                    const osc = ac.createOscillator();
-                    const gain = ac.createGain();
+                [523, 659, 784, 1047].forEach((freq, i) => {
+                    const osc = ac.createOscillator(), gain = ac.createGain();
                     osc.connect(gain); gain.connect(ac.destination);
                     osc.type = 'triangle';
                     const t = now + i * 0.13;
@@ -61,12 +72,9 @@ function useSound() {
                     osc.start(t); osc.stop(t + 0.35);
                 });
             }
-
             if (type === 'draw') {
-                // Two descending notes
                 [440, 330].forEach((freq, i) => {
-                    const osc = ac.createOscillator();
-                    const gain = ac.createGain();
+                    const osc = ac.createOscillator(), gain = ac.createGain();
                     osc.connect(gain); gain.connect(ac.destination);
                     osc.type = 'sine';
                     const t = now + i * 0.2;
@@ -76,21 +84,16 @@ function useSound() {
                     osc.start(t); osc.stop(t + 0.3);
                 });
             }
-
             if (type === 'invalid') {
-                const osc = ac.createOscillator();
-                const gain = ac.createGain();
+                const osc = ac.createOscillator(), gain = ac.createGain();
                 osc.connect(gain); gain.connect(ac.destination);
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(120, now);
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(120, now);
                 gain.gain.setValueAtTime(0.2, now);
                 gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
                 osc.start(now); osc.stop(now + 0.15);
             }
         } catch (_) {}
     }, []);
-
-    return play;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -144,7 +147,6 @@ function getWinCells(board: Board): [number,number][] {
     return [];
 }
 
-// viewBox cell center
 function vbCenter(r: number, c: number): [number, number] {
     return [
         VB_PAD + c * (VB_CELL + VB_GAP) + VB_CELL / 2,
@@ -152,7 +154,6 @@ function vbCenter(r: number, c: number): [number, number] {
     ];
 }
 
-// Convert client coords to column index using SVG hit-testing
 function clientToCol(svgEl: SVGSVGElement, clientX: number): number {
     const rect = svgEl.getBoundingClientRect();
     const svgX = (clientX - rect.left) / rect.width * VB_W;
@@ -161,19 +162,40 @@ function clientToCol(svgEl: SVGSVGElement, clientX: number): number {
         const right = left + VB_CELL;
         if (svgX >= left && svgX <= right) return c;
     }
-    // clamp to nearest column edge
     if (svgX < VB_PAD) return 0;
     return COLS - 1;
 }
 
-// ─── Piece with drop animation ────────────────────────────────────────────────
+// ─── Move Timer Ring ──────────────────────────────────────────────────────────
+function MoveTimerRing({ seconds, isMyTurn }: { seconds: number; isMyTurn: boolean }) {
+    const r = 20, circ = 2 * Math.PI * r;
+    const frac = seconds / MOVE_TIMER_SECS;
+    const color = seconds <= 5 ? '#ef4444' : seconds <= 10 ? '#f97316' : isMyTurn ? '#22c55e' : '#94a3b8';
+    return (
+        <div className="relative w-11 h-11 flex items-center justify-center flex-shrink-0">
+            <svg width={44} height={44} viewBox="0 0 44 44" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx={22} cy={22} r={r} fill="none" stroke="#e5e7eb" strokeWidth={3.5}/>
+                <circle cx={22} cy={22} r={r} fill="none" stroke={color} strokeWidth={3.5}
+                    strokeDasharray={circ}
+                    strokeDashoffset={circ * (1 - frac)}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}/>
+            </svg>
+            <span className={`absolute text-[11px] font-black ${seconds <= 5 ? 'text-red-600 animate-pulse' : isMyTurn ? 'text-green-700' : 'text-gray-400'}`}>
+                {seconds}
+            </span>
+        </div>
+    );
+}
+
+// ─── Piece ────────────────────────────────────────────────────────────────────
 function Piece({ r, c, symbol, isNew, isWin, winPulse }: {
     r: number; c: number; symbol: Cell;
     isNew: boolean; isWin: boolean; winPulse: boolean;
 }) {
     const [cx, cy] = vbCenter(r, c);
-    const startCy  = VB_PAD + VB_CELL / 2;   // top of board
-    const [curY, setCurY] = useState(isNew ? startCy - cy : 0);  // offset from final pos
+    const startCy  = VB_PAD + VB_CELL / 2;
+    const [curY, setCurY] = useState(isNew ? startCy - cy : 0);
 
     useEffect(() => {
         if (!isNew) return;
@@ -193,11 +215,9 @@ function Piece({ r, c, symbol, isNew, isWin, winPulse }: {
             transform: `translateY(${curY}px)`,
             transition: isNew ? 'transform 0.38s cubic-bezier(0.22, 1.8, 0.45, 1)' : undefined,
         }}>
-            {/* outer glow */}
             <circle cx={cx} cy={cy} r={VB_R + 5}
                 fill={isWin && winPulse ? glow : base}
-                opacity={isWin ? (winPulse ? 0.5 : 0.2) : 0.2}
-            />
+                opacity={isWin ? (winPulse ? 0.5 : 0.2) : 0.2}/>
             <defs>
                 <radialGradient id={`g${r}${c}`} cx="33%" cy="28%" r="68%">
                     <stop offset="0%"   stopColor={light}/>
@@ -206,14 +226,44 @@ function Piece({ r, c, symbol, isNew, isWin, winPulse }: {
                 </radialGradient>
             </defs>
             <circle cx={cx} cy={cy} r={VB_R} fill={`url(#g${r}${c})`}/>
-            {/* shine */}
             <ellipse cx={cx - VB_R*0.22} cy={cy - VB_R*0.28}
                 rx={VB_R*0.3} ry={VB_R*0.17} fill="white" opacity={0.5}/>
         </g>
     );
 }
 
-// ─── SVG Board — single pointer event surface ─────────────────────────────────
+// ─── PlayerChip ───────────────────────────────────────────────────────────────
+function PlayerChip({ name, symbol, active, isMe, moveTimer }: {
+    name: string; symbol: string; active: boolean; isMe: boolean; moveTimer?: number;
+}) {
+    const isRed = symbol === 'R';
+    return (
+        <div className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-2xl border-2 transition-all duration-300 ${
+            active
+                ? isRed ? 'border-red-400 bg-red-50 shadow-md' : 'border-yellow-400 bg-yellow-50 shadow-md'
+                : 'border-gray-100 bg-white opacity-60'
+        }`}>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-white text-lg shadow-md ${
+                isRed ? 'bg-gradient-to-br from-red-400 to-red-600' : 'bg-gradient-to-br from-yellow-300 to-amber-500'
+            }`}>
+                {symbol === 'R' ? '🔴' : '🟡'}
+            </div>
+            <div className="flex-1 min-w-0">
+                <p className={`text-xs font-black truncate ${active ? 'text-gray-800' : 'text-gray-400'}`}>
+                    {isMe ? 'أنت' : name}
+                </p>
+                <p className={`text-[10px] font-bold ${active ? (isRed ? 'text-red-500' : 'text-amber-600') : 'text-gray-300'}`}>
+                    {active ? '← دوره' : '⏸'}
+                </p>
+            </div>
+            {active && moveTimer !== undefined && (
+                <MoveTimerRing seconds={moveTimer} isMyTurn={isMe}/>
+            )}
+        </div>
+    );
+}
+
+// ─── SVG Board ────────────────────────────────────────────────────────────────
 function BoardSVG({ board, onColClick, disabled, mySymbol, lastMove }: {
     board: Board; onColClick: (col: number) => void;
     disabled: boolean; mySymbol: Cell; lastMove: [number,number] | null;
@@ -232,7 +282,6 @@ function BoardSVG({ board, onColClick, disabled, mySymbol, lastMove }: {
     const isRed     = mySymbol === 'R';
     const accentClr = isRed ? '#ef4444' : '#facc15';
 
-    // ── unified pointer → column ──────────────────────────────────────────────
     const resolveCol = (e: React.PointerEvent<SVGSVGElement>) => {
         if (!svgRef.current) return -1;
         return clientToCol(svgRef.current, e.clientX);
@@ -244,20 +293,17 @@ function BoardSVG({ board, onColClick, disabled, mySymbol, lastMove }: {
         const col = resolveCol(e);
         if (col >= 0) setHoverCol(col);
     };
-
     const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
         if (disabled) { setHoverCol(null); return; }
         const col = resolveCol(e);
         setHoverCol(col >= 0 ? col : null);
     };
-
     const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
         if (disabled) return;
         const col = resolveCol(e);
         if (col >= 0) onColClick(col);
         setHoverCol(null);
     };
-
     const handlePointerLeave = () => setHoverCol(null);
 
     const previewRow = hoverCol !== null && !disabled ? getDropRow(board, hoverCol) : -1;
@@ -279,19 +325,12 @@ function BoardSVG({ board, onColClick, disabled, mySymbol, lastMove }: {
                     <stop offset="0%"   stopColor="#1d4ed8"/>
                     <stop offset="100%" stopColor="#1e3a8a"/>
                 </linearGradient>
-                <filter id="inset-shadow" x="-10%" y="-10%" width="120%" height="120%">
-                    <feComposite in="SourceGraphic" in2="SourceGraphic" operator="over"/>
-                    <feGaussianBlur stdDeviation="2" result="blur"/>
-                    <feComposite in="blur" in2="SourceGraphic" operator="in" result="inner"/>
-                    <feColorMatrix in="inner" type="matrix"
-                        values="0 0 0 0 0   0 0 0 0 0   0 0 0 0 0   0 0 0 0.6 0"/>
-                </filter>
                 <filter id="drop-shadow">
                     <feDropShadow dx="0" dy="6" stdDeviation="10" floodColor="#1e3a8a" floodOpacity="0.7"/>
                 </filter>
             </defs>
 
-            {/* Hover preview piece */}
+            {/* Hover preview */}
             {hoverCol !== null && !disabled && (
                 <g opacity={0.75}>
                     <defs>
@@ -300,83 +339,63 @@ function BoardSVG({ board, onColClick, disabled, mySymbol, lastMove }: {
                             <stop offset="100%" stopColor={accentClr}/>
                         </radialGradient>
                     </defs>
-                    <circle
-                        cx={VB_PAD + hoverCol * (VB_CELL + VB_GAP) + VB_CELL / 2}
-                        cy={PREVIEW_Y + (VB_CELL * 0.7) / 2}
-                        r={VB_R * 0.85}
-                        fill="url(#prev-g)"
-                    />
-                    {/* arrow */}
-                    <text
-                        x={VB_PAD + hoverCol * (VB_CELL + VB_GAP) + VB_CELL / 2}
-                        y={VB_PAD - 3}
-                        textAnchor="middle"
-                        fontSize={13}
-                        fill={accentClr}
-                        fontWeight="bold"
-                    >▼</text>
+                    {(() => {
+                        const [cx] = vbCenter(0, hoverCol);
+                        return (
+                            <>
+                                <circle cx={cx} cy={PREVIEW_Y + VB_CELL * 0.35} r={VB_R}
+                                    fill={`url(#prev-g)`} filter="url(#drop-shadow)"/>
+                                <ellipse cx={cx - VB_R*0.22} cy={PREVIEW_Y + VB_CELL*0.35 - VB_R*0.28}
+                                    rx={VB_R*0.3} ry={VB_R*0.17} fill="white" opacity={0.5}/>
+                                {previewRow >= 0 && (
+                                    <circle cx={cx} cy={vbCenter(previewRow, hoverCol)[1]} r={VB_R}
+                                        fill={accentClr} opacity={0.2}/>
+                                )}
+                            </>
+                        );
+                    })()}
                 </g>
             )}
 
-            {/* Board background */}
-            <rect x={0} y={0} width={VB_W} height={VB_H}
-                rx={18} ry={18}
-                fill="url(#board-grad)"
-                filter="url(#drop-shadow)"
-            />
+            {/* Board */}
+            <rect x={0} y={VB_PAD - 4} width={VB_W} height={VB_H - VB_PAD + 4}
+                rx={18} fill="url(#board-grad)" filter="url(#drop-shadow)"/>
 
-            {/* Slot holes */}
+            {/* Holes */}
             {Array.from({ length: ROWS }, (_, r) =>
                 Array.from({ length: COLS }, (_, c) => {
                     const [cx, cy] = vbCenter(r, c);
-                    const isPreview = hoverCol === c && previewRow === r && !disabled;
                     return (
-                        <circle key={`h${r}${c}`}
-                            cx={cx} cy={cy} r={VB_R}
-                            fill={isPreview
-                                ? (isRed ? 'rgba(239,68,68,0.22)' : 'rgba(250,204,21,0.22)')
-                                : '#172554'}
-                            style={{ transition: 'fill 0.12s' }}
-                        />
+                        <circle key={`${r}-${c}`} cx={cx} cy={cy} r={VB_R + 2}
+                            fill="none" stroke="rgba(0,0,20,0.35)" strokeWidth={2}/>
                     );
                 })
             )}
 
             {/* Pieces */}
-            {board.map((row, r) => row.map((cell, c) => {
-                if (!cell) return null;
-                const isNew = !!(lastMove && lastMove[0]===r && lastMove[1]===c);
-                const isWin = winCells.some(([wr,wc]) => wr===r && wc===c);
-                return <Piece key={`p${r}${c}`} r={r} c={c} symbol={cell} isNew={isNew} isWin={isWin} winPulse={winPulse}/>;
-            }))}
+            {board.map((row, r) =>
+                row.map((cell, c) => {
+                    if (!cell) return null;
+                    const isLast = lastMove?.[0] === r && lastMove?.[1] === c;
+                    const isWin  = winCells.some(([wr,wc]) => wr===r && wc===c);
+                    return <Piece key={`${r}-${c}`} r={r} c={c} symbol={cell}
+                        isNew={isLast} isWin={isWin} winPulse={winPulse}/>;
+                })
+            )}
 
-            {/* Corner bolts */}
-            {[[14,14],[VB_W-14,14],[14,VB_H-14],[VB_W-14,VB_H-14]].map(([bx,by],i) => (
-                <circle key={`bolt${i}`} cx={bx} cy={by} r={4.5}
-                    fill="#1e3a8a" stroke="#3b82f6" strokeWidth={1.5} opacity={0.65}/>
-            ))}
+            {/* Holes overlay */}
+            {Array.from({ length: ROWS }, (_, r) =>
+                Array.from({ length: COLS }, (_, c) => {
+                    const [cx, cy] = vbCenter(r, c);
+                    const hasCell = board[r][c] !== null;
+                    return (
+                        <circle key={`h${r}-${c}`} cx={cx} cy={cy} r={VB_R + 1}
+                            fill={hasCell ? 'none' : '#0f172a'}
+                            opacity={hasCell ? 0 : 0.55}/>
+                    );
+                })
+            )}
         </svg>
-    );
-}
-
-// ─── Player chip ──────────────────────────────────────────────────────────────
-function PlayerChip({ name, symbol, active, isMe }: { name:string; symbol:'R'|'Y'; active:boolean; isMe:boolean }) {
-    const isRed = symbol === 'R';
-    return (
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all duration-300 min-w-0 flex-1 ${
-            active
-                ? isRed ? 'bg-red-50 border-red-400 shadow-md' : 'bg-yellow-50 border-yellow-400 shadow-md'
-                : 'bg-gray-50 border-gray-200 opacity-55'
-        }`}>
-            <div className={`w-6 h-6 flex-shrink-0 rounded-full ${
-                isRed ? 'bg-gradient-to-br from-red-300 to-red-600' : 'bg-gradient-to-br from-yellow-200 to-yellow-500'
-            } ${active ? 'ring-2 ring-offset-1 ' + (isRed ? 'ring-red-500' : 'ring-yellow-500') : ''}`}/>
-            <div className="min-w-0 flex-1">
-                <p className="font-black text-xs text-gray-800 truncate">{name}</p>
-                {isMe && <p className="text-[10px] font-bold text-gray-400 leading-none">أنت</p>}
-            </div>
-            {active && <Zap className={`w-3.5 h-3.5 flex-shrink-0 animate-pulse ${isRed ? 'text-red-500' : 'text-yellow-500'}`}/>}
-        </div>
     );
 }
 
@@ -397,6 +416,13 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
     const soundedWin   = useRef(false);
     const soundedDraw  = useRef(false);
 
+    // ── Move timer ────────────────────────────────────────────────────────────
+    const [moveTimer, setMoveTimer] = useState(MOVE_TIMER_SECS);
+    const [offlineCountdown, setOfflineCountdown] = useState<number | null>(null);
+    const [opponentOffline, setOpponentOffline] = useState(false);
+    const prevTurnRef = useRef<string | null>(null);
+    const timerPlayedRef = useRef<Set<number>>(new Set());
+
     const board: Board = useMemo(() => match.game_state?.board ?? emptyBoard(), [match.game_state?.board]);
 
     // Detect last placed piece & play drop sound
@@ -411,16 +437,70 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
         prevBoardRef.current = board;
     }, [board]);
 
+    // Reset timer on turn change
+    useEffect(() => {
+        const currentTurn = match.game_state?.current_turn;
+        if (currentTurn && currentTurn !== prevTurnRef.current) {
+            prevTurnRef.current = currentTurn;
+            setMoveTimer(MOVE_TIMER_SECS);
+            setOpponentOffline(false);
+            setOfflineCountdown(null);
+            timerPlayedRef.current.clear();
+        }
+    }, [match.game_state?.current_turn]);
+
+    // Countdown timer
+    useEffect(() => {
+        if (match.status !== 'playing') return;
+        const iv = setInterval(() => {
+            setMoveTimer(prev => {
+                const next = prev - 1;
+                if ([10, 5, 3, 2, 1].includes(next) && !timerPlayedRef.current.has(next)) {
+                    timerPlayedRef.current.add(next);
+                    play('tick');
+                }
+                if (next <= 0) {
+                    clearInterval(iv);
+                    play('timeout');
+                    // Detect offline opponent — only the non-active player triggers this
+                    const activeId = match.game_state?.current_turn;
+                    if (activeId !== employee.employee_id) {
+                        setOpponentOffline(true);
+                        setOfflineCountdown(OFFLINE_CLOSE_SECS);
+                    }
+                    return 0;
+                }
+                return next;
+            });
+        }, 1000);
+        return () => clearInterval(iv);
+    }, [match.game_state?.current_turn, match.status]);
+
+    // Offline close countdown
+    useEffect(() => {
+        if (offlineCountdown === null) return;
+        if (offlineCountdown <= 0) {
+            // Close the game — declare opponent forfeit
+            const activeId = match.game_state?.current_turn;
+            const winnerId = match.players?.find((p: any) => p.id !== activeId)?.id ?? null;
+            supabase.from('live_matches').update({
+                status: 'finished',
+                winner_id: winnerId,
+            }).eq('id', match.id);
+            return;
+        }
+        const iv = setInterval(() => setOfflineCountdown(p => (p ?? 1) - 1), 1000);
+        return () => clearInterval(iv);
+    }, [offlineCountdown]);
+
     // Win / draw sound
     useEffect(() => {
         const status = match.status;
         if ((status === 'reward_time' || status === 'finished') && match.winner_id && !soundedWin.current) {
-            soundedWin.current = true;
-            play('win');
+            soundedWin.current = true; play('win');
         }
         if (status === 'finished' && !match.winner_id && !soundedDraw.current) {
-            soundedDraw.current = true;
-            play('draw');
+            soundedDraw.current = true; play('draw');
         }
     }, [match.status, match.winner_id]);
 
@@ -435,12 +515,10 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
 
         const { board: nextBoard } = result;
         const winnerSymbol = checkWinner(nextBoard);
-        let newStatus = 'playing';
-        let winnerId: string | null = null;
+        let newStatus = 'playing', winnerId: string | null = null;
 
-        if (winnerSymbol === 'draw') {
-            newStatus = 'finished';
-        } else if (winnerSymbol) {
+        if (winnerSymbol === 'draw') newStatus = 'finished';
+        else if (winnerSymbol) {
             newStatus = 'reward_time';
             winnerId  = winnerSymbol === me?.symbol ? me?.id : opponent?.id;
         }
@@ -474,6 +552,21 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
     // ── PLAYING ───────────────────────────────────────────────────────────────
     if (status === 'playing') return (
         <div className="flex flex-col gap-2 py-2 px-3">
+
+            {/* Offline alert */}
+            {opponentOffline && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-2xl px-3 py-2.5 flex items-center gap-2 animate-in slide-in-from-top">
+                    <WifiOff className="w-5 h-5 text-red-500 flex-shrink-0"/>
+                    <div className="flex-1">
+                        <p className="text-xs font-black text-red-700">{opponent?.name || 'المنافس'} غير متصل!</p>
+                        <p className="text-[11px] text-red-400 font-bold">تغلق اللعبة خلال {offlineCountdown} ثانية</p>
+                    </div>
+                    <div className="w-8 h-8 rounded-full bg-red-200 flex items-center justify-center">
+                        <span className="text-sm font-black text-red-700">{offlineCountdown}</span>
+                    </div>
+                </div>
+            )}
+
             {/* Turn banner */}
             <div className={`text-center text-xs font-black py-2 px-3 rounded-xl border-2 transition-all duration-400 ${
                 isMyTurn
@@ -487,11 +580,23 @@ export default function Connect4Game({ match, employee, onExit, grantPoints }: P
 
             {/* Players */}
             <div className="flex gap-2">
-                <PlayerChip name={me?.name || 'أنت'} symbol={me?.symbol || 'R'} active={isMyTurn} isMe={true}/>
-                <PlayerChip name={opponent?.name || 'المنافس'} symbol={opponent?.symbol || 'Y'} active={!isMyTurn} isMe={false}/>
+                <PlayerChip
+                    name={me?.name || 'أنت'}
+                    symbol={me?.symbol || 'R'}
+                    active={isMyTurn}
+                    isMe={true}
+                    moveTimer={isMyTurn ? moveTimer : undefined}
+                />
+                <PlayerChip
+                    name={opponent?.name || 'المنافس'}
+                    symbol={opponent?.symbol || 'Y'}
+                    active={!isMyTurn}
+                    isMe={false}
+                    moveTimer={!isMyTurn ? moveTimer : undefined}
+                />
             </div>
 
-            {/* Board — fills width with side margins */}
+            {/* Board */}
             <div className="w-full">
                 <BoardSVG
                     board={board}
