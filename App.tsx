@@ -58,6 +58,9 @@ const AppContent = () => {
   if (currentPath === '/contact') return <ContactPage />;
   if (currentPath === '/directory') return <StaffDirectoryPage />;
   if (currentPath === '/survey') return <SurveyPage />;
+  
+  // ✅ مسار الزائر العام ليفتح لوحة المريض كزائر
+  if (currentPath === '/guest') return <PatientDashboard isGuest={true} />; 
 
   const { user, employeeProfile, loading, isAdmin } = useAuth();
 
@@ -165,13 +168,13 @@ const AppContent = () => {
 
   // ==========================================
   // 🌟 مسار الزوار والمواطنين (آمن ولا يجمع بيانات طبية)
-  // إذا لم يكن موظفاً ولا مشرفاً، فهو زائر!
+  // إذا لم يكن موظفاً ولا مشرفاً، فهو مريض مسجل دخول بجوجل
   // ==========================================
   if (!employeeProfile) {
     return (
       <>
         <OfflineBanner />
-        <PatientDashboard />
+        <PatientDashboard isGuest={false} /> 
       </>
     );
   }
