@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { 
   Menu, X, User, Home, Activity, 
   MessageSquare, BookOpen, Phone, Share2, Heart, 
-  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, Lock
+  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock
 } from 'lucide-react';
 
 // ✅ المكونات المفعلة (مذكرات صحية شخصية آمنة + شكاوى)
