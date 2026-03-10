@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { 
   Menu, X, User, Home, Activity, 
   MessageSquare, BookOpen, Phone, Share2, Heart, 
-  Loader2, ChevronLeft, Baby, HeartPulse, Building2
+  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, Lock
 } from 'lucide-react';
 
 // ✅ المكونات المفعلة (مذكرات صحية شخصية آمنة + شكاوى)
@@ -15,14 +15,6 @@ import ChronicLogs from './tabs/ChronicLogs';
 import ChildGrowthLogs from './tabs/ChildGrowthLogs';
 import PregnancyLogs from './tabs/PregnancyLogs';
 import PatientComplaints from './tabs/PatientComplaints';
-
-// ⚠️ المكونات المعطلة (الاستشارات والملف الرسمي)
-/*
-import MedicalProfileWizard from './components/MedicalProfileWizard';
-import PatientProfile from './tabs/PatientProfile';
-import PatientAppointments from './tabs/PatientAppointments';
-import PatientConsultations from './tabs/PatientConsultations';
-*/
 
 interface Article {
   id: string;
@@ -35,7 +27,8 @@ interface Article {
   created_at: string;
 }
 
-export default function PatientDashboard() {
+// ✅ إضافة isGuest كـ Prop
+export default function PatientDashboard({ isGuest = false }: { isGuest?: boolean }) {
   const { user, signOut } = useAuth();
   
   const [activeTab, setActiveTab] = useState('home');
@@ -47,9 +40,8 @@ export default function PatientDashboard() {
 
   const articleCategories = ['الكل', 'تغذية', 'صحة الطفل', 'أمراض مزمنة', 'صحة المرأة', 'نصائح عامة', 'أخبار المركز'];
 
-  // نستخدم معرف المستخدم في المصادقة كمعرف عام لتخزين بياناته الشخصية (السجلات)
-  // هذا يغنينا عن الحاجة لإنشاء ملف طبي رسمي (Medical Profile)
-  const patientId = user?.id || 'guest';
+  // إذا كان المستخدم ضيفاً، لا يوجد ID، وإلا نستخدم معرف جوجل
+  const patientId = user?.id || null;
 
   useEffect(() => {
     const fetchArticles = async () => {
@@ -86,17 +78,17 @@ export default function PatientDashboard() {
     } catch (err) {}
   };
 
-  // ✅ القائمة الجانبية المحدثة
+  // ✅ القائمة الجانبية مع تحديد التبويبات التي تحتاج تسجيل دخول (requiresAuth)
   const menuItems = [
-    { id: 'home', label: 'الرئيسية والمقالات', icon: Home, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { id: 'home', label: 'الرئيسية والمقالات', icon: Home, color: 'text-indigo-600', bg: 'bg-indigo-50', requiresAuth: false },
     { divider: true, id: 'd1' },
-    { id: 'chronic_logs', label: 'مفكرة الأمراض المزمنة', icon: Activity, color: 'text-rose-600', bg: 'bg-rose-50' },
-    { id: 'child_logs', label: 'سجل نمو الطفل', icon: Baby, color: 'text-sky-600', bg: 'bg-sky-50' },
-    { id: 'pregnancy_logs', label: 'متابعة الحمل', icon: HeartPulse, color: 'text-pink-600', bg: 'bg-pink-50' },
+    { id: 'chronic_logs', label: 'مفكرة الأمراض المزمنة', icon: Activity, color: 'text-rose-600', bg: 'bg-rose-50', requiresAuth: true },
+    { id: 'child_logs', label: 'سجل نمو الطفل', icon: Baby, color: 'text-sky-600', bg: 'bg-sky-50', requiresAuth: true },
+    { id: 'pregnancy_logs', label: 'متابعة الحمل', icon: HeartPulse, color: 'text-pink-600', bg: 'bg-pink-50', requiresAuth: true },
     { divider: true, id: 'd2' },
-    { id: 'complaints', label: 'تواصل مع الإدارة', icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { id: 'policies', label: 'سياسات المركز', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50' },
-    { id: 'contact', label: 'دليل الأرقام', icon: Phone, color: 'text-gray-600', bg: 'bg-gray-50' },
+    { id: 'complaints', label: 'تواصل مع الإدارة', icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50', requiresAuth: true },
+    { id: 'policies', label: 'سياسات المركز', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50', requiresAuth: false },
+    { id: 'contact', label: 'دليل الأرقام', icon: Phone, color: 'text-gray-600', bg: 'bg-gray-50', requiresAuth: false },
   ];
 
   const bottomNavItems = [
@@ -105,7 +97,35 @@ export default function PatientDashboard() {
     { id: 'complaints', label: 'تواصل', icon: MessageSquare },
   ];
 
+  // 🌟 مكون (رسالة طلب تسجيل الدخول) يظهر للزوار عند محاولة فتح تبويب محمي
+  const RequireAuthMessage = () => (
+    <div className="h-full flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95">
+        <div className="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center mb-6 shadow-sm border border-red-100">
+            <Lock className="w-10 h-10 text-red-500" />
+        </div>
+        <h2 className="text-2xl font-black text-gray-800 mb-3 tracking-tight">خدمة مخصصة للمسجلين</h2>
+        <p className="text-sm font-bold text-gray-500 mb-8 max-w-sm leading-relaxed">
+            للحفاظ على سرية بياناتك الطبية، يرجى تسجيل الدخول بحساب Google للوصول إلى هذه الخدمة المجانية.
+        </p>
+        <button 
+            onClick={() => window.location.href = '/'} // يوجهه لصفحة الـ Login الرئيسية
+            className="flex items-center gap-3 bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all"
+        >
+            <LogIn size={20} /> تسجيل الدخول الآن
+        </button>
+    </div>
+  );
+
   const renderActiveTabContent = () => {
+    
+    // 1. التحقق من الصلاحيات قبل عرض المحتوى
+    const activeMenuInfo = menuItems.find(m => m.id === activeTab);
+    
+    // إذا كان التبويب يحتاج تسجيل دخول والمستخدم ضيف (isGuest) -> اعرض رسالة الحجب
+    if (activeMenuInfo?.requiresAuth && (isGuest || !patientId)) {
+        return <RequireAuthMessage />;
+    }
+
     if (activeTab === 'home') {
       return (
         <div className="max-w-4xl mx-auto p-4 md:p-6 animate-in fade-in">
@@ -201,12 +221,14 @@ export default function PatientDashboard() {
       );
     }
 
-    // ✅ استدعاء المكونات المفعلة
-    switch (activeTab) {
-      case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientId} /></div>;
-      case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientId} /></div>;
-      case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientId} /></div>;
-      case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientId} /></div>;
+    // ✅ استدعاء المكونات المفعلة (للمستخدمين المسجلين فقط)
+    if (patientId) {
+        switch (activeTab) {
+        case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientId} /></div>;
+        case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientId} /></div>;
+        case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientId} /></div>;
+        case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientId} /></div>;
+        }
     }
 
     return (
@@ -261,26 +283,39 @@ export default function PatientDashboard() {
                     }`}
                 >
                 {item.icon && <item.icon className={`w-5 h-5 ${isActive ? '' : 'opacity-70'}`} />} 
-                <span className="text-sm">{item.label}</span>
+                <span className="text-sm flex-1 text-right">{item.label}</span>
+                {/* إظهار علامة القفل إذا كان يحتاج تسجيل دخول والزائر غير مسجل */}
+                {item.requiresAuth && (isGuest || !patientId) && <Lock size={14} className="opacity-40" />}
                 </button>
             );
           })}
         </nav>
         
-        {/* تذييل القائمة (تسجيل الخروج) */}
+        {/* تذييل القائمة (تسجيل الخروج أو الدخول) */}
         <div className="p-5 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center gap-3 mb-4 px-2">
-              <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center border shadow-sm">
-                  <User className="w-5 h-5 text-gray-400" />
+              <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center border shadow-sm overflow-hidden">
+                  {user?.user_metadata?.avatar_url ? (
+                      <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                      <User className="w-5 h-5 text-gray-400" />
+                  )}
               </div>
               <div className="min-w-0 flex-1">
                   <p className="text-xs font-black text-gray-800 truncate">{user?.user_metadata?.full_name || 'زائر كريم'}</p>
-                  <p className="text-[10px] text-gray-500 font-bold truncate" dir="ltr">{user?.email}</p>
+                  <p className="text-[10px] text-gray-500 font-bold truncate" dir="ltr">{user?.email || 'تصفح بدون حساب'}</p>
               </div>
           </div>
-          <button onClick={signOut} className="w-full py-3 bg-white border border-red-100 text-red-600 rounded-2xl font-black text-sm hover:bg-red-50 hover:border-red-200 transition-all shadow-sm">
-              تسجيل الخروج
-          </button>
+          
+          {isGuest || !user ? (
+              <button onClick={() => window.location.href = '/'} className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-2">
+                  <LogIn size={16} /> تسجيل الدخول
+              </button>
+          ) : (
+              <button onClick={signOut} className="w-full py-3 bg-white border border-red-100 text-red-600 rounded-2xl font-black text-sm hover:bg-red-50 hover:border-red-200 transition-all shadow-sm flex items-center justify-center gap-2">
+                  <LogOut size={16} /> تسجيل الخروج
+              </button>
+          )}
         </div>
       </aside>
 
@@ -301,11 +336,14 @@ export default function PatientDashboard() {
           </div>
           
           <div className="flex items-center gap-3">
-             {/* أيقونة المستخدم للزينة */}
              <div className="hidden md:flex items-center gap-2 bg-white px-3 py-1.5 border border-gray-100 rounded-full shadow-sm">
                  <span className="text-xs font-bold text-gray-600">{user?.user_metadata?.full_name || 'زائر'}</span>
-                 <div className="w-7 h-7 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600">
-                     <User size={14} />
+                 <div className="w-7 h-7 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 overflow-hidden">
+                    {user?.user_metadata?.avatar_url ? (
+                        <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                        <User size={14} />
+                    )}
                  </div>
              </div>
           </div>
@@ -315,7 +353,7 @@ export default function PatientDashboard() {
           {renderActiveTabContent()}
         </main>
 
-        {/* البار السفلي للموبايل (تم تحسين تصميمه) */}
+        {/* البار السفلي للموبايل */}
         <div className="md:hidden fixed bottom-4 left-4 right-4 bg-white/90 backdrop-blur-lg border border-gray-100 rounded-3xl px-6 py-3 flex justify-between items-center z-50 shadow-2xl shadow-black/5">
           {bottomNavItems.map(item => {
             const isActive = activeTab === item.id;
