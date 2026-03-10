@@ -37,11 +37,31 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const [articles, setArticles] = useState<Article[]>([]);
   const [loadingArticles, setLoadingArticles] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('الكل');
+  
+  // حالة تحميل زر جوجل
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const articleCategories = ['الكل', 'تغذية', 'صحة الطفل', 'أمراض مزمنة', 'صحة المرأة', 'نصائح عامة', 'أخبار المركز'];
 
   // إذا كان المستخدم ضيفاً، لا يوجد ID، وإلا نستخدم معرف جوجل
   const patientId = user?.id || null;
+
+  // 🌟 دالة الدخول المباشر بحساب جوجل من داخل لوحة الزائر
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    try {
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin, // التوجيه للصفحة الرئيسية بعد الدخول ليكمل تصفح كمسجل
+            }
+        });
+        if (error) throw error;
+    } catch (err: any) {
+        toast.error('حدث خطأ أثناء الاتصال بخوادم جوجل. يرجى المحاولة لاحقاً.');
+        setGoogleLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchArticles = async () => {
@@ -97,7 +117,7 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     { id: 'complaints', label: 'تواصل', icon: MessageSquare },
   ];
 
-  // 🌟 مكون (رسالة طلب تسجيل الدخول) يظهر للزوار عند محاولة فتح تبويب محمي
+  // 🌟 مكون (رسالة طلب تسجيل الدخول)
   const RequireAuthMessage = () => (
     <div className="h-full flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95">
         <div className="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center mb-6 shadow-sm border border-red-100">
@@ -108,10 +128,12 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
             للحفاظ على سرية بياناتك الطبية، يرجى تسجيل الدخول بحساب Google للوصول إلى هذه الخدمة المجانية.
         </p>
         <button 
-            onClick={() => window.location.href = '/'} // يوجهه لصفحة الـ Login الرئيسية
-            className="flex items-center gap-3 bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all"
+            onClick={handleGoogleLogin} 
+            disabled={googleLoading}
+            className="flex items-center gap-3 bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all disabled:opacity-50"
         >
-            <LogIn size={20} /> تسجيل الدخول الآن
+            {googleLoading ? <Loader2 size={20} className="animate-spin" /> : <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5 bg-white rounded-full p-0.5" />} 
+            تسجيل الدخول الآن
         </button>
     </div>
   );
@@ -308,8 +330,8 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           </div>
           
           {isGuest || !user ? (
-              <button onClick={() => window.location.href = '/'} className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-2">
-                  <LogIn size={16} /> تسجيل الدخول
+              <button onClick={handleGoogleLogin} disabled={googleLoading} className="w-full py-3 bg-white border border-indigo-100 text-indigo-600 rounded-2xl font-black text-sm hover:bg-indigo-50 hover:border-indigo-200 transition-all shadow-sm flex items-center justify-center gap-2">
+                  {googleLoading ? <Loader2 size={16} className="animate-spin" /> : <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-4 h-4" />} تسجيل الدخول
               </button>
           ) : (
               <button onClick={signOut} className="w-full py-3 bg-white border border-red-100 text-red-600 rounded-2xl font-black text-sm hover:bg-red-50 hover:border-red-200 transition-all shadow-sm flex items-center justify-center gap-2">
