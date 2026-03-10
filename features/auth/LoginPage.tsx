@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
-import { Lock, Mail, Loader2, UserPlus, LogIn, ArrowRight, UserCheck, Phone, Building2, Briefcase } from 'lucide-react';
+import { Lock, Mail, Loader2, UserPlus, LogIn, ArrowRight, UserCheck, Phone, Building2, Briefcase, Users } from 'lucide-react'; // ✅ إضافة أيقونة Users
 
 const AVATARS = ["👨‍💼", "👩‍💼", "👨‍🔬", "👩‍🔬", "🕵️‍♂️", "🕵️‍♀️", "🧑‍💻", "👩‍💻"];
 
@@ -21,23 +21,10 @@ export default function LoginPage() {
   const [supAvatar, setSupAvatar] = useState(AVATARS[0]);
 
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
 
-  // دالة الدخول بحساب جوجل للزوار (مبسطة)
-  const handleGoogleLogin = async () => {
-    setGoogleLoading(true);
-    try {
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: window.location.origin, // التوجيه للصفحة الرئيسية بعد الدخول
-            }
-        });
-        if (error) throw error;
-    } catch (err: any) {
-        toast.error('حدث خطأ أثناء الاتصال بخوادم جوجل. يرجى المحاولة لاحقاً.');
-        setGoogleLoading(false);
-    }
+  // ✅ دالة دخول الزائر (توجيه مباشر للرابط بدون حساب)
+  const handleGuestLogin = () => {
+      window.location.href = '/guest';
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -272,10 +259,9 @@ export default function LoginPage() {
           </button>
         </form>
 
-{/* 🌟 قسم الزوار (دخول بجوجل) */}
+        {/* 🌟 قسم الزوار (بدون تسجيل دخول جوجل) */}
         {mode === 'signin' && (
             <div className="mt-8">
-                {/* 1. الخط الفاصل (تم فصله لتجنب تغطية الزر) */}
                 <div className="relative mb-6">
                     <div className="absolute inset-0 flex items-center pointer-events-none">
                         <div className="w-full border-t border-gray-200"></div>
@@ -285,27 +271,21 @@ export default function LoginPage() {
                     </div>
                 </div>
                 
-                {/* 2. زر الدخول بجوجل */}
+                {/* ✅ زر تصفح التطبيق كزائر */}
                 <button 
                     type="button"
-                    onClick={handleGoogleLogin} 
-                    disabled={googleLoading}
-                    className="w-full bg-white border-2 border-gray-100 text-gray-700 rounded-2xl py-3.5 text-sm font-black shadow-sm hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50 cursor-pointer relative z-10"
+                    onClick={handleGuestLogin} 
+                    className="w-full bg-white border-2 border-indigo-100 text-indigo-700 rounded-2xl py-3.5 text-sm font-black shadow-sm hover:bg-indigo-50 hover:border-indigo-200 transition-all flex items-center justify-center gap-3 active:scale-95 cursor-pointer relative z-10"
                 >
-                    {googleLoading ? <Loader2 className="w-5 h-5 animate-spin text-blue-500" /> : (
-                        <>
-                            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-                            تسجيل الدخول بحساب Google
-                        </>
-                    )}
+                    <Users className="w-5 h-5" />
+                    تصفح التطبيق كزائر
                 </button>
                 <p className="text-[10px] text-center text-gray-400 mt-3 font-bold leading-relaxed">
-                    الدخول مخصص للزوار للتعرف على مواعيد العيادات، سياسات المركز، والمشاركة بآرائهم ومقترحاتهم.
+                    الدخول مخصص للزوار للتعرف على مواعيد العيادات، تصفح المقالات الطبية، والمشاركة بآرائهم.
                 </p>
             </div>
         )}
 
-        
         {/* Back/Toggle Buttons */}
         <div className="flex flex-col gap-3 mt-6">
             {(mode === 'recovery' || mode === 'signup_supervisor') && (
@@ -318,7 +298,6 @@ export default function LoginPage() {
                 </button>
             )}
 
-            {/* زر إنشاء حساب مشرف جديد يظهر فقط في شاشة الدخول الرئيسية */}
             {mode === 'signin' && (
                 <div className="mt-2 pt-4 border-t border-gray-100 text-center">
                     <p className="text-xs text-gray-400 mb-2 font-bold">هل أنت مفتش أو مشرف من الإدارة؟</p>
@@ -338,4 +317,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
