@@ -7,13 +7,14 @@ import toast from 'react-hot-toast';
 import { 
   Menu, X, User, Home, Activity, 
   MessageSquare, BookOpen, Phone, Share2, Heart, 
-  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users
+  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users, CalendarIcon
 } from 'lucide-react';
 
 import ChronicLogs from './tabs/ChronicLogs';
 import ChildGrowthLogs from './tabs/ChildGrowthLogs';
 import PregnancyLogs from './tabs/PregnancyLogs';
 import PatientComplaints from './tabs/PatientComplaints';
+import PatientAppointments from './tabs/PatientAppointments'; // ✅ استيراد مكون المواعيد
 
 import ContactPage from '../../pages/public/ContactPage';
 import PricingPage from '../../pages/public/PricingPage';
@@ -78,12 +79,11 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
               if (existingPatient) {
                   setPatientDbId(existingPatient.id);
               } else {
-                  // ✅ الكود المحدث: إرسال الـ user_id والاسم فقط
-const newPatientData = {
-    user_id: user.id,
-    full_name: user.user_metadata?.full_name || 'مستخدم زائر', // ✅ استخدام full_name المطابق للقاعدة
-    gender: 'غير محدد' // إضافة حقل احتياطي لتجنب أي مشاكل أخرى في المستقبل
-};
+                  const newPatientData = {
+                      user_id: user.id,
+                      full_name: user.user_metadata?.full_name || 'مستخدم زائر', 
+                      gender: 'غير محدد' 
+                  };
                   const { data: newPatient, error: insertError } = await supabase
                       .from('patients')
                       .insert(newPatientData)
@@ -145,6 +145,8 @@ const newPatientData = {
   const menuItems = [
     { id: 'home', label: 'الرئيسية والمقالات', icon: Home, color: 'text-indigo-600', bg: 'bg-indigo-50', requiresAuth: false },
     { divider: true, id: 'd1' },
+    // ✅ إضافة تبويب المواعيد
+    { id: 'appointments', label: 'مواعيدي', icon: CalendarIcon, color: 'text-blue-600', bg: 'bg-blue-50', requiresAuth: true }, 
     { id: 'chronic_logs', label: 'مفكرة الأمراض المزمنة', icon: Activity, color: 'text-rose-600', bg: 'bg-rose-50', requiresAuth: true },
     { id: 'child_logs', label: 'سجل نمو الطفل', icon: Baby, color: 'text-sky-600', bg: 'bg-sky-50', requiresAuth: true },
     { id: 'pregnancy_logs', label: 'متابعة الحمل', icon: HeartPulse, color: 'text-pink-600', bg: 'bg-pink-50', requiresAuth: true },
@@ -159,8 +161,8 @@ const newPatientData = {
 
   const bottomNavItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
+    { id: 'appointments', label: 'مواعيدي', icon: CalendarIcon }, // ✅ تعديل البار السفلي
     { id: 'contact', label: 'تواصل', icon: Phone },
-    { id: 'chronic_logs', label: 'سجلاتي', icon: Activity },
   ];
 
   const RequireAuthMessage = () => (
@@ -299,6 +301,7 @@ const newPatientData = {
 
     if (patientDbId) {
         switch (activeTab) {
+            case 'appointments': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientAppointments patientId={patientDbId} /></div>; // ✅ توجيه لصفحة المواعيد
             case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientDbId} /></div>;
             case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientDbId} /></div>;
             case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientDbId} /></div>;
