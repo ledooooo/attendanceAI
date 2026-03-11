@@ -3,12 +3,12 @@ import { ArrowRight, FileText, CheckCircle2 } from 'lucide-react';
 
 export default function PricingPage() {
   const services = [
-    { name: 'كشف طب الأسرة', price: '50 ج.م' },
-    { name: 'كشف أخصائي', price: '80 ج.م' },
+    { name: 'كشف طب الأسرة', price: '5 ج.م' },
+    { name: 'كشف أخصائي', price: '15 ج.م' },
     { name: 'جلسة استنشاق (نيبولايزر)', price: '20 ج.م' },
-    { name: 'قياس سكر عشوائي', price: '15 ج.م' },
-    { name: 'رسم قلب (ECG)', price: '40 ج.م' },
-    { name: 'غيار على جرح (بسيط)', price: '30 ج.م' },
+    { name: 'قياس سكر عشوائي', price: '20 ج.م' },
+    { name: 'رسم قلب (ECG)', price: '25 ج.م' },
+    { name: 'غيار على جرح (بسيط)', price: '15 ج.م' },
   ];
 
   return (
