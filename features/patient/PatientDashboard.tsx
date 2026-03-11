@@ -10,13 +10,11 @@ import {
   Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users
 } from 'lucide-react';
 
-// ✅ المكونات المفعلة (مذكرات صحية شخصية آمنة + شكاوى)
 import ChronicLogs from './tabs/ChronicLogs';
 import ChildGrowthLogs from './tabs/ChildGrowthLogs';
 import PregnancyLogs from './tabs/PregnancyLogs';
 import PatientComplaints from './tabs/PatientComplaints';
 
-// ✅ استيراد الصفحات العامة
 import ContactPage from '../../pages/public/ContactPage';
 import PricingPage from '../../pages/public/PricingPage';
 import StaffDirectoryPage from '../../pages/public/StaffDirectoryPage';
@@ -45,7 +43,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   
   const [googleLoading, setGoogleLoading] = useState(false);
   
-  // 🌟 متغير لحفظ المعرف الشرعي للمريض من قاعدة البيانات
   const [patientDbId, setPatientDbId] = useState<string | null>(null);
   const [isInitializingProfile, setIsInitializingProfile] = useState(false);
 
@@ -65,7 +62,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     }
   };
 
-  // 🌟 دالة "الإنشاء الصامت" لملف المريض المبدئي لحل مشكلة الـ Foreign Key
   useEffect(() => {
       const initializeSilentProfile = async () => {
           if (isGuest || !user?.id) return;
@@ -73,26 +69,19 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           setIsInitializingProfile(true);
 
           try {
-              // 1. هل لديه ملف مريض بالفعل؟
-              const { data: existingPatient, error: searchError } = await supabase
+              const { data: existingPatient } = await supabase
                   .from('patients')
                   .select('id')
                   .eq('user_id', user.id)
                   .maybeSingle();
 
               if (existingPatient) {
-                  // لديه ملف، نستخدم رقمه الشرعي
                   setPatientDbId(existingPatient.id);
               } else {
-                  // 2. ليس لديه ملف! (مسجل جديد بجوجل). سننشئ له ملفاً صامتاً.
+                  // ✅ الكود المحدث: إرسال الـ user_id والاسم فقط
                   const newPatientData = {
                       user_id: user.id,
-                      name: user.user_metadata?.full_name || 'مستخدم جوجل',
-                      phone: 'غير محدد',
-                      gender: 'other',
-                      birth_date: '1990-01-01', // بيانات افتراضية لكي لا يرفضها الـ Database
-                      blood_type: 'O+',
-                      address: 'غير محدد'
+                      name: user.user_metadata?.full_name || 'مستخدم جوجل'
                   };
 
                   const { data: newPatient, error: insertError } = await supabase
@@ -117,7 +106,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
 
       initializeSilentProfile();
   }, [user?.id, isGuest]);
-
 
   useEffect(() => {
     const fetchArticles = async () => {
@@ -161,12 +149,10 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     { id: 'child_logs', label: 'سجل نمو الطفل', icon: Baby, color: 'text-sky-600', bg: 'bg-sky-50', requiresAuth: true },
     { id: 'pregnancy_logs', label: 'متابعة الحمل', icon: HeartPulse, color: 'text-pink-600', bg: 'bg-pink-50', requiresAuth: true },
     { divider: true, id: 'd2' },
-    
     { id: 'pricing', label: 'لائحة الأسعار', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', requiresAuth: false },
     { id: 'directory', label: 'هيكل الأطباء', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50', requiresAuth: false },
     { id: 'contact', label: 'تواصل معنا', icon: Phone, color: 'text-blue-600', bg: 'bg-blue-50', requiresAuth: false },
     { id: 'survey', label: 'استبيان الرضا', icon: MessageSquare, color: 'text-orange-600', bg: 'bg-orange-50', requiresAuth: false },
-    
     { divider: true, id: 'd3' },
     { id: 'complaints', label: 'رسالة للإدارة', icon: BookOpen, color: 'text-gray-600', bg: 'bg-gray-50', requiresAuth: true },
   ];
@@ -200,12 +186,10 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const renderActiveTabContent = () => {
     const activeMenuInfo = menuItems.find(m => m.id === activeTab);
     
-    // حجب التبويبات المحمية للزوار
     if (activeMenuInfo?.requiresAuth && (isGuest || !user)) {
         return <RequireAuthMessage />;
     }
 
-    // 🌟 إظهار شاشة تحميل قصيرة أثناء إنشاء الملف الصامت
     if (activeMenuInfo?.requiresAuth && isInitializingProfile) {
         return (
             <div className="h-full flex flex-col items-center justify-center">
@@ -313,7 +297,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         case 'survey': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><SurveyPage /></div>;
     }
 
-    // ✅ نستخدم المرجع الحقيقي (patientDbId) بدلاً من (user.id) لمنع الخطأ
     if (patientDbId) {
         switch (activeTab) {
             case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientDbId} /></div>;
