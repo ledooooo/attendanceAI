@@ -10,16 +10,13 @@ import {
   Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users
 } from 'lucide-react';
 
-// ✅ المكونات الطبية والشكاوى
+// ✅ المكونات المفعلة (مذكرات صحية شخصية آمنة + شكاوى)
 import ChronicLogs from './tabs/ChronicLogs';
 import ChildGrowthLogs from './tabs/ChildGrowthLogs';
 import PregnancyLogs from './tabs/PregnancyLogs';
 import PatientComplaints from './tabs/PatientComplaints';
 
-// ✅ إعادة تفعيل معالج الملف الطبي (يظهر فقط للمسجلين الجدد بجوجل)
-import MedicalProfileWizard from './components/MedicalProfileWizard';
-
-// ✅ استيراد الصفحات العامة
+// ✅ استيراد الصفحات العامة (لتُعرض داخل اللوحة بدلاً من فتحها في نافذة مستقلة)
 import ContactPage from '../../pages/public/ContactPage';
 import PricingPage from '../../pages/public/PricingPage';
 import StaffDirectoryPage from '../../pages/public/StaffDirectoryPage';
@@ -36,6 +33,7 @@ interface Article {
   created_at: string;
 }
 
+// ✅ إضافة isGuest كـ Prop
 export default function PatientDashboard({ isGuest = false }: { isGuest?: boolean }) {
   const { user, signOut } = useAuth();
   
@@ -45,47 +43,26 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const [articles, setArticles] = useState<Article[]>([]);
   const [loadingArticles, setLoadingArticles] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('الكل');
+  
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const articleCategories = ['الكل', 'تغذية', 'صحة الطفل', 'أمراض مزمنة', 'صحة المرأة', 'نصائح عامة', 'أخبار المركز'];
 
-  // 🌟 حالات الملف الطبي بقاعدة البيانات (لحل مشكلة الـ ID)
-  const [patientDbId, setPatientDbId] = useState<string | null>(null);
-  const [checkingProfile, setCheckingProfile] = useState(!isGuest && !!user);
+  const patientId = user?.id || null;
 
-  // جلب المعرف الحقيقي للمريض من جدول patients
-  useEffect(() => {
-    const fetchPatientProfile = async () => {
-        if (isGuest || !user?.id) {
-            setCheckingProfile(false);
-            return;
-        }
-        setCheckingProfile(true);
-        const { data } = await supabase
-            .from('patients')
-            .select('id')
-            .eq('user_id', user.id)
-            .maybeSingle();
-        
-        if (data) {
-            setPatientDbId(data.id); // ✅ هذا هو الـ ID الحقيقي المقبول عند الحفظ
-        }
-        setCheckingProfile(false);
-    };
-    fetchPatientProfile();
-  }, [user?.id, isGuest]);
-
-
+  // 🌟 دالة الدخول المباشر بحساب جوجل من داخل لوحة الزائر
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     try {
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
-            options: { redirectTo: window.location.origin }
+            options: {
+                redirectTo: window.location.origin, 
+            }
         });
         if (error) throw error;
     } catch (err: any) {
-        toast.error('حدث خطأ أثناء الاتصال بخوادم جوجل.');
+        toast.error('حدث خطأ أثناء الاتصال بخوادم جوجل. يرجى المحاولة لاحقاً.');
         setGoogleLoading(false);
     }
   };
@@ -93,14 +70,22 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   useEffect(() => {
     const fetchArticles = async () => {
       setLoadingArticles(true);
-      const { data } = await supabase.from('medical_articles').select('*').order('created_at', { ascending: false });
-      if (data) setArticles(data);
+      const { data, error } = await supabase
+        .from('medical_articles')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+      if (!error && data) {
+        setArticles(data);
+      }
       setLoadingArticles(false);
     };
     fetchArticles();
   }, []);
 
-  const filteredArticles = selectedCategory === 'الكل' ? articles : articles.filter(a => a.category === selectedCategory);
+  const filteredArticles = selectedCategory === 'الكل' 
+    ? articles 
+    : articles.filter(a => a.category === selectedCategory);
 
   const handleLike = async (id: string, currentLikes: number) => {
     setArticles(articles.map(a => a.id === id ? { ...a, likes_count: currentLikes + 1 } : a));
@@ -109,11 +94,15 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
 
   const handleShare = async (title: string) => {
     try {
-      if (navigator.share) await navigator.share({ title: title, url: window.location.href });
-      else toast.success('تم نسخ رابط المقال');
+      if (navigator.share) {
+        await navigator.share({ title: title, url: window.location.href });
+      } else {
+        toast.success('تم نسخ رابط المقال');
+      }
     } catch (err) {}
   };
 
+  // ✅ القائمة الجانبية مع الصفحات العامة المدمجة
   const menuItems = [
     { id: 'home', label: 'الرئيسية والمقالات', icon: Home, color: 'text-indigo-600', bg: 'bg-indigo-50', requiresAuth: false },
     { divider: true, id: 'd1' },
@@ -121,10 +110,13 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     { id: 'child_logs', label: 'سجل نمو الطفل', icon: Baby, color: 'text-sky-600', bg: 'bg-sky-50', requiresAuth: true },
     { id: 'pregnancy_logs', label: 'متابعة الحمل', icon: HeartPulse, color: 'text-pink-600', bg: 'bg-pink-50', requiresAuth: true },
     { divider: true, id: 'd2' },
+    
+    // 🌟 الصفحات العامة (لا تتطلب تسجيل دخول)
     { id: 'pricing', label: 'لائحة الأسعار', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', requiresAuth: false },
     { id: 'directory', label: 'هيكل الأطباء', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50', requiresAuth: false },
     { id: 'contact', label: 'تواصل معنا', icon: Phone, color: 'text-blue-600', bg: 'bg-blue-50', requiresAuth: false },
     { id: 'survey', label: 'استبيان الرضا', icon: MessageSquare, color: 'text-orange-600', bg: 'bg-orange-50', requiresAuth: false },
+    
     { divider: true, id: 'd3' },
     { id: 'complaints', label: 'رسالة للإدارة', icon: BookOpen, color: 'text-gray-600', bg: 'bg-gray-50', requiresAuth: true },
   ];
@@ -132,7 +124,7 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const bottomNavItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
     { id: 'contact', label: 'تواصل', icon: Phone },
-    { id: 'child_logs', label: 'سجلاتي', icon: Activity },
+    { id: 'chronic_logs', label: 'سجلاتي', icon: Activity },
   ];
 
   const RequireAuthMessage = () => (
@@ -144,33 +136,23 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         <p className="text-sm font-bold text-gray-500 mb-8 max-w-sm leading-relaxed">
             للحفاظ على سرية بياناتك الطبية، يرجى تسجيل الدخول بحساب Google للوصول إلى هذه الخدمة المجانية.
         </p>
-        <button onClick={handleGoogleLogin} disabled={googleLoading} className="flex items-center gap-3 bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all disabled:opacity-50">
+        <button 
+            onClick={handleGoogleLogin} 
+            disabled={googleLoading}
+            className="flex items-center gap-3 bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all disabled:opacity-50"
+        >
             {googleLoading ? <Loader2 size={20} className="animate-spin" /> : <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5 bg-white rounded-full p-0.5" />} 
             تسجيل الدخول الآن
         </button>
     </div>
   );
 
-  // 🌟 شاشة التحميل الأولية للملف الطبي
-  if (checkingProfile) {
-    return (
-        <div className="h-screen w-full flex flex-col items-center justify-center bg-gray-50">
-            <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
-            <p className="text-gray-500 font-bold">جاري تجهيز بوابتك الصحية...</p>
-        </div>
-    );
-  }
-
-  // 🌟 إذا كان مسجلاً للدخول ولكنه لم ينشئ ملفه الطبي بعد (يتم توجيهه لمعالج التسجيل لمرة واحدة فقط)
-  if (!isGuest && user && !patientDbId) {
-      return <MedicalProfileWizard onComplete={() => window.location.reload()} />;
-  }
-
   const renderActiveTabContent = () => {
+    
     const activeMenuInfo = menuItems.find(m => m.id === activeTab);
     
     // حجب التبويبات المحمية للزوار
-    if (activeMenuInfo?.requiresAuth && (isGuest || !user)) {
+    if (activeMenuInfo?.requiresAuth && (isGuest || !patientId)) {
         return <RequireAuthMessage />;
     }
 
@@ -180,16 +162,24 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-[2rem] p-8 text-white mb-8 shadow-xl shadow-indigo-200 relative overflow-hidden">
             <div className="relative z-10">
               <h1 className="text-2xl md:text-3xl font-black mb-3 tracking-tight">مرحباً بك في أسرة غرب المطار 👋</h1>
-              <p className="text-sm font-bold opacity-90 leading-relaxed max-w-md">منصتك الشاملة للتثقيف الصحي، متابعة قياساتك الشخصية، والتواصل المستمر مع إدارة المركز.</p>
+              <p className="text-sm font-bold opacity-90 leading-relaxed max-w-md">
+                منصتك الشاملة للتثقيف الصحي، متابعة قياساتك الشخصية، والتواصل المستمر مع إدارة المركز.
+              </p>
             </div>
             <HeartPulse className="absolute -left-10 -bottom-10 w-48 h-48 text-white opacity-10 transform -rotate-12" />
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full blur-2xl"></div>
           </div>
 
           <div className="flex overflow-x-auto gap-3 pb-4 mb-4 no-scrollbar scroll-smooth">
             {articleCategories.map(cat => (
               <button 
-                key={cat} onClick={() => setSelectedCategory(cat)}
-                className={`px-6 py-2.5 rounded-2xl text-xs font-black whitespace-nowrap transition-all border-2 shrink-0 ${selectedCategory === cat ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' : 'bg-white text-gray-600 border-gray-100 hover:border-gray-200'}`}
+                key={cat} 
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-6 py-2.5 rounded-2xl text-xs font-black whitespace-nowrap transition-all border-2 shrink-0 ${
+                  selectedCategory === cat 
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100' 
+                    : 'bg-white text-gray-600 border-gray-100 hover:border-gray-200 hover:bg-gray-50'
+                }`}
               >
                 {cat}
               </button>
@@ -209,28 +199,44 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {filteredArticles.map(article => (
-                <div key={article.id} className="bg-white rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col group">
+                <div key={article.id} className="bg-white rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col group">
                   <div className="h-52 bg-gray-100 relative overflow-hidden">
                     {article.image_url ? (
                       <img src={article.image_url} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-indigo-50 text-indigo-200"><Building2 size={60} /></div>
+                      <div className="w-full h-full flex items-center justify-center bg-indigo-50 text-indigo-200">
+                        <Building2 size={60} />
+                      </div>
                     )}
-                    <span className="absolute top-4 right-4 bg-white/95 backdrop-blur text-indigo-700 text-[10px] font-black px-4 py-1.5 rounded-full shadow-sm">{article.category}</span>
+                    <span className="absolute top-4 right-4 bg-white/95 backdrop-blur text-indigo-700 text-[10px] font-black px-4 py-1.5 rounded-full shadow-sm">
+                      {article.category}
+                    </span>
                   </div>
+                  
                   <div className="p-6 flex-1 flex flex-col">
                     <div className="flex items-center gap-2 mb-4 text-[10px] text-gray-500 font-bold">
                       <span className="bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">{new Date(article.created_at).toLocaleDateString('ar-EG')}</span>
-                      <span>•</span><span>بقلم: <span className="text-indigo-600">{article.author_name}</span></span>
+                      <span>•</span>
+                      <span>بقلم: <span className="text-indigo-600">{article.author_name}</span></span>
                     </div>
-                    <h3 className="text-lg font-black text-gray-800 mb-3 line-clamp-2">{article.title}</h3>
-                    <p className="text-xs text-gray-500 font-medium leading-relaxed line-clamp-3 mb-6 flex-1">{article.content}</p>
+                    
+                    <h3 className="text-lg font-black text-gray-800 mb-3 leading-snug line-clamp-2">{article.title}</h3>
+                    <p className="text-xs text-gray-500 font-medium leading-relaxed line-clamp-3 mb-6 flex-1">
+                      {article.content}
+                    </p>
+                    
                     <div className="flex items-center justify-between pt-5 border-t border-gray-50 mt-auto">
                       <div className="flex gap-2">
-                        <button onClick={() => handleLike(article.id, article.likes_count)} className="flex items-center gap-1.5 p-2 bg-rose-50 text-rose-500 rounded-xl"><Heart size={18} /> <span className="text-xs font-black">{article.likes_count}</span></button>
-                        <button onClick={() => handleShare(article.title)} className="flex items-center p-2 bg-gray-50 text-gray-500 rounded-xl"><Share2 size={18} /></button>
+                        <button onClick={() => handleLike(article.id, article.likes_count)} className="flex items-center gap-1.5 p-2 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-100 transition-colors">
+                          <Heart size={18} /> <span className="text-xs font-black">{article.likes_count}</span>
+                        </button>
+                        <button onClick={() => handleShare(article.title)} className="flex items-center p-2 bg-gray-50 text-gray-500 rounded-xl hover:bg-gray-100 hover:text-gray-800 transition-colors">
+                          <Share2 size={18} />
+                        </button>
                       </div>
-                      <button className="flex items-center gap-1.5 text-xs font-black text-indigo-600 bg-indigo-50 px-5 py-2.5 rounded-xl">اقرأ المزيد <ChevronLeft size={14} /></button>
+                      <button className="flex items-center gap-1.5 text-xs font-black text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 px-5 py-2.5 rounded-xl">
+                        اقرأ المزيد <ChevronLeft size={14} />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -249,17 +255,25 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         case 'survey': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><SurveyPage /></div>;
     }
 
-    // ✅ استدعاء المكونات المحمية (للمسجلين فقط وتمرير الـ ID الحقيقي patientDbId)
-    if (patientDbId) {
+    // ✅ استدعاء المكونات المحمية (للمسجلين فقط)
+    if (patientId) {
         switch (activeTab) {
-            case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientDbId} /></div>;
-            case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientDbId} /></div>;
-            case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientDbId} /></div>;
-            case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientDbId} /></div>;
+            case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientId} /></div>;
+            case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientId} /></div>;
+            case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientId} /></div>;
+            case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientId} /></div>;
         }
     }
 
-    return null;
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-6 text-center animate-in fade-in">
+        <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+          <BookOpen className="w-10 h-10 text-gray-400" />
+        </div>
+        <h2 className="text-xl font-black text-gray-800 mb-2">جاري تجهيز هذا القسم</h2>
+        <p className="text-sm font-bold text-gray-500">هذه الصفحة قيد التطوير وسيتم إضافتها قريباً.</p>
+      </div>
+    );
   };
 
   return (
@@ -271,7 +285,9 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         
         <div className="p-6 bg-white border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-indigo-100 to-purple-50 rounded-2xl flex items-center justify-center border border-indigo-50 shadow-sm"><Building2 className="w-6 h-6 text-indigo-600" /></div>
+                <div className="w-12 h-12 bg-gradient-to-br from-indigo-100 to-purple-50 rounded-2xl flex items-center justify-center border border-indigo-50 shadow-sm">
+                    <Building2 className="w-6 h-6 text-indigo-600" />
+                </div>
                 <div>
                     <h2 className="font-black text-sm text-gray-800 tracking-tight">غرب المطار</h2>
                     <p className="text-[10px] text-gray-500 font-bold mt-0.5">بوابة الزوار والمواطنين</p>
@@ -282,18 +298,24 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         
         <nav className="flex-1 overflow-y-auto p-4 space-y-1.5 custom-scrollbar pb-24">
           {menuItems.map((item, index) => {
-            if (item.divider) return <div key={`div-${index}`} className="h-px bg-gray-100 my-4 mx-2"></div>;
+            if (item.divider) {
+                return <div key={`div-${index}`} className="h-px bg-gray-100 my-4 mx-2"></div>;
+            }
             
             const isActive = activeTab === item.id;
             return (
                 <button 
                     key={item.id} 
                     onClick={() => { setActiveTab(item.id!); setIsSidebarOpen(false); }} 
-                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-bold transition-all duration-200 ${isActive ? `${item.bg} ${item.color} shadow-sm ring-1 ring-black/5` : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}
+                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl font-bold transition-all duration-200 ${
+                        isActive 
+                        ? `${item.bg} ${item.color} shadow-sm ring-1 ring-black/5` 
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
                 >
                 {item.icon && <item.icon className={`w-5 h-5 ${isActive ? '' : 'opacity-70'}`} />} 
                 <span className="text-sm flex-1 text-right">{item.label}</span>
-                {item.requiresAuth && (isGuest || !user) && <Lock size={14} className="opacity-40" />}
+                {item.requiresAuth && (isGuest || !patientId) && <Lock size={14} className="opacity-40" />}
                 </button>
             );
           })}
@@ -302,7 +324,11 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         <div className="p-5 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center gap-3 mb-4 px-2">
               <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center border shadow-sm overflow-hidden">
-                  {user?.user_metadata?.avatar_url ? <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" /> : <User className="w-5 h-5 text-gray-400" />}
+                  {user?.user_metadata?.avatar_url ? (
+                      <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                      <User className="w-5 h-5 text-gray-400" />
+                  )}
               </div>
               <div className="min-w-0 flex-1">
                   <p className="text-xs font-black text-gray-800 truncate">{user?.user_metadata?.full_name || 'زائر كريم'}</p>
@@ -329,19 +355,27 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
               <Menu className="w-5 h-5"/>
             </button>
             <div>
-                <h1 className="font-black text-gray-800 text-lg md:text-xl tracking-tight">{menuItems.find(m => m.id === activeTab)?.label || 'الرئيسية'}</h1>
+                <h1 className="font-black text-gray-800 text-lg md:text-xl tracking-tight">
+                    {menuItems.find(m => m.id === activeTab)?.label || 'الرئيسية'}
+                </h1>
             </div>
           </div>
+          
           <div className="flex items-center gap-3">
              <div className="hidden md:flex items-center gap-2 bg-white px-3 py-1.5 border border-gray-100 rounded-full shadow-sm">
                  <span className="text-xs font-bold text-gray-600">{user?.user_metadata?.full_name || 'زائر'}</span>
                  <div className="w-7 h-7 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 overflow-hidden">
-                    {user?.user_metadata?.avatar_url ? <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" /> : <User size={14} />}
+                    {user?.user_metadata?.avatar_url ? (
+                        <img src={user.user_metadata.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                        <User size={14} />
+                    )}
                  </div>
              </div>
           </div>
         </header>
 
+        {/* ✅ إزالة Padding/Scrollbar إذا كانت صفحة عامة لتجنب الازدواجية */}
         <main className={`flex-1 overflow-y-auto ${['pricing', 'contact', 'directory', 'survey'].includes(activeTab) ? '' : 'pb-24 custom-scrollbar'}`}>
           {renderActiveTabContent()}
         </main>
@@ -350,7 +384,11 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           {bottomNavItems.map(item => {
             const isActive = activeTab === item.id;
             return (
-              <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center gap-1 w-16 transition-all duration-300 ${isActive ? 'text-indigo-600 -translate-y-1' : 'text-gray-400 hover:text-gray-600'}`}>
+              <button 
+                key={item.id} 
+                onClick={() => setActiveTab(item.id)} 
+                className={`flex flex-col items-center gap-1 w-16 transition-all duration-300 ${isActive ? 'text-indigo-600 -translate-y-1' : 'text-gray-400 hover:text-gray-600'}`}
+              >
                 <div className={`p-2.5 rounded-2xl transition-all duration-300 ${isActive ? 'bg-indigo-50 shadow-sm' : 'bg-transparent'}`}>
                   <item.icon className={`w-5 h-5 ${isActive ? 'fill-indigo-100 stroke-indigo-600' : 'stroke-[1.5]'}`} />
                 </div>
@@ -359,6 +397,7 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
             );
           })}
         </div>
+
       </div>
     </div>
   );
