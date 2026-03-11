@@ -7,14 +7,17 @@ import toast from 'react-hot-toast';
 import { 
   Menu, X, User, Home, Activity, 
   MessageSquare, BookOpen, Phone, Share2, Heart, 
-  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users, CalendarIcon
+  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users, CalendarIcon, Calculator
 } from 'lucide-react';
 
 import ChronicLogs from './tabs/ChronicLogs';
 import ChildGrowthLogs from './tabs/ChildGrowthLogs';
 import PregnancyLogs from './tabs/PregnancyLogs';
 import PatientComplaints from './tabs/PatientComplaints';
-import PatientAppointments from './tabs/PatientAppointments'; // ✅ استيراد مكون المواعيد
+import PatientAppointments from './tabs/PatientAppointments';
+
+// ✅ استيراد مكون الآلات الحاسبة
+import CalculatorsMenu from '../calculators/CalculatorsMenu';
 
 import ContactPage from '../../pages/public/ContactPage';
 import PricingPage from '../../pages/public/PricingPage';
@@ -145,7 +148,8 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const menuItems = [
     { id: 'home', label: 'الرئيسية والمقالات', icon: Home, color: 'text-indigo-600', bg: 'bg-indigo-50', requiresAuth: false },
     { divider: true, id: 'd1' },
-    // ✅ إضافة تبويب المواعيد
+    // ✅ إضافة تبويب الآلات الحاسبة (متاح للجميع)
+    { id: 'calculators', label: 'حاسبات طبية', icon: Calculator, color: 'text-teal-600', bg: 'bg-teal-50', requiresAuth: false },
     { id: 'appointments', label: 'مواعيدي', icon: CalendarIcon, color: 'text-blue-600', bg: 'bg-blue-50', requiresAuth: true }, 
     { id: 'chronic_logs', label: 'مفكرة الأمراض المزمنة', icon: Activity, color: 'text-rose-600', bg: 'bg-rose-50', requiresAuth: true },
     { id: 'child_logs', label: 'سجل نمو الطفل', icon: Baby, color: 'text-sky-600', bg: 'bg-sky-50', requiresAuth: true },
@@ -161,8 +165,8 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
 
   const bottomNavItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
-    { id: 'appointments', label: 'مواعيدي', icon: CalendarIcon }, // ✅ تعديل البار السفلي
-    { id: 'contact', label: 'تواصل', icon: Phone },
+    { id: 'appointments', label: 'مواعيدي', icon: CalendarIcon }, 
+    { id: 'calculators', label: 'حاسبات', icon: Calculator }, // ✅ إضافته للبار السفلي لسهولة الوصول
   ];
 
   const RequireAuthMessage = () => (
@@ -293,6 +297,8 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     }
 
     switch (activeTab) {
+        // ✅ إضافة توجيه التبويب الجديد وعرضه بشكل كامل
+        case 'calculators': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><CalculatorsMenu /></div>;
         case 'pricing': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><PricingPage /></div>;
         case 'contact': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><ContactPage /></div>;
         case 'directory': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><StaffDirectoryPage /></div>;
@@ -301,7 +307,7 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
 
     if (patientDbId) {
         switch (activeTab) {
-            case 'appointments': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientAppointments patientId={patientDbId} /></div>; // ✅ توجيه لصفحة المواعيد
+            case 'appointments': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientAppointments patientId={patientDbId} /></div>; 
             case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientDbId} /></div>;
             case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientDbId} /></div>;
             case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientDbId} /></div>;
@@ -419,7 +425,8 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           </div>
         </header>
 
-        <main className={`flex-1 overflow-y-auto ${['pricing', 'contact', 'directory', 'survey'].includes(activeTab) ? '' : 'pb-24 custom-scrollbar'}`}>
+        {/* إزالة الـ padding إذا كانت الصفحات عامة لكي تأخذ الشاشة كاملة */}
+        <main className={`flex-1 overflow-y-auto ${['calculators', 'pricing', 'contact', 'directory', 'survey'].includes(activeTab) ? '' : 'pb-24 custom-scrollbar'}`}>
           {renderActiveTabContent()}
         </main>
 
