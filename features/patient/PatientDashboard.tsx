@@ -16,7 +16,7 @@ import ChildGrowthLogs from './tabs/ChildGrowthLogs';
 import PregnancyLogs from './tabs/PregnancyLogs';
 import PatientComplaints from './tabs/PatientComplaints';
 
-// ✅ استيراد الصفحات العامة (لتُعرض داخل اللوحة بدلاً من فتحها في نافذة مستقلة)
+// ✅ استيراد الصفحات العامة
 import ContactPage from '../../pages/public/ContactPage';
 import PricingPage from '../../pages/public/PricingPage';
 import StaffDirectoryPage from '../../pages/public/StaffDirectoryPage';
@@ -33,7 +33,6 @@ interface Article {
   created_at: string;
 }
 
-// ✅ إضافة isGuest كـ Prop
 export default function PatientDashboard({ isGuest = false }: { isGuest?: boolean }) {
   const { user, signOut } = useAuth();
   
@@ -45,20 +44,19 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const [selectedCategory, setSelectedCategory] = useState('الكل');
   
   const [googleLoading, setGoogleLoading] = useState(false);
+  
+  // 🌟 متغير لحفظ المعرف الشرعي للمريض من قاعدة البيانات
+  const [patientDbId, setPatientDbId] = useState<string | null>(null);
+  const [isInitializingProfile, setIsInitializingProfile] = useState(false);
 
   const articleCategories = ['الكل', 'تغذية', 'صحة الطفل', 'أمراض مزمنة', 'صحة المرأة', 'نصائح عامة', 'أخبار المركز'];
 
-  const patientId = user?.id || null;
-
-  // 🌟 دالة الدخول المباشر بحساب جوجل من داخل لوحة الزائر
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     try {
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
-            options: {
-                redirectTo: window.location.origin, 
-            }
+            options: { redirectTo: window.location.origin }
         });
         if (error) throw error;
     } catch (err: any) {
@@ -66,6 +64,60 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         setGoogleLoading(false);
     }
   };
+
+  // 🌟 دالة "الإنشاء الصامت" لملف المريض المبدئي لحل مشكلة الـ Foreign Key
+  useEffect(() => {
+      const initializeSilentProfile = async () => {
+          if (isGuest || !user?.id) return;
+          
+          setIsInitializingProfile(true);
+
+          try {
+              // 1. هل لديه ملف مريض بالفعل؟
+              const { data: existingPatient, error: searchError } = await supabase
+                  .from('patients')
+                  .select('id')
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+              if (existingPatient) {
+                  // لديه ملف، نستخدم رقمه الشرعي
+                  setPatientDbId(existingPatient.id);
+              } else {
+                  // 2. ليس لديه ملف! (مسجل جديد بجوجل). سننشئ له ملفاً صامتاً.
+                  const newPatientData = {
+                      user_id: user.id,
+                      name: user.user_metadata?.full_name || 'مستخدم جوجل',
+                      phone: 'غير محدد',
+                      gender: 'other',
+                      birth_date: '1990-01-01', // بيانات افتراضية لكي لا يرفضها الـ Database
+                      blood_type: 'O+',
+                      address: 'غير محدد'
+                  };
+
+                  const { data: newPatient, error: insertError } = await supabase
+                      .from('patients')
+                      .insert(newPatientData)
+                      .select('id')
+                      .single();
+
+                  if (insertError) {
+                      console.error("Silent Profile Creation Error:", insertError);
+                      toast.error("حدث خطأ في تجهيز ملفك الطبي. يرجى تحديث الصفحة.");
+                  } else if (newPatient) {
+                      setPatientDbId(newPatient.id);
+                  }
+              }
+          } catch (err) {
+              console.error("Initialization Error:", err);
+          } finally {
+              setIsInitializingProfile(false);
+          }
+      };
+
+      initializeSilentProfile();
+  }, [user?.id, isGuest]);
+
 
   useEffect(() => {
     const fetchArticles = async () => {
@@ -102,7 +154,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     } catch (err) {}
   };
 
-  // ✅ القائمة الجانبية مع الصفحات العامة المدمجة
   const menuItems = [
     { id: 'home', label: 'الرئيسية والمقالات', icon: Home, color: 'text-indigo-600', bg: 'bg-indigo-50', requiresAuth: false },
     { divider: true, id: 'd1' },
@@ -111,7 +162,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     { id: 'pregnancy_logs', label: 'متابعة الحمل', icon: HeartPulse, color: 'text-pink-600', bg: 'bg-pink-50', requiresAuth: true },
     { divider: true, id: 'd2' },
     
-    // 🌟 الصفحات العامة (لا تتطلب تسجيل دخول)
     { id: 'pricing', label: 'لائحة الأسعار', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', requiresAuth: false },
     { id: 'directory', label: 'هيكل الأطباء', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50', requiresAuth: false },
     { id: 'contact', label: 'تواصل معنا', icon: Phone, color: 'text-blue-600', bg: 'bg-blue-50', requiresAuth: false },
@@ -148,12 +198,21 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   );
 
   const renderActiveTabContent = () => {
-    
     const activeMenuInfo = menuItems.find(m => m.id === activeTab);
     
     // حجب التبويبات المحمية للزوار
-    if (activeMenuInfo?.requiresAuth && (isGuest || !patientId)) {
+    if (activeMenuInfo?.requiresAuth && (isGuest || !user)) {
         return <RequireAuthMessage />;
+    }
+
+    // 🌟 إظهار شاشة تحميل قصيرة أثناء إنشاء الملف الصامت
+    if (activeMenuInfo?.requiresAuth && isInitializingProfile) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center">
+                <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
+                <p className="text-sm font-bold text-gray-500">جاري تجهيز مساحتك الخاصة...</p>
+            </div>
+        );
     }
 
     if (activeTab === 'home') {
@@ -247,7 +306,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
       );
     }
 
-    // 🌟 استدعاء الصفحات العامة داخل اللوحة
     switch (activeTab) {
         case 'pricing': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><PricingPage /></div>;
         case 'contact': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><ContactPage /></div>;
@@ -255,13 +313,13 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         case 'survey': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><SurveyPage /></div>;
     }
 
-    // ✅ استدعاء المكونات المحمية (للمسجلين فقط)
-    if (patientId) {
+    // ✅ نستخدم المرجع الحقيقي (patientDbId) بدلاً من (user.id) لمنع الخطأ
+    if (patientDbId) {
         switch (activeTab) {
-            case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientId} /></div>;
-            case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientId} /></div>;
-            case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientId} /></div>;
-            case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientId} /></div>;
+            case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientDbId} /></div>;
+            case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientDbId} /></div>;
+            case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientDbId} /></div>;
+            case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientDbId} /></div>;
         }
     }
 
@@ -315,7 +373,7 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
                 >
                 {item.icon && <item.icon className={`w-5 h-5 ${isActive ? '' : 'opacity-70'}`} />} 
                 <span className="text-sm flex-1 text-right">{item.label}</span>
-                {item.requiresAuth && (isGuest || !patientId) && <Lock size={14} className="opacity-40" />}
+                {item.requiresAuth && (isGuest || !user) && <Lock size={14} className="opacity-40" />}
                 </button>
             );
           })}
@@ -375,7 +433,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           </div>
         </header>
 
-        {/* ✅ إزالة Padding/Scrollbar إذا كانت صفحة عامة لتجنب الازدواجية */}
         <main className={`flex-1 overflow-y-auto ${['pricing', 'contact', 'directory', 'survey'].includes(activeTab) ? '' : 'pb-24 custom-scrollbar'}`}>
           {renderActiveTabContent()}
         </main>
@@ -397,7 +454,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
             );
           })}
         </div>
-
       </div>
     </div>
   );
