@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../supabaseClient';
+import { useAuth } from '../../../context/AuthContext';
+import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
 import { 
   Menu, X, User, Home, Activity, 
