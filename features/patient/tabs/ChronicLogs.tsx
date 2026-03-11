@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
 import { Activity, Plus, Loader2, Calendar } from 'lucide-react';
-import { useAuth } from '../../../context/AuthContext';
+
 export default function ChronicLogs({ patientId }: { patientId: string }) {
     const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
