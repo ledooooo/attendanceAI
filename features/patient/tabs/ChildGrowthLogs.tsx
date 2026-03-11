@@ -22,29 +22,40 @@ export default function ChildGrowthLogs({ patientId }: { patientId: string }) {
         setLoading(false);
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setSubmitting(true);
-        const payload = {
-            child_id: patientId,
-            weight: formData.weight ? Number(formData.weight) : null,
-            height: formData.height ? Number(formData.height) : null,
-            head_circumference: formData.head_circumference ? Number(formData.head_circumference) : null,
-            hemoglobin: formData.hemoglobin ? Number(formData.hemoglobin) : null,
-            notes: formData.notes
-        };
-        const { error } = await supabase.from('health_logs_child').insert(payload);
-        if (!error) { 
-            toast.success('تم تسجيل قياسات الطفل بنجاح'); 
-            setShowForm(false); 
-            setFormData({weight: '', height: '', head_circumference: '', hemoglobin: '', notes: ''});
-            fetchLogs(); 
-        } else {
-            toast.error('حدث خطأ أثناء التسجيل');
-        }
-        setSubmitting(false);
-    };
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
+  if (!patientId) {
+    toast.error("معرف الطفل غير موجود");
+    return;
+  }
+
+  setSubmitting(true);
+
+  const payload = {
+    child_id: patientId,
+    weight: formData.weight ? Number(formData.weight) : null,
+    height: formData.height ? Number(formData.height) : null,
+    head_circumference: formData.head_circumference ? Number(formData.head_circumference) : null,
+    hemoglobin: formData.hemoglobin ? Number(formData.hemoglobin) : null,
+    notes: formData.notes
+  };
+
+  const { error } = await supabase
+    .from('health_logs_child')
+    .insert([payload]);
+
+  if (error) {
+    console.log(error);
+    toast.error(error.message);
+  } else {
+    toast.success('تم تسجيل قياسات الطفل بنجاح');
+    setShowForm(false);
+    fetchLogs();
+  }
+
+  setSubmitting(false);
+};
     return (
         <div className="animate-in fade-in space-y-6">
             {/* الترويسة */}
