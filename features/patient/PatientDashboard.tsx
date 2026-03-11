@@ -17,7 +17,7 @@ import PatientComplaints from './tabs/PatientComplaints';
 import PatientAppointments from './tabs/PatientAppointments';
 
 // ✅ استيراد مكون الآلات الحاسبة
-import CalculatorsMenu from '../calculators/CalculatorsMenu';
+import CalculatorsMenu from '../../calculators/CalculatorsMenu';
 
 import ContactPage from '../../pages/public/ContactPage';
 import PricingPage from '../../pages/public/PricingPage';
