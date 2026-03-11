@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { 
   Menu, X, User, Home, Activity, 
   MessageSquare, BookOpen, Phone, Share2, Heart, 
-  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock
+  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users
 } from 'lucide-react';
 
 // ✅ المكونات المفعلة (مذكرات صحية شخصية آمنة + شكاوى)
@@ -15,6 +15,12 @@ import ChronicLogs from './tabs/ChronicLogs';
 import ChildGrowthLogs from './tabs/ChildGrowthLogs';
 import PregnancyLogs from './tabs/PregnancyLogs';
 import PatientComplaints from './tabs/PatientComplaints';
+
+// ✅ استيراد الصفحات العامة (لتُعرض داخل اللوحة بدلاً من فتحها في نافذة مستقلة)
+import ContactPage from '../../pages/public/ContactPage';
+import PricingPage from '../../pages/public/PricingPage';
+import StaffDirectoryPage from '../../pages/public/StaffDirectoryPage';
+import SurveyPage from '../../pages/public/SurveyPage';
 
 interface Article {
   id: string;
@@ -38,12 +44,10 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const [loadingArticles, setLoadingArticles] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('الكل');
   
-  // حالة تحميل زر جوجل
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const articleCategories = ['الكل', 'تغذية', 'صحة الطفل', 'أمراض مزمنة', 'صحة المرأة', 'نصائح عامة', 'أخبار المركز'];
 
-  // إذا كان المستخدم ضيفاً، لا يوجد ID، وإلا نستخدم معرف جوجل
   const patientId = user?.id || null;
 
   // 🌟 دالة الدخول المباشر بحساب جوجل من داخل لوحة الزائر
@@ -53,7 +57,7 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin, // التوجيه للصفحة الرئيسية بعد الدخول ليكمل تصفح كمسجل
+                redirectTo: window.location.origin, 
             }
         });
         if (error) throw error;
@@ -98,7 +102,7 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     } catch (err) {}
   };
 
-  // ✅ القائمة الجانبية مع تحديد التبويبات التي تحتاج تسجيل دخول (requiresAuth)
+  // ✅ القائمة الجانبية مع الصفحات العامة المدمجة
   const menuItems = [
     { id: 'home', label: 'الرئيسية والمقالات', icon: Home, color: 'text-indigo-600', bg: 'bg-indigo-50', requiresAuth: false },
     { divider: true, id: 'd1' },
@@ -106,18 +110,23 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     { id: 'child_logs', label: 'سجل نمو الطفل', icon: Baby, color: 'text-sky-600', bg: 'bg-sky-50', requiresAuth: true },
     { id: 'pregnancy_logs', label: 'متابعة الحمل', icon: HeartPulse, color: 'text-pink-600', bg: 'bg-pink-50', requiresAuth: true },
     { divider: true, id: 'd2' },
-    { id: 'complaints', label: 'تواصل مع الإدارة', icon: MessageSquare, color: 'text-blue-600', bg: 'bg-blue-50', requiresAuth: true },
-    { id: 'policies', label: 'سياسات المركز', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50', requiresAuth: false },
-    { id: 'contact', label: 'دليل الأرقام', icon: Phone, color: 'text-gray-600', bg: 'bg-gray-50', requiresAuth: false },
+    
+    // 🌟 الصفحات العامة (لا تتطلب تسجيل دخول)
+    { id: 'pricing', label: 'لائحة الأسعار', icon: FileText, color: 'text-emerald-600', bg: 'bg-emerald-50', requiresAuth: false },
+    { id: 'directory', label: 'هيكل الأطباء', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50', requiresAuth: false },
+    { id: 'contact', label: 'تواصل معنا', icon: Phone, color: 'text-blue-600', bg: 'bg-blue-50', requiresAuth: false },
+    { id: 'survey', label: 'استبيان الرضا', icon: MessageSquare, color: 'text-orange-600', bg: 'bg-orange-50', requiresAuth: false },
+    
+    { divider: true, id: 'd3' },
+    { id: 'complaints', label: 'رسالة للإدارة', icon: BookOpen, color: 'text-gray-600', bg: 'bg-gray-50', requiresAuth: true },
   ];
 
   const bottomNavItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
+    { id: 'contact', label: 'تواصل', icon: Phone },
     { id: 'chronic_logs', label: 'سجلاتي', icon: Activity },
-    { id: 'complaints', label: 'تواصل', icon: MessageSquare },
   ];
 
-  // 🌟 مكون (رسالة طلب تسجيل الدخول)
   const RequireAuthMessage = () => (
     <div className="h-full flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in-95">
         <div className="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center mb-6 shadow-sm border border-red-100">
@@ -140,10 +149,9 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
 
   const renderActiveTabContent = () => {
     
-    // 1. التحقق من الصلاحيات قبل عرض المحتوى
     const activeMenuInfo = menuItems.find(m => m.id === activeTab);
     
-    // إذا كان التبويب يحتاج تسجيل دخول والمستخدم ضيف (isGuest) -> اعرض رسالة الحجب
+    // حجب التبويبات المحمية للزوار
     if (activeMenuInfo?.requiresAuth && (isGuest || !patientId)) {
         return <RequireAuthMessage />;
     }
@@ -151,8 +159,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
     if (activeTab === 'home') {
       return (
         <div className="max-w-4xl mx-auto p-4 md:p-6 animate-in fade-in">
-          
-          {/* Hero Banner */}
           <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-[2rem] p-8 text-white mb-8 shadow-xl shadow-indigo-200 relative overflow-hidden">
             <div className="relative z-10">
               <h1 className="text-2xl md:text-3xl font-black mb-3 tracking-tight">مرحباً بك في أسرة غرب المطار 👋</h1>
@@ -164,7 +170,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
             <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full blur-2xl"></div>
           </div>
 
-          {/* Categories */}
           <div className="flex overflow-x-auto gap-3 pb-4 mb-4 no-scrollbar scroll-smooth">
             {articleCategories.map(cat => (
               <button 
@@ -181,7 +186,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
             ))}
           </div>
 
-          {/* Articles */}
           {loadingArticles ? (
             <div className="flex flex-col items-center justify-center py-20">
               <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
@@ -243,13 +247,21 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
       );
     }
 
-    // ✅ استدعاء المكونات المفعلة (للمستخدمين المسجلين فقط)
+    // 🌟 استدعاء الصفحات العامة داخل اللوحة
+    switch (activeTab) {
+        case 'pricing': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><PricingPage /></div>;
+        case 'contact': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><ContactPage /></div>;
+        case 'directory': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><StaffDirectoryPage /></div>;
+        case 'survey': return <div className="h-full w-full overflow-y-auto animate-in fade-in"><SurveyPage /></div>;
+    }
+
+    // ✅ استدعاء المكونات المحمية (للمسجلين فقط)
     if (patientId) {
         switch (activeTab) {
-        case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientId} /></div>;
-        case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientId} /></div>;
-        case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientId} /></div>;
-        case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientId} /></div>;
+            case 'chronic_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChronicLogs patientId={patientId} /></div>;
+            case 'child_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><ChildGrowthLogs patientId={patientId} /></div>;
+            case 'pregnancy_logs': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PregnancyLogs patientId={patientId} /></div>;
+            case 'complaints': return <div className="max-w-4xl mx-auto p-4 md:p-6"><PatientComplaints patientId={patientId} /></div>;
         }
     }
 
@@ -267,12 +279,10 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   return (
     <div className="h-screen w-full bg-[#f8fafc] flex overflow-hidden font-sans text-right" dir="rtl">
       
-      {/* القائمة الجانبية للموبايل */}
       {isSidebarOpen && <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-[60] md:hidden transition-opacity" onClick={() => setIsSidebarOpen(false)} />}
       
       <aside className={`fixed inset-y-0 right-0 z-[70] w-[280px] bg-white border-l border-gray-100 shadow-2xl transform transition-transform duration-300 md:translate-x-0 md:static flex flex-col ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         
-        {/* رأس القائمة */}
         <div className="p-6 bg-white border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
                 <div className="w-12 h-12 bg-gradient-to-br from-indigo-100 to-purple-50 rounded-2xl flex items-center justify-center border border-indigo-50 shadow-sm">
@@ -286,7 +296,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:bg-gray-50 rounded-xl"><X size={20}/></button>
         </div>
         
-        {/* روابط القائمة */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1.5 custom-scrollbar pb-24">
           {menuItems.map((item, index) => {
             if (item.divider) {
@@ -306,14 +315,12 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
                 >
                 {item.icon && <item.icon className={`w-5 h-5 ${isActive ? '' : 'opacity-70'}`} />} 
                 <span className="text-sm flex-1 text-right">{item.label}</span>
-                {/* إظهار علامة القفل إذا كان يحتاج تسجيل دخول والزائر غير مسجل */}
                 {item.requiresAuth && (isGuest || !patientId) && <Lock size={14} className="opacity-40" />}
                 </button>
             );
           })}
         </nav>
         
-        {/* تذييل القائمة (تسجيل الخروج أو الدخول) */}
         <div className="p-5 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center gap-3 mb-4 px-2">
               <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center border shadow-sm overflow-hidden">
@@ -341,10 +348,7 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         </div>
       </aside>
 
-      {/* منطقة المحتوى الرئيسي */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        
-        {/* الشريط العلوي */}
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-gray-100 flex items-center justify-between px-6 sticky top-0 z-30 shrink-0">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2.5 bg-white shadow-sm border border-gray-100 rounded-2xl text-gray-700 hover:bg-gray-50 transition-colors">
@@ -371,11 +375,11 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto pb-24 custom-scrollbar">
+        {/* ✅ إزالة Padding/Scrollbar إذا كانت صفحة عامة لتجنب الازدواجية */}
+        <main className={`flex-1 overflow-y-auto ${['pricing', 'contact', 'directory', 'survey'].includes(activeTab) ? '' : 'pb-24 custom-scrollbar'}`}>
           {renderActiveTabContent()}
         </main>
 
-        {/* البار السفلي للموبايل */}
         <div className="md:hidden fixed bottom-4 left-4 right-4 bg-white/90 backdrop-blur-lg border border-gray-100 rounded-3xl px-6 py-3 flex justify-between items-center z-50 shadow-2xl shadow-black/5">
           {bottomNavItems.map(item => {
             const isActive = activeTab === item.id;
