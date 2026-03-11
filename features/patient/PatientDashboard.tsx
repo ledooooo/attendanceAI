@@ -79,11 +79,11 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
                   setPatientDbId(existingPatient.id);
               } else {
                   // ✅ الكود المحدث: إرسال الـ user_id والاسم فقط
-                  const newPatientData = {
-                      user_id: user.id,
-                      name: user.user_metadata?.full_name || 'مستخدم جوجل'
-                  };
-
+const newPatientData = {
+    user_id: user.id,
+    full_name: user.user_metadata?.full_name || 'مستخدم زائر', // ✅ استخدام full_name المطابق للقاعدة
+    gender: 'غير محدد' // إضافة حقل احتياطي لتجنب أي مشاكل أخرى في المستقبل
+};
                   const { data: newPatient, error: insertError } = await supabase
                       .from('patients')
                       .insert(newPatientData)
