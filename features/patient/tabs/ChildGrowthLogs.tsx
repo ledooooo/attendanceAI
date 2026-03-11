@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
-import { Baby, Plus, Loader2, Calendar } from 'lucide-react';
+import { Baby, Plus, Loader2, Calendar, TrendingUp } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export default function ChildGrowthLogs({ patientId }: { patientId: string }) {
     const [logs, setLogs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [activeChart, setActiveChart] = useState<'weight' | 'height'>('weight');
 
     const [formData, setFormData] = useState({
         weight: '', height: '', head_circumference: '', hemoglobin: '', notes: ''
@@ -17,47 +19,66 @@ export default function ChildGrowthLogs({ patientId }: { patientId: string }) {
 
     const fetchLogs = async () => {
         setLoading(true);
-        const { data } = await supabase.from('health_logs_child').select('*').eq('child_id', patientId).order('log_timestamp', { ascending: false });
+        const { data } = await supabase
+            .from('health_logs_child')
+            .select('*')
+            .eq('child_id', patientId)
+            .order('log_timestamp', { ascending: false });
+        
         if (data) setLogs(data);
         setLoading(false);
     };
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
 
-  if (!patientId) {
-    toast.error("معرف الطفل غير موجود");
-    return;
-  }
+        if (!patientId) {
+            toast.error("معرف الطفل غير موجود");
+            return;
+        }
 
-  setSubmitting(true);
+        setSubmitting(true);
 
-  const payload = {
-    child_id: patientId,
-    weight: formData.weight ? Number(formData.weight) : null,
-    height: formData.height ? Number(formData.height) : null,
-    head_circumference: formData.head_circumference ? Number(formData.head_circumference) : null,
-    hemoglobin: formData.hemoglobin ? Number(formData.hemoglobin) : null,
-    notes: formData.notes
-  };
+        const payload = {
+            child_id: patientId,
+            weight: formData.weight ? Number(formData.weight) : null,
+            height: formData.height ? Number(formData.height) : null,
+            head_circumference: formData.head_circumference ? Number(formData.head_circumference) : null,
+            hemoglobin: formData.hemoglobin ? Number(formData.hemoglobin) : null,
+            notes: formData.notes
+        };
 
-  const { error } = await supabase
-    .from('health_logs_child')
-    .insert([payload]);
+        // ✅ إصلاح الخطأ 409 بإزالة الأقواس المربعة
+        const { error } = await supabase
+            .from('health_logs_child')
+            .insert(payload);
 
-  if (error) {
-    console.log(error);
-    toast.error(error.message);
-  } else {
-    toast.success('تم تسجيل قياسات الطفل بنجاح');
-    setShowForm(false);
-    fetchLogs();
-  }
+        if (error) {
+            console.error("Insert Error:", error);
+            toast.error(error.message || 'حدث خطأ أثناء حفظ البيانات');
+        } else {
+            toast.success('تم تسجيل قياسات الطفل بنجاح');
+            setShowForm(false);
+            setFormData({ weight: '', height: '', head_circumference: '', hemoglobin: '', notes: '' });
+            fetchLogs();
+        }
 
-  setSubmitting(false);
-};
+        setSubmitting(false);
+    };
+
+    // 🌟 تحضير البيانات للرسم البياني (تصاعدياً حسب التاريخ)
+    const chartData = useMemo(() => {
+        if (!logs || logs.length === 0) return [];
+        return [...logs].reverse().map(log => ({
+            date: new Date(log.log_timestamp).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' }),
+            weight: log.weight,
+            height: log.height
+        }));
+    }, [logs]);
+
     return (
         <div className="animate-in fade-in space-y-6">
+            
             {/* الترويسة */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-[2rem] shadow-sm border border-sky-100">
                 <div className="flex items-center gap-4">
@@ -104,6 +125,39 @@ const handleSubmit = async (e: React.FormEvent) => {
                 </form>
             )}
 
+            {/* 🌟 منحنى النمو (رسم بياني) */}
+            {logs.length > 1 && !loading && (
+                <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-sky-100">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-black text-gray-800 flex items-center gap-2"><TrendingUp size={20} className="text-sky-500"/> منحنى التطور</h3>
+                        <div className="flex gap-2 bg-gray-50 p-1 rounded-xl border border-gray-100">
+                            <button onClick={() => setActiveChart('weight')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${activeChart === 'weight' ? 'bg-white text-sky-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>الوزن</button>
+                            <button onClick={() => setActiveChart('height')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${activeChart === 'height' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>الطول</button>
+                        </div>
+                    </div>
+                    
+                    <div className="h-64 w-full" dir="ltr">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                <XAxis dataKey="date" tick={{fontSize: 10, fill: '#6b7280'}} tickLine={false} axisLine={false} />
+                                <YAxis tick={{fontSize: 10, fill: '#6b7280'}} tickLine={false} axisLine={false} domain={['dataMin - 1', 'dataMax + 1']} />
+                                <Tooltip 
+                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px', fontWeight: 'bold' }}
+                                    formatter={(value: any) => [value, activeChart === 'weight' ? 'كجم' : 'سم']}
+                                    labelStyle={{ color: '#9ca3af', marginBottom: '4px' }}
+                                />
+                                {activeChart === 'weight' ? (
+                                    <Line type="monotone" dataKey="weight" name="الوزن" stroke="#0ea5e9" strokeWidth={4} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                                ) : (
+                                    <Line type="monotone" dataKey="height" name="الطول" stroke="#10b981" strokeWidth={4} dot={{r: 4, strokeWidth: 2}} activeDot={{r: 6}} />
+                                )}
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            )}
+
             {/* قائمة السجلات */}
             {loading ? (
                 <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-sky-500"/></div>
@@ -116,12 +170,12 @@ const handleSubmit = async (e: React.FormEvent) => {
                 <div className="grid gap-4">
                     {logs.map(log => (
                         <div key={log.id} className="bg-white p-5 rounded-[1.5rem] border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <div className="flex items-center gap-2 text-gray-600 font-bold text-sm bg-gray-50 px-4 py-2 rounded-xl">
+                            <div className="flex items-center gap-2 text-gray-600 font-bold text-sm bg-gray-50 px-4 py-2 rounded-xl shrink-0">
                                 <Calendar size={16} className="text-sky-500" />
                                 <span>{new Date(log.log_timestamp).toLocaleDateString('ar-EG')}</span>
                             </div>
                             
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2 flex-1 justify-end">
                                 {log.weight && (
                                     <div className="bg-sky-50 text-sky-700 px-4 py-2 rounded-xl text-xs font-bold border border-sky-100">
                                         الوزن: <span className="font-black text-sm" dir="ltr">{log.weight}</span> كجم
