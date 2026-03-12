@@ -3,8 +3,8 @@ import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
 import { 
   BookOpen, Plus, FileText, CheckCircle, Clock, 
-  Stethoscope, Syringe, Eye, AlertCircle, Loader2, Calendar
-} from 'lucide-react';
+  Stethoscope, Syringe, Eye, AlertCircle, Loader2, Calendar, X 
+} from 'lucide-react'; // ✅ تمت إضافة الأيقونة X هنا
 
 interface LogbookEntry {
   id: string;
@@ -20,6 +20,7 @@ interface LogbookEntry {
 export default function TraineeLogbookTab({ employeeId }: { employeeId: string }) {
   const [traineeId, setTraineeId] = useState<string | null>(null);
   const [entries, setEntries] = useState<LogbookEntry[]>([]);
+  const [rotations, setRotations] = useState<any[]>([]); // لحفظ الدورات التدريبية المتاحة
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -28,15 +29,16 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
     entry_date: new Date().toISOString().split('T')[0],
     entry_type: 'case',
     diagnosis: '',
-    description: ''
+    description: '',
+    rotation_id: '' // ربط الحالة بالدورة
   });
 
-  // 1. جلب بيانات المتدرب وسجل الحالات
+  // جلب البيانات
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // أولاً: البحث عن رقم المتدرب (Trainee ID) المرتبط بهذا الموظف
+        // 1. جلب بيانات المتدرب
         const { data: traineeData, error: traineeError } = await supabase
           .from('fellowship_trainees')
           .select('id')
@@ -44,22 +46,29 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
           .single();
 
         if (traineeError || !traineeData) {
-          console.warn("Trainee profile not found");
           setLoading(false);
           return;
         }
 
         setTraineeId(traineeData.id);
 
-        // ثانياً: جلب سجل الحالات الخاص به
-        const { data: logbookData, error: logbookError } = await supabase
+        // 2. جلب سجل الحالات
+        const { data: logbookData } = await supabase
           .from('fellowship_logbook')
           .select('*')
           .eq('trainee_id', traineeData.id)
           .order('entry_date', { ascending: false });
 
-        if (logbookError) throw logbookError;
         setEntries(logbookData || []);
+
+        // 3. جلب الدورات التدريبية (Rotations) الخاصة بالمتدرب ليربط الحالة بها
+        const { data: rotData } = await supabase
+          .from('fellowship_trainee_rotations')
+          .select('id, start_date, end_date, rotation_type:fellowship_rotation_types(name_ar, training_year)')
+          .eq('trainee_id', traineeData.id)
+          .order('start_date', { ascending: false });
+          
+        setRotations(rotData || []);
 
       } catch (error) {
         console.error('Error fetching logbook:', error);
@@ -72,13 +81,10 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
     if (employeeId) fetchData();
   }, [employeeId]);
 
-  // 2. دالة إرسال حالة جديدة
+  // إرسال حالة جديدة
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!traineeId) {
-      toast.error('ملفك كمتدرب غير مكتمل، يرجى مراجعة الإدارة.');
-      return;
-    }
+    if (!traineeId) return;
 
     setSubmitting(true);
     try {
@@ -88,6 +94,7 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
         entry_type: formData.entry_type,
         diagnosis: formData.diagnosis,
         description: formData.description,
+        rotation_id: formData.rotation_id || null // الدورة المرتبطة (إن وجدت)
       };
 
       const { data, error } = await supabase
@@ -98,10 +105,10 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
 
       if (error) throw error;
 
-      toast.success('تم تسجيل الحالة بنجاح بانتظار مراجعة المدرب!');
+      toast.success('تم تسجيل الحالة بنجاح. بانتظار الاعتماد!');
       setEntries([data, ...entries]);
-      setShowForm(false); // إخفاء النموذج بعد النجاح
-      setFormData({ ...formData, diagnosis: '', description: '' }); // تفريغ الحقول
+      setShowForm(false);
+      setFormData({ ...formData, diagnosis: '', description: '' });
 
     } catch (error) {
       console.error('Error adding entry:', error);
@@ -111,7 +118,6 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
     }
   };
 
-  // دالة مساعدة لاختيار الأيقونة واللون حسب نوع الإدخال
   const getTypeConfig = (type: string) => {
     switch (type) {
       case 'case': return { label: 'حالة مرضية', icon: Stethoscope, color: 'text-blue-600', bg: 'bg-blue-50' };
@@ -131,7 +137,6 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
     );
   }
 
-  // إذا لم يكن مسجلاً في جدول المتدربين
   if (!traineeId && !loading) {
     return (
       <div className="p-6 text-center animate-in fade-in">
@@ -140,16 +145,15 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
         </div>
         <h2 className="text-xl font-black text-gray-800 mb-2">ملف المتدرب غير مفعل</h2>
         <p className="text-sm font-bold text-gray-500 max-w-sm mx-auto">
-          حسابك كموظف يعمل بنجاح، لكن لم يتم تسجيل بياناتك كمتدرب زمالة في قاعدة البيانات بعد. يرجى التواصل مع إدارة التدريب لإضافة كود الزمالة الخاص بك.
+          حسابك كموظف يعمل بنجاح، لكن لم يتم تسجيل بياناتك كمتدرب زمالة. يرجى التواصل مع الإدارة.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6 animate-in fade-in">
+    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6 animate-in fade-in" dir="rtl">
       
-      {/* الهيدر وزر الإضافة */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
         <div>
           <h2 className="text-xl font-black text-gray-800 flex items-center gap-2">
@@ -165,10 +169,9 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
         </button>
       </div>
 
-      {/* نموذج الإضافة */}
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-white p-6 rounded-3xl shadow-sm border border-emerald-100 animate-in slide-in-from-top-4 space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div>
               <label className="block text-xs font-bold text-gray-600 mb-1.5">تاريخ الحالة *</label>
               <div className="relative">
@@ -193,6 +196,23 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
                 <option value="procedure">إجراء طبي (Procedure)</option>
                 <option value="skill">تطبيق مهارة (Skill)</option>
                 <option value="observation">ملاحظة (Observation)</option>
+              </select>
+            </div>
+
+            {/* ✅ اختيار الدورة التدريبية التي تتبع لها الحالة */}
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1.5">الدورة المرتبطة (Rotation)</label>
+              <select 
+                value={formData.rotation_id} 
+                onChange={e => setFormData({...formData, rotation_id: e.target.value})}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:border-emerald-500 text-sm font-bold"
+              >
+                <option value="">-- اختر الدورة --</option>
+                {rotations.map(rot => (
+                  <option key={rot.id} value={rot.id}>
+                    {rot.rotation_type?.name_ar} (السنة {rot.rotation_type?.training_year})
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -228,7 +248,6 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
         </form>
       )}
 
-      {/* قائمة السجلات */}
       <div className="space-y-4">
         <h3 className="font-black text-gray-800 text-lg px-2">سجلاتي السابقة ({entries.length})</h3>
         
@@ -244,7 +263,7 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
               const Icon = typeConfig.icon;
               
               return (
-                <div key={entry.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:border-gray-200 transition-all flex flex-col">
+                <div key={entry.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
                   
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-2">
@@ -257,7 +276,6 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
                       </div>
                     </div>
                     
-                    {/* حالة المراجعة */}
                     {entry.trainer_reviewed ? (
                       <span className="flex items-center gap-1 text-[10px] font-black bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-md border border-emerald-100">
                         <CheckCircle size={12} /> تم الاعتماد
@@ -274,7 +292,6 @@ export default function TraineeLogbookTab({ employeeId }: { employeeId: string }
                     {entry.description}
                   </p>
 
-                  {/* تعليق المدرب (إن وجد) */}
                   {entry.trainer_reviewed && entry.trainer_comments && (
                     <div className="mt-auto bg-gray-50 p-3 rounded-xl border border-gray-100">
                       <p className="text-[10px] font-black text-gray-400 mb-1">تعليق المدرب:</p>
