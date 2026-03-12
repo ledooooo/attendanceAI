@@ -23,7 +23,8 @@ import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
 import CalculatorsMenu from '../../calculators/CalculatorsMenu';
 import ThemeOverlay from '../staff/components/ThemeOverlay';
-
+import TraineeProfileTab from './tabs/TraineeProfileTab';
+import TraineeLecturesTab from './tabs/TraineeLecturesTab';
 // استيراد تبويبات الزمالة (التي برمجناها)
 import TraineeOverviewTab from './tabs/TraineeOverviewTab';
 import TraineeLogbookTab from './tabs/TraineeLogbookTab';
@@ -109,7 +110,8 @@ export default function TraineeDashboard({ employee }: Props) {
     { id: 'logbook', label: 'سجل الحالات', icon: BookOpen, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { id: 'portfolio', label: 'ملف الإنجاز', icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50' },
     { id: 'dops', label: 'تقييم DOPS', icon: CheckCircle, color: 'text-purple-600', bg: 'bg-purple-50' },
-    
+    { id: 'profile', label: 'الملف الأكاديمي', icon: User, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { id: 'lectures', label: 'المحاضرات العلمية', icon: Presentation, color: 'text-blue-600', bg: 'bg-blue-50' },
     { id: 'divider2', label: 'الخدمات العامة', isHeader: true },
     { id: 'news', label: 'الرئيسية والأخبار', icon: LayoutDashboard, color: 'text-gray-600', bg: 'bg-gray-50' },
     { id: 'attendance', label: 'سجل الحضور', icon: Clock, color: 'text-rose-600', bg: 'bg-rose-50' },
