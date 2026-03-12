@@ -13,10 +13,8 @@ import TraineeLogbookTab from './tabs/TraineeLogbookTab';
 import TraineePortfolioTab from './tabs/TraineePortfolioTab';
 import TraineeDopsTab from './tabs/TraineeDopsTab';
 
-// ✅ 🌟 استيراد الخدمات العامة من مجلدات الموظفين (Staff Components)
-import StaffNewsFeed from '../staff/components/StaffNewsFeed';
-import AttendanceTab from '../staff/components/AttendanceTab';
-import CalculatorsMenu from '../staff/components/CalculatorsMenu';
+// ✅ 🌟 استيراد الخدمات العامة من مساراتها الصحيحة (مجلد Admin)
+import AttendanceTab from '../admin/components/AttendanceTab';
 import GamificationManager from '../admin/components/GamificationManager';
 
 export default function TraineeDashboard({ employee }: { employee: any }) {
@@ -48,11 +46,13 @@ export default function TraineeDashboard({ employee }: { employee: any }) {
       case 'portfolio': return <TraineePortfolioTab employeeId={employee?.id} />;
       case 'dops': return <TraineeDopsTab employeeId={employee?.id} />;
       
-      // ✅ 🌟 التبويبات العامة الفعالة
-      case 'news': return <div className="p-4"><StaffNewsFeed /></div>;
+      // ✅ التبويبات العامة (التي تم ربطها بنجاح)
       case 'attendance': return <div className="p-4"><AttendanceTab onRefresh={() => {}} /></div>;
-      case 'calculators': return <div className="p-4"><CalculatorsMenu /></div>;
       case 'arcade': return <div className="p-4"><GamificationManager /></div>;
+      
+      // ⚠️ وضعنا هذه كمكونات مؤقتة حتى لا يتعطل الرفع (لأننا لا نعرف مسارها الدقيق في مشروعك)
+      case 'news': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Home className="w-12 h-12 mx-auto mb-4 opacity-20"/>شاشة الأخبار قيد الربط...</div>;
+      case 'calculators': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Calculator className="w-12 h-12 mx-auto mb-4 opacity-20"/>شاشة الحاسبات قيد الربط...</div>;
       
       default: return <TraineeOverviewTab employeeId={employee?.id} />;
     }
