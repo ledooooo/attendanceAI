@@ -5,13 +5,16 @@ import LoginPage from './features/auth/LoginPage';
 import AdminDashboard from './features/admin/AdminDashboard';
 import StaffDashboard from './features/staff/StaffDashboard';
 
-// ✅ 1. استيراد واجهة المشرف الجديدة
+// ✅ 1. استيراد واجهة المشرف
 import SupervisorDashboard from './features/supervisor/SupervisorDashboard'; 
 
-// 🌟 2. استيراد واجهة الزوار والمواطنين (الآمنة)
+// 🌟 2. استيراد واجهة الزوار والمواطنين
 import PatientDashboard from './features/patient/PatientDashboard'; 
 
-// 🌟 3. استيراد الصفحات العامة (Public Pages)
+// 🎓 3. استيراد واجهة متدربي الزمالة الجديدة
+import TraineeDashboard from './features/fellowship/TraineeDashboard';
+
+// 🌟 4. استيراد الصفحات العامة (Public Pages)
 import PricingPage from './pages/public/PricingPage';
 import ContactPage from './pages/public/ContactPage';
 import StaffDirectoryPage from './pages/public/StaffDirectoryPage';
@@ -51,7 +54,6 @@ const persister = createSyncStoragePersister({
 
 const AppContent = () => {
   // 🌟 نظام التوجيه للصفحات العامة (بدون تسجيل دخول)
-  // نضعه في البداية لكي يعمل حتى لو لم يكن هناك User
   const currentPath = window.location.pathname;
 
   if (currentPath === '/pricing') return <PricingPage />;
@@ -64,7 +66,7 @@ const AppContent = () => {
 
   const { user, employeeProfile, loading, isAdmin } = useAuth();
 
-  // استعلام للتحقق مما إذا كان المستخدم يمتلك حساب مشرف (يُنفذ فقط إذا لم يكن موظفاً)
+  // استعلام للتحقق مما إذا كان المستخدم يمتلك حساب مشرف
   const { data: supervisorData, isLoading: loadingSup } = useQuery({
       queryKey: ['check_supervisor_status', user?.id],
       queryFn: async () => {
@@ -76,7 +78,6 @@ const AppContent = () => {
               .maybeSingle();
           return data;
       },
-      // لا نشغل هذا الاستعلام إلا لو كان مسجلاً وليس لديه ملف موظف (لتوفير الموارد)
       enabled: !!user && !employeeProfile 
   });
 
@@ -112,7 +113,7 @@ const AppContent = () => {
     return () => clearTimeout(timer);
   }, [loading]);
 
-  // شاشة التحميل (أثناء جلب بيانات الموظف أو المشرف)
+  // شاشة التحميل
   if (loading || loadingSup) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-gray-50">
@@ -156,7 +157,6 @@ const AppContent = () => {
           );
       }
 
-      // إذا كان معتمداً (approved) يفتح شاشة المشرف
       return (
           <>
             <OnlineTracker />
@@ -167,8 +167,7 @@ const AppContent = () => {
   }
 
   // ==========================================
-  // 🌟 مسار الزوار والمواطنين (آمن ولا يجمع بيانات طبية)
-  // إذا لم يكن موظفاً ولا مشرفاً، فهو مريض مسجل دخول بجوجل
+  // 🌟 مسار الزوار والمواطنين
   // ==========================================
   if (!employeeProfile) {
     return (
@@ -180,8 +179,14 @@ const AppContent = () => {
   }
 
   // ==========================================
-  // مسار الموظفين والمديرين العادي (Employees Routing)
+  // مسار الموظفين والمديرين العادي + المتدربين
   // ==========================================
+  
+  // 🎓 فحص إذا كان الموظف متدرب زمالة بناءً على تخصصه أو مسماه الوظيفي
+  const isFellowshipTrainee = 
+      employeeProfile.specialty?.includes('متدرب') || 
+      employeeProfile.job_title?.includes('متدرب');
+
   return (
     <>
       <OnlineTracker /> 
@@ -189,7 +194,11 @@ const AppContent = () => {
       
       {isAdmin ? (
         <AdminDashboard />
+      ) : isFellowshipTrainee ? (
+        // 🎓 مسار المتدرب (Trainee Dashboard)
+        <TraineeDashboard employee={employeeProfile} />
       ) : (
+        // مسار الموظف العادي
         <MandatoryTrainingGuard employeeId={employeeProfile.employee_id}>
             <StaffDashboard employee={employeeProfile} />
         </MandatoryTrainingGuard>
