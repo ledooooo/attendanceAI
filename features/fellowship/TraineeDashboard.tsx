@@ -13,6 +13,12 @@ import TraineeLogbookTab from './tabs/TraineeLogbookTab';
 import TraineePortfolioTab from './tabs/TraineePortfolioTab';
 import TraineeDopsTab from './tabs/TraineeDopsTab';
 
+// ✅ 🌟 استيراد الخدمات العامة من مجلدات الموظفين (Staff Components)
+import StaffNewsFeed from '../staff/components/StaffNewsFeed';
+import AttendanceTab from '../staff/components/AttendanceTab';
+import CalculatorsMenu from '../staff/components/CalculatorsMenu';
+import GamificationManager from '../admin/components/GamificationManager';
+
 export default function TraineeDashboard({ employee }: { employee: any }) {
   const { signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
@@ -36,17 +42,17 @@ export default function TraineeDashboard({ employee }: { employee: any }) {
   // دالة لعرض التبويب المختار
   const renderActiveTabContent = () => {
     switch (activeTab) {
-      // تبويبات الزمالة (تم تعديل employee_id إلى id هنا 👇)
+      // تبويبات الزمالة
       case 'overview': return <TraineeOverviewTab employeeId={employee?.id} />;
       case 'logbook': return <TraineeLogbookTab employeeId={employee?.id} />;
       case 'portfolio': return <TraineePortfolioTab employeeId={employee?.id} />;
       case 'dops': return <TraineeDopsTab employeeId={employee?.id} />;
       
-      // التبويبات العامة
-      case 'news': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Home className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط الأخبار والتعميمات...</div>;
-      case 'attendance': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Clock className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط سجل الحضور...</div>;
-      case 'calculators': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Calculator className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط الحاسبات الطبية...</div>;
-      case 'arcade': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Gamepad2 className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط نظام النقاط...</div>;
+      // ✅ 🌟 التبويبات العامة الفعالة
+      case 'news': return <div className="p-4"><StaffNewsFeed /></div>;
+      case 'attendance': return <div className="p-4"><AttendanceTab onRefresh={() => {}} /></div>;
+      case 'calculators': return <div className="p-4"><CalculatorsMenu /></div>;
+      case 'arcade': return <div className="p-4"><GamificationManager /></div>;
       
       default: return <TraineeOverviewTab employeeId={employee?.id} />;
     }
