@@ -9,11 +9,11 @@ import toast from 'react-hot-toast';
 
 import { 
   LogOut, User, Clock, Menu, X, LayoutDashboard, Share2, Info, 
-  Bell, Settings, Trophy, Gamepad2, Sparkles, BellRing, Calculator, 
-  GraduationCap, BookOpen, FileText, CheckCircle, DownloadCloud
+  Bell, Trophy, Gamepad2, Sparkles, Calculator, 
+  GraduationCap, BookOpen, FileText, CheckCircle, DownloadCloud, Presentation
 } from 'lucide-react';
 
-// استيراد المكونات الفرعية (من Staff & Admin & Gamification)
+// ✅ استيراد المكونات الفرعية من مساراتها الصحيحة (كما في StaffDashboard)
 import StaffAttendance from '../staff/components/StaffAttendance';
 import StaffNewsFeed from '../staff/components/StaffNewsFeed';
 import EOMVotingCard from '../staff/components/EOMVotingCard';
@@ -23,13 +23,14 @@ import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
 import CalculatorsMenu from '../../calculators/CalculatorsMenu';
 import ThemeOverlay from '../staff/components/ThemeOverlay';
-import TraineeProfileTab from './tabs/TraineeProfileTab';
-import TraineeLecturesTab from './tabs/TraineeLecturesTab';
-// استيراد تبويبات الزمالة (التي برمجناها)
+
+// 🌟 استيراد تبويبات الزمالة
 import TraineeOverviewTab from './tabs/TraineeOverviewTab';
 import TraineeLogbookTab from './tabs/TraineeLogbookTab';
 import TraineePortfolioTab from './tabs/TraineePortfolioTab';
 import TraineeDopsTab from './tabs/TraineeDopsTab';
+import TraineeProfileTab from './tabs/TraineeProfileTab';
+import TraineeLecturesTab from './tabs/TraineeLecturesTab';
 
 interface Props {
   employee: any;
@@ -43,15 +44,14 @@ export default function TraineeDashboard({ employee }: Props) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
-  // States للقوائم العلوية
+  // States للقوائم
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
-  
   const [isThemeEnabled, setIsThemeEnabled] = useState(true);
 
-  // States للتطبيق والتثبيت
+  // States للتثبيت
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showInstallPopup, setShowInstallPopup] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -59,9 +59,9 @@ export default function TraineeDashboard({ employee }: Props) {
 
   // 🌟 جلب الإشعارات
   const { data: notifications = [] } = useQuery({
-      queryKey: ['trainee_notifications', employee.id],
+      queryKey: ['trainee_notifications', employee.employee_id],
       queryFn: async () => {
-          const { data } = await supabase.from('notifications').select('*').eq('user_id', employee.id).order('created_at', { ascending: false }).limit(20);
+          const { data } = await supabase.from('notifications').select('*').eq('user_id', employee.employee_id).order('created_at', { ascending: false }).limit(20);
           return data || [];
       },
       refetchInterval: 30000
@@ -69,7 +69,17 @@ export default function TraineeDashboard({ employee }: Props) {
 
   const unreadNotifsCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
 
-  // 🌟 إغلاق القوائم عند النقر خارجها
+  // 🌟 جلب الحضور لتشغيل مكون StaffAttendance بشكل صحيح
+  const { data: attendanceData = [] } = useQuery({
+      queryKey: ['trainee_attendance', employee.employee_id],
+      queryFn: async () => {
+          const { data } = await supabase.from('attendance').select('*').eq('employee_id', employee.employee_id);
+          return data || [];
+      }
+  });
+
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+
   useEffect(() => {
       function handleClickOutside(event: any) {
           if (notifRef.current && !notifRef.current.contains(event.target)) setShowNotifMenu(false);
@@ -78,14 +88,12 @@ export default function TraineeDashboard({ employee }: Props) {
       return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [notifRef]);
 
-  // 🌟 Swipe لفتح القائمة الجانبية في الموبايل
   const swipeHandlers = useSwipeable({
     onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth * 0.75) setIsSidebarOpen(true); },
     onSwipedRight: () => setIsSidebarOpen(false),
     trackMouse: true, delta: 50,
   });
 
-  // 🌟 التحقق من تثبيت التطبيق
   useEffect(() => {
     const checkStandalone = () => { setIsStandalone(window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true); };
     checkStandalone();
@@ -103,38 +111,41 @@ export default function TraineeDashboard({ employee }: Props) {
       setIsScrolled(scrollTop > 40);
   };
 
-  // تعريف القائمة الجانبية (مقسمة لأكاديمي وعام)
+  // ✅ القائمة الجانبية (مدمجة)
   const menuItems = useMemo(() => [
     { id: 'divider1', label: 'أكاديمية الزمالة', isHeader: true },
-    { id: 'overview', label: 'نظرة عامة', icon: GraduationCap, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-    { id: 'logbook', label: 'سجل الحالات', icon: BookOpen, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { id: 'portfolio', label: 'ملف الإنجاز', icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { id: 'dops', label: 'تقييم DOPS', icon: CheckCircle, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { id: 'profile', label: 'الملف الأكاديمي', icon: User, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-    { id: 'lectures', label: 'المحاضرات العلمية', icon: Presentation, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { id: 'overview', label: 'نظرة عامة', icon: GraduationCap },
+    { id: 'profile', label: 'الملف الأكاديمي', icon: User },
+    { id: 'logbook', label: 'سجل الحالات', icon: BookOpen },
+    { id: 'portfolio', label: 'ملف الإنجاز', icon: FileText },
+    { id: 'dops', label: 'تقييم DOPS', icon: CheckCircle },
+    { id: 'lectures', label: 'المحاضرات العلمية', icon: Presentation },
+    
     { id: 'divider2', label: 'الخدمات العامة', isHeader: true },
-    { id: 'news', label: 'الرئيسية والأخبار', icon: LayoutDashboard, color: 'text-gray-600', bg: 'bg-gray-50' },
-    { id: 'attendance', label: 'سجل الحضور', icon: Clock, color: 'text-rose-600', bg: 'bg-rose-50' },
-    { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, color: 'text-orange-600', bg: 'bg-orange-50', isNew: true },
-    { id: 'calculators', label: 'حاسبات طبية', icon: Calculator, color: 'text-teal-600', bg: 'bg-teal-50' },
+    { id: 'news', label: 'الرئيسية والأخبار', icon: LayoutDashboard },
+    { id: 'attendance', label: 'سجل الحضور', icon: Clock },
+    { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, isNew: true },
+    { id: 'calculators', label: 'حاسبات طبية', icon: Calculator },
   ], []);
 
-  // دالة عرض المحتوى
+  // ✅ عرض المحتوى الصحيح (نمرر employee.employee_id بدلاً من id لمنع الأخطاء)
   const renderActiveTabContent = () => {
     switch (activeTab) {
-      // تبويبات الزمالة
-      case 'overview': return <TraineeOverviewTab employeeId={employee?.id} />;
-      case 'logbook': return <TraineeLogbookTab employeeId={employee?.id} />;
-      case 'portfolio': return <TraineePortfolioTab employeeId={employee?.id} />;
-      case 'dops': return <TraineeDopsTab employeeId={employee?.id} />;
+      // 🎓 تبويبات الزمالة
+      case 'overview': return <TraineeOverviewTab employeeId={employee.employee_id} />;
+      case 'profile': return <TraineeProfileTab employeeId={employee.employee_id} />;
+      case 'logbook': return <TraineeLogbookTab employeeId={employee.employee_id} />;
+      case 'portfolio': return <TraineePortfolioTab employeeId={employee.employee_id} />;
+      case 'dops': return <TraineeDopsTab employeeId={employee.employee_id} />;
+      case 'lectures': return <TraineeLecturesTab employeeId={employee.employee_id} />;
       
-      // التبويبات العامة (بنفس تصميم StaffDashboard)
+      // 🏥 التبويبات العامة (بنفس تصميم StaffDashboard)
       case 'news': return <div className="space-y-4"><EOMVotingCard employee={employee} /><StaffNewsFeed employee={employee} /></div>;
-      case 'attendance': return <StaffAttendance attendance={[]} selectedMonth={new Date().toISOString().slice(0, 7)} setSelectedMonth={()=>{}} employee={employee} />;
+      case 'attendance': return <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} />;
       case 'arcade': return <StaffArcade employee={employee} deepLinkRoomId={null} />;
       case 'calculators': return <CalculatorsMenu />;
       
-      default: return <TraineeOverviewTab employeeId={employee?.id} />;
+      default: return <TraineeOverviewTab employeeId={employee.employee_id} />;
     }
   };
 
@@ -160,10 +171,9 @@ export default function TraineeDashboard({ employee }: Props) {
           )}
       </div>
 
-      {/* خلفية القائمة الجانبية للموبايل */}
       {isSidebarOpen && <div className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" onClick={() => setIsSidebarOpen(false)} />}
 
-      {/* القائمة الجانبية (Sidebar) */}
+      {/* القائمة الجانبية */}
       <aside className={`
           fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl 
           transform transition-transform duration-300 ease-in-out flex flex-col 
@@ -246,7 +256,7 @@ export default function TraineeDashboard({ employee }: Props) {
             </div>
         </main>
 
-        {/* شريط التنقل السفلي للموبايل (Bottom Navbar) */}
+        {/* شريط التنقل السفلي للموبايل */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-1.5 flex justify-between items-center z-50 pb-safe shadow-[0_-4px_15px_rgba(0,0,0,0.03)]">
             <MobileNavItem icon={LayoutDashboard} label="الرئيسية" active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
             <MobileNavItem icon={BookOpen} label="سجل الحالات" active={activeTab === 'logbook'} onClick={() => setActiveTab('logbook')} />
