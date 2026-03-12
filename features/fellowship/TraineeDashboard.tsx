@@ -1,331 +1,330 @@
-import React, { useState, useEffect } from 'react';
+'use client';
+
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
+import { useSwipeable } from 'react-swipeable';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+
 import { 
-  GraduationCap, Users, Stethoscope, Link as LinkIcon, 
-  Calendar, Loader2, Plus, Trash2, CheckCircle,
-  FileText, Activity, BookOpen, UserCog, Presentation
+  LogOut, User, Clock, Menu, X, LayoutDashboard, Share2, Info, 
+  Bell, Settings, Trophy, Gamepad2, Sparkles, BellRing, Calculator, 
+  GraduationCap, BookOpen, FileText, CheckCircle, DownloadCloud
 } from 'lucide-react';
 
-type Section = 'trainees' | 'trainers' | 'assignments' | 'rotations' | 'logbook_review' | 'dops_eval' | 'tar_reports' | 'lectures';
+// استيراد المكونات الفرعية (من Staff & Admin & Gamification)
+import StaffAttendance from '../staff/components/StaffAttendance';
+import StaffNewsFeed from '../staff/components/StaffNewsFeed';
+import EOMVotingCard from '../staff/components/EOMVotingCard';
+import StaffArcade from '../staff/components/StaffArcade';
+import DailyQuizModal from '../../components/gamification/DailyQuizModal';
+import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
+import LevelProgressBar from '../../components/gamification/LevelProgressBar';
+import CalculatorsMenu from '../../calculators/CalculatorsMenu';
+import ThemeOverlay from '../staff/components/ThemeOverlay';
 
-export default function AdminFellowshipTab() {
-  const [activeSection, setActiveSection] = useState<Section>('trainees');
-  const [loading, setLoading] = useState(false);
+// استيراد تبويبات الزمالة (التي برمجناها)
+import TraineeOverviewTab from './tabs/TraineeOverviewTab';
+import TraineeLogbookTab from './tabs/TraineeLogbookTab';
+import TraineePortfolioTab from './tabs/TraineePortfolioTab';
+import TraineeDopsTab from './tabs/TraineeDopsTab';
+
+interface Props {
+  employee: any;
+}
+
+export default function TraineeDashboard({ employee }: Props) {
+  const { signOut } = useAuth();
+  const queryClient = useQueryClient();
   
-  // --- Data States ---
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [trainees, setTrainees] = useState<any[]>([]);
-  const [trainers, setTrainers] = useState<any[]>([]);
-  const [assignments, setAssignments] = useState<any[]>([]);
-  const [rotationTypes, setRotationTypes] = useState<any[]>([]);
-  const [clinicalSkills, setClinicalSkills] = useState<any[]>([]);
-  const [pendingLogbooks, setPendingLogbooks] = useState<any[]>([]);
-  const [lectures, setLectures] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
 
-  // --- Form States ---
-  const [newTrainee, setNewTrainee] = useState({ employee_id: '', trainee_code: '', enrollment_date: '' });
-  const [newTrainer, setNewTrainer] = useState({ employee_id: '', trainer_code: '', title: '' });
-  const [newAssignment, setNewAssignment] = useState({ trainer_id: '', trainee_id: '', start_date: '' });
-  const [newRotation, setNewRotation] = useState({ trainee_id: '', rotation_type_id: '', start_date: '', end_date: '', trainer_id: '' });
-  const [newDops, setNewDops] = useState({ trainee_id: '', assessor_id: '', skill_id: '', assessment_date: '', rating: 3, assessor_feedback: '' });
-  const [newTar, setNewTar] = useState({ trainee_id: '', trainer_id: '', report_period_start: '', report_period_end: '', overall_rating: 3, trainer_comments: '' });
+  // States للقوائم العلوية
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showLeaderboardMenu, setShowLeaderboardMenu] = useState(false);
+  const [showNotifMenu, setShowNotifMenu] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  
+  const [isThemeEnabled, setIsThemeEnabled] = useState(true);
 
-  // --- Lecture Form States ---
-  const [newLecture, setNewLecture] = useState({
-    title: '', description: '', lecture_date: '', lecture_time: '', location: '', presenter_type: 'trainer', presenter_trainee_id: '', presenter_name: ''
+  // States للتطبيق والتثبيت
+  const [showAboutModal, setShowAboutModal] = useState(false);
+  const [showInstallPopup, setShowInstallPopup] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  // 🌟 جلب الإشعارات
+  const { data: notifications = [] } = useQuery({
+      queryKey: ['trainee_notifications', employee.id],
+      queryFn: async () => {
+          const { data } = await supabase.from('notifications').select('*').eq('user_id', employee.id).order('created_at', { ascending: false }).limit(20);
+          return data || [];
+      },
+      refetchInterval: 30000
   });
-  const [quizQuestions, setQuizQuestions] = useState([{ question: '', options: ['', '', '', ''], correct_answer: '' }]);
 
+  const unreadNotifsCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
+
+  // 🌟 إغلاق القوائم عند النقر خارجها
   useEffect(() => {
-    fetchData();
-  }, []);
+      function handleClickOutside(event: any) {
+          if (notifRef.current && !notifRef.current.contains(event.target)) setShowNotifMenu(false);
+      }
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [notifRef]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [
-        { data: emps }, { data: trns }, { data: trnrs }, 
-        { data: asgns }, { data: rts }, { data: skills }, { data: logs }, { data: lecs }
-      ] = await Promise.all([
-        supabase.from('employees').select('id, name, specialty, role'),
-        supabase.from('fellowship_trainees').select('*, employee:employees(name, specialty)'),
-        supabase.from('fellowship_trainers').select('*, employee:employees(name, specialty)'),
-        supabase.from('fellowship_trainer_trainee').select('*, trainer:fellowship_trainers(employee:employees(name)), trainee:fellowship_trainees(employee:employees(name))'),
-        supabase.from('fellowship_rotation_types').select('*').order('training_year', { ascending: true }),
-        supabase.from('fellowship_clinical_skills').select('*'),
-        supabase.from('fellowship_logbook').select('*, trainee:fellowship_trainees(employee:employees(name))').eq('trainer_reviewed', false),
-        supabase.from('fellowship_lectures').select('*, presenter_trainee:fellowship_trainees(employee:employees(name))').order('lecture_date', { ascending: false })
-      ]);
+  // 🌟 Swipe لفتح القائمة الجانبية في الموبايل
+  const swipeHandlers = useSwipeable({
+    onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth * 0.75) setIsSidebarOpen(true); },
+    onSwipedRight: () => setIsSidebarOpen(false),
+    trackMouse: true, delta: 50,
+  });
 
-      setEmployees(emps || []);
-      setTrainees(trns || []);
-      setTrainers(trnrs || []);
-      setAssignments(asgns || []);
-      setRotationTypes(rts || []);
-      setClinicalSkills(skills || []);
-      setPendingLogbooks(logs || []);
-      setLectures(lecs || []);
-    } catch (error) {
-      toast.error('حدث خطأ أثناء جلب البيانات');
-    } finally {
-      setLoading(false);
-    }
+  // 🌟 التحقق من تثبيت التطبيق
+  useEffect(() => {
+    const checkStandalone = () => { setIsStandalone(window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true); };
+    checkStandalone();
+    const handler = (e: any) => { e.preventDefault(); setDeferredPrompt(e); if (!isStandalone) setTimeout(() => setShowInstallPopup(true), 3000); };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, [isStandalone]);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) { deferredPrompt.prompt(); const { outcome } = await deferredPrompt.userChoice; if (outcome === 'accepted') { setDeferredPrompt(null); setShowInstallPopup(false); } }
   };
 
-  // --- Handlers (Add Functions) ---
-  const handleAdd = async (table: string, data: any, resetState: Function, successMsg: string) => {
-    try {
-      const { error } = await supabase.from(table).insert([data]);
-      if (error) throw error;
-      toast.success(successMsg);
-      resetState();
-      fetchData();
-    } catch (error: any) {
-      toast.error(error.message || 'حدث خطأ أثناء الحفظ');
-    }
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+      const scrollTop = e.currentTarget.scrollTop;
+      setIsScrolled(scrollTop > 40);
   };
 
-  const handleApproveLogbook = async (id: string) => {
-    try {
-      const { error } = await supabase.from('fellowship_logbook').update({ trainer_reviewed: true, trainer_review_date: new Date().toISOString() }).eq('id', id);
-      if (error) throw error;
-      toast.success('تم اعتماد الحالة');
-      fetchData();
-    } catch (error) {
-      toast.error('خطأ في الاعتماد');
-    }
-  };
-
-  // --- Lecture Submit ---
-  const handleAddLecture = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // تعريف القائمة الجانبية (مقسمة لأكاديمي وعام)
+  const menuItems = useMemo(() => [
+    { id: 'divider1', label: 'أكاديمية الزمالة', isHeader: true },
+    { id: 'overview', label: 'نظرة عامة', icon: GraduationCap, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { id: 'logbook', label: 'سجل الحالات', icon: BookOpen, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { id: 'portfolio', label: 'ملف الإنجاز', icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { id: 'dops', label: 'تقييم DOPS', icon: CheckCircle, color: 'text-purple-600', bg: 'bg-purple-50' },
     
-    // التحقق من صحة أسئلة الاختبار
-    const validQuestions = quizQuestions.filter(q => q.question && q.correct_answer && q.options.every(opt => opt));
-    
-    const payload = {
-        ...newLecture,
-        presenter_trainee_id: newLecture.presenter_type === 'trainee' ? newLecture.presenter_trainee_id : null,
-        presenter_name: newLecture.presenter_type !== 'trainee' ? newLecture.presenter_name : null,
-        quiz_questions: validQuestions.length > 0 ? validQuestions : null
-    };
+    { id: 'divider2', label: 'الخدمات العامة', isHeader: true },
+    { id: 'news', label: 'الرئيسية والأخبار', icon: LayoutDashboard, color: 'text-gray-600', bg: 'bg-gray-50' },
+    { id: 'attendance', label: 'سجل الحضور', icon: Clock, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, color: 'text-orange-600', bg: 'bg-orange-50', isNew: true },
+    { id: 'calculators', label: 'حاسبات طبية', icon: Calculator, color: 'text-teal-600', bg: 'bg-teal-50' },
+  ], []);
 
-    try {
-      const { error } = await supabase.from('fellowship_lectures').insert(payload);
-      if (error) throw error;
-      toast.success('تم إنشاء المحاضرة بنجاح');
+  // دالة عرض المحتوى
+  const renderActiveTabContent = () => {
+    switch (activeTab) {
+      // تبويبات الزمالة
+      case 'overview': return <TraineeOverviewTab employeeId={employee?.id} />;
+      case 'logbook': return <TraineeLogbookTab employeeId={employee?.id} />;
+      case 'portfolio': return <TraineePortfolioTab employeeId={employee?.id} />;
+      case 'dops': return <TraineeDopsTab employeeId={employee?.id} />;
       
-      setNewLecture({ title: '', description: '', lecture_date: '', lecture_time: '', location: '', presenter_type: 'trainer', presenter_trainee_id: '', presenter_name: '' });
-      setQuizQuestions([{ question: '', options: ['', '', '', ''], correct_answer: '' }]);
-      fetchData();
-    } catch (error: any) {
-      toast.error(error.message || 'خطأ في إنشاء المحاضرة');
+      // التبويبات العامة (بنفس تصميم StaffDashboard)
+      case 'news': return <div className="space-y-4"><EOMVotingCard employee={employee} /><StaffNewsFeed employee={employee} /></div>;
+      case 'attendance': return <StaffAttendance attendance={[]} selectedMonth={new Date().toISOString().slice(0, 7)} setSelectedMonth={()=>{}} employee={employee} />;
+      case 'arcade': return <StaffArcade employee={employee} deepLinkRoomId={null} />;
+      case 'calculators': return <CalculatorsMenu />;
+      
+      default: return <TraineeOverviewTab employeeId={employee?.id} />;
     }
-  };
-
-  const handleQuestionChange = (index: number, field: string, value: string, optionIndex?: number) => {
-    const updatedQuestions = [...quizQuestions];
-    if (field === 'options' && optionIndex !== undefined) {
-      updatedQuestions[index].options[optionIndex] = value;
-    } else {
-      (updatedQuestions[index] as any)[field] = value;
-    }
-    setQuizQuestions(updatedQuestions);
-  };
-
-  const addQuestion = () => setQuizQuestions([...quizQuestions, { question: '', options: ['', '', '', ''], correct_answer: '' }]);
-  const removeQuestion = (index: number) => setQuizQuestions(quizQuestions.filter((_, i) => i !== index));
-
-
-  // --- UI Components ---
-  const renderNavButton = (id: Section, label: string, icon: any, colorClass: string) => {
-    const Icon = icon;
-    const isActive = activeSection === id;
-    return (
-      <button 
-        onClick={() => setActiveSection(id)} 
-        className={`flex flex-col items-center justify-center p-3 rounded-2xl font-black text-xs transition-all min-w-[90px] text-center shrink-0 ${isActive ? `bg-white shadow-md ${colorClass}` : 'text-gray-500 hover:bg-white/50'}`}
-      >
-        <Icon size={24} className="mb-1" />
-        {label}
-      </button>
-    );
   };
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in" dir="rtl">
+    <div {...swipeHandlers} className="min-h-screen w-full bg-gray-50 flex overflow-visible font-sans text-right" dir="rtl">
       
-      {/* Header */}
-      <div className="bg-gradient-to-l from-indigo-900 to-purple-800 rounded-3xl p-6 md:p-8 text-white shadow-xl flex items-center gap-4">
-        <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-sm hidden md:block">
-          <GraduationCap size={40} className="text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl md:text-3xl font-black mb-2 tracking-tight">إدارة الزمالة المصرية لطب الأسرة</h1>
-          <p className="text-indigo-100 font-bold text-sm">لوحة التحكم الشاملة للتدريب، التقييم، والجداول (WPBA).</p>
-        </div>
+      <DailyQuizModal employee={employee} />
+      {isThemeEnabled && <ThemeOverlay employee={employee} />}
+
+      {/* رسالة تثبيت التطبيق */}
+      <div className="fixed top-0 left-0 right-0 z-[60] flex flex-col gap-2 p-2 md:px-6 pointer-events-none">
+          {!isStandalone && showInstallPopup && (
+            <div className="pointer-events-auto w-full max-w-xl mx-auto bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-3 rounded-2xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-10 duration-500 border border-white/20">
+                <div className="flex items-center gap-3">
+                    <div className="bg-white/20 p-2 rounded-xl"><DownloadCloud className="w-5 h-5 animate-bounce" /></div>
+                    <div><p className="text-xs font-black">ثبّت تطبيق غرب المطار</p><p className="text-[10px] opacity-80">لتجربة أسرع وسهولة في الوصول للخدمات</p></div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                    <button onClick={() => setShowInstallPopup(false)} className="text-[10px] font-bold px-2 py-1 hover:bg-white/10 rounded-lg">لاحقاً</button>
+                    <button onClick={handleInstallClick} className="bg-white text-emerald-600 text-xs font-black px-4 py-2 rounded-xl shadow-sm active:scale-95 transition-transform">تثبيت</button>
+                </div>
+            </div>
+          )}
       </div>
 
-      {/* Navigation Toolbar */}
-      <div className="bg-gray-100 p-2 rounded-3xl flex overflow-x-auto custom-scrollbar gap-2 shadow-inner">
-        {renderNavButton('trainees', 'المتدربون', Users, 'text-indigo-700')}
-        {renderNavButton('trainers', 'المدربون', Stethoscope, 'text-emerald-700')}
-        {renderNavButton('assignments', 'الإسناد', LinkIcon, 'text-amber-700')}
-        {renderNavButton('lectures', 'المحاضرات', Presentation, 'text-orange-700')}
-        {renderNavButton('rotations', 'الدورات', Calendar, 'text-blue-700')}
-        {renderNavButton('logbook_review', 'مراجعة السجل', BookOpen, 'text-rose-700')}
-        {renderNavButton('dops_eval', 'تقييم DOPS', Activity, 'text-purple-700')}
-        {renderNavButton('tar_reports', 'تقارير TAR', FileText, 'text-teal-700')}
+      {/* خلفية القائمة الجانبية للموبايل */}
+      {isSidebarOpen && <div className="fixed inset-0 bg-black/60 z-[60] md:hidden backdrop-blur-sm transition-opacity duration-300" onClick={() => setIsSidebarOpen(false)} />}
+
+      {/* القائمة الجانبية (Sidebar) */}
+      <aside className={`
+          fixed inset-y-0 right-0 z-[70] w-[85vw] max-w-[300px] bg-white border-l shadow-2xl 
+          transform transition-transform duration-300 ease-in-out flex flex-col 
+          ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} 
+          md:translate-x-0 md:static md:w-72 md:shadow-none h-[100dvh]
+      `}>
+        <div className="h-20 flex items-center justify-between px-6 border-b shrink-0 bg-gradient-to-r from-indigo-50 to-white">
+            <div className="flex items-center gap-3">
+                <div className="bg-white p-1.5 rounded-xl shadow-sm border border-indigo-100">
+                    <GraduationCap className="w-8 h-8 text-indigo-600" />
+                </div>
+                <div>
+                    <h1 className="font-black text-gray-800 text-base">برنامج الزمالة</h1>
+                    <p className="text-[10px] text-gray-500 font-bold">بوابة المتدربين</p>
+                </div>
+            </div>
+            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><X className="w-6 h-6"/></button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 custom-scrollbar pb-safe">
+          {menuItems.map((item: any, index) => {
+            if (item.isHeader) return <h3 key={`hdr-${index}`} className="text-xs font-black text-gray-400 mt-4 mb-2 px-2">{item.label}</h3>;
+            
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
+                className={`
+                    w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 group relative
+                    ${isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 font-bold translate-x-[-5px]' : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 font-medium'}
+                `}
+              >
+                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-indigo-600'}`} />
+                <span className="text-sm">{item.label}</span>
+                {item.isNew && <span className="absolute left-4 bg-fuchsia-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full animate-pulse border border-white shadow-md">NEW!</span>}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="p-3 border-t bg-gray-50 flex items-center justify-between shrink-0 pb-safe gap-1">
+            <button onClick={() => { try { navigator.share({ title: 'غرب المطار', url: window.location.origin }) }catch(e){} }} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-indigo-100 hover:text-indigo-600 transition-colors flex flex-col items-center gap-1"><Share2 className="w-5 h-5" /><span className="text-[9px] font-bold">مشاركة</span></button>
+            <button onClick={() => setShowAboutModal(true)} className="flex-1 p-2 rounded-xl text-gray-500 hover:bg-orange-100 hover:text-orange-600 transition-colors flex flex-col items-center gap-1"><Info className="w-5 h-5" /><span className="text-[9px] font-bold">حول</span></button>
+            <button onClick={() => setIsThemeEnabled(!isThemeEnabled)} className={`flex-1 p-2 rounded-xl transition-colors flex flex-col items-center gap-1 ${isThemeEnabled ? 'text-indigo-600 bg-indigo-50' : 'text-gray-500 hover:bg-gray-100'}`}><Sparkles className="w-5 h-5" /><span className="text-[9px] font-bold">الثيم</span></button>
+            <button onClick={signOut} className="flex-1 p-2 rounded-xl text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors flex flex-col items-center gap-1"><LogOut className="w-5 h-5" /><span className="text-[9px] font-bold">خروج</span></button>
+        </div>
+      </aside>
+
+      {/* المحتوى الرئيسي */}
+      <div className="flex-1 flex flex-col min-w-0 bg-gray-100/50 relative">
+        <header className={`h-16 bg-white border-b flex items-center justify-between px-3 md:px-6 sticky top-0 z-30 transition-shadow duration-300 shrink-0 ${isScrolled ? 'shadow-md' : 'shadow-sm'}`}>
+            <div className="flex items-center gap-2 md:gap-3">
+                <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-xl hover:bg-gray-100 transition-all"><Menu className="w-5 h-5 text-gray-700"/></button>
+                <span className="font-black text-gray-800 hidden md:block">لوحة المتدرب</span>
+            </div>
+
+            <div className="flex items-center justify-end gap-1.5 md:gap-2 mr-auto" ref={notifRef}>
+                <button onClick={() => { setShowLeaderboardMenu(!showLeaderboardMenu); setShowProfileMenu(false); setShowNotifMenu(false); }} className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 ${showLeaderboardMenu ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-700 shadow-sm' : 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100'}`}>
+                    <Trophy className="w-4 h-4 md:w-5 md:h-5" />
+                </button>
+
+                <button onClick={() => { setShowNotifMenu(!showNotifMenu); setShowProfileMenu(false); setShowLeaderboardMenu(false); }} className={`p-2 rounded-xl transition-transform duration-200 hover:scale-105 active:scale-95 relative ${showNotifMenu ? 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-800 shadow-sm' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                    <Bell className={`w-4 h-4 md:w-5 md:h-5 ${unreadNotifsCount > 0 ? 'text-indigo-600 animate-pulse' : ''}`} />
+                    {unreadNotifsCount > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] md:text-[10px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-bounce shadow-md">{unreadNotifsCount}</span>}
+                </button>
+                
+                <button onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifMenu(false); setShowLeaderboardMenu(false); }} className="w-8 h-8 md:w-9 md:h-9 rounded-full border-2 border-indigo-100 p-0.5 overflow-hidden ml-1 hover:scale-105 transition-transform active:scale-95 outline-none focus:ring-2 focus:ring-indigo-400 bg-indigo-50">
+                    {employee?.photo_url ? <img src={employee.photo_url} className="w-full h-full object-cover rounded-full" alt="Profile" /> : <div className="w-full h-full flex items-center justify-center rounded-full text-indigo-700 font-black text-xs md:text-sm">{employee?.name?.charAt(0)}</div>}
+                </button>
+            </div>
+        </header>
+
+        <main onScroll={handleScroll} className="flex-1 overflow-y-auto p-2 md:p-4 custom-scrollbar pb-24 relative">
+            <div className="max-w-6xl mx-auto space-y-4">
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-200/60 p-3 md:p-6 min-h-[500px]">
+                    {renderActiveTabContent()}
+                </div>
+            </div>
+        </main>
+
+        {/* شريط التنقل السفلي للموبايل (Bottom Navbar) */}
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-1.5 flex justify-between items-center z-50 pb-safe shadow-[0_-4px_15px_rgba(0,0,0,0.03)]">
+            <MobileNavItem icon={LayoutDashboard} label="الرئيسية" active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
+            <MobileNavItem icon={BookOpen} label="سجل الحالات" active={activeTab === 'logbook'} onClick={() => setActiveTab('logbook')} />
+            
+            <button onClick={() => setActiveTab('arcade')} className="relative -top-5 bg-indigo-600 text-white p-3.5 rounded-2xl shadow-lg shadow-indigo-200 border-4 border-gray-50 flex items-center justify-center transform active:scale-95 transition-transform">
+                <Gamepad2 className="w-5 h-5" />
+            </button>
+
+            <MobileNavItem icon={Clock} label="حضوري" active={activeTab === 'attendance'} onClick={() => setActiveTab('attendance')} />
+            <MobileNavItem icon={Menu} label="المزيد" active={false} onClick={() => setIsSidebarOpen(true)} />
+        </div>
+
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-indigo-600" /></div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          
-          {/* ========================================================= */}
-          {/* LEFT COLUMN: FORMS (نموذج الإدخال حسب القسم المختار) */}
-          {/* ========================================================= */}
-          <div className={`lg:col-span-1 bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${activeSection !== 'lectures' ? 'sticky top-24' : ''}`}>
-            
-            {activeSection === 'trainees' && (
-              <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_trainees', newTrainee, () => setNewTrainee({ employee_id: '', trainee_code: '', enrollment_date: '' }), 'تم الإضافة'); }} className="space-y-4">
-                <h3 className="font-black text-indigo-900 text-lg mb-4 flex items-center gap-2"><Plus size={20}/> إضافة متدرب</h3>
-                <select required value={newTrainee.employee_id} onChange={e => setNewTrainee({...newTrainee, employee_id: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl text-sm font-bold">
-                  <option value="">-- اختر الموظف --</option>
-                  {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                </select>
-                <input required type="text" value={newTrainee.trainee_code} onChange={e => setNewTrainee({...newTrainee, trainee_code: e.target.value})} placeholder="كود المتدرب (مثال: TR-01)" className="w-full p-3 bg-gray-50 border rounded-xl text-sm font-bold" />
-                <input required type="date" value={newTrainee.enrollment_date} onChange={e => setNewTrainee({...newTrainee, enrollment_date: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl text-sm font-bold" />
-                <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black">حفظ</button>
-              </form>
-            )}
-
-            {/* ... (باقي النماذج السابقة لم تتغير) ... */}
-            
-            {/* 🌟 نموذج إضافة محاضرة واختبار */}
-            {activeSection === 'lectures' && (
-              <form onSubmit={handleAddLecture} className="space-y-5">
-                <h3 className="font-black text-orange-900 text-lg mb-2 flex items-center gap-2"><Presentation size={20}/> إنشاء محاضرة علمية</h3>
-                
-                <input required type="text" value={newLecture.title} onChange={e => setNewLecture({...newLecture, title: e.target.value})} placeholder="عنوان المحاضرة / الموضوع" className="w-full p-3 bg-gray-50 border rounded-xl text-sm font-bold" />
-                <textarea required value={newLecture.description} onChange={e => setNewLecture({...newLecture, description: e.target.value})} placeholder="وصف قصير ومحاور المحاضرة" className="w-full p-3 bg-gray-50 border rounded-xl text-sm font-bold resize-none h-20" />
-                
-                <div className="grid grid-cols-2 gap-2">
-                    <input required type="date" value={newLecture.lecture_date} onChange={e => setNewLecture({...newLecture, lecture_date: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl text-sm font-bold" />
-                    <input required type="time" value={newLecture.lecture_time} onChange={e => setNewLecture({...newLecture, lecture_time: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-xl text-sm font-bold" />
-                </div>
-                
-                <input required type="text" value={newLecture.location} onChange={e => setNewLecture({...newLecture, location: e.target.value})} placeholder="المكان (قاعة أ، أو رابط زووم)" className="w-full p-3 bg-gray-50 border rounded-xl text-sm font-bold" />
-
-                <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
-                    <label className="block text-xs font-black text-orange-800 mb-2">من سيقوم بإلقاء المحاضرة؟</label>
-                    <select required value={newLecture.presenter_type} onChange={e => setNewLecture({...newLecture, presenter_type: e.target.value})} className="w-full p-3 bg-white border rounded-xl text-sm font-bold mb-2">
-                        <option value="trainer">مدرب / استشاري</option>
-                        <option value="trainee">متدرب (Case Presentation / Journal Club)</option>
-                        <option value="external">محاضر خارجي</option>
-                    </select>
-
-                    {newLecture.presenter_type === 'trainee' ? (
-                        <select required value={newLecture.presenter_trainee_id} onChange={e => setNewLecture({...newLecture, presenter_trainee_id: e.target.value})} className="w-full p-3 bg-white border rounded-xl text-sm font-bold">
-                            <option value="">-- اختر المتدرب --</option>
-                            {trainees.map(t => <option key={t.id} value={t.id}>{t.employee?.name}</option>)}
-                        </select>
-                    ) : (
-                        <input required type="text" value={newLecture.presenter_name} onChange={e => setNewLecture({...newLecture, presenter_name: e.target.value})} placeholder="اسم المحاضر (د. فلان)" className="w-full p-3 bg-white border rounded-xl text-sm font-bold" />
-                    )}
-                </div>
-
-                <div className="border-t pt-4">
-                    <div className="flex justify-between items-center mb-3">
-                        <label className="block text-xs font-black text-gray-800">أسئلة الاختبار (اختياري)</label>
-                        <button type="button" onClick={addQuestion} className="text-[10px] bg-gray-100 text-gray-600 px-2 py-1 rounded font-bold hover:bg-gray-200">+ إضافة سؤال</button>
-                    </div>
-
-                    {quizQuestions.map((q, index) => (
-                        <div key={index} className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-3 relative">
-                            {quizQuestions.length > 1 && (
-                                <button type="button" onClick={() => removeQuestion(index)} className="absolute top-2 right-2 text-red-500 bg-red-50 p-1 rounded-full"><Trash2 size={12}/></button>
-                            )}
-                            <input type="text" value={q.question} onChange={e => handleQuestionChange(index, 'question', e.target.value)} placeholder={`السؤال ${index + 1}`} className="w-full p-2 mb-2 bg-white border rounded text-xs font-bold" />
-                            <div className="grid grid-cols-2 gap-2 mb-2">
-                                {q.options.map((opt, optIndex) => (
-                                    <input key={optIndex} type="text" value={opt} onChange={e => handleQuestionChange(index, 'options', e.target.value, optIndex)} placeholder={`خيار ${optIndex + 1}`} className="w-full p-2 bg-white border rounded text-xs font-bold" />
-                                ))}
-                            </div>
-                            <input type="text" value={q.correct_answer} onChange={e => handleQuestionChange(index, 'correct_answer', e.target.value)} placeholder="الإجابة الصحيحة (اكتب الخيار حرفياً)" className="w-full p-2 bg-white border border-emerald-200 rounded text-xs font-bold focus:border-emerald-500 outline-none" />
-                        </div>
-                    ))}
-                </div>
-
-                <button type="submit" className="w-full py-3 bg-orange-600 text-white rounded-xl font-black">إنشاء المحاضرة ونشرها</button>
-              </form>
-            )}
-
-          </div>
-
-          {/* ========================================================= */}
-          {/* RIGHT COLUMN: LISTS & DATA (عرض البيانات) */}
-          {/* ========================================================= */}
-          <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-gray-100 min-h-[500px]">
-            
-            {/* ... (الجداول السابقة) ... */}
-
-            {/* 🌟 قائمة المحاضرات */}
-            {activeSection === 'lectures' && (
-              <div className="space-y-4">
-                <h3 className="font-black text-gray-800 text-lg border-b pb-2 mb-4">أجندة المحاضرات العلمية</h3>
-                {lectures.length === 0 ? <p className="text-gray-400 text-sm font-bold text-center py-10">لا توجد محاضرات مجدولة</p> : lectures.map(lec => (
-                  <div key={lec.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex justify-between items-start">
-                    <div>
-                      <h4 className="font-black text-gray-800 text-sm mb-1">{lec.title}</h4>
-                      <p className="text-xs text-gray-500 font-bold mb-2">{lec.description}</p>
-                      <div className="flex gap-3 text-[10px] font-bold text-orange-700 bg-orange-50 px-3 py-1 rounded-lg w-fit">
-                        <span>المحاضر: {lec.presenter_type === 'trainee' ? lec.presenter_trainee?.employee?.name : lec.presenter_name}</span>
-                        <span>|</span>
-                        <span>أسئلة الاختبار: {lec.quiz_questions ? lec.quiz_questions.length : 0}</span>
-                      </div>
-                    </div>
-                    <div className="text-left shrink-0 ml-2">
-                        <span className="block text-xs font-black text-gray-700">{new Date(lec.lecture_date).toLocaleDateString('ar-EG')}</span>
-                        <span className="block text-[10px] text-gray-400 mt-0.5">{lec.lecture_time}</span>
-                    </div>
+      {/* --- القوائم المنبثقة (Modals) --- */}
+      {showNotifMenu && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowNotifMenu(false)}>
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                  <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                      <h3 className="font-black text-gray-800 flex items-center gap-2"><Bell className="w-5 h-5 text-indigo-600"/> التنبيهات</h3>
+                      <button onClick={()=>setShowNotifMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500"><X size={18}/></button>
                   </div>
-                ))}
+                  <div className="p-10 text-center text-gray-400 font-bold italic">لا توجد إشعارات حالياً ✨</div>
               </div>
-            )}
-
-            {/* 🌟 سجل الحالات بانتظار المراجعة */}
-            {activeSection === 'logbook_review' && (
-              <div className="space-y-4">
-                <h3 className="font-black text-gray-800 text-lg border-b pb-2 mb-4 flex items-center gap-2">
-                  حالات بانتظار الاعتماد <span className="bg-rose-100 text-rose-600 px-2 py-0.5 rounded text-sm">{pendingLogbooks.length}</span>
-                </h3>
-                {pendingLogbooks.length === 0 ? (
-                  <p className="text-gray-400 font-bold text-center py-10">لا توجد حالات معلقة.</p>
-                ) : pendingLogbooks.map(log => (
-                  <div key={log.id} className="p-5 bg-white border border-rose-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <p className="text-[10px] font-black text-rose-500 bg-rose-50 px-2 py-1 rounded inline-block mb-1">متدرب: {log.trainee?.employee?.name}</p>
-                        <h4 className="font-black text-gray-800 text-sm">{log.diagnosis}</h4>
-                      </div>
-                      <span className="text-xs font-bold text-gray-400">{new Date(log.entry_date).toLocaleDateString('ar-EG')}</span>
-                    </div>
-                    <p className="text-xs text-gray-600 font-bold leading-relaxed mb-4 bg-gray-50 p-3 rounded-lg border border-gray-100">{log.description}</p>
-                    <button onClick={() => handleApproveLogbook(log.id)} className="w-full bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-600 py-2 rounded-xl font-black text-xs transition-colors flex justify-center items-center gap-2">
-                      <CheckCircle size={16} /> اعتماد الحالة
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
           </div>
+      )}
 
+      {showProfileMenu && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowProfileMenu(false)}>
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col" onClick={e => e.stopPropagation()}>
+                  <div className="p-6 pb-4 bg-gradient-to-br from-indigo-500 to-purple-600 flex flex-col items-center relative text-white">
+                      <button onClick={()=>setShowProfileMenu(false)} className="absolute top-4 right-4 p-1.5 bg-black/10 rounded-full hover:bg-black/20 text-white"><X size={18}/></button>
+                      <div className="w-20 h-20 bg-white rounded-full border-4 border-indigo-100 shadow-md overflow-hidden mb-3 text-indigo-600 flex items-center justify-center text-3xl font-black">
+                           {employee?.name?.charAt(0)}
+                      </div>
+                      <h3 className="font-black text-lg">{employee?.name}</h3>
+                      <p className="text-xs text-indigo-50 font-bold mt-1 bg-black/10 px-3 py-1 rounded-full">متدرب زمالة - {employee?.specialty}</p>
+                  </div>
+                  <div className="p-5 pt-4 space-y-4">
+                      <div className="bg-indigo-50/80 rounded-2xl p-4 border border-indigo-100 shadow-sm relative overflow-hidden"><LevelProgressBar employee={employee} /></div>
+                      <button onClick={signOut} className="w-full flex items-center justify-center gap-2 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-all active:scale-95 text-sm"><LogOut size={18}/> تسجيل خروج</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {showLeaderboardMenu && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in" onClick={() => setShowLeaderboardMenu(false)}>
+              <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                  <div className="p-4 border-b flex justify-between items-center bg-indigo-50">
+                      <h3 className="font-black text-indigo-800 flex items-center gap-2 text-sm"><Trophy className="w-5 h-5 text-yellow-500"/> لوحة الشرف</h3>
+                      <button onClick={()=>setShowLeaderboardMenu(false)} className="p-1 bg-white rounded-full hover:bg-red-50 hover:text-red-500 text-indigo-700"><X className="w-5 h-5"/></button>
+                  </div>
+                  <div className="overflow-y-auto custom-scrollbar flex-1 flex flex-col p-2">
+                      <LeaderboardWidget />
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {showAboutModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-[2rem] p-6 w-full max-w-sm text-center relative animate-in zoom-in-95 shadow-2xl">
+                  <button onClick={() => setShowAboutModal(false)} className="absolute top-4 right-4 p-2 bg-gray-50 rounded-full hover:bg-gray-100"><X size={16}/></button>
+                  <div className="w-20 h-20 bg-indigo-100 rounded-3xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-indigo-200 rotate-3 hover:rotate-0 transition-transform duration-300"><img src="/pwa-192x192.png" className="w-14 h-14 rounded-xl" alt="Logo" /></div>
+                  <h2 className="text-xl font-black text-gray-800">برنامج الزمالة</h2>
+                  <p className="text-xs text-gray-500 font-bold mb-6 tracking-widest uppercase">تطبيق إدارة المتدربين</p>
+              </div>
         </div>
       )}
+
     </div>
   );
 }
+
+const MobileNavItem = ({ icon: Icon, label, active, onClick }: any) => (
+    <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-colors w-14 ${active ? 'text-indigo-600' : 'text-gray-400'}`}>
+        <div className={`p-1 rounded-lg transition-all relative ${active ? 'bg-indigo-50' : ''}`}>
+            <Icon className={`w-5 h-5 ${active ? 'fill-current' : ''}`} />
+        </div>
+        <span className="text-[9px] font-bold">{label}</span>
+    </button>
+);
