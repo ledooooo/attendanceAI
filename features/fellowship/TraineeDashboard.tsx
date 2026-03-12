@@ -36,19 +36,19 @@ export default function TraineeDashboard({ employee }: { employee: any }) {
   // دالة لعرض التبويب المختار
   const renderActiveTabContent = () => {
     switch (activeTab) {
-      // تبويبات الزمالة
-      case 'overview': return <TraineeOverviewTab employeeId={employee?.employee_id} />;
-      case 'logbook': return <TraineeLogbookTab employeeId={employee?.employee_id} />;
-      case 'portfolio': return <TraineePortfolioTab employeeId={employee?.employee_id} />;
-      case 'dops': return <TraineeDopsTab employeeId={employee?.employee_id} />;
+      // تبويبات الزمالة (تم تعديل employee_id إلى id هنا 👇)
+      case 'overview': return <TraineeOverviewTab employeeId={employee?.id} />;
+      case 'logbook': return <TraineeLogbookTab employeeId={employee?.id} />;
+      case 'portfolio': return <TraineePortfolioTab employeeId={employee?.id} />;
+      case 'dops': return <TraineeDopsTab employeeId={employee?.id} />;
       
-      // التبويبات العامة (مؤقتاً Placeholders حتى ندمجها بشكل صحيح)
+      // التبويبات العامة
       case 'news': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Home className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط الأخبار والتعميمات...</div>;
       case 'attendance': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Clock className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط سجل الحضور...</div>;
       case 'calculators': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Calculator className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط الحاسبات الطبية...</div>;
       case 'arcade': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Gamepad2 className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط نظام النقاط...</div>;
       
-      default: return <TraineeOverviewTab employeeId={employee?.employee_id} />;
+      default: return <TraineeOverviewTab employeeId={employee?.id} />;
     }
   };
 
