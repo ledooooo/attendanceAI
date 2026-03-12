@@ -128,27 +128,26 @@ export default function TraineeDashboard({ employee }: Props) {
     { id: 'calculators', label: 'حاسبات طبية', icon: Calculator },
   ], []);
 
-  // ✅ عرض المحتوى الصحيح (نمرر employee.employee_id بدلاً من id لمنع الأخطاء)
+// ✅ عرض المحتوى الصحيح
   const renderActiveTabContent = () => {
     switch (activeTab) {
-      // 🎓 تبويبات الزمالة
-      case 'overview': return <TraineeOverviewTab employeeId={employee.employee_id} />;
-      case 'profile': return <TraineeProfileTab employeeId={employee.employee_id} />;
-      case 'logbook': return <TraineeLogbookTab employeeId={employee.employee_id} />;
-      case 'portfolio': return <TraineePortfolioTab employeeId={employee.employee_id} />;
-      case 'dops': return <TraineeDopsTab employeeId={employee.employee_id} />;
-      case 'lectures': return <TraineeLecturesTab employeeId={employee.employee_id} />;
+      // 🎓 تبويبات الزمالة (يجب أن نمرر لها employee.id وهو الـ UUID)
+      case 'overview': return <TraineeOverviewTab employeeId={employee.id} />;
+      case 'profile': return <TraineeProfileTab employeeId={employee.id} />;
+      case 'logbook': return <TraineeLogbookTab employeeId={employee.id} />;
+      case 'portfolio': return <TraineePortfolioTab employeeId={employee.id} />;
+      case 'dops': return <TraineeDopsTab employeeId={employee.id} />;
+      case 'lectures': return <TraineeLecturesTab employeeId={employee.id} />;
       
-      // 🏥 التبويبات العامة (بنفس تصميم StaffDashboard)
+      // 🏥 التبويبات العامة (نمرر لها employee بالكامل، وهي ستتعامل مع employee_id رقم 555 بداخلها)
       case 'news': return <div className="space-y-4"><EOMVotingCard employee={employee} /><StaffNewsFeed employee={employee} /></div>;
       case 'attendance': return <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} />;
       case 'arcade': return <StaffArcade employee={employee} deepLinkRoomId={null} />;
       case 'calculators': return <CalculatorsMenu />;
       
-      default: return <TraineeOverviewTab employeeId={employee.employee_id} />;
+      default: return <TraineeOverviewTab employeeId={employee.id} />;
     }
   };
-
   return (
     <div {...swipeHandlers} className="min-h-screen w-full bg-gray-50 flex overflow-visible font-sans text-right" dir="rtl">
       
