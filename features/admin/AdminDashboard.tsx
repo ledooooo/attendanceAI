@@ -46,7 +46,7 @@ import AdminSupervisorRounds from './components/AdminSupervisorRounds';
 import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
 
 // ✅ استيراد لوحة تحكم الزمالة (التي أنشأناها)
-import AdminFellowshipTab from './tabs/AdminFellowshipTab'; 
+import AdminFellowshipTab from './components/AdminFellowshipTab'; 
 
 // ✅ دالة بديلة لـ dayjs لحساب "منذ متى" بالعربية
 const formatTimeAgo = (dateString: string) => {
