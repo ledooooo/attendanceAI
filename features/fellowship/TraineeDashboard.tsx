@@ -4,18 +4,10 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { 
   Menu, X, LogOut, User, Home, Clock, Calculator, Gamepad2, 
-  GraduationCap, BookOpen, FileText, CheckCircle, Activity 
+  GraduationCap, BookOpen, FileText, CheckCircle 
 } from 'lucide-react';
 
-// 🌟 استيراد التبويبات العامة للموظفين (نفس التبويبات التي يستخدمها باقي الموظفين)
-// تأكد من تعديل المسارات إذا كانت مختلفة في مشروعك
-import StaffNewsFeed from '../staff/tabs/StaffNewsFeed';
-import StaffAttendance from '../staff/tabs/StaffAttendance';
-import CalculatorsMenu from '../staff/tabs/CalculatorsMenu';
-import GamificationManager from '../../components/GamificationManager';
-
-// 🌟 استيراد تبويبات الزمالة (سنقوم بإنشائها في الخطوات القادمة)
-// قمت بعمل مكونات مؤقتة (Placeholders) بالأسفل حتى لا يحدث خطأ عند التشغيل
+// 🌟 استيراد تبويبات الزمالة
 import TraineeOverviewTab from './tabs/TraineeOverviewTab';
 import TraineeLogbookTab from './tabs/TraineeLogbookTab';
 import TraineePortfolioTab from './tabs/TraineePortfolioTab';
@@ -45,18 +37,18 @@ export default function TraineeDashboard({ employee }: { employee: any }) {
   const renderActiveTabContent = () => {
     switch (activeTab) {
       // تبويبات الزمالة
-      case 'overview': return <TraineeOverviewTab employeeId={employee.employee_id} />;
-      case 'logbook': return <TraineeLogbookTab employeeId={employee.employee_id} />;
-      case 'portfolio': return <TraineePortfolioTab employeeId={employee.employee_id} />;
-      case 'dops': return <TraineeDopsTab employeeId={employee.employee_id} />;
+      case 'overview': return <TraineeOverviewTab employeeId={employee?.employee_id} />;
+      case 'logbook': return <TraineeLogbookTab employeeId={employee?.employee_id} />;
+      case 'portfolio': return <TraineePortfolioTab employeeId={employee?.employee_id} />;
+      case 'dops': return <TraineeDopsTab employeeId={employee?.employee_id} />;
       
-      // التبويبات العامة (المشتركة مع الموظفين)
-      case 'news': return <StaffNewsFeed employee={employee} />;
-      case 'attendance': return <StaffAttendance employee={employee} />;
-      case 'calculators': return <div className="p-4"><CalculatorsMenu /></div>;
-      case 'arcade': return <div className="p-4"><GamificationManager employeeId={employee.employee_id} /></div>;
+      // التبويبات العامة (مؤقتاً Placeholders حتى ندمجها بشكل صحيح)
+      case 'news': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Home className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط الأخبار والتعميمات...</div>;
+      case 'attendance': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Clock className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط سجل الحضور...</div>;
+      case 'calculators': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Calculator className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط الحاسبات الطبية...</div>;
+      case 'arcade': return <div className="p-6 text-center text-gray-500 font-bold mt-20"><Gamepad2 className="w-12 h-12 mx-auto mb-4 opacity-20"/>جاري ربط نظام النقاط...</div>;
       
-      default: return <TraineeOverviewTab employeeId={employee.employee_id} />;
+      default: return <TraineeOverviewTab employeeId={employee?.employee_id} />;
     }
   };
 
@@ -115,8 +107,8 @@ export default function TraineeDashboard({ employee }: { employee: any }) {
                   {employee?.name?.charAt(0) || 'م'}
               </div>
               <div className="min-w-0 flex-1">
-                  <p className="text-xs font-black text-gray-800 truncate">{employee?.name}</p>
-                  <p className="text-[10px] text-gray-500 font-bold truncate">متدرب زمالة - {employee?.specialty}</p>
+                  <p className="text-xs font-black text-gray-800 truncate">{employee?.name || 'متدرب'}</p>
+                  <p className="text-[10px] text-gray-500 font-bold truncate">متدرب زمالة - {employee?.specialty || ''}</p>
               </div>
           </div>
           <button onClick={signOut} className="w-full py-3 bg-white border border-red-100 text-red-600 rounded-2xl font-black text-sm hover:bg-red-50 hover:border-red-200 transition-all shadow-sm flex items-center justify-center gap-2">
