@@ -9,10 +9,9 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus // تم استيراد أيقونة جديدة لبوابة الزائرين
+    Trash2, UserPlus, GraduationCap // ✅ استيراد GraduationCap لأيقونة الزمالة
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-// import { BookOpen } from 'lucide-react';visitors_dashboard
 
 // Imports (Components)
 import HomeTab from './components/HomeTab';
@@ -45,6 +44,9 @@ import AdminSupervisorRounds from './components/AdminSupervisorRounds';
 
 // ✅ استيراد بوابة الزائرين
 import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
+
+// ✅ استيراد لوحة تحكم الزمالة (التي أنشأناها)
+import AdminFellowshipTab from './tabs/AdminFellowshipTab'; 
 
 // ✅ دالة بديلة لـ dayjs لحساب "منذ متى" بالعربية
 const formatTimeAgo = (dateString: string) => {
@@ -206,7 +208,8 @@ export default function AdminDashboard() {
             case 'tasks': return <TasksManager employees={employees || []} />;
             case 'vaccinations': return <VaccinationsTab employees={employees || []} />;
             case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
-         // case 'visitors_dashboard': return <AdminVisitorsDashboard />; // ✅ عرض بوابة الزائرين
+         // case 'visitors_dashboard': return <AdminVisitorsDashboard />; 
+            case 'fellowship': return <AdminFellowshipTab />; // ✅ استدعاء واجهة إدارة الزمالة
             default: return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
         }
     };
@@ -379,7 +382,8 @@ export default function AdminDashboard() {
 // قائمة القائمة الجانبية المحدثة
 const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
- // { id: 'visitors_dashboard', label: 'بوابة الزائرين', icon: UserPlus }, // ✅ تمت الإضافة هنا كأولوية للمدير
+ // { id: 'visitors_dashboard', label: 'بوابة الزائرين', icon: UserPlus }, 
+    { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap }, // ✅ تمت إضافة زر الزمالة هنا
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
