@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
-import { Activity, Plus, Loader2, Calendar, ChevronRight, ChevronLeft, List, ActivitySquare, AlertCircle, CheckCircle2, AlertTriangle, Stethoscope, TrendingUp, TrendingDown } from 'lucide-react';
+import { Activity, Plus, Loader2, Calendar, ChevronRight, ChevronLeft, List, ActivitySquare, AlertCircle, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 const ITEMS_PER_PAGE = 5;
