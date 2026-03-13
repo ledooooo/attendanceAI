@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
-import { HeartPulse, Plus, Loader2, Calendar, ChevronRight, ChevronLeft, List, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { HeartPulse, Plus, Loader2, Calendar, ChevronRight, ChevronLeft, List, AlertTriangle, Stethoscope, CheckCircle2 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 
 const ITEMS_PER_PAGE = 5;
