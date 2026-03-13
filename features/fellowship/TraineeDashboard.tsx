@@ -10,7 +10,7 @@ import {
   LogOut, User, Clock, Menu, X, Stethoscope, LayoutDashboard, Share2, Info,
   Bell, Trophy, Gamepad2, Sparkles, Calculator,
   GraduationCap, BookOpen, FileText, CheckCircle, DownloadCloud,
-  Presentation, ChevronRight, Activity, Home, MoreHorizontal
+  Presentation, ChevronRight, Activity, Home, MapPin, MoreHorizontal
 } from 'lucide-react';
 
 import StaffAttendance from '../staff/components/StaffAttendance';
