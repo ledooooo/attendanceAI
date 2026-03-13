@@ -141,7 +141,7 @@ export default function TraineeDashboard({ employee }: Props) {
     { id: 'skills',    label: 'المهارات السريرية', icon: Stethoscope },
     { id: 'rotations', label: 'جدول الدورات',      icon: MapPin      },
     { id: 'tar',       label: 'تقارير التقييم TAR', icon: ClipboardList },
-    { id: 'data_entry', label: 'تسجيل بياناتي', icon: ClipboardList }
+    { id: 'data_entry', label: 'تسجيل بياناتي', icon: ClipboardList },
     { id: 'exams',     label: 'الامتحانات',         icon: GraduationCap },
     { id: 'divider2', label: '🏥 الخدمات العامة', isHeader: true },
     { id: 'news',        label: 'الرئيسية والأخبار', icon: LayoutDashboard },
