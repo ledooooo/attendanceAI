@@ -8,7 +8,7 @@ import {
   Menu, X, User, Home, Activity, 
   MessageSquare, BookOpen, Phone, Share2, Heart, 
   Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users, CalendarIcon, Calculator,
-  Search, LayoutList, LayoutGrid, ChevronRight
+  Search, LayoutList, LayoutGrid, Stethoscope, ChevronRight
 } from 'lucide-react';
 
 import ChronicLogs from './tabs/ChronicLogs';
