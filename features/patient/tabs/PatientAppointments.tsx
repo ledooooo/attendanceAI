@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
-import { Calendar as CalendarIcon, Clock, Plus, Loader2, FileText, ChevronRight, Stethoscope, ChevronLeft, List } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, Plus, Loader2, FileText, ChevronRight, ChevronLeft, List } from 'lucide-react';
 
 const ITEMS_PER_PAGE = 5;
 
