@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
-import { User, Activity, FileText, Edit2, Save, X, Loader2, Heart, Droplet } from 'lucide-react';
+import { User, Activity, FileText, Edit2, Save, X, Loader2, Stethoscope, Heart, Droplet } from 'lucide-react';
 
 export default function PatientProfile({ patientId }: { patientId: string }) {
     const [profile, setProfile] = useState<any>(null);
