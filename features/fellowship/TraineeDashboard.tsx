@@ -33,6 +33,7 @@ import TraineeSkillsTab    from './tabs/TraineeSkillsTab';
 import TraineeRotationsTab from './tabs/TraineeRotationsTab';
 import TraineeTARTab       from './tabs/TraineeTARTab';
 import TraineeExamsTab     from './tabs/TraineeExamsTab';
+import TraineeDataEntryPage from './tabs/TraineeDataEntryPage';
 
 interface Props { employee: any; }
 
@@ -140,6 +141,7 @@ export default function TraineeDashboard({ employee }: Props) {
     { id: 'skills',    label: 'المهارات السريرية', icon: Stethoscope },
     { id: 'rotations', label: 'جدول الدورات',      icon: MapPin      },
     { id: 'tar',       label: 'تقارير التقييم TAR', icon: ClipboardList },
+    { id: 'data_entry', label: 'تسجيل بياناتي', icon: ClipboardList }
     { id: 'exams',     label: 'الامتحانات',         icon: GraduationCap },
     { id: 'divider2', label: '🏥 الخدمات العامة', isHeader: true },
     { id: 'news',        label: 'الرئيسية والأخبار', icon: LayoutDashboard },
@@ -161,6 +163,7 @@ export default function TraineeDashboard({ employee }: Props) {
       case 'rotations': return <TraineeRotationsTab employeeId={employee.id} />;
       case 'tar':       return <TraineeTARTab       employeeId={employee.id} />;
       case 'exams':     return <TraineeExamsTab     employeeId={employee.id} />;
+      case 'data_entry': return <TraineeDataEntryPage employeeId={employee.id} />;
       case 'news':        return <div className="space-y-4"><EOMVotingCard employee={employee} /><StaffNewsFeed employee={employee} /></div>;
       case 'attendance':  return <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} />;
       case 'arcade':      return <StaffArcade employee={employee} deepLinkRoomId={null} />;
