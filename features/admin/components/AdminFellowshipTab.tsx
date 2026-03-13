@@ -14,16 +14,16 @@ type Section = 'overview' | 'trainees' | 'trainers' | 'assignments' | 'rotations
              | 'logbook_review' | 'dops_eval' | 'tar_reports' | 'lectures';
 
 // ─── Nav config ────────────────────────────────────────────────────────────────
-const NAV_ITEMS: { id: Section; label: string; icon: any; color: string; bg: string }[] = [
-  { id: 'overview',      label: 'نظرة عامة',    icon: BarChart2,    color: 'text-indigo-700',  bg: 'bg-indigo-50'  },
-  { id: 'trainees',      label: 'المتدربون',    icon: Users,        color: 'text-blue-700',    bg: 'bg-blue-50'    },
-  { id: 'trainers',      label: 'المدربون',     icon: Stethoscope,  color: 'text-emerald-700', bg: 'bg-emerald-50' },
-  { id: 'assignments',   label: 'الإسناد',      icon: LinkIcon,     color: 'text-amber-700',   bg: 'bg-amber-50'   },
-  { id: 'lectures',      label: 'المحاضرات',   icon: Presentation, color: 'text-orange-700',  bg: 'bg-orange-50'  },
-  { id: 'rotations',     label: 'الدورات',     icon: Calendar,     color: 'text-cyan-700',    bg: 'bg-cyan-50'    },
-  { id: 'logbook_review',label: 'اعتماد السجل', icon: BookOpen,     color: 'text-rose-700',    bg: 'bg-rose-50'    },
-  { id: 'dops_eval',     label: 'تقييم DOPS',  icon: Activity,     color: 'text-purple-700',  bg: 'bg-purple-50'  },
-  { id: 'tar_reports',   label: 'تقارير TAR',   icon: FileText,     color: 'text-teal-700',    bg: 'bg-teal-50'    },
+const ALL_NAV_ITEMS: { id: Section; label: string; icon: any; color: string; bg: string; adminOnly?: boolean }[] = [
+  { id: 'overview',       label: 'نظرة عامة',    icon: BarChart2,    color: 'text-indigo-700',  bg: 'bg-indigo-50'                 },
+  { id: 'trainees',       label: 'المتدربون',    icon: Users,        color: 'text-blue-700',    bg: 'bg-blue-50',   adminOnly: true },
+  { id: 'trainers',       label: 'المدربون',     icon: Stethoscope,  color: 'text-emerald-700', bg: 'bg-emerald-50',adminOnly: true },
+  { id: 'assignments',    label: 'الإسناد',      icon: LinkIcon,     color: 'text-amber-700',   bg: 'bg-amber-50',  adminOnly: true },
+  { id: 'lectures',       label: 'المحاضرات',   icon: Presentation, color: 'text-orange-700',  bg: 'bg-orange-50'                 },
+  { id: 'rotations',      label: 'الدورات',     icon: Calendar,     color: 'text-cyan-700',    bg: 'bg-cyan-50',   adminOnly: true },
+  { id: 'logbook_review', label: 'اعتماد السجل', icon: BookOpen,     color: 'text-rose-700',    bg: 'bg-rose-50'                   },
+  { id: 'dops_eval',      label: 'تقييم DOPS',  icon: Activity,     color: 'text-purple-700',  bg: 'bg-purple-50'                 },
+  { id: 'tar_reports',    label: 'تقارير TAR',   icon: FileText,     color: 'text-teal-700',    bg: 'bg-teal-50'                   },
 ];
 
 // ─── Small helpers ─────────────────────────────────────────────────────────────
@@ -66,12 +66,24 @@ const StatCard = ({ label, value, icon: Icon, color, bg, sub }: any) => (
 );
 
 // ══════════════════════════════════════════════════════════════════════════════
-export default function AdminFellowshipTab() {
+interface AdminFellowshipTabProps {
+  trainerMode?: boolean;        // true = لوحة المدرب
+  trainerEmployeeId?: string;   // employee.id للمدرب الحالي
+}
+
+export default function AdminFellowshipTab({
+  trainerMode = false,
+  trainerEmployeeId,
+}: AdminFellowshipTabProps) {
   const [activeSection, setActiveSection] = useState<Section>('overview');
   const [loading, setLoading]       = useState(false);
   const [saving, setSaving]         = useState(false);
   const [reviewId, setReviewId]     = useState<string | null>(null);
   const [reviewComment, setReviewComment] = useState('');
+  const [myTrainerId, setMyTrainerId] = useState<string | null>(null); // fellowship_trainers.id
+
+  // ── Nav items filtered by mode ─────────────────────────────────────────
+  const NAV_ITEMS = ALL_NAV_ITEMS.filter(n => !trainerMode || !n.adminOnly);
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const [employees, setEmployees]         = useState<any[]>([]);
@@ -99,20 +111,70 @@ export default function AdminFellowshipTab() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      // في trainerMode: أول حاجة نجيب fellowship_trainers.id للمدرب الحالي
+      let trainerId: string | null = myTrainerId;
+      if (trainerMode && trainerEmployeeId && !trainerId) {
+        const { data: trainerRow } = await supabase
+          .from('fellowship_trainers')
+          .select('id')
+          .eq('employee_id', trainerEmployeeId)
+          .single();
+        trainerId = trainerRow?.id || null;
+        setMyTrainerId(trainerId);
+        // في trainerMode أنت بتقيّم بنفسك — سبق الـ DOPS form يتملأ تلقائياً
+        setNewDops(prev => ({ ...prev, assessor_id: trainerId || '' }));
+        setNewTar(prev => ({ ...prev, trainer_id: trainerId || '' }));
+      }
+
+      // جيب IDs المتدربين المسندين للمدرب ده فقط (في trainerMode)
+      let assignedTraineeIds: string[] = [];
+      if (trainerMode && trainerId) {
+        const { data: asgn } = await supabase
+          .from('fellowship_trainer_trainee')
+          .select('trainee_id')
+          .eq('trainer_id', trainerId);
+        assignedTraineeIds = (asgn || []).map(a => a.trainee_id);
+      }
+
+      // Logbook query — في trainerMode: بس المتدربين المسندين
+      let logbookQuery = supabase
+        .from('fellowship_logbook')
+        .select('*, trainee:fellowship_trainees(employee:employees(name))')
+        .eq('trainer_reviewed', false)
+        .order('created_at', { ascending: false });
+      if (trainerMode && assignedTraineeIds.length > 0) {
+        logbookQuery = logbookQuery.in('trainee_id', assignedTraineeIds);
+      } else if (trainerMode && assignedTraineeIds.length === 0) {
+        // مفيش متدربين مسندين — نرجع فاضي
+        setLoading(false);
+        return;
+      }
+
+      // TAR query — في trainerMode: بس التقارير اللي المدرب ده كتبها
+      let tarQuery = supabase
+        .from('fellowship_tar_reports')
+        .select('*, trainer:fellowship_trainers(employee:employees(name)), trainee:fellowship_trainees(employee:employees(name))')
+        .order('created_at', { ascending: false });
+      if (trainerMode && trainerId) {
+        tarQuery = tarQuery.eq('trainer_id', trainerId);
+      }
+
       const [
         { data: emps }, { data: trns }, { data: trnrs },
         { data: asgns }, { data: rts }, { data: skills },
         { data: logs }, { data: lecs }, { data: tars },
       ] = await Promise.all([
         supabase.from('employees').select('id, name, specialty, role').order('name'),
-        supabase.from('fellowship_trainees').select('*, employee:employees(name, specialty, photo_url)').order('created_at', { ascending: false }),
+        trainerMode && assignedTraineeIds.length > 0
+          ? supabase.from('fellowship_trainees').select('*, employee:employees(name, specialty, photo_url)').in('id', assignedTraineeIds)
+          : supabase.from('fellowship_trainees').select('*, employee:employees(name, specialty, photo_url)').order('created_at', { ascending: false }),
         supabase.from('fellowship_trainers').select('*, employee:employees(name, specialty)').order('created_at', { ascending: false }),
         supabase.from('fellowship_trainer_trainee').select('*, trainer:fellowship_trainers(employee:employees(name)), trainee:fellowship_trainees(employee:employees(name))'),
         supabase.from('fellowship_rotation_types').select('*').order('training_year').order('sort_order'),
         supabase.from('fellowship_clinical_skills').select('*').order('skill_number'),
-        supabase.from('fellowship_logbook').select('*, trainee:fellowship_trainees(employee:employees(name))').eq('trainer_reviewed', false).order('created_at', { ascending: false }),
+        logbookQuery,
         supabase.from('fellowship_lectures').select('*, presenter_trainee:fellowship_trainees(employee:employees(name))').order('lecture_date', { ascending: false }),
-        supabase.from('fellowship_tar_reports').select('*, trainer:fellowship_trainers(employee:employees(name)), trainee:fellowship_trainees(employee:employees(name))').order('created_at', { ascending: false }),
+        tarQuery,
       ]);
       setEmployees(emps || []);  setTrainees(trns || []);  setTrainers(trnrs || []);
       setAssignments(asgns || []); setRotationTypes(rts || []); setClinicalSkills(skills || []);
@@ -198,17 +260,27 @@ export default function AdminFellowshipTab() {
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5 animate-in fade-in duration-300" dir="rtl">
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
-      <div className="relative bg-gradient-to-br from-indigo-700 via-indigo-800 to-violet-900 rounded-3xl p-6 md:p-8 text-white overflow-hidden">
+      <div className={`relative rounded-3xl p-6 md:p-8 text-white overflow-hidden ${
+        trainerMode
+          ? 'bg-gradient-to-br from-emerald-700 via-teal-700 to-cyan-800'
+          : 'bg-gradient-to-br from-indigo-700 via-indigo-800 to-violet-900'
+      }`}>
         <div className="absolute inset-0 opacity-[0.06]"
           style={{ backgroundImage: 'radial-gradient(circle, white 1.5px, transparent 1.5px)', backgroundSize: '24px 24px' }} />
         <div className="absolute -left-10 -bottom-10 w-48 h-48 bg-white/5 rounded-full" />
         <div className="relative flex items-center gap-5">
           <div className="w-16 h-16 bg-white/15 rounded-2xl flex items-center justify-center border border-white/20 flex-shrink-0">
-            <GraduationCap size={34} className="text-white" />
+            {trainerMode ? <Stethoscope size={34} className="text-white" /> : <GraduationCap size={34} className="text-white" />}
           </div>
           <div>
-            <h1 className="text-xl md:text-2xl font-black tracking-tight">إدارة الزمالة المصرية لطب الأسرة</h1>
-            <p className="text-indigo-200 font-bold text-xs mt-1">لوحة التحكم الشاملة للتدريب والتقييم (WPBA)</p>
+            <h1 className="text-xl md:text-2xl font-black tracking-tight">
+              {trainerMode ? 'لوحة المدرب — زمالة طب الأسرة' : 'إدارة الزمالة المصرية لطب الأسرة'}
+            </h1>
+            <p className={`font-bold text-xs mt-1 ${trainerMode ? 'text-emerald-200' : 'text-indigo-200'}`}>
+              {trainerMode
+                ? `متدربوك: ${trainees.length} · يمكنك اعتماد السجلات وإضافة التقييمات`
+                : 'لوحة التحكم الشاملة للتدريب والتقييم (WPBA)'}
+            </p>
           </div>
           <div className="mr-auto hidden md:flex items-center gap-3">
             {pendingCount > 0 && (
@@ -260,7 +332,7 @@ export default function AdminFellowshipTab() {
         activeSection === 'overview' ? (
           <div className="space-y-5 animate-in fade-in duration-300">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatCard label="متدربون نشطون"   value={activeTrainees}    icon={Users}       color="text-blue-600"    bg="bg-blue-50"    />
+              <StatCard label={trainerMode ? 'متدربوك' : 'متدربون نشطون'} value={trainerMode ? trainees.length : activeTrainees} icon={Users}        color="text-blue-600"    bg="bg-blue-50"    />
               <StatCard label="مدربون مسجلون"   value={trainers.length}   icon={Stethoscope} color="text-emerald-600" bg="bg-emerald-50" />
               <StatCard label="حالات انتظار"    value={pendingCount}      icon={BookOpen}    color="text-rose-600"    bg="bg-rose-50"    sub="بانتظار الاعتماد" />
               <StatCard label="محاضرات مجدولة" value={lectures.length}   icon={Presentation}color="text-orange-600"  bg="bg-orange-50"  />
@@ -334,8 +406,8 @@ export default function AdminFellowshipTab() {
             {/* ── LEFT: Form ──────────────────────────────────────────────── */}
             <div className={`lg:col-span-1 bg-white p-5 rounded-3xl shadow-sm border border-gray-100 ${activeSection !== 'lectures' ? 'lg:sticky lg:top-24' : ''}`}>
 
-              {/* TRAINEES form */}
-              {activeSection === 'trainees' && (
+              {/* TRAINEES form — admin only */}
+              {activeSection === 'trainees' && !trainerMode && (
                 <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_trainees', { ...newTrainee, current_year: 1 }, () => setNewTrainee({ employee_id: '', trainee_code: '', enrollment_date: '', expected_graduation: '' }), '✅ تم إضافة المتدرب'); }} className="space-y-4">
                   <SectionHeader icon={Users} title="إضافة متدرب جديد" color="text-blue-600" bg="bg-blue-50" />
                   <Field label="الموظف">
@@ -351,8 +423,8 @@ export default function AdminFellowshipTab() {
                 </form>
               )}
 
-              {/* TRAINERS form */}
-              {activeSection === 'trainers' && (
+              {/* TRAINERS form — admin only */}
+              {activeSection === 'trainers' && !trainerMode && (
                 <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_trainers', newTrainer, () => setNewTrainer({ employee_id: '', trainer_code: '', title: '', is_scientific_supervisor: false }), '✅ تم إضافة المدرب'); }} className="space-y-4">
                   <SectionHeader icon={Stethoscope} title="إضافة مدرب جديد" color="text-emerald-600" bg="bg-emerald-50" />
                   <Field label="الموظف">
@@ -379,8 +451,8 @@ export default function AdminFellowshipTab() {
                 </form>
               )}
 
-              {/* ASSIGNMENTS form */}
-              {activeSection === 'assignments' && (
+              {/* ASSIGNMENTS form — admin only */}
+              {activeSection === 'assignments' && !trainerMode && (
                 <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_trainer_trainee', newAssignment, () => setNewAssignment({ trainer_id: '', trainee_id: '', start_date: '', is_primary: true }), '✅ تم الإسناد'); }} className="space-y-4">
                   <SectionHeader icon={LinkIcon} title="إسناد مدرب لمتدرب" color="text-amber-600" bg="bg-amber-50" />
                   <Field label="المدرب">
@@ -404,8 +476,8 @@ export default function AdminFellowshipTab() {
                 </form>
               )}
 
-              {/* ROTATIONS form */}
-              {activeSection === 'rotations' && (
+              {/* ROTATIONS form — admin only */}
+              {activeSection === 'rotations' && !trainerMode && (
                 <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_trainee_rotations', { trainee_id: newRotation.trainee_id, rotation_type_id: newRotation.rotation_type_id, start_date: newRotation.start_date, end_date: newRotation.end_date, trainer_id: newRotation.trainer_id || null, status: newRotation.status }, () => setNewRotation({ trainee_id: '', rotation_type_id: '', start_date: '', end_date: '', trainer_id: '', status: 'scheduled' }), '✅ تم جدولة الدورة'); }} className="space-y-4">
                   <SectionHeader icon={Calendar} title="جدولة دورة تدريبية" color="text-cyan-600" bg="bg-cyan-50" />
                   <Field label="المتدرب">
@@ -449,7 +521,7 @@ export default function AdminFellowshipTab() {
 
               {/* DOPS form */}
               {activeSection === 'dops_eval' && (
-                <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_dops_assessments', { trainee_id: newDops.trainee_id, assessor_id: newDops.assessor_id, skill_id: newDops.skill_id, assessment_date: newDops.assessment_date, rating: Number(newDops.rating), assessor_feedback: newDops.assessor_feedback, strengths: newDops.strengths, areas_for_development: newDops.areas_for_development }, () => setNewDops({ trainee_id: '', assessor_id: '', skill_id: '', assessment_date: new Date().toISOString().split('T')[0], rating: 3, assessor_feedback: '', strengths: '', areas_for_development: '' }), '✅ تم حفظ تقييم DOPS'); }} className="space-y-4">
+                <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_dops_assessments', { trainee_id: newDops.trainee_id, assessor_id: newDops.assessor_id, skill_id: newDops.skill_id, assessment_date: newDops.assessment_date, rating: Number(newDops.rating), assessor_feedback: newDops.assessor_feedback, strengths: newDops.strengths, areas_for_development: newDops.areas_for_development }, () => setNewDops({ trainee_id: '', assessor_id: myTrainerId || '', skill_id: '', assessment_date: new Date().toISOString().split('T')[0], rating: 3, assessor_feedback: '', strengths: '', areas_for_development: '' }), '✅ تم حفظ تقييم DOPS'); }} className="space-y-4">
                   <SectionHeader icon={Activity} title="تقييم DOPS جديد" color="text-purple-600" bg="bg-purple-50" />
                   <Field label="المتدرب">
                     <Select required value={newDops.trainee_id} onChange={e => setNewDops({...newDops, trainee_id: e.target.value})}>
@@ -457,12 +529,21 @@ export default function AdminFellowshipTab() {
                       {trainees.map(t => <option key={t.id} value={t.id}>{t.employee?.name}</option>)}
                     </Select>
                   </Field>
-                  <Field label="المقيِّم">
-                    <Select required value={newDops.assessor_id} onChange={e => setNewDops({...newDops, assessor_id: e.target.value})}>
-                      <option value="">-- اختر المدرب --</option>
-                      {trainers.map(t => <option key={t.id} value={t.id}>{t.employee?.name}</option>)}
-                    </Select>
-                  </Field>
+                  {/* في trainerMode المدرب هو المقيّم تلقائياً — نخفي الـ select */}
+                  {!trainerMode && (
+                    <Field label="المقيِّم">
+                      <Select required value={newDops.assessor_id} onChange={e => setNewDops({...newDops, assessor_id: e.target.value})}>
+                        <option value="">-- اختر المدرب --</option>
+                        {trainers.map(t => <option key={t.id} value={t.id}>{t.employee?.name}</option>)}
+                      </Select>
+                    </Field>
+                  )}
+                  {trainerMode && (
+                    <div className="flex items-center gap-2 bg-emerald-50 rounded-xl px-3 py-2 border border-emerald-100">
+                      <Stethoscope size={14} className="text-emerald-600"/>
+                      <p className="text-xs font-black text-emerald-700">أنت المقيِّم لهذا التقييم</p>
+                    </div>
+                  )}
                   <Field label="المهارة">
                     <Select required value={newDops.skill_id} onChange={e => setNewDops({...newDops, skill_id: e.target.value})}>
                       <option value="">-- اختر المهارة --</option>
@@ -489,7 +570,7 @@ export default function AdminFellowshipTab() {
 
               {/* TAR form */}
               {activeSection === 'tar_reports' && (
-                <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_tar_reports', { ...newTar, overall_rating: Number(newTar.overall_rating) }, () => setNewTar({ trainee_id: '', trainer_id: '', report_period_start: '', report_period_end: '', overall_rating: 3, trainer_comments: '' }), '✅ تم حفظ تقرير TAR'); }} className="space-y-4">
+                <form onSubmit={e => { e.preventDefault(); handleAdd('fellowship_tar_reports', { ...newTar, overall_rating: Number(newTar.overall_rating) }, () => setNewTar({ trainee_id: '', trainer_id: myTrainerId || '', report_period_start: '', report_period_end: '', overall_rating: 3, trainer_comments: '' }), '✅ تم حفظ تقرير TAR'); }} className="space-y-4">
                   <SectionHeader icon={FileText} title="تقرير TAR جديد" color="text-teal-600" bg="bg-teal-50" />
                   <Field label="المتدرب">
                     <Select required value={newTar.trainee_id} onChange={e => setNewTar({...newTar, trainee_id: e.target.value})}>
@@ -497,12 +578,21 @@ export default function AdminFellowshipTab() {
                       {trainees.map(t => <option key={t.id} value={t.id}>{t.employee?.name}</option>)}
                     </Select>
                   </Field>
-                  <Field label="المدرب">
-                    <Select required value={newTar.trainer_id} onChange={e => setNewTar({...newTar, trainer_id: e.target.value})}>
-                      <option value="">-- اختر --</option>
-                      {trainers.map(t => <option key={t.id} value={t.id}>{t.employee?.name}</option>)}
-                    </Select>
-                  </Field>
+                  {/* في trainerMode المدرب هو الكاتب تلقائياً */}
+                  {!trainerMode && (
+                    <Field label="المدرب">
+                      <Select required value={newTar.trainer_id} onChange={e => setNewTar({...newTar, trainer_id: e.target.value})}>
+                        <option value="">-- اختر --</option>
+                        {trainers.map(t => <option key={t.id} value={t.id}>{t.employee?.name}</option>)}
+                      </Select>
+                    </Field>
+                  )}
+                  {trainerMode && (
+                    <div className="flex items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
+                      <Stethoscope size={14} className="text-teal-600"/>
+                      <p className="text-xs font-black text-teal-700">أنت كاتب هذا التقرير</p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="من"><Input required type="date" value={newTar.report_period_start} onChange={e => setNewTar({...newTar, report_period_start: e.target.value})} /></Field>
                     <Field label="إلى"><Input required type="date" value={newTar.report_period_end} onChange={e => setNewTar({...newTar, report_period_end: e.target.value})} /></Field>
@@ -595,6 +685,12 @@ export default function AdminFellowshipTab() {
               {activeSection === 'logbook_review' && (
                 <div className="space-y-4">
                   <SectionHeader icon={BookOpen} title="فلترة السجلات" color="text-rose-600" bg="bg-rose-50" />
+                  {trainerMode && (
+                    <div className="flex items-center gap-2 bg-emerald-50 rounded-xl px-3 py-2 border border-emerald-100">
+                      <CheckCircle2 size={14} className="text-emerald-600"/>
+                      <p className="text-xs font-black text-emerald-700">تعرض فقط حالات متدربيك</p>
+                    </div>
+                  )}
                   <div className="relative">
                     <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input value={logSearch} onChange={e => setLogSearch(e.target.value)} placeholder="ابحث بالاسم أو التشخيص..."
