@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import toast from 'react-hot-toast';
-import { ArrowRight, Star, Send, HeartHandshake, Loader2 } from 'lucide-react';
+import { ArrowRight, Star, Send, Stethoscope, HeartHandshake, Loader2 } from 'lucide-react';
 
 export default function SurveyPage() {
   const [rating, setRating] = useState(0);
