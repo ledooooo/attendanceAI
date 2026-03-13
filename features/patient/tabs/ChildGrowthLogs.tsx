@@ -5,7 +5,7 @@ import {
     Baby, Plus, Loader2, Calendar, TrendingUp, ChevronRight, 
     ChevronLeft, List, Syringe, Brain, AlertCircle, CheckCircle2, Info
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Stethoscope, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const ITEMS_PER_PAGE = 5;
 
