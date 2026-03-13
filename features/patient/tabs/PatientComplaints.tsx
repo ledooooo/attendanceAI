@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import toast from 'react-hot-toast';
-import { MessageSquare, Send, Loader2, HelpCircle, ChevronRight, ChevronLeft, List, Plus } from 'lucide-react';
+import { MessageSquare, Send, Loader2, HelpCircle, ChevronRight, Stethoscope, ChevronLeft, List, Plus } from 'lucide-react';
 
 const ITEMS_PER_PAGE = 5;
 
