@@ -3,7 +3,7 @@ import { supabase } from '../../supabaseClient';
 import toast from 'react-hot-toast';
 import { 
   ArrowRight, MapPin, Phone, Mail, MessageSquare, 
-  Send, Loader2, Share2, Map, Star 
+  Send, Loader2, Stethoscope, Share2, Map, Star 
 } from 'lucide-react';
 
 export default function ContactPage() {
