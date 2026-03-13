@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Users, Stethoscope, ShieldCheck, Award } from 'lucide-react';
+import { ArrowRight, Users, Stethoscope, ShieldCheck, Stethoscope, Award } from 'lucide-react';
 
 export default function StaffDirectoryPage() {
   const departments = [
