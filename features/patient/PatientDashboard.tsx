@@ -8,7 +8,7 @@ import {
   Menu, X, User, Home, Activity, 
   MessageSquare, BookOpen, Phone, Share2, Heart, 
   Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users, CalendarIcon, Calculator,
-  Search, LayoutList, LayoutGrid, ChevronRight
+  Search, LayoutList, LayoutGrid, ChevronRight, Stethoscope, Clock
 } from 'lucide-react';
 
 import ChronicLogs from './tabs/ChronicLogs';
@@ -16,8 +16,6 @@ import ChildGrowthLogs from './tabs/ChildGrowthLogs';
 import PregnancyLogs from './tabs/PregnancyLogs';
 import PatientComplaints from './tabs/PatientComplaints';
 import PatientAppointments from './tabs/PatientAppointments';
-
-// ✅ استيراد مكون الآلات الحاسبة
 import CalculatorsMenu from '../../calculators/CalculatorsMenu';
 
 import ContactPage from '../../pages/public/ContactPage';
@@ -25,6 +23,7 @@ import PricingPage from '../../pages/public/PricingPage';
 import StaffDirectoryPage from '../../pages/public/StaffDirectoryPage';
 import SurveyPage from '../../pages/public/SurveyPage';
 
+// تحديث الواجهة لتطابق أعمدة جدول medical_articles
 interface Article {
   id: string;
   title: string;
@@ -32,6 +31,7 @@ interface Article {
   content: string;
   image_url: string;
   author_name: string;
+  author_role: string;
   likes_count: number;
   created_at: string;
 }
@@ -54,10 +54,11 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const [totalArticles, setTotalArticles] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string>('الكل');
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list'); // List is default
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
   const ARTICLES_PER_PAGE = 5;
-  const categories = ['الكل', 'تغذية', 'أمراض مزمنة', 'صحة الطفل', 'طب الأسنان', 'نصائح عامة'];
+  // التصنيفات الشائعة (يمكنك تعديلها حسب محتوى مقالاتك)
+  const categories = ['الكل', 'الرعاية الأولية', 'تغذية', 'أمراض مزمنة', 'صحة الطفل', 'طب الأسنان', 'نصائح عامة'];
 
   useEffect(() => {
     if (!isGuest && user) {
@@ -84,10 +85,10 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   const fetchArticles = async () => {
     setLoadingArticles(true);
     try {
+      // التوجيه للجدول الصحيح medical_articles
       let query = supabase
-        .from('news_and_articles')
-        .select('*', { count: 'exact' })
-        .eq('is_published', true);
+        .from('medical_articles')
+        .select('*', { count: 'exact' });
 
       // Filtering
       if (selectedCategory !== 'الكل') {
@@ -119,17 +120,43 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
 
   const handleLike = async (articleId: string) => {
     try {
-      // Optmistic UI Update
+      // Optimistic UI Update
       setArticles(prev => prev.map(a => a.id === articleId ? { ...a, likes_count: a.likes_count + 1 } : a));
       if (selectedArticle && selectedArticle.id === articleId) {
         setSelectedArticle(prev => prev ? { ...prev, likes_count: prev.likes_count + 1 } : null);
       }
       
+      // تأكد من وجود دالة increment_article_likes أو قم بإنشائها في قاعدة البيانات
       await supabase.rpc('increment_article_likes', { article_id: articleId });
       toast.success('شكراً لتفاعلك! ❤️', { position: 'bottom-center' });
     } catch (error) {
       console.error('Error liking article', error);
     }
+  };
+
+  const handleShare = async (article: Article) => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: article.title,
+          text: `اقرأ هذا المقال الطبي المفيد: ${article.title} عبر منصة غرب المطار`,
+          url: window.location.href, // أو رابط مخصص للمقال إذا وجد
+        });
+      } catch (error) {
+        console.log('مشاركة ملغاة أو غير مدعومة', error);
+      }
+    } else {
+      // Fallback: نسخ الرابط
+      navigator.clipboard.writeText(window.location.href);
+      toast.success('تم نسخ رابط المقال للمشاركة');
+    }
+  };
+
+  // دالة لحساب وقت القراءة التقريبي (200 كلمة في الدقيقة)
+  const calculateReadTime = (text: string) => {
+    const words = text.replace(/<[^>]+>/g, '').split(/\s+/).length;
+    const time = Math.ceil(words / 200);
+    return time > 0 ? time : 1;
   };
 
   const renderArticlesTab = () => {
@@ -150,8 +177,8 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
                 <BookOpen className="w-20 h-20 text-indigo-300" />
               </div>
             )}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-6 pt-20 text-white">
-              <span className="bg-indigo-500 text-white px-3 py-1 rounded-full text-xs font-bold mb-3 inline-block">
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-6 pt-24 text-white">
+              <span className="bg-indigo-500 text-white px-3 py-1 rounded-full text-xs font-bold mb-3 inline-block shadow-sm">
                 {selectedArticle.category}
               </span>
               <h2 className="text-2xl md:text-3xl font-black leading-tight">{selectedArticle.title}</h2>
@@ -159,30 +186,44 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           </div>
           
           <div className="p-6 md:p-8">
-            <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-100">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600">
-                  <User className="w-6 h-6" />
+            <div className="flex flex-wrap items-center justify-between mb-8 pb-6 border-b border-gray-100 gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 shrink-0">
+                  <Stethoscope className="w-7 h-7" />
                 </div>
                 <div>
-                  <p className="font-bold text-gray-800">{selectedArticle.author_name}</p>
-                  <p className="text-xs text-gray-500">{new Date(selectedArticle.created_at).toLocaleDateString('ar-EG')}</p>
+                  <p className="font-bold text-gray-800 text-lg">{selectedArticle.author_name}</p>
+                  <p className="text-sm text-indigo-600 font-medium">{selectedArticle.author_role || 'طاقم طبي'}</p>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                    <span className="flex items-center gap-1"><CalendarIcon className="w-3.5 h-3.5"/> {new Date(selectedArticle.created_at).toLocaleDateString('ar-EG')}</span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5"/> قراءة في {calculateReadTime(selectedArticle.content)} دقيقة</span>
+                  </div>
                 </div>
               </div>
-              <button 
-                onClick={() => handleLike(selectedArticle.id)}
-                className="flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-2 rounded-full hover:bg-rose-100 transition-colors font-bold"
-              >
-                <Heart className="w-5 h-5 fill-current" />
-                {selectedArticle.likes_count}
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => handleShare(selectedArticle)}
+                  className="flex items-center justify-center w-10 h-10 bg-gray-50 text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                  title="مشاركة"
+                >
+                  <Share2 className="w-5 h-5" />
+                </button>
+                <button 
+                  onClick={() => handleLike(selectedArticle.id)}
+                  className="flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-2 h-10 rounded-full hover:bg-rose-100 transition-colors font-bold"
+                >
+                  <Heart className="w-5 h-5 fill-current" />
+                  {selectedArticle.likes_count}
+                </button>
+              </div>
             </div>
             
-            <div className="prose prose-lg prose-indigo rtl prose-headings:font-black prose-p:text-gray-600 max-w-none leading-relaxed" 
+            <div className="prose prose-lg prose-indigo rtl prose-headings:font-black prose-p:text-gray-700 max-w-none leading-relaxed" 
                  dangerouslySetInnerHTML={{ __html: selectedArticle.content }} />
                  
-            <button onClick={() => setSelectedArticle(null)} className="mt-10 w-full bg-gray-100 text-gray-700 font-bold py-4 rounded-2xl hover:bg-gray-200 transition-colors">
-              العودة للقائمة
+            <button onClick={() => setSelectedArticle(null)} className="mt-12 w-full bg-gray-100 text-gray-700 font-bold py-4 rounded-2xl hover:bg-gray-200 transition-colors">
+              العودة لقائمة المقالات
             </button>
           </div>
         </div>
@@ -196,15 +237,15 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
         <div className="bg-white p-4 md:p-6 rounded-[2rem] shadow-sm border border-gray-100 space-y-4">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <h2 className="text-2xl font-black text-gray-800 flex items-center gap-2">
-                    <BookOpen className="text-indigo-600" /> المقالات الطبية
+                    <BookOpen className="text-indigo-600" /> مكتبة التثقيف الصحي
                 </h2>
                 
                 {/* View Toggle */}
-                <div className="flex items-center bg-gray-100 p-1 rounded-xl">
-                    <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}>
+                <div className="flex items-center bg-gray-50 p-1 rounded-xl border border-gray-100">
+                    <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-indigo-600 font-bold' : 'text-gray-400'}`}>
                         <LayoutList className="w-5 h-5" />
                     </button>
-                    <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}>
+                    <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-indigo-600 font-bold' : 'text-gray-400'}`}>
                         <LayoutGrid className="w-5 h-5" />
                     </button>
                 </div>
@@ -215,23 +256,23 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
                 <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
                 <input 
                     type="text" 
-                    placeholder="ابحث عن مقال طبي..." 
+                    placeholder="ابحث في المقالات (مثال: السكر، الضغط...)" 
                     value={searchQuery}
                     onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                    className="w-full bg-gray-50 border-none pl-4 pr-12 py-3.5 rounded-2xl font-bold text-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow"
+                    className="w-full bg-white border border-gray-200 pl-4 pr-12 py-3.5 rounded-2xl font-bold text-gray-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow shadow-sm"
                 />
             </div>
 
-            {/* Categories (Scrollable horizontally) */}
-            <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar hide-scrollbar-mobile">
+            {/* Categories */}
+            <div className="flex gap-2 overflow-x-auto pb-2 pt-1 custom-scrollbar hide-scrollbar-mobile">
                 {categories.map(cat => (
                     <button 
                         key={cat}
                         onClick={() => { setSelectedCategory(cat); setCurrentPage(1); }}
-                        className={`whitespace-nowrap px-5 py-2 rounded-full font-bold text-sm transition-all flex-shrink-0 ${
+                        className={`whitespace-nowrap px-5 py-2 rounded-full font-bold text-sm transition-all flex-shrink-0 border ${
                             selectedCategory === cat 
-                            ? 'bg-indigo-600 text-white shadow-md' 
-                            : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
+                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                         }`}
                     >
                         {cat}
@@ -246,20 +287,25 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
             <div className={viewMode === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "space-y-4"}>
                 {[1, 2, 3].map(i => (
                     <div key={i} className={`bg-white rounded-3xl p-4 border border-gray-100 flex ${viewMode === 'list' ? 'gap-4 items-center' : 'flex-col'} animate-pulse`}>
-                        <div className={`bg-gray-200 rounded-2xl ${viewMode === 'list' ? 'w-24 h-24' : 'w-full h-48'} shrink-0`}></div>
-                        <div className="flex-1 space-y-3 py-2 w-full">
-                            <div className="h-3 bg-gray-200 rounded w-1/4"></div>
-                            <div className="h-5 bg-gray-200 rounded w-3/4"></div>
-                            <div className="h-4 bg-gray-200 rounded w-full"></div>
+                        <div className={`bg-gray-100 rounded-2xl ${viewMode === 'list' ? 'w-28 h-28 md:w-36 md:h-36' : 'w-full h-48'} shrink-0`}></div>
+                        <div className="flex-1 space-y-4 py-2 w-full">
+                            <div className="h-4 bg-gray-100 rounded-md w-1/4"></div>
+                            <div className="h-6 bg-gray-100 rounded-md w-3/4"></div>
+                            <div className="space-y-2">
+                                <div className="h-3 bg-gray-100 rounded-md w-full"></div>
+                                <div className="h-3 bg-gray-100 rounded-md w-5/6"></div>
+                            </div>
                         </div>
                     </div>
                 ))}
             </div>
         ) : articles.length === 0 ? (
             <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
-                <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-lg font-bold text-gray-500">لا توجد مقالات متاحة حالياً</p>
-                <button onClick={() => {setSearchQuery(''); setSelectedCategory('الكل');}} className="mt-4 text-indigo-600 font-bold hover:underline">عرض الكل</button>
+                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <BookOpen className="w-10 h-10 text-gray-300" />
+                </div>
+                <p className="text-lg font-bold text-gray-600">لا توجد مقالات مطابقة لبحثك</p>
+                <button onClick={() => {setSearchQuery(''); setSelectedCategory('الكل');}} className="mt-4 text-indigo-600 font-bold hover:text-indigo-700 bg-indigo-50 px-6 py-2 rounded-full transition-colors">عرض جميع المقالات</button>
             </div>
         ) : (
             <>
@@ -268,35 +314,36 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
                     <div 
                         key={article.id} 
                         onClick={() => setSelectedArticle(article)}
-                        className={`bg-white rounded-3xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group flex ${viewMode === 'list' ? 'flex-row gap-4 items-center' : 'flex-col gap-4'}`}
+                        className={`bg-white rounded-3xl p-4 border border-gray-100 shadow-sm hover:shadow-lg hover:border-indigo-100 transition-all duration-300 cursor-pointer group flex ${viewMode === 'list' ? 'flex-row gap-4 items-center' : 'flex-col gap-4'}`}
                     >
-                        <div className={`relative overflow-hidden rounded-2xl shrink-0 ${viewMode === 'list' ? 'w-28 h-28 md:w-36 md:h-36' : 'w-full h-48'}`}>
+                        <div className={`relative overflow-hidden rounded-2xl shrink-0 ${viewMode === 'list' ? 'w-28 h-28 md:w-40 md:h-40' : 'w-full h-56'}`}>
                             {article.image_url ? (
-                                <img src={article.image_url} alt={article.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                                <img src={article.image_url} alt={article.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                             ) : (
-                                <div className="w-full h-full bg-indigo-50 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
-                                    <BookOpen className="w-8 h-8 text-indigo-300" />
+                                <div className="w-full h-full bg-gradient-to-br from-gray-50 to-indigo-50 flex items-center justify-center group-hover:scale-105 transition-transform duration-500">
+                                    <Stethoscope className="w-10 h-10 text-indigo-200" />
                                 </div>
                             )}
-                            <div className="absolute top-2 right-2 bg-white/90 backdrop-blur px-2 py-1 rounded-lg text-[10px] font-black text-indigo-600 shadow-sm">
+                            <div className="absolute top-2 right-2 bg-white/95 backdrop-blur px-2.5 py-1 rounded-lg text-[10px] font-black text-indigo-700 shadow-sm">
                                 {article.category}
                             </div>
                         </div>
                         
-                        <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
+                        <div className="flex-1 min-w-0 flex flex-col justify-between py-1 h-full">
                             <div>
-                                <h3 className="font-black text-gray-800 text-lg mb-1 group-hover:text-indigo-600 transition-colors line-clamp-2">{article.title}</h3>
-                                {/* استخراج نص بسيط من الـ HTML للعرض المختصر */}
-                                <p className="text-sm text-gray-500 line-clamp-2" dangerouslySetInnerHTML={{ __html: article.content.replace(/<[^>]+>/g, '').substring(0, 100) + '...' }}></p>
+                                <h3 className="font-black text-gray-800 text-lg md:text-xl mb-2 group-hover:text-indigo-600 transition-colors line-clamp-2 leading-snug">{article.title}</h3>
+                                <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed" dangerouslySetInnerHTML={{ __html: article.content.replace(/<[^>]+>/g, '').substring(0, 120) + '...' }}></p>
                             </div>
                             
-                            <div className="flex items-center justify-between mt-3">
-                                <div className="flex items-center gap-1.5 text-gray-400 text-xs font-bold">
-                                    <User className="w-3.5 h-3.5" />
-                                    <span className="truncate max-w-[100px]">{article.author_name}</span>
+                            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-50">
+                                <div className="flex items-center gap-2 text-gray-500 text-xs font-bold">
+                                    <div className="w-6 h-6 bg-indigo-50 rounded-full flex items-center justify-center">
+                                      <User className="w-3 h-3 text-indigo-500" />
+                                    </div>
+                                    <span className="truncate max-w-[120px]">{article.author_name}</span>
                                 </div>
-                                <div className="flex items-center gap-1 text-rose-500 text-xs font-bold bg-rose-50 px-2 py-1 rounded-md">
-                                    <Heart className="w-3 h-3 fill-current" />
+                                <div className="flex items-center gap-1 text-rose-500 text-xs font-bold bg-rose-50 px-2.5 py-1.5 rounded-lg">
+                                    <Heart className="w-3.5 h-3.5 fill-current" />
                                     {article.likes_count}
                                 </div>
                             </div>
@@ -311,21 +358,21 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
                         <button 
                             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                             disabled={currentPage === 1}
-                            className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 font-bold text-sm"
+                            className="px-4 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-bold text-sm transition-colors"
                         >
-                            <ChevronRight className="w-5 h-5" /> السابق
+                            <ChevronRight className="w-4 h-4" /> السابق
                         </button>
                         
-                        <span className="text-sm font-bold text-gray-500">
-                            صفحة <span className="text-indigo-600 text-lg">{currentPage}</span> من {totalPages}
+                        <span className="text-sm font-bold text-gray-500 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100">
+                            صفحة <span className="text-indigo-600 text-base mx-1">{currentPage}</span> من {totalPages}
                         </span>
 
                         <button 
                             onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                             disabled={currentPage === totalPages}
-                            className="p-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 font-bold text-sm"
+                            className="px-4 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-bold text-sm transition-colors"
                         >
-                            التالي <ChevronLeft className="w-5 h-5" />
+                            التالي <ChevronLeft className="w-4 h-4" />
                         </button>
                     </div>
                 )}
@@ -433,7 +480,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
   return (
     <div className="h-screen w-full bg-gray-50 flex overflow-hidden font-sans text-right" dir="rtl">
       
-      {/* Sidebar for Desktop / Mobile */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/40 z-[60] md:hidden backdrop-blur-sm" 
@@ -527,7 +573,6 @@ export default function PatientDashboard({ isGuest = false }: { isGuest?: boolea
           </div>
         </header>
 
-        {/* إزالة الـ padding إذا كانت الصفحات عامة لكي تأخذ الشاشة كاملة */}
         <main className={`flex-1 overflow-y-auto ${['calculators', 'pricing', 'contact', 'directory', 'survey'].includes(activeTab) ? '' : 'p-4 md:p-8 pb-24 md:pb-8 custom-scrollbar'}`}>
           {renderActiveTabContent()}
         </main>
