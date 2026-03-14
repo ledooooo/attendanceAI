@@ -14,6 +14,7 @@ import XOGame from './games/XOGame';
 import StopTheBusGame from './games/StopTheBusGame';
 import ChessGame from './games/ChessGame';
 import HangmanGame from './games/HangmanGame';
+import BottleMatchGame from './games/BottleMatchGame';
 
 // ─── Beautiful Avatars ────────────────────────────────────────────────────────
 // Each avatar has: emoji, gradient bg, label
@@ -46,6 +47,7 @@ const GAME_TYPES = [
     { key: 'connect4',   label: 'Connect 4',         icon: '🔴🟡', desc: 'أربعة في صف',        color: 'from-blue-500 to-cyan-600',    minPlayers: 2, maxPlayers: 2  },
     { key: 'chess',      label: 'شطرنج',             icon: '♟️',   desc: 'شطرنج كلاسيكي',      color: 'from-amber-500 to-orange-600', minPlayers: 2, maxPlayers: 2  },
     { key: 'hangman',    label: 'المشنقة',           icon: '🪢',   desc: 'خمّن الكلمة الطبية', color: 'from-rose-500 to-pink-700',    minPlayers: 2, maxPlayers: 8  },
+    { key: 'bottlematch',label: 'ترتيب الزجاجات',   icon: '🍾',   desc: 'رتّب الألوان السرية', color: 'from-cyan-500 to-indigo-600',  minPlayers: 2, maxPlayers: 6  },
     { key: 'stopthebus', label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',   color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
 ];
 
@@ -399,8 +401,9 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                 result: 'ongoing', drawOfferedBy: null,
             };
         }
-        else if (selectedGameType === 'hangman')    initialState = {}; // HangmanGame builds state on host start
-        else if (selectedGameType === 'stopthebus') initialState = { letter: '', startedAt: 0, allAnswers: [], voteRound: 1 };
+        else if (selectedGameType === 'hangman')     initialState = {};
+        else if (selectedGameType === 'bottlematch') initialState = {};
+        else if (selectedGameType === 'stopthebus')  initialState = { letter: '', startedAt: 0, allAnswers: [], voteRound: 1 };
 
         const { data, error } = await supabase.from('live_matches').insert({
             game_type: selectedGameType, status: 'waiting', players: [player],
@@ -424,7 +427,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             symbol: match.game_type === 'xo' ? 'O' : match.game_type === 'connect4' ? 'Y' : match.game_type === 'chess' ? '♚' : undefined,
         };
 
-        const newStatus = (match.game_type === 'stopthebus' || match.game_type === 'hangman') ? 'waiting' : 'playing';
+        const newStatus = (match.game_type === 'stopthebus' || match.game_type === 'hangman' || match.game_type === 'bottlematch') ? 'waiting' : 'playing';
         const updatedPlayers = [...match.players, player];
 
         const { data: updated, error } = await supabase.from('live_matches').update({
@@ -649,8 +652,8 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             {view === 'playing' && currentMatch && (
                 <div className="flex-1 flex flex-col">
 
-                    {/* Players header — hidden for stopthebus and hangman (they have own headers) */}
-                    {currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && (
+                    {/* Players header — hidden for stopthebus, hangman, bottlematch */}
+                    {currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch' && (
                         <div className="px-3 py-3 flex justify-between items-center border-b border-gray-100 bg-white">
                             {/* Me */}
                             <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all ${currentMatch.game_state?.current_turn === me?.id ? 'border-green-400 bg-green-50 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
@@ -688,12 +691,11 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
                     {/* Game area */}
                     <div className={`flex-1 flex flex-col ${
-                        currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman'
+                        currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch'
                             ? 'items-center justify-center p-3' : ''
                     }`}>
-
-                        {/* WAITING (non-stopthebus, non-hangman) */}
-                        {currentMatch.status === 'waiting' && currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && (
+                        {/* WAITING (non-stopthebus, non-hangman, non-bottlematch) */}
+                        {currentMatch.status === 'waiting' && currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch' && (
                             <div className="text-center">
                                 <Loader2 className="w-14 h-14 text-indigo-200 animate-spin mx-auto mb-4"/>
                                 <h3 className="text-lg font-black text-indigo-900">في انتظار المنافس...</h3>
@@ -747,6 +749,11 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                                 grantPoints={grantPoints}
                                 recordResult={recordResult}
                             />
+                        )}
+
+                        {/* ── BOTTLE MATCH ── */}
+                        {currentMatch.game_type === 'bottlematch' && (
+                            <BottleMatchGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
 
                         {/* ── HANGMAN ── */}
