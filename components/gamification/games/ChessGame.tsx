@@ -318,16 +318,25 @@ export default function ChessGame({ match, employee, onExit, grantPoints, record
     // My color: first player = white, second = black
     const myColor: Color = match.players?.[0]?.id === myId ? 'w' : 'b';
 
-    const gs: ChessState = match.game_state ?? {
-        board: makeInitialBoard(), turn: 'w',
-        castling: { wK: true, wQ: true, bK: true, bQ: true },
-        enPassant: null, halfmove: 0, moveHistory: [],
-        whiteTime: PLAYER_TIMER_SECS, blackTime: PLAYER_TIMER_SECS,
-        lastMoveAt: Date.now(), currentTurn: match.players?.[0]?.id,
-        result: 'ongoing', drawOfferedBy: null,
+    // Build a stable initial board (only computed once)
+    const initialBoard = useMemo(() => makeInitialBoard(), []);
+
+    const rawGs = match.game_state ?? {};
+    const gs: ChessState = {
+        board:        Array.isArray(rawGs.board) && rawGs.board.length === 8 ? rawGs.board : initialBoard,
+        turn:         rawGs.turn         ?? 'w',
+        castling:     rawGs.castling     ?? { wK: true, wQ: true, bK: true, bQ: true },
+        enPassant:    rawGs.enPassant    ?? null,
+        halfmove:     rawGs.halfmove     ?? 0,
+        moveHistory:  rawGs.moveHistory  ?? [],
+        whiteTime:    rawGs.whiteTime    ?? PLAYER_TIMER_SECS,
+        blackTime:    rawGs.blackTime    ?? PLAYER_TIMER_SECS,
+        lastMoveAt:   rawGs.lastMoveAt   ?? Date.now(),
+        currentTurn:  rawGs.currentTurn  ?? match.players?.[0]?.id,
+        result:       rawGs.result       ?? 'ongoing',
+        drawOfferedBy: rawGs.drawOfferedBy ?? null,
     };
 
-    const board: Board = gs.board;
     const status: string = match.status;
     const isMyTurn = gs.currentTurn === myId;
     const amIWinner = match.winner_id === myId;
@@ -436,20 +445,20 @@ export default function ChessGame({ match, employee, onExit, grantPoints, record
     // ── Handle square click ───────────────────────────────────────────────────
     const handleSquareClick = async (r: number, c: number) => {
         if (!isMyTurn || status !== 'playing') return;
-        const piece = board[r][c];
+        const piece = safeBoard[r][c];
 
         if (selected) {
             const [sr, sc] = selected;
             // Clicking own piece → re-select
             if (piece?.color === myColor) {
                 setSelected([r,c]);
-                setHighlights(legalMoves(board, r, c, gs.enPassant, gs.castling));
+                setHighlights(legalMoves(safeBoard, r, c, gs.enPassant, gs.castling));
                 return;
             }
             // Is this a legal destination?
             if (highlights.some(([hr,hc]) => hr===r && hc===c)) {
                 // Check pawn promotion
-                const movingPiece = board[sr][sc];
+                const movingPiece = safeBoard[sr][sc];
                 if (movingPiece?.type === 'P' && (r === 0 || r === 7)) {
                     setPromoChoice({ from: selected, to: [r,c] });
                     return;
@@ -463,17 +472,17 @@ export default function ChessGame({ match, employee, onExit, grantPoints, record
 
         if (piece?.color === myColor) {
             setSelected([r,c]);
-            setHighlights(legalMoves(board, r, c, gs.enPassant, gs.castling));
+            setHighlights(legalMoves(safeBoard, r, c, gs.enPassant, gs.castling));
         }
     };
 
     const executeMove = async (from: Square, to: Square, promo: PieceType) => {
         setSelected(null); setHighlights([]);
         const [fr, fc] = from, [tr, tc] = to;
-        const movingPiece = board[fr][fc]!;
-        const captured = !!board[tr][tc];
+        const movingPiece = safeBoard[fr][fc]!;
+        const captured = !!safeBoard[tr][tc];
 
-        let nb = applyMove(board, from, to, promo);
+        let nb = applyMove(safeBoard, from, to, promo);
 
         // Castling rook move
         if (movingPiece.type === 'K') {
@@ -578,19 +587,24 @@ export default function ChessGame({ match, employee, onExit, grantPoints, record
     };
 
     // ── Board rendering ───────────────────────────────────────────────────────
+    // Guard: board must be a valid 8x8 array
+    const safeBoard: Board = (Array.isArray(gs.board) && gs.board.length === 8)
+        ? gs.board
+        : initialBoard;
+
     // Flip board if playing black
     const displayBoard = myColor === 'b'
-        ? [...board].reverse().map(row => [...row].reverse())
-        : board;
+        ? [...safeBoard].reverse().map(row => [...row].reverse())
+        : safeBoard;
     const toDisplayCoords = (r: number, c: number): Square =>
         myColor === 'b' ? [7 - r, 7 - c] : [r, c];
 
-    const inCheck = isKingInCheck(board, gs.turn);
+    const inCheck = isKingInCheck(safeBoard, gs.turn);
 
     // Find king square
     const kingSquare: Square | null = (() => {
         for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
-            if (board[r][c]?.type === 'K' && board[r][c]?.color === gs.turn) return [r,c];
+            if (safeBoard[r][c]?.type === 'K' && safeBoard[r][c]?.color === gs.turn) return [r,c];
         return null;
     })();
 
