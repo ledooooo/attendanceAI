@@ -376,19 +376,19 @@ export default function TraineeDashboard({ employee }: Props) {
 
         {/* ─── Mobile Bottom Nav ───────────────────────────────────────── */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-gray-100 px-2 py-2 flex justify-around items-center z-50 pb-safe shadow-[0_-1px_20px_rgba(0,0,0,0.05)]">
-          <MobileNavItem icon={Home}         label="الرئيسية"   active={activeTab === 'overview'}  onClick={() => switchTab('overview')} />
-          <MobileNavItem icon={BookOpen}     label="سجلاتي"    active={activeTab === 'logbook'}   onClick={() => switchTab('logbook')} />
+          <MobileNavItem icon={Home}          label="الرئيسية"  active={activeTab === 'overview'}    onClick={() => switchTab('overview')} />
+          <MobileNavItem icon={BookOpen}      label="سجلاتي"   active={activeTab === 'logbook'}     onClick={() => switchTab('logbook')} />
 
-          {/* FAB center */}
-          <button onClick={() => switchTab('arcade')}
+          {/* FAB center — تسجيل بيانات */}
+          <button onClick={() => switchTab('data_entry')}
             className={`relative -top-4 w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl border-4 border-[#f4f6fb] transition-all active:scale-95
-              ${activeTab === 'arcade' ? 'bg-indigo-700' : 'bg-indigo-600'} text-white`}>
-            <Gamepad2 className="w-6 h-6" />
-            <span className="absolute -top-1 -right-1 text-[8px] font-black bg-fuchsia-500 text-white px-1 py-0.5 rounded-full">HOT</span>
+              ${activeTab === 'data_entry' ? 'bg-indigo-700' : 'bg-indigo-600'} text-white`}>
+            <ClipboardList className="w-6 h-6" />
+            <span className="absolute -top-1 -right-1 text-[8px] font-black bg-emerald-500 text-white px-1 py-0.5 rounded-full">+</span>
           </button>
 
-          <MobileNavItem icon={Clock}        label="حضوري"     active={activeTab === 'attendance'} onClick={() => switchTab('attendance')} />
-          <MobileNavItem icon={MoreHorizontal} label="المزيد"  active={false}                      onClick={() => setIsSidebarOpen(true)} />
+          <MobileNavItem icon={GraduationCap} label="امتحاناتي" active={activeTab === 'exams'}       onClick={() => switchTab('exams')} />
+          <MobileNavItem icon={MoreHorizontal} label="المزيد"   active={false}                       onClick={() => setIsSidebarOpen(true)} />
         </nav>
       </div>
 
