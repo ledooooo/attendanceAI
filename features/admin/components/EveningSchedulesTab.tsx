@@ -260,7 +260,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         (fStatus === 'all' || e.status === fStatus)
     );
 
-    // ✅ دالة توليد الجدول الشهري: أعمدة مفردة لكل تخصص
+    // ✅ دالة توليد الجدول الشهري: توزيع ذكي وتجميع الفائض لضمان عدم ضياع أي موظف
     const getMonthlyMatrix = () => {
         const [year, month] = selectedMonth.split('-');
         const daysInMonth = new Date(Number(year), Number(month), 0).getDate();
@@ -276,54 +276,57 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             let humanDoctors: string[] = [];
             let dentists: string[] = [];
             let pharmacists: string[] = [];
-            let nurses: string[] = [];
             let labTechs: string[] = [];
-            let admins: string[] = [];
             let physiotherapists: string[] = [];
+            let nurses: string[] = [];
+            let clerks: string[] = [];
+            let admins: string[] = [];
+            let others: string[] = []; // لحفظ أي تخصص غير معروف وعرضه في الملاحظات
 
             if (daySchedule && daySchedule.doctors) {
                 daySchedule.doctors.forEach((d: any) => {
                     const emp = employees.find(e => e.id === d.id);
-                    if (emp) {
-                        const spec = emp.specialty || '';
-                        const shortName = emp.name.split(' ').slice(0, 2).join(' '); // الاسم ثنائي
-                        
-                        // التوزيع الذكي للتخصصات (مع تجاهل الهمزات والاختلافات)
-                        if (spec.includes('بشري') || spec === 'طبيب') humanDoctors.push(shortName);
-                        else if (spec.includes('سنان')) dentists.push(shortName); // يحل مشكلة أسنان واسنان
-                        else if (spec.includes('صيدل')) pharmacists.push(shortName);
-                        else if (spec.includes('معمل') || spec.includes('مختبر') || spec.includes('تحاليل')) labTechs.push(shortName);
-                        else if (spec.includes('طبيعي')) physiotherapists.push(shortName);
-                        else if (spec.includes('تمريض') || spec.includes('ممرض')) nurses.push(shortName);
-                        else admins.push(shortName); // الإداريين والعمال
-                    } else {
-                        // إذا كان مسجلاً بالاسم فقط دون ربطه بقاعدة البيانات
-                        humanDoctors.push(d.name);
-                    }
+                    const shortName = emp ? emp.name.split(' ').slice(0, 2).join(' ') : d.name;
+                    const spec = emp ? (emp.specialty || '') : '';
+                    
+                    // استخدام (includes) مع أجزاء الكلمات لتجنب مشاكل الـ (ي/ى) والهمزات
+                    if (spec.includes('بشر') || spec === 'طبيب') humanDoctors.push(shortName);
+                    else if (spec.includes('سنان')) dentists.push(shortName);
+                    else if (spec.includes('صيدل')) pharmacists.push(shortName);
+                    else if (spec.includes('معمل') || spec.includes('مختبر') || spec.includes('فني') || spec.includes('فنى')) labTechs.push(shortName);
+                    else if (spec.includes('طبيع')) physiotherapists.push(shortName);
+                    else if (spec.includes('تمريض') || spec.includes('ممرض')) nurses.push(shortName);
+                    else if (spec.includes('كاتب')) clerks.push(shortName);
+                    else if (spec.includes('ادار') || spec.includes('إدار')) admins.push(shortName);
+                    else others.push(shortName);
                 });
             }
+
+            // تجميع الملاحظات مع أسماء الموظفين غير المصنفين لضمان ظهور الجميع
+            const finalNotes = [daySchedule?.notes, ...others].filter(Boolean).join(' - ');
 
             matrix.push({
                 date: dateStr,
                 dayNum: i,
                 dayName,
-                // تخصيص متغيرات مفردة (عمود 1 وعمود 2 للتخصصات التي تتكرر)
+                // العمود 1 يأخذ الأول، والعمود 2 يجمع الباقي (إن وُجِدوا) لضمان كتابة الجميع
                 humanDoc1: humanDoctors[0] || '-',
-                humanDoc2: humanDoctors[1] || '-',
-                dentist: dentists[0] || '-',
-                pharmacist: pharmacists[0] || '-',
-                physio: physiotherapists[0] || '-',
-                labTech: labTechs[0] || '-',
-                nurse1: nurses[0] || '-',
-                nurse2: nurses[1] || '-',
-                admin: admins[0] || '-',
-                notes: daySchedule?.notes || ''
+                humanDoc2: humanDoctors.slice(1).join(' / ') || '-',
+                dentist1: dentists[0] || '-',
+                dentist2: dentists.slice(1).join(' / ') || '-',
+                pharmacist: pharmacists.join(' / ') || '-',
+                labTech: labTechs.join(' / ') || '-',
+                physio: physiotherapists.join(' / ') || '-',
+                nurse: nurses.join(' / ') || '-',
+                clerk: clerks.join(' / ') || '-',
+                admin: admins.join(' / ') || '-',
+                notes: finalNotes || '-'
             });
         }
         return matrix;
     };
 
-    // ✅ دالة الطباعة المضبوطة لصفحة واحدة (A4 Landscape)
+    // ✅ دالة الطباعة المضبوطة لصفحة واحدة (A4 Landscape) مع كافة الأعمدة
     const handlePrint = () => {
         if (!printRef.current) return;
         const printContent = printRef.current.innerHTML;
@@ -486,51 +489,57 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                             <div className="py-20 text-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto"/></div>
                         ) : (
                             <div className="overflow-x-auto print-container" ref={printRef}>
-                                {/* ✅ ستايل طباعة فائق التجهيز للصفحة الواحدة */}
+                                {/* ستايل طباعة فائق التجهيز لتقليص المساحات وإدراج 13 عموداً و31 صفاً في A4 Landscape */}
                                 <style type="text/css" media="print">
                                     {`
                                         @page { size: A4 landscape; margin: 5mm; }
                                         body { -webkit-print-color-adjust: exact; background: white; }
-                                        .print-table { width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.1; }
-                                        /* تصغير المسافات الداخلية وارتفاع الصفوف بشدة لتتسع 31 يوماً */
-                                        .print-table th, .print-table td { border: 1px solid #222; padding: 1px 3px; text-align: center; height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
-                                        .print-table th { background-color: #e5e7eb !important; font-weight: bold; }
+                                        .print-table { width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.1; table-layout: fixed; }
+                                        .print-table th, .print-table td { border: 1px solid #333; padding: 1px 2px; text-align: center; height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                                        .print-table th { background-color: #e5e7eb !important; font-weight: bold; font-size: 10px; }
                                         .bg-red-50 { background-color: #fef2f2 !important; }
+                                        
+                                        /* توزيع عرض الأعمدة لتناسب A4 */
+                                        .col-day { width: 4%; }
+                                        .col-date { width: 6%; }
+                                        .col-doc { width: 9%; }
+                                        .col-notes { width: 10%; }
                                     `}
                                 </style>
                                 <table className="print-table w-full text-center whitespace-nowrap min-w-[1000px]">
                                     <thead>
                                         <tr className="bg-gray-100 text-gray-700">
-                                            <th className="p-2 w-10">اليوم</th>
-                                            <th className="p-2 w-16">التاريخ</th>
-                                            <th className="p-2 text-blue-700">طبيب بشري 1</th>
-                                            <th className="p-2 text-blue-700">طبيب بشري 2</th>
-                                            <th className="p-2 text-purple-700">طبيب أسنان</th>
-                                            <th className="p-2 text-emerald-700">صيدلة</th>
-                                            <th className="p-2 text-amber-700">فني معمل</th>
-                                            <th className="p-2 text-orange-700">علاج طبيعي</th>
-                                            <th className="p-2 text-rose-700">تمريض 1</th>
-                                            <th className="p-2 text-rose-700">تمريض 2</th>
-                                            <th className="p-2 text-gray-700">إداري/عامل</th>
-                                            <th className="p-2 w-20">ملاحظات</th>
+                                            <th className="p-2 col-day">اليوم</th>
+                                            <th className="p-2 col-date">التاريخ</th>
+                                            <th className="p-2 col-doc text-blue-700">طبيب بشرى 1</th>
+                                            <th className="p-2 col-doc text-blue-700">طبيب بشرى 2</th>
+                                            <th className="p-2 col-doc text-purple-700">طبيب اسنان 1</th>
+                                            <th className="p-2 col-doc text-purple-700">طبيب اسنان 2</th>
+                                            <th className="p-2 col-doc text-emerald-700">صيدلى</th>
+                                            <th className="p-2 col-doc text-amber-700">فنى معمل</th>
+                                            <th className="p-2 col-doc text-orange-700">علاج طبيعى</th>
+                                            <th className="p-2 col-doc text-rose-700">تمريض</th>
+                                            <th className="p-2 col-doc text-teal-700">كاتب</th>
+                                            <th className="p-2 col-doc text-gray-700">ادارى</th>
+                                            <th className="p-2 col-notes">ملاحظات</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {getMonthlyMatrix().map((day) => (
-                                            <tr key={day.date} className={`border-t border-gray-200 ${day.dayName === 'الجمعة' ? 'bg-red-50 text-red-900 font-bold' : 'hover:bg-gray-50'}`}>
+                                            <tr key={day.date} className={`border-t border-gray-200 ${day.dayName === 'الجمعة' ? 'bg-red-50/50 text-red-900 font-bold' : 'hover:bg-gray-50'}`}>
                                                 <td className="font-bold text-[10px]">{day.dayName.replace('ال', '')}</td>
                                                 <td className="font-mono text-[10px]">{day.date}</td>
-                                                {/* اسم واحد فقط لكل خلية! */}
                                                 <td className="text-blue-800 font-bold text-[10px]">{day.humanDoc1}</td>
                                                 <td className="text-blue-800 font-bold text-[10px]">{day.humanDoc2}</td>
-                                                <td className="text-purple-800 font-bold text-[10px]">{day.dentist}</td>
+                                                <td className="text-purple-800 font-bold text-[10px]">{day.dentist1}</td>
+                                                <td className="text-purple-800 font-bold text-[10px]">{day.dentist2}</td>
                                                 <td className="text-emerald-800 font-bold text-[10px]">{day.pharmacist}</td>
                                                 <td className="text-amber-800 font-bold text-[10px]">{day.labTech}</td>
                                                 <td className="text-orange-800 font-bold text-[10px]">{day.physio}</td>
-                                                <td className="text-rose-800 font-bold text-[10px]">{day.nurse1}</td>
-                                                <td className="text-rose-800 font-bold text-[10px]">{day.nurse2}</td>
+                                                <td className="text-rose-800 font-bold text-[10px]">{day.nurse}</td>
+                                                <td className="text-teal-800 font-bold text-[10px]">{day.clerk}</td>
                                                 <td className="text-gray-800 font-bold text-[10px]">{day.admin}</td>
-                                                <td className="text-[9px] text-gray-500 max-w-[80px] truncate">{day.notes}</td>
+                                                <td className="text-[9px] text-gray-500 truncate">{day.notes}</td>
                                             </tr>
                                         ))}
                                     </tbody>
