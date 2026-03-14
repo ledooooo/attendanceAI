@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
@@ -9,7 +11,7 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus, GraduationCap // ✅ استيراد GraduationCap لأيقونة الزمالة
+    Trash2, UserPlus, GraduationCap, Gamepad2, Stethoscope, ChevronLeft, ShieldAlert
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -41,14 +43,9 @@ import SupervisorsManager from './components/SupervisorsManager';
 import StatisticsManager from './components/StatisticsManager';
 import CompetitionsManager from './components/CompetitionsManager';
 import AdminSupervisorRounds from './components/AdminSupervisorRounds';
-
-// ✅ استيراد بوابة الزائرين
 import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
-
-// ✅ استيراد لوحة تحكم الزمالة (التي أنشأناها)
 import AdminFellowshipTab from './components/AdminFellowshipTab'; 
 
-// ✅ دالة بديلة لـ dayjs لحساب "منذ متى" بالعربية
 const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -71,7 +68,6 @@ export default function AdminDashboard() {
     const [showNotifications, setShowNotifications] = useState(false);
     const notifRef = useRef<HTMLDivElement>(null);
 
-    // إغلاق قائمة الإشعارات عند النقر خارجها
     useEffect(() => {
         function handleClickOutside(event: any) {
             if (notifRef.current && !notifRef.current.contains(event.target)) {
@@ -123,7 +119,7 @@ export default function AdminDashboard() {
                 .limit(20);
             return data || [];
         },
-        enabled: showNotifications // Fetch only when opened
+        enabled: showNotifications
     });
 
     const markAsReadMutation = useMutation({
@@ -179,10 +175,135 @@ export default function AdminDashboard() {
         trackMouse: true, delta: 50,
     });
 
+
+    // =====================================
+    // 📊 دالة تصميم شاشة الرئيسية (Advanced Dashboard)
+    // =====================================
+    const renderAdvancedHome = () => {
+        // حساب الإحصائيات (القوة الفعلية النشطة فقط)
+        const activeEmployees = employees.filter(e => e.is_active !== false);
+        const onlineThreshold = 1000 * 60 * 15; // 15 دقيقة
+        const now = new Date().getTime();
+        
+        const onlineUsers = allActiveUsers.filter(u => u.last_seen && (now - new Date(u.last_seen).getTime() < onlineThreshold));
+        
+        // تجميع الموظفين حسب التخصص
+        const specialtyStats = activeEmployees.reduce((acc, emp) => {
+            const spec = emp.specialty || 'أخرى';
+            if (!acc[spec]) acc[spec] = { total: 0, online: 0, absent: 0 };
+            acc[spec].total += 1;
+            if (emp.last_seen && (now - new Date(emp.last_seen).getTime() < onlineThreshold)) {
+                acc[spec].online += 1;
+            } else {
+                acc[spec].absent += 1;
+            }
+            return acc;
+        }, {} as Record<string, {total: number, online: number, absent: number}>);
+
+        return (
+            <div className="space-y-6 animate-in fade-in duration-500 max-w-7xl mx-auto">
+                {/* 1. رأس اللوحة (Header Cards) */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 p-5 rounded-3xl text-white shadow-lg shadow-indigo-200 relative overflow-hidden">
+                        <div className="absolute -right-4 -top-4 w-20 h-20 bg-white/10 rounded-full blur-2xl"></div>
+                        <Users className="w-8 h-8 text-indigo-200 mb-3" />
+                        <p className="text-indigo-100 text-xs font-bold mb-1">القوة الفعلية (نشط)</p>
+                        <h3 className="text-3xl font-black">{activeEmployees.length} <span className="text-sm font-normal opacity-80">موظف</span></h3>
+                    </div>
+                    
+                    <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 p-5 rounded-3xl text-white shadow-lg shadow-emerald-200 relative overflow-hidden">
+                        <div className="absolute -right-4 -top-4 w-20 h-20 bg-white/10 rounded-full blur-2xl"></div>
+                        <div className="flex items-center gap-2 mb-3">
+                            <span className="relative flex h-3 w-3">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-200 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-300"></span>
+                            </span>
+                            <Smartphone className="w-6 h-6 text-emerald-200" />
+                        </div>
+                        <p className="text-emerald-100 text-xs font-bold mb-1">متصل الآن (Online)</p>
+                        <h3 className="text-3xl font-black">{onlineUsers.length} <span className="text-sm font-normal opacity-80">عضو</span></h3>
+                    </div>
+
+                    <div onClick={() => setActiveTab('leaves')} className="bg-gradient-to-br from-amber-500 to-amber-700 p-5 rounded-3xl text-white shadow-lg shadow-amber-200 relative overflow-hidden cursor-pointer hover:scale-[1.02] transition-transform">
+                        <div className="absolute -right-4 -top-4 w-20 h-20 bg-white/10 rounded-full blur-2xl"></div>
+                        <ClipboardList className="w-8 h-8 text-amber-200 mb-3" />
+                        <p className="text-amber-100 text-xs font-bold mb-1">طلبات معلقة</p>
+                        <div className="flex items-end justify-between">
+                            <h3 className="text-3xl font-black">{badges.leaves}</h3>
+                            <ChevronLeft className="w-5 h-5 text-amber-200" />
+                        </div>
+                    </div>
+
+                    <div onClick={() => setActiveTab('quality')} className="bg-gradient-to-br from-rose-500 to-rose-700 p-5 rounded-3xl text-white shadow-lg shadow-rose-200 relative overflow-hidden cursor-pointer hover:scale-[1.02] transition-transform">
+                        <div className="absolute -right-4 -top-4 w-20 h-20 bg-white/10 rounded-full blur-2xl"></div>
+                        <ShieldAlert className="w-8 h-8 text-rose-200 mb-3" />
+                        <p className="text-rose-100 text-xs font-bold mb-1">بلاغات OVR جديدة</p>
+                        <div className="flex items-end justify-between">
+                            <h3 className="text-3xl font-black">{badges.ovr}</h3>
+                            <ChevronLeft className="w-5 h-5 text-rose-200" />
+                        </div>
+                    </div>
+                </div>
+
+                {/* 2. الإحصائيات التفصيلية للتخصصات */}
+                <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+                    <div className="flex items-center justify-between mb-6 border-b border-gray-50 pb-4">
+                        <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                            <Stethoscope className="text-blue-600 w-5 h-5" /> تفصيل القوة العاملة (حسب التخصص)
+                        </h3>
+                        <span className="text-xs font-bold bg-blue-50 text-blue-600 px-3 py-1 rounded-lg border border-blue-100">تحديث مباشر</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Object.entries(specialtyStats).sort((a,b) => b[1].total - a[1].total).map(([spec, stats]) => (
+                            <div key={spec} className="bg-gray-50/80 p-4 rounded-2xl border border-gray-100 hover:border-blue-200 transition-colors group">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="font-bold text-gray-700 text-sm group-hover:text-blue-700 transition-colors">{spec}</h4>
+                                    <span className="bg-white shadow-sm border border-gray-200 text-gray-800 text-xs font-black px-2 py-0.5 rounded-md">
+                                        {stats.total} موظف
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-2 mt-2">
+                                    <div className="flex-1 bg-emerald-50 rounded-xl p-2 border border-emerald-100/50 flex flex-col items-center">
+                                        <span className="text-[10px] text-emerald-600 font-bold mb-1">متصل</span>
+                                        <span className="text-lg font-black text-emerald-700">{stats.online}</span>
+                                    </div>
+                                    <div className="flex-1 bg-gray-100 rounded-xl p-2 border border-gray-200/50 flex flex-col items-center">
+                                        <span className="text-[10px] text-gray-500 font-bold mb-1">غير متصل</span>
+                                        <span className="text-lg font-black text-gray-600">{stats.absent}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* 3. قائمة المتصلين حالياً */}
+                {onlineUsers.length > 0 && (
+                    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+                        <h3 className="text-base font-black text-gray-800 mb-4 flex items-center gap-2">
+                            <Activity className="text-emerald-500 w-5 h-5" /> المتواجدون على النظام الآن
+                        </h3>
+                        <div className="flex flex-wrap gap-2">
+                            {onlineUsers.map(user => (
+                                <div key={user.id} className="flex items-center gap-2 bg-emerald-50/50 border border-emerald-100 px-3 py-1.5 rounded-full">
+                                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                    <span className="text-xs font-bold text-gray-700">{user.name?.split(' ')[0]} {user.name?.split(' ')[1]}</span>
+                                    <span className="text-[9px] bg-white text-gray-500 px-1.5 py-0.5 rounded-md shadow-sm">{user.specialty}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+
     // --- Content Renderer ---
     const renderContent = () => {
         switch (activeTab) {
-            case 'home': return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
+            case 'home': return renderAdvancedHome(); // ✅ استخدام الشاشة الجديدة
             case 'doctors': return <DoctorsTab employees={employees || []} onRefresh={refetchEmployees} centerId={settings?.id} />;
             case 'supervisors': return <SupervisorsManager />;
             case 'staff_admin': return <AdministrationTab employee={currentAdminEmployee} />;
@@ -208,9 +329,8 @@ export default function AdminDashboard() {
             case 'tasks': return <TasksManager employees={employees || []} />;
             case 'vaccinations': return <VaccinationsTab employees={employees || []} />;
             case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
-         // case 'visitors_dashboard': return <AdminVisitorsDashboard />; 
-            case 'fellowship': return <AdminFellowshipTab />; // ✅ استدعاء واجهة إدارة الزمالة
-            default: return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
+            case 'fellowship': return <AdminFellowshipTab />;
+            default: return renderAdvancedHome();
         }
     };
 
@@ -281,7 +401,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs border border-white shadow-sm">AD</div>
                         <div className="text-right">
-                            <p className="text-xs font-bold text-gray-800">Admin</p>
+                            <p className="text-xs font-bold text-gray-800">المدير</p>
                         </div>
                     </div>
                     <button onClick={signOut} title="تسجيل الخروج" className="p-2 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors bg-white shadow-sm border border-gray-100">
@@ -303,7 +423,6 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="flex items-center gap-3" ref={notifRef}>
-                        {/* زر الإشعارات الفعال */}
                         <div className="relative">
                             <button 
                                 onClick={() => setShowNotifications(!showNotifications)}
@@ -315,7 +434,6 @@ export default function AdminDashboard() {
                                 )}
                             </button>
 
-                            {/* قائمة الإشعارات المنسدلة */}
                             {showNotifications && (
                                 <div className="absolute left-0 mt-3 w-80 md:w-96 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-in slide-in-from-top-2">
                                     <div className="p-3 border-b bg-gray-50/50 flex justify-between items-center">
@@ -341,7 +459,6 @@ export default function AdminDashboard() {
                                                         <div>
                                                             <h5 className="text-xs font-bold text-gray-800">{notif.title}</h5>
                                                             <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{notif.message}</p>
-                                                            {/* ✅ استخدام الدالة البديلة هنا */}
                                                             <span className="text-[9px] text-gray-400 mt-1 block">{formatTimeAgo(notif.created_at)}</span>
                                                         </div>
                                                     </div>
@@ -355,10 +472,8 @@ export default function AdminDashboard() {
                     </div>
                 </header>
 
-                <main className="flex-1 overflow-y-auto p-3 md:p-6 custom-scrollbar pb-20 scroll-smooth">
-                    <div className="max-w-7xl mx-auto space-y-4">
-                        {renderContent()}
-                    </div>
+                <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar pb-24 scroll-smooth">
+                    {renderContent()}
                 </main>
 
                 {/* Bottom Navbar (Mobile Only) */}
@@ -379,11 +494,12 @@ export default function AdminDashboard() {
     );
 }
 
-// قائمة القائمة الجانبية المحدثة
+// قائمة القائمة الجانبية المحدثة (تم إضافة تبويب الألعاب)
 const menuItems = [
-    { id: 'home', label: 'الرئيسية', icon: Home },
- // { id: 'visitors_dashboard', label: 'بوابة الزائرين', icon: UserPlus }, 
-    { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap }, // ✅ تمت إضافة زر الزمالة هنا
+    { id: 'home', label: 'الرئيسية', icon: LayoutDashboard },
+    { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap },
+    { id: 'gamification', label: 'النقاط والمسابقات', icon: Trophy }, 
+    { id: 'competitions', label: 'صالة الألعاب', icon: Gamepad2 }, // ✅ تبويب الألعاب الجديد
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
@@ -397,8 +513,6 @@ const menuItems = [
     { id: 'statistics', label: 'الإحصائيات', icon: BarChart3 },
     { id: 'evaluations', label: 'التقييمات', icon: Activity },
     { id: 'news', label: 'الأخبار', icon: Newspaper },
-    { id: 'competitions', label: 'المسابقات', icon: Swords },
-    { id: 'gamification', label: 'النقاط', icon: Trophy },
     { id: 'vaccinations', label: 'التطعيمات', icon: Syringe },
     { id: 'training', label: 'التدريب', icon: BookOpen },
     { id: 'assets', label: 'العهد', icon: Box },
