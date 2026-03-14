@@ -65,7 +65,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         queryKey: ['evening_schedules_list', selectedMonth],
         queryFn: async () => {
             const startDate = `${selectedMonth}-01`;
-            // حساب آخر يوم في الشهر
             const [year, month] = selectedMonth.split('-');
             const lastDay = new Date(Number(year), Number(month), 0).getDate();
             const endDate = `${selectedMonth}-${lastDay}`;
@@ -80,7 +79,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             if (error) throw error;
             return data;
         },
-        enabled: false, // 🚫 منع التحميل التلقائي لتقليل استهلاك الداتا بيز
+        enabled: false, 
     });
 
     // ------------------------------------------------------------------
@@ -131,7 +130,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         },
         onSuccess: () => {
             toast.success("تم حفظ الجدول بنجاح ✅");
-            refetch(); // إعادة جلب البيانات لتحديث العرض
+            refetch();
         },
         onError: (err: any) => toast.error(err.message)
     });
@@ -261,7 +260,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         (fStatus === 'all' || e.status === fStatus)
     );
 
-    // ✅ دالة توليد الجدول الشهري والتصنيف حسب التخصص
+    // ✅ دالة توليد الجدول الشهري: عمود واحد لكل تخصص، دمج الأطباء بـ ( / )، وأسماء مختصرة
     const getMonthlyMatrix = () => {
         const [year, month] = selectedMonth.split('-');
         const daysInMonth = new Date(Number(year), Number(month), 0).getDate();
@@ -286,7 +285,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                     const emp = employees.find(e => e.id === d.id);
                     if (emp) {
                         const spec = emp.specialty || '';
-                        const shortName = emp.name.split(' ').slice(0, 2).join(' '); // الاسم ثنائي فقط توفيراً للمساحة
+                        const shortName = emp.name.split(' ').slice(0, 2).join(' '); // الاسم ثنائي لتصغير الخلية
                         
                         if (spec.includes('بشري') || spec.includes('طبيب')) humanDoctors.push(shortName);
                         else if (spec.includes('أسنان')) dentists.push(shortName);
@@ -295,7 +294,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                         else if (spec.includes('علاج طبيعي')) physiotherapists.push(shortName);
                         else admins.push(shortName);
                     } else {
-                        humanDoctors.push(d.name); // للأسماء المكتوبة يدوياً
+                        humanDoctors.push(d.name);
                     }
                 });
             }
@@ -304,27 +303,28 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                 date: dateStr,
                 dayNum: i,
                 dayName,
-                humanDoctors: humanDoctors.join(' ، '),
-                dentists: dentists.join(' ، '),
-                pharmacists: pharmacists.join(' ، '),
-                physiotherapists: physiotherapists.join(' ، '),
-                nurses: nurses.join(' ، '),
-                admins: admins.join(' ، '),
+                // يتم الفصل بعلامة ( / ) بدلاً من الكومة لتجنب التفاف النص (Word Wrap) الذي يزيد ارتفاع الصف
+                humanDoctors: humanDoctors.join(' / '),
+                dentists: dentists.join(' / '),
+                pharmacists: pharmacists.join(' / '),
+                physiotherapists: physiotherapists.join(' / '),
+                nurses: nurses.join(' / '),
+                admins: admins.join(' / '),
                 notes: daySchedule?.notes || ''
             });
         }
         return matrix;
     };
 
-    // ✅ دالة طباعة الـ A4
+    // ✅ دالة الطباعة: تم تجهيز الستايل ليطبع الجدول في صفحة واحدة A4 Landscape
     const handlePrint = () => {
         if (!printRef.current) return;
         const printContent = printRef.current.innerHTML;
         const originalContent = document.body.innerHTML;
         
         document.body.innerHTML = `
-            <div dir="rtl" style="font-family: 'Tajawal', sans-serif; padding: 20px;">
-                <h2 style="text-align: center; margin-bottom: 20px; font-weight: bold;">جدول النوبتجية المسائية - شهر ${selectedMonth}</h2>
+            <div dir="rtl" style="font-family: 'Tajawal', sans-serif; padding: 0; margin: 0;">
+                <h3 style="text-align: center; margin: 10px 0; font-weight: bold; font-size: 16px;">جدول النوبتجية المسائية - شهر ${selectedMonth}</h3>
                 ${printContent}
             </div>
         `;
@@ -474,48 +474,50 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                         </button>
                     </div>
 
-                    <div className="bg-white rounded-3xl border shadow-sm overflow-hidden p-4">
+                    <div className="bg-white rounded-3xl border shadow-sm overflow-hidden p-2 md:p-4">
                         {isFetching ? (
                             <div className="py-20 text-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto"/></div>
                         ) : (
                             <div className="overflow-x-auto print-container" ref={printRef}>
-                                {/* ستايل الطباعة الذي يتم تطبيقه فقط عند ضغط زر الطباعة */}
+                                {/* ✅ ستايل الطباعة القوي: يقلل الهوامش ويصغر الخط ليناسب ورقة واحدة */}
                                 <style type="text/css" media="print">
                                     {`
-                                        @page { size: A4 landscape; margin: 10mm; }
+                                        @page { size: A4 landscape; margin: 10mm 15mm; }
                                         body { -webkit-print-color-adjust: exact; background: white; }
-                                        .print-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                                        .print-table th, .print-table td { border: 1px solid #000; padding: 8px; text-align: center; }
-                                        .print-table th { background-color: #f3f4f6 !important; font-weight: bold; }
+                                        .print-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                                        /* تصغير الارتفاع والـ padding لإدخال 31 صف براحة */
+                                        .print-table th, .print-table td { border: 1px solid #333; padding: 2px 4px; text-align: center; height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+                                        .print-table th { background-color: #e5e7eb !important; font-weight: bold; }
                                         .bg-red-50 { background-color: #fee2e2 !important; }
                                     `}
                                 </style>
                                 <table className="print-table w-full text-center whitespace-nowrap min-w-[900px]">
                                     <thead>
                                         <tr className="bg-gray-100 text-gray-700">
-                                            <th className="p-3">اليوم</th>
-                                            <th className="p-3">التاريخ</th>
-                                            <th className="p-3">طبيب بشري</th>
-                                            <th className="p-3">طبيب أسنان</th>
-                                            <th className="p-3">صيدلة</th>
-                                            <th className="p-3">علاج طبيعي</th>
-                                            <th className="p-3">تمريض</th>
-                                            <th className="p-3">إداري/كاتب</th>
-                                            <th className="p-3">ملاحظات</th>
+                                            <th className="p-2 w-10">اليوم</th>
+                                            <th className="p-2 w-16">التاريخ</th>
+                                            <th className="p-2">طبيب بشري</th>
+                                            <th className="p-2">طبيب أسنان</th>
+                                            <th className="p-2">صيدلة</th>
+                                            <th className="p-2">علاج طبيعي</th>
+                                            <th className="p-2">تمريض</th>
+                                            <th className="p-2">إداري/كاتب</th>
+                                            <th className="p-2 w-24">ملاحظات</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {getMonthlyMatrix().map((day) => (
-                                            <tr key={day.date} className={`border-t border-gray-100 ${day.dayName === 'الجمعة' ? 'bg-red-50/50 text-red-900 font-bold' : 'hover:bg-gray-50'}`}>
-                                                <td className="p-2 font-bold">{day.dayName.replace('ال', '')}</td>
-                                                <td className="p-2 font-mono text-xs">{day.date}</td>
-                                                <td className="p-2 text-blue-700 font-bold text-xs whitespace-normal">{day.humanDoctors || '-'}</td>
-                                                <td className="p-2 text-purple-700 font-bold text-xs whitespace-normal">{day.dentists || '-'}</td>
-                                                <td className="p-2 text-emerald-700 font-bold text-xs whitespace-normal">{day.pharmacists || '-'}</td>
-                                                <td className="p-2 text-orange-700 font-bold text-xs whitespace-normal">{day.physiotherapists || '-'}</td>
-                                                <td className="p-2 text-rose-700 font-bold text-xs whitespace-normal">{day.nurses || '-'}</td>
-                                                <td className="p-2 text-gray-700 font-bold text-xs whitespace-normal">{day.admins || '-'}</td>
-                                                <td className="p-2 text-xs text-gray-500 whitespace-normal">{day.notes || '-'}</td>
+                                            <tr key={day.date} className={`border-t border-gray-200 ${day.dayName === 'الجمعة' ? 'bg-red-50/50 text-red-900 font-bold' : 'hover:bg-gray-50'}`}>
+                                                <td className="font-bold text-[11px]">{day.dayName.replace('ال', '')}</td>
+                                                <td className="font-mono text-[11px]">{day.date}</td>
+                                                {/* الأعمدة مفصولة بتخصصها، كل خلية تحتوي اسماً واحداً (أو اسمين مفصولين بـ / إذا اضطررت) */}
+                                                <td className="text-blue-800 font-bold text-[11px]">{day.humanDoctors || '-'}</td>
+                                                <td className="text-purple-800 font-bold text-[11px]">{day.dentists || '-'}</td>
+                                                <td className="text-emerald-800 font-bold text-[11px]">{day.pharmacists || '-'}</td>
+                                                <td className="text-orange-800 font-bold text-[11px]">{day.physiotherapists || '-'}</td>
+                                                <td className="text-rose-800 font-bold text-[11px]">{day.nurses || '-'}</td>
+                                                <td className="text-gray-800 font-bold text-[11px]">{day.admins || '-'}</td>
+                                                <td className="text-[10px] text-gray-500 max-w-[100px] truncate">{day.notes || '-'}</td>
                                             </tr>
                                         ))}
                                     </tbody>
