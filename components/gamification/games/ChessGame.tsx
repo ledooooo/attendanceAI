@@ -619,7 +619,7 @@ export default function ChessGame({ match, employee, onExit, grantPoints, record
 
     // ── PLAYING ───────────────────────────────────────────────────────────────
     if (status === 'playing' || status === 'finished') return (
-        <div className="flex flex-col gap-2 py-1 px-2 w-full max-w-sm mx-auto">
+        <div className="flex flex-col gap-2 py-1 px-1 w-full"style={{ maxWidth: '100vw' }}>
 
             {/* Offline alert */}
             {opponentOffline && (
@@ -698,7 +698,7 @@ export default function ChessGame({ match, employee, onExit, grantPoints, record
                 {displayBoard.map((row, dr) => (
                     <div key={dr} className="flex">
                         {/* Rank label */}
-                        <div className="w-4 flex items-center justify-center text-[9px] font-black text-amber-800/60 bg-amber-100/50 flex-shrink-0">
+                        <div className="w-5 flex items-center justify-center text-[10px] font-black text-amber-800/70 bg-amber-100/60 flex-shrink-0">
                             {myColor === 'b' ? dr + 1 : 8 - dr}
                         </div>
                         {row.map((piece, dc) => {
@@ -706,31 +706,32 @@ export default function ChessGame({ match, employee, onExit, grantPoints, record
                             const isLight = (ar + ac) % 2 === 0;
                             const isSelected = selected?.[0] === ar && selected?.[1] === ac;
                             const isHighlight = highlights.some(([hr,hc]) => hr===ar && hc===ac);
-                            const isKingInCheckSq = inCheck && kingSquare?.[0] === ar && kingSquare?.[1] === ac && board[ar][ac]?.color === gs.turn;
-                            const isLastMove = gs.moveHistory.length > 0; // simplified
+                            const isKingInCheckSq = inCheck && kingSquare?.[0] === ar && kingSquare?.[1] === ac && safeBoard[ar][ac]?.color === gs.turn;
 
                             return (
                                 <button key={dc}
                                     onClick={() => handleSquareClick(ar, ac)}
                                     disabled={status === 'finished'}
-                                    className={`relative flex-1 aspect-square flex items-center justify-center transition-all select-none
+                                    className={`relative flex-1 flex items-center justify-center transition-all select-none
                                         ${isKingInCheckSq ? 'bg-red-400' :
                                           isSelected ? 'bg-yellow-300' :
-                                          isHighlight ? (isLight ? 'bg-yellow-200' : 'bg-yellow-400/60') :
-                                          isLight ? 'bg-amber-100' : 'bg-amber-800'}
-                                        ${isMyTurn && piece?.color === myColor && !isSelected && status === 'playing' ? 'hover:brightness-110 cursor-pointer' : 'cursor-default'}
+                                          isHighlight ? (isLight ? 'bg-yellow-200' : 'bg-yellow-500/50') :
+                                          isLight ? 'bg-amber-100' : 'bg-amber-700'}
+                                        ${isMyTurn && piece?.color === myColor && !isSelected && status === 'playing' ? 'hover:brightness-110 cursor-pointer active:scale-95' : 'cursor-default'}
                                     `}
-                                    style={{ fontSize: 'clamp(16px, 5vw, 32px)' }}
+                                    style={{ aspectRatio: '1', fontSize: 'clamp(22px, 9vw, 44px)' }}
                                 >
                                     {isHighlight && !piece && (
-                                        <div className="absolute w-1/3 h-1/3 rounded-full bg-gray-800/25"/>
+                                        <div className="absolute w-[38%] h-[38%] rounded-full bg-black/20"/>
                                     )}
                                     {isHighlight && piece && (
-                                        <div className="absolute inset-0 border-4 border-yellow-500/60 rounded-sm"/>
+                                        <div className="absolute inset-0.5 border-4 border-yellow-500/70 rounded-sm pointer-events-none"/>
                                     )}
                                     {piece && (
-                                        <span className={`relative z-10 leading-none select-none drop-shadow-sm ${
-                                            piece.color === 'w' ? 'text-white [text-shadow:0_1px_2px_#0008,0_0_4px_#0004]' : 'text-gray-900 [text-shadow:0_1px_2px_#fff8]'
+                                        <span className={`relative z-10 leading-none select-none ${
+                                            piece.color === 'w'
+                                                ? 'text-white [text-shadow:0_1px_3px_#0009,0_0_6px_#0006]'
+                                                : 'text-gray-900 [text-shadow:0_1px_2px_#fff9,0_0_4px_#fff4]'
                                         }`}>
                                             {GLYPHS[piece.color][piece.type]}
                                         </span>
@@ -741,10 +742,10 @@ export default function ChessGame({ match, employee, onExit, grantPoints, record
                     </div>
                 ))}
                 {/* File labels */}
-                <div className="flex bg-amber-100/50">
-                    <div className="w-4"/>
+                <div className="flex bg-amber-100/60">
+                    <div className="w-5"/>
                     {(myColor === 'b' ? ['h','g','f','e','d','c','b','a'] : ['a','b','c','d','e','f','g','h']).map(l => (
-                        <div key={l} className="flex-1 text-center text-[9px] font-black text-amber-800/60 py-0.5">{l}</div>
+                        <div key={l} className="flex-1 text-center text-[10px] font-black text-amber-800/70 py-0.5">{l}</div>
                     ))}
                 </div>
             </div>
