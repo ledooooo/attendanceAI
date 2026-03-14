@@ -65,7 +65,10 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         queryKey: ['evening_schedules_list', selectedMonth],
         queryFn: async () => {
             const startDate = `${selectedMonth}-01`;
-            const endDate = `${selectedMonth}-31`;
+            // حساب آخر يوم في الشهر
+            const [year, month] = selectedMonth.split('-');
+            const lastDay = new Date(Number(year), Number(month), 0).getDate();
+            const endDate = `${selectedMonth}-${lastDay}`;
 
             const { data, error } = await supabase
                 .from('evening_schedules')
@@ -77,8 +80,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             if (error) throw error;
             return data;
         },
-        enabled: false, // 🚫 منع التحميل التلقائي
-        staleTime: 1000 * 60 * 5,
+        enabled: false, // 🚫 منع التحميل التلقائي لتقليل استهلاك الداتا بيز
     });
 
     // ------------------------------------------------------------------
@@ -129,7 +131,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         },
         onSuccess: () => {
             toast.success("تم حفظ الجدول بنجاح ✅");
-            refetch(); // إعادة جلب البيانات للشهر الحالي
+            refetch(); // إعادة جلب البيانات لتحديث العرض
         },
         onError: (err: any) => toast.error(err.message)
     });
@@ -228,7 +230,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     });
 
     // ------------------------------------------------------------------
-    // 4. 🎨 دوال العرض والطباعة
+    // 4. 🎨 دوال العرض والطباعة والمصفوفة الشهرية
     // ------------------------------------------------------------------
 
     const handleDownloadSample = () => {
@@ -248,9 +250,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         if (exists) {
             setSelectedDoctors(prev => prev.filter(d => d.id !== emp.id));
         } else {
-            setSelectedDoctors(prev => [...prev, {
-                id: emp.id, name: emp.name, code: emp.employee_id
-            }]);
+            setSelectedDoctors(prev => [...prev, { id: emp.id, name: emp.name, code: emp.employee_id }]);
         }
     };
 
@@ -261,9 +261,8 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         (fStatus === 'all' || e.status === fStatus)
     );
 
-    // دالة لتجميع أطباء الجدول الشهري حسب التخصصات
+    // ✅ دالة توليد الجدول الشهري والتصنيف حسب التخصص
     const getMonthlyMatrix = () => {
-        // توليد أيام الشهر المختار
         const [year, month] = selectedMonth.split('-');
         const daysInMonth = new Date(Number(year), Number(month), 0).getDate();
         
@@ -275,12 +274,11 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             
             const daySchedule = schedules.find((s:any) => s.date === dateStr);
             
-            // التصنيفات المطلوبة
             let humanDoctors: string[] = [];
             let dentists: string[] = [];
             let pharmacists: string[] = [];
             let nurses: string[] = [];
-            let admins: string[] = []; // كتبة/إداريين
+            let admins: string[] = [];
             let physiotherapists: string[] = [];
 
             if (daySchedule && daySchedule.doctors) {
@@ -288,14 +286,16 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                     const emp = employees.find(e => e.id === d.id);
                     if (emp) {
                         const spec = emp.specialty || '';
-                        if (spec.includes('بشري') || spec.includes('طبيب')) humanDoctors.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
-                        else if (spec.includes('أسنان')) dentists.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
-                        else if (spec.includes('صيدل')) pharmacists.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
-                        else if (spec.includes('تمريض') || spec.includes('ممرض')) nurses.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
-                        else if (spec.includes('علاج طبيعي')) physiotherapists.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
-                        else admins.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
+                        const shortName = emp.name.split(' ').slice(0, 2).join(' '); // الاسم ثنائي فقط توفيراً للمساحة
+                        
+                        if (spec.includes('بشري') || spec.includes('طبيب')) humanDoctors.push(shortName);
+                        else if (spec.includes('أسنان')) dentists.push(shortName);
+                        else if (spec.includes('صيدل')) pharmacists.push(shortName);
+                        else if (spec.includes('تمريض') || spec.includes('ممرض')) nurses.push(shortName);
+                        else if (spec.includes('علاج طبيعي')) physiotherapists.push(shortName);
+                        else admins.push(shortName);
                     } else {
-                        humanDoctors.push(d.name); // في حالة كان اسماً فقط وليس مسجلاً
+                        humanDoctors.push(d.name); // للأسماء المكتوبة يدوياً
                     }
                 });
             }
@@ -316,6 +316,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         return matrix;
     };
 
+    // ✅ دالة طباعة الـ A4
     const handlePrint = () => {
         if (!printRef.current) return;
         const printContent = printRef.current.innerHTML;
@@ -323,32 +324,30 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         
         document.body.innerHTML = `
             <div dir="rtl" style="font-family: 'Tajawal', sans-serif; padding: 20px;">
-                <h1 style="text-align: center; margin-bottom: 20px; font-weight: bold;">جدول النوبتجية المسائية - شهر ${selectedMonth}</h1>
+                <h2 style="text-align: center; margin-bottom: 20px; font-weight: bold;">جدول النوبتجية المسائية - شهر ${selectedMonth}</h2>
                 ${printContent}
             </div>
         `;
         window.print();
         document.body.innerHTML = originalContent;
-        window.location.reload(); // لإعادة تفاعل React بعد الطباعة
+        window.location.reload(); 
     };
 
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             
-            {/* Header & Controls */}
+            {/* Header & View Toggles */}
             <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
                 <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800">
-                    <CalendarRange className="w-7 h-7 text-indigo-600"/> النوبتجية المسائية
+                    <CalendarRange className="w-7 h-7 text-indigo-600"/> جداول النوبتجية
                 </h2>
-                
-                {/* View Toggles */}
                 <div className="flex items-center bg-gray-100 p-1 rounded-xl">
                     <button onClick={() => setViewMode('daily')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${viewMode === 'daily' ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>
                         إعداد يومي
                     </button>
                     <button onClick={() => { setViewMode('monthly'); refetch(); }} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center gap-2 ${viewMode === 'monthly' ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>
-                        عرض شهري
+                        عرض شهري / طباعة
                     </button>
                 </div>
             </div>
@@ -366,7 +365,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* لوحة التحكم */}
+                        {/* 1. لوحة الحفظ */}
                         <div className="lg:col-span-1 space-y-6">
                             <div className="bg-white p-6 rounded-[30px] border shadow-sm sticky top-4">
                                 <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
@@ -377,7 +376,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                                         <div className="flex-1">
                                             <Input type="date" label="التاريخ" value={selectedDate} onChange={setSelectedDate} />
                                         </div>
-                                        <button onClick={() => refetch()} className="mt-6 bg-indigo-50 text-indigo-600 px-3 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition-colors flex items-center justify-center">
+                                        <button onClick={() => refetch()} className="mt-6 bg-indigo-50 text-indigo-600 px-3 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition-colors flex items-center justify-center" title="استدعاء بيانات هذا اليوم">
                                             {isFetching ? <Loader2 className="w-5 h-5 animate-spin"/> : <Eye className="w-5 h-5"/>}
                                         </button>
                                     </div>
@@ -417,7 +416,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                             </div>
                         </div>
 
-                        {/* قائمة الموظفين للاختيار */}
+                        {/* 2. قائمة الموظفين للاختيار */}
                         <div className="lg:col-span-2 space-y-4">
                             <div className="bg-gray-50 p-4 rounded-3xl border border-gray-100 grid grid-cols-2 md:grid-cols-4 gap-3 shadow-inner">
                                 <Input label="الاسم" value={fName} onChange={setFName} placeholder="بحث..." />
@@ -459,15 +458,15 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             )}
 
             {/* =======================================================
-                VIEW 2: العرض الشهري (Monthly Matrix)
+                VIEW 2: العرض الشهري والطباعة (Monthly Matrix & Print)
             ======================================================= */}
             {viewMode === 'monthly' && (
                 <div className="space-y-4 animate-in slide-in-from-right duration-300">
                     <div className="bg-white p-4 rounded-3xl border shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
-                            <Input type="month" label="اختر الشهر" value={selectedMonth} onChange={(v) => { setSelectedMonth(v); setTimeout(() => refetch(), 100); }} />
-                            <button onClick={() => refetch()} className="mt-6 bg-indigo-50 text-indigo-600 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors">
-                                {isFetching ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4"/>} عرض
+                            <Input type="month" label="اختر الشهر" value={selectedMonth} onChange={(v) => { setSelectedMonth(v); }} />
+                            <button onClick={() => refetch()} disabled={isFetching} className="mt-6 bg-indigo-50 text-indigo-600 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors disabled:opacity-50">
+                                {isFetching ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4"/>} جلب الشهر
                             </button>
                         </div>
                         <button onClick={handlePrint} className="bg-gray-800 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-900 transition-all shadow-lg active:scale-95">
@@ -480,42 +479,43 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                             <div className="py-20 text-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto"/></div>
                         ) : (
                             <div className="overflow-x-auto print-container" ref={printRef}>
+                                {/* ستايل الطباعة الذي يتم تطبيقه فقط عند ضغط زر الطباعة */}
                                 <style type="text/css" media="print">
                                     {`
                                         @page { size: A4 landscape; margin: 10mm; }
                                         body { -webkit-print-color-adjust: exact; background: white; }
-                                        .print-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-                                        .print-table th, .print-table td { border: 1px solid #000; padding: 6px; text-align: center; }
+                                        .print-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                                        .print-table th, .print-table td { border: 1px solid #000; padding: 8px; text-align: center; }
                                         .print-table th { background-color: #f3f4f6 !important; font-weight: bold; }
-                                        .bg-gray-50 { background-color: #f9fafb !important; }
+                                        .bg-red-50 { background-color: #fee2e2 !important; }
                                     `}
                                 </style>
-                                <table className="print-table w-full text-center whitespace-nowrap">
+                                <table className="print-table w-full text-center whitespace-nowrap min-w-[900px]">
                                     <thead>
-                                        <tr>
-                                            <th className="w-10">اليوم</th>
-                                            <th className="w-24">التاريخ</th>
-                                            <th>طبيب بشري</th>
-                                            <th>صيدلي</th>
-                                            <th>طبيب أسنان</th>
-                                            <th>علاج طبيعي</th>
-                                            <th>تمريض</th>
-                                            <th>إداري/كاتب</th>
-                                            <th>ملاحظات</th>
+                                        <tr className="bg-gray-100 text-gray-700">
+                                            <th className="p-3">اليوم</th>
+                                            <th className="p-3">التاريخ</th>
+                                            <th className="p-3">طبيب بشري</th>
+                                            <th className="p-3">طبيب أسنان</th>
+                                            <th className="p-3">صيدلة</th>
+                                            <th className="p-3">علاج طبيعي</th>
+                                            <th className="p-3">تمريض</th>
+                                            <th className="p-3">إداري/كاتب</th>
+                                            <th className="p-3">ملاحظات</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {getMonthlyMatrix().map((day) => (
-                                            <tr key={day.date} className={day.dayName === 'الجمعة' ? 'bg-red-50 text-red-900 font-bold' : 'hover:bg-gray-50'}>
-                                                <td className="font-bold">{day.dayName.replace('ال', '')}</td>
-                                                <td className="font-mono text-xs">{day.date}</td>
-                                                <td className="text-blue-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.humanDoctors || '-'}</td>
-                                                <td className="text-emerald-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.pharmacists || '-'}</td>
-                                                <td className="text-purple-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.dentists || '-'}</td>
-                                                <td className="text-orange-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.physiotherapists || '-'}</td>
-                                                <td className="text-rose-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.nurses || '-'}</td>
-                                                <td className="text-gray-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.admins || '-'}</td>
-                                                <td className="text-xs text-gray-500 whitespace-normal max-w-[100px]">{day.notes || '-'}</td>
+                                            <tr key={day.date} className={`border-t border-gray-100 ${day.dayName === 'الجمعة' ? 'bg-red-50/50 text-red-900 font-bold' : 'hover:bg-gray-50'}`}>
+                                                <td className="p-2 font-bold">{day.dayName.replace('ال', '')}</td>
+                                                <td className="p-2 font-mono text-xs">{day.date}</td>
+                                                <td className="p-2 text-blue-700 font-bold text-xs whitespace-normal">{day.humanDoctors || '-'}</td>
+                                                <td className="p-2 text-purple-700 font-bold text-xs whitespace-normal">{day.dentists || '-'}</td>
+                                                <td className="p-2 text-emerald-700 font-bold text-xs whitespace-normal">{day.pharmacists || '-'}</td>
+                                                <td className="p-2 text-orange-700 font-bold text-xs whitespace-normal">{day.physiotherapists || '-'}</td>
+                                                <td className="p-2 text-rose-700 font-bold text-xs whitespace-normal">{day.nurses || '-'}</td>
+                                                <td className="p-2 text-gray-700 font-bold text-xs whitespace-normal">{day.admins || '-'}</td>
+                                                <td className="p-2 text-xs text-gray-500 whitespace-normal">{day.notes || '-'}</td>
                                             </tr>
                                         ))}
                                     </tbody>
