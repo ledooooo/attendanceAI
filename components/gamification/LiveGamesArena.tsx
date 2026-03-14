@@ -12,6 +12,7 @@ import {
 import Connect4Game from './games/Connect4Game';
 import XOGame from './games/XOGame';
 import StopTheBusGame from './games/StopTheBusGame';
+import ChessGame from './games/ChessGame';
 
 // ─── Beautiful Avatars ────────────────────────────────────────────────────────
 // Each avatar has: emoji, gradient bg, label
@@ -42,6 +43,7 @@ const ALIASES = [
 const GAME_TYPES = [
     { key: 'xo',         label: 'XO',               icon: '✕⭕',  desc: 'إكس أو الكلاسيكية',  color: 'from-indigo-500 to-violet-600', minPlayers: 2, maxPlayers: 2  },
     { key: 'connect4',   label: 'Connect 4',         icon: '🔴🟡', desc: 'أربعة في صف',        color: 'from-blue-500 to-cyan-600',    minPlayers: 2, maxPlayers: 2  },
+    { key: 'chess',      label: 'شطرنج',             icon: '♟️',   desc: 'شطرنج كلاسيكي',      color: 'from-amber-500 to-orange-600', minPlayers: 2, maxPlayers: 2  },
     { key: 'stopthebus', label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',   color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
 ];
 
@@ -207,7 +209,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
     const [matches, setMatches] = useState<any[]>([]);
     const [currentMatch, setCurrentMatch] = useState<any>(null);
-    const [view, setView] = useState<'lobby' | 'game_select' | 'identity_setup' | 'playing'>('lobby');
+    const [view, setView] = useState<'lobby' | 'game_select' | 'identity_setup' | 'playing' | 'leaderboard'>('lobby');
 
     const [selectedGameType, setSelectedGameType] = useState<string>('xo');
     const [useAlias, setUseAlias] = useState(false);
@@ -215,6 +217,8 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
     const [joiningMatchId, setJoiningMatchId] = useState<string | null>(null);
     const [joiningGameType, setJoiningGameType] = useState<string>('xo');
     const [loading, setLoading] = useState(false);
+    const [leaderboard, setLeaderboard] = useState<any[]>([]);
+    const [myStats, setMyStats] = useState<any>(null);
 
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
     const [autoDeleteTimeLeft, setAutoDeleteTimeLeft] = useState<number | null>(null);
@@ -303,6 +307,45 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         confetti({ particleCount: 200, spread: 100, zIndex: 9999 });
     };
 
+    const recordResult = async (result: 'win' | 'loss' | 'draw', game: string, opponentName: string) => {
+        await supabase.from('live_game_results').insert({
+            employee_id: employee.employee_id,
+            employee_name: employee.name,
+            game_type: game,
+            result,
+            opponent_name: opponentName,
+            played_at: new Date().toISOString(),
+        });
+    };
+
+    const fetchLeaderboard = async () => {
+        // Top players by wins
+        const { data } = await supabase
+            .from('live_game_results')
+            .select('employee_id, employee_name, result, game_type')
+            .order('played_at', { ascending: false })
+            .limit(500);
+
+        if (!data) return;
+
+        // Aggregate stats per player
+        const stats: Record<string, { name: string; wins: number; losses: number; draws: number; games: number }> = {};
+        for (const r of data) {
+            if (!stats[r.employee_id]) stats[r.employee_id] = { name: r.employee_name, wins: 0, losses: 0, draws: 0, games: 0 };
+            stats[r.employee_id].games++;
+            if (r.result === 'win')  stats[r.employee_id].wins++;
+            if (r.result === 'loss') stats[r.employee_id].losses++;
+            if (r.result === 'draw') stats[r.employee_id].draws++;
+        }
+
+        const sorted = Object.entries(stats)
+            .map(([id, s]) => ({ id, ...s, winRate: s.games > 0 ? Math.round(s.wins / s.games * 100) : 0 }))
+            .sort((a, b) => b.wins - a.wins || b.winRate - a.winRate);
+
+        setLeaderboard(sorted);
+        setMyStats(sorted.find(s => s.id === employee.employee_id) ?? null);
+    };
+
     // ── Player info ──
     const getMyPlayerInfo = () => {
         if (useAlias) {
@@ -312,7 +355,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                 avatar: selectedAlias.emoji,
                 avatarBg: selectedAlias.bg,
                 isAlias: true,
-                symbol: selectedGameType === 'xo' ? 'X' : selectedGameType === 'connect4' ? 'R' : undefined,
+                symbol: selectedGameType === 'xo' ? 'X' : selectedGameType === 'connect4' ? 'R' : selectedGameType === 'chess' ? '♔' : undefined,
             };
         }
         const styleIdx = employee.employee_id.charCodeAt(0) % AVATAR_STYLES.length;
@@ -322,7 +365,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             avatar: employee.photo_url || '👤',
             avatarBg: AVATAR_STYLES[styleIdx].bg,
             isAlias: false,
-            symbol: selectedGameType === 'xo' ? 'X' : selectedGameType === 'connect4' ? 'R' : undefined,
+            symbol: selectedGameType === 'xo' ? 'X' : selectedGameType === 'connect4' ? 'R' : selectedGameType === 'chess' ? '♔' : undefined,
         };
     };
 
@@ -334,6 +377,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         let initialState: any = {};
         if (selectedGameType === 'xo')           initialState = { board: Array(9).fill(null), current_turn: player.id };
         else if (selectedGameType === 'connect4') initialState = { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: player.id };
+        else if (selectedGameType === 'chess')    initialState = {}; // ChessGame builds its own initial state
         else if (selectedGameType === 'stopthebus') initialState = { letter: '', startedAt: 0, allAnswers: [], voteRound: 1 };
 
         const { data, error } = await supabase.from('live_matches').insert({
@@ -355,7 +399,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         const playerInfo = getMyPlayerInfo();
         const player = {
             ...playerInfo,
-            symbol: match.game_type === 'xo' ? 'O' : match.game_type === 'connect4' ? 'Y' : undefined,
+            symbol: match.game_type === 'xo' ? 'O' : match.game_type === 'connect4' ? 'Y' : match.game_type === 'chess' ? '♚' : undefined,
         };
 
         const newStatus = match.game_type === 'stopthebus' ? 'waiting' : 'playing';
@@ -450,9 +494,15 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
                     {/* Waiting rooms */}
                     <div>
-                        <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2 text-sm">
-                            <Users className="w-4 h-4 text-indigo-500"/> غرف الانتظار ({matches.length})
-                        </h4>
+                        <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-bold text-gray-700 flex items-center gap-2 text-sm">
+                                <Users className="w-4 h-4 text-indigo-500"/> غرف الانتظار ({matches.length})
+                            </h4>
+                            <button onClick={() => { setView('leaderboard'); fetchLeaderboard(); }}
+                                className="flex items-center gap-1.5 text-xs font-black text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl hover:bg-amber-100 transition-all">
+                                <Trophy className="w-3.5 h-3.5"/> لوحة النتائج
+                            </button>
+                        </div>
                         {matches.length === 0 ? (
                             <div className="text-center py-8 bg-white rounded-2xl border-2 border-dashed border-gray-200">
                                 <Clock className="w-10 h-10 text-gray-300 mx-auto mb-2"/>
@@ -663,11 +713,94 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                             <Connect4Game match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
 
+                        {/* ── CHESS ── */}
+                        {currentMatch.game_type === 'chess' && (
+                            <ChessGame
+                                match={currentMatch}
+                                employee={employee}
+                                onExit={exitMatch}
+                                grantPoints={grantPoints}
+                                recordResult={recordResult}
+                            />
+                        )}
+
                         {/* ── STOP THE BUS ── */}
                         {currentMatch.game_type === 'stopthebus' && (
                             <StopTheBusGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
                     </div>
+                </div>
+            )}
+
+            {/* ── LEADERBOARD ── */}
+            {view === 'leaderboard' && (
+                <div className="p-3 flex-1 space-y-3">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setView('lobby')} className="p-2 bg-gray-100 rounded-xl hover:bg-gray-200 transition-all">
+                            <X className="w-4 h-4 text-gray-600"/>
+                        </button>
+                        <div>
+                            <h3 className="text-lg font-black text-gray-800">لوحة النتائج 🏆</h3>
+                            <p className="text-xs text-gray-400 font-bold">إجمالي نتائج الألعاب المباشرة</p>
+                        </div>
+                    </div>
+
+                    {myStats && (
+                        <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white rounded-2xl p-4 shadow-lg">
+                            <p className="text-indigo-200 text-xs font-bold mb-1">إحصائياتك</p>
+                            <p className="text-xl font-black mb-3">{myStats.name}</p>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[
+                                    { label: 'انتصار', val: myStats.wins,   color: 'bg-green-400/30'  },
+                                    { label: 'خسارة',  val: myStats.losses, color: 'bg-red-400/30'    },
+                                    { label: 'تعادل',  val: myStats.draws,  color: 'bg-blue-400/30'   },
+                                    { label: 'نسبة%',  val: `${myStats.winRate}%`, color: 'bg-yellow-400/30' },
+                                ].map(s => (
+                                    <div key={s.label} className={`${s.color} rounded-xl p-2 text-center`}>
+                                        <p className="text-lg font-black">{s.val}</p>
+                                        <p className="text-[10px] font-bold text-indigo-100">{s.label}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {leaderboard.length === 0 ? (
+                        <div className="text-center py-10 bg-white rounded-2xl border-2 border-dashed border-gray-200">
+                            <Trophy className="w-12 h-12 text-gray-200 mx-auto mb-2"/>
+                            <p className="text-gray-400 font-bold text-sm">لا توجد نتائج بعد</p>
+                            <p className="text-gray-300 text-xs mt-1">العب أول مباراة لتظهر هنا!</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {leaderboard.slice(0, 20).map((player, idx) => {
+                                const isMe = player.id === employee.employee_id;
+                                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                                return (
+                                    <div key={player.id} className={`bg-white rounded-xl border-2 p-3 flex items-center gap-3 transition-all ${
+                                        isMe ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-100'
+                                    }`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${
+                                            idx < 3 ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-500'
+                                        }`}>
+                                            {medal ?? <span className="text-xs">#{idx+1}</span>}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-sm font-black truncate ${isMe ? 'text-indigo-700' : 'text-gray-800'}`}>
+                                                {player.name} {isMe && '(أنت)'}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400 font-bold">{player.games} مباراة</p>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <span className="text-xs font-black text-green-600 bg-green-50 px-2 py-0.5 rounded-full">{player.wins}✓</span>
+                                            <span className="text-xs font-black text-red-500 bg-red-50 px-2 py-0.5 rounded-full">{player.losses}✗</span>
+                                            <span className="text-xs font-black text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{player.winRate}%</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
         </div>
