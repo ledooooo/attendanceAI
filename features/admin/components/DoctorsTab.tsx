@@ -48,7 +48,6 @@ const formatLastSeen = (dateString: string | null) => {
     return <span className="text-gray-400 text-[10px] font-mono">{date.toLocaleDateString('ar-EG')}</span>;
 };
 
-// 🛠️ دالة مساعدة لتنظيف التواريخ وتجنب أخطاء قاعدة البيانات
 const cleanDate = (dateStr: string | undefined | null) => {
     return (dateStr && dateStr.trim() !== '') ? dateStr : null;
 };
@@ -56,22 +55,19 @@ const cleanDate = (dateStr: string | undefined | null) => {
 export default function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
     const queryClient = useQueryClient();
 
-    // UI State
     const [fName, setFName] = useState('');
     const [fId, setFId] = useState('');
     const [fSpec, setFSpec] = useState('all');
-    const [fStatus, setFStatus] = useState('نشط'); // ✅ جعل الحالة الافتراضية "نشط"
+    const [fStatus, setFStatus] = useState('نشط');
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'employee_id' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
     const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
     const [detailTab, setDetailTab] = useState('profile');
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
-    // Form State
     const [showModal, setShowModal] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false);
 
-    // Reward State
     const [showRewardModal, setShowRewardModal] = useState(false);
     const [rewardData, setRewardData] = useState({ empId: '', empName: '', amount: 10, reason: '' });
     
@@ -93,7 +89,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     };
     const [formData, setFormData] = useState(initialFormState);
 
-    // ✅ استعلام جديد لجلب إحصائيات اليوم (الحضور والطلبات والـ OVR)
     const todayStr = new Date().toISOString().split('T')[0];
     const { data: dashboardStats } = useQuery({
         queryKey: ['admin_dashboard_summary', todayStr],
@@ -101,7 +96,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             const [attRes, reqRes, ovrRes] = await Promise.all([
                 supabase.from('attendance').select('employee_id').eq('date', todayStr).in('status', ['حضور', 'مأمورية', 'إذن']),
                 supabase.from('leave_requests').select('id, employee_name, type, created_at').eq('status', 'معلق').limit(5),
-                // استخدام try-catch للـ OVR في حال كان اسم الجدول مختلفاً
                 supabase.from('quality_reports').select('id, incident_type, severity').eq('status', 'مفتوح').limit(5)
                     .catch(() => ({ data: [] })) 
             ]);
@@ -113,7 +107,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         }
     });
 
-    // 1. Fetch Data for Selected Employee
     const { data: empData = { attendance: [], requests: [], evals: [], messages: [] }, isLoading: loadingDetails } = useQuery({
         queryKey: ['employee_full_details', selectedEmp?.employee_id],
         queryFn: async () => {
@@ -129,7 +122,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         enabled: !!selectedEmp,
     });
 
-    // 2. Mutations
     const givePointsMutation = useMutation({
         mutationFn: async () => {
             if (!rewardData.reason) throw new Error("يجب كتابة سبب المكافأة");
@@ -155,7 +147,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         mutationFn: async (data: any) => {
             const hasStatsPermission = (data.permissions || []).includes('statistics_manager');
 
-            // ✅ تنظيف التواريخ لتجنب أخطاء الداتا بيز
             const payload = {
                 ...data,
                 center_id: centerId,
@@ -217,7 +208,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         },
     });
 
-    // 3. Logic & Handlers
     const handleFormSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         saveMutation.mutate(formData);
@@ -227,6 +217,34 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         let direction: 'asc' | 'desc' = 'asc';
         if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
         setSortConfig({ key, direction });
+    };
+
+    // ✅ دالة التصدير المفقودة
+    const handleExportEmployees = () => {
+        if (employees.length === 0) {
+            toast.error("لا توجد بيانات لتصديرها");
+            return;
+        }
+        
+        // تجهيز البيانات لملف الإكسيل (تنظيف البيانات ليكون الملف مقروء)
+        const exportData = employees.map(emp => ({
+            "الكود": emp.employee_id,
+            "الاسم": emp.name,
+            "الرقم القومي": emp.national_id || '',
+            "التخصص": emp.specialty || '',
+            "رقم الهاتف": emp.phone || '',
+            "الحالة": emp.status || 'نشط',
+            "تاريخ التعيين": emp.join_date || '',
+            "رصيد اعتيادي": emp.leave_annual_balance || 0,
+            "متبقي اعتيادي": emp.remaining_annual || 0,
+            "رصيد عارضة": emp.leave_casual_balance || 0,
+            "متبقي عارضة": emp.remaining_casual || 0,
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Employees");
+        XLSX.writeFile(wb, `بيانات_الموظفين_${new Date().toLocaleDateString('ar-EG')}.xlsx`);
     };
 
     const sortedEmployees = useMemo(() => {
@@ -247,7 +265,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         return filtered;
     }, [employees, fName, fId, fSpec, fStatus, sortConfig]);
 
-    // ✅ حساب إحصائيات التخصصات (للقوة الفعلية النشطة فقط)
     const specialtyStats = useMemo(() => {
         const activeEmps = employees.filter(e => e.status === 'نشط');
         const presentIds = dashboardStats?.presentIds || [];
@@ -259,7 +276,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             return acc;
         }, {} as Record<string, { total: number, present: number }>);
 
-        // تحويلها لمصفوفة للترتيب والعرض
         return Object.entries(stats).map(([name, data]) => ({
             name,
             total: data.total,
@@ -267,7 +283,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             absent: data.total - data.present
         })).sort((a, b) => b.total - a.total);
     }, [employees, dashboardStats]);
-
 
     const handleOpenAdd = () => {
         setFormData(initialFormState);
@@ -322,7 +337,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         if (!enabled) setFormData({ ...formData, part_time_start_date: '', part_time_end_date: '' });
     };
 
-    // --- View ---
     if (selectedEmp) {
         return (
             <div className="space-y-6 animate-in slide-in-from-left duration-300">
@@ -381,7 +395,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             
-            {/* 🚀 قسم الأدوات السريعة (Quick Actions) */}
             <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar hide-scrollbar-mobile">
                 <button onClick={handleOpenAdd} className="shrink-0 flex items-center gap-2 bg-gradient-to-l from-blue-600 to-blue-800 text-white px-5 py-3 rounded-2xl font-bold hover:shadow-lg transition-all active:scale-95">
                     <UserPlus className="w-5 h-5"/> إضافة موظف
@@ -400,10 +413,8 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 </button>
             </div>
 
-            {/* 📊 قسم لوحة المعلومات السريعة (Dashboard Stats) */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
-                {/* قائمة القوة الفعلية بالتخصص */}
                 <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
                     <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-50">
                         <h3 className="font-black text-gray-800 flex items-center gap-2"><Stethoscope className="text-blue-600 w-5 h-5"/> القوة الفعلية (النشطة) لليوم</h3>
@@ -423,7 +434,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                     </div>
                 </div>
 
-                {/* قائمة الطلبات والمهام المعلقة */}
                 <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 flex flex-col gap-4">
                     <div>
                         <h3 className="font-black text-gray-800 flex items-center gap-2 mb-3"><FilePlus className="text-orange-500 w-4 h-4"/> طلبات معلقة ({dashboardStats?.pendingRequests?.length || 0})</h3>
@@ -462,15 +472,15 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
             </div>
 
-            {/* 🔍 أدوات البحث والجدول */}
             <div className="flex flex-col md:flex-row justify-between items-center border-t border-gray-200 pt-6 gap-4 mt-6">
                 <h2 className="text-xl font-black flex items-center gap-2 text-gray-800"><Users className="w-6 h-6 text-blue-600"/> إدارة وتعديل الموظفين</h2>
                 <div className="flex gap-2">
                     <button onClick={() => { if(confirm('تأكيد المزامنة؟')) syncMutation.mutate(); }} disabled={syncMutation.isPending} className="bg-white text-blue-600 border border-blue-200 px-4 py-2 rounded-xl font-bold hover:bg-blue-50 transition-all text-sm flex items-center gap-2">
                         <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? 'animate-spin' : ''}`}/> مزامنة الأرصدة
                     </button>
+                    {/* ✅ إعادة تفعيل زر تصدير الإكسيل بنجاح */}
                     <button onClick={handleExportEmployees} className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-100 transition-all text-sm">
-                        <FileSpreadsheet className="w-4 h-4"/> تصدير
+                        <FileSpreadsheet className="w-4 h-4"/> تصدير Excel
                     </button>
                 </div>
             </div>
@@ -546,7 +556,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 </table>
             </div>
 
-            {/* ✅ Modal for Rewards */}
             {showRewardModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm overflow-hidden zoom-in-95">
@@ -575,7 +584,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 </div>
             )}
 
-            {/* Modal for Add/Edit Employee */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 my-8">
