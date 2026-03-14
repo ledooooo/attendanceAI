@@ -9,7 +9,7 @@ import {
     Download, Users, ArrowRight, User, Clock, FileText, 
     Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, 
     RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby, Timer, Info, Syringe, ShieldCheck, Mail,
-    Gift // ✅ 1. استيراد أيقونة الهدية
+    Gift, Gamepad2, AlertTriangle, FilePlus, Stethoscope, ClipboardList
 } from 'lucide-react';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -24,7 +24,6 @@ import StaffMessages from '../../staff/components/StaffMessages';
 
 const DAYS_OPTIONS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"];
 
-// ✅ تم إضافة صلاحية "إحصائيات العمل" هنا
 const AVAILABLE_PERMISSIONS = [
     { id: 'vaccinations', label: 'إدارة التطعيمات' },
     { id: 'attendance', label: 'إدارة البصمة والحضور' },
@@ -34,7 +33,7 @@ const AVAILABLE_PERMISSIONS = [
     { id: 'quality', label: 'إدارة الجودة (OVR)' },
     { id: 'training_manager', label: 'مسؤول التدريب والتعليم المستمر' },
     { id: 'assets_manager', label: 'مسؤول العهد والأصول' },
-    { id: 'statistics_manager', label: 'مدخل إحصائيات العمل' } // 🆕 صلاحية جديدة للإحصائيات
+    { id: 'statistics_manager', label: 'مدخل إحصائيات العمل' }
 ];
 
 const formatLastSeen = (dateString: string | null) => {
@@ -49,6 +48,11 @@ const formatLastSeen = (dateString: string | null) => {
     return <span className="text-gray-400 text-[10px] font-mono">{date.toLocaleDateString('ar-EG')}</span>;
 };
 
+// 🛠️ دالة مساعدة لتنظيف التواريخ وتجنب أخطاء قاعدة البيانات
+const cleanDate = (dateStr: string | undefined | null) => {
+    return (dateStr && dateStr.trim() !== '') ? dateStr : null;
+};
+
 export default function DoctorsTab({ employees, onRefresh, centerId }: { employees: Employee[], onRefresh: () => void, centerId: string }) {
     const queryClient = useQueryClient();
 
@@ -56,7 +60,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     const [fName, setFName] = useState('');
     const [fId, setFId] = useState('');
     const [fSpec, setFSpec] = useState('all');
-    const [fStatus, setFStatus] = useState('all');
+    const [fStatus, setFStatus] = useState('نشط'); // ✅ جعل الحالة الافتراضية "نشط"
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'employee_id' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
     const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
     const [detailTab, setDetailTab] = useState('profile');
@@ -67,7 +71,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     const [editMode, setEditMode] = useState(false);
     const [isPartTimeEnabled, setIsPartTimeEnabled] = useState(false);
 
-    // ✅ 2. حالة نافذة المكافآت
+    // Reward State
     const [showRewardModal, setShowRewardModal] = useState(false);
     const [rewardData, setRewardData] = useState({ empId: '', empName: '', amount: 10, reason: '' });
     
@@ -84,12 +88,32 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         part_time_start_date: '', part_time_end_date: '',
         address: '', qualification: '', marital_status: '', penalties: '',
         permissions: [], 
-        can_manage_statistics: false, // 🆕 الحقل الجديد للإحصائيات 
+        can_manage_statistics: false, 
         hep_b_dose1: '', hep_b_dose2: '', hep_b_dose3: '', hep_b_notes: '', hep_b_location: ''
     };
     const [formData, setFormData] = useState(initialFormState);
 
-    // 1. Fetch Data
+    // ✅ استعلام جديد لجلب إحصائيات اليوم (الحضور والطلبات والـ OVR)
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { data: dashboardStats } = useQuery({
+        queryKey: ['admin_dashboard_summary', todayStr],
+        queryFn: async () => {
+            const [attRes, reqRes, ovrRes] = await Promise.all([
+                supabase.from('attendance').select('employee_id').eq('date', todayStr).in('status', ['حضور', 'مأمورية', 'إذن']),
+                supabase.from('leave_requests').select('id, employee_name, type, created_at').eq('status', 'معلق').limit(5),
+                // استخدام try-catch للـ OVR في حال كان اسم الجدول مختلفاً
+                supabase.from('quality_reports').select('id, incident_type, severity').eq('status', 'مفتوح').limit(5)
+                    .catch(() => ({ data: [] })) 
+            ]);
+            return {
+                presentIds: attRes.data?.map(a => a.employee_id) || [],
+                pendingRequests: reqRes.data || [],
+                ovrs: ovrRes?.data || []
+            };
+        }
+    });
+
+    // 1. Fetch Data for Selected Employee
     const { data: empData = { attendance: [], requests: [], evals: [], messages: [] }, isLoading: loadingDetails } = useQuery({
         queryKey: ['employee_full_details', selectedEmp?.employee_id],
         queryFn: async () => {
@@ -100,78 +124,38 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 supabase.from('evaluations').select('*').eq('employee_id', selectedEmp.employee_id).order('month', { ascending: false }),
                 supabase.from('messages').select('*').or(`to_user.eq.${selectedEmp.employee_id},to_user.eq.all`).order('created_at', { ascending: false })
             ]);
-            
-            return { 
-                attendance: att.data || [], 
-                requests: req.data || [], 
-                evals: evl.data || [], 
-                messages: msg.data || [] 
-            };
+            return { attendance: att.data || [], requests: req.data || [], evals: evl.data || [], messages: msg.data || [] };
         },
         enabled: !!selectedEmp,
-        staleTime: 1000 * 60 * 2,
     });
 
     // 2. Mutations
-    
-// ✅ 3. دالة منح النقاط (نسخة مطورة بالإشعارات اللحظية)
     const givePointsMutation = useMutation({
         mutationFn: async () => {
             if (!rewardData.reason) throw new Error("يجب كتابة سبب المكافأة");
-            
-            // أ) زيادة النقاط في قاعدة البيانات
-            const { error: rpcError } = await supabase.rpc('increment_points', { 
-                emp_id: rewardData.empId, 
-                amount: rewardData.amount 
-            });
+            const { error: rpcError } = await supabase.rpc('increment_points', { emp_id: rewardData.empId, amount: rewardData.amount });
             if (rpcError) throw rpcError;
-
-            // ب) تسجيل العملية في سجل النقاط
-            await supabase.from('points_ledger').insert({
-                employee_id: rewardData.empId,
-                points: rewardData.amount,
-                reason: `مكافأة إدارية: ${rewardData.reason}`
-            });
-
-            // ج) إرسال الإشعارات
-            const notifTitle = '🎉 مكافأة جديدة!';
+            
+            await supabase.from('points_ledger').insert({ employee_id: rewardData.empId, points: rewardData.amount, reason: `مكافأة إدارية: ${rewardData.reason}` });
+            
             const notifMsg = `تم منحك ${rewardData.amount} نقطة من الإدارة. السبب: ${rewardData.reason}`;
-
-            // 1. الحفظ في جدول notifications
-            await supabase.from('notifications').insert({
-                user_id: String(rewardData.empId),
-                title: notifTitle,
-                message: notifMsg,
-                type: 'reward',
-                sender_name: 'الإدارة',
-                is_read: false
-            });
-
-            // ✅ 2. إرسال Push Notification لحظي لهاتف الموظف
-            supabase.functions.invoke('send-push-notification', {
-                body: { 
-                    userId: String(rewardData.empId), 
-                    title: notifTitle, 
-                    body: notifMsg, 
-                    url: '/staff?tab=store' // توجيه الموظف لمتجر الجوائز لرؤية رصيده
-                }
-            }).catch(err => console.error("Push Reward Error:", err));
+            await supabase.from('notifications').insert({ user_id: String(rewardData.empId), title: '🎉 مكافأة جديدة!', message: notifMsg, type: 'reward', sender_name: 'الإدارة' });
+            
+            supabase.functions.invoke('send-push-notification', { body: { userId: String(rewardData.empId), title: '🎉 مكافأة جديدة!', body: notifMsg, url: '/staff?tab=store' } }).catch(e=>e);
         },
         onSuccess: () => {
-            toast.success(`تم منح ${rewardData.amount} نقطة للموظف ${rewardData.empName} بنجاح 🎁`);
+            toast.success(`تم منح النقاط للموظف بنجاح 🎁`);
             setShowRewardModal(false);
-            setRewardData({ empId: '', empName: '', amount: 10, reason: '' });
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
         },
         onError: (err: any) => toast.error(err.message)
     });
 
-    
     const saveMutation = useMutation({
         mutationFn: async (data: any) => {
-            // التحقق من تفعيل صلاحية الإحصائيات إذا تم اختيارها من المصفوفة
             const hasStatsPermission = (data.permissions || []).includes('statistics_manager');
 
+            // ✅ تنظيف التواريخ لتجنب أخطاء الداتا بيز
             const payload = {
                 ...data,
                 center_id: centerId,
@@ -180,13 +164,17 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 remaining_annual: Number(data.remaining_annual),
                 remaining_casual: Number(data.remaining_casual),
                 total_absence: Number(data.total_absence),
-                part_time_start_date: isPartTimeEnabled ? data.part_time_start_date : null,
-                part_time_end_date: isPartTimeEnabled ? data.part_time_end_date : null,
-                hep_b_dose1: data.hep_b_dose1 || null,
-                hep_b_dose2: data.hep_b_dose2 || null,
-                hep_b_dose3: data.hep_b_dose3 || null,
+                join_date: cleanDate(data.join_date),
+                resignation_date: cleanDate(data.resignation_date),
+                nursing_start_date: cleanDate(data.nursing_start_date),
+                nursing_end_date: cleanDate(data.nursing_end_date),
+                part_time_start_date: isPartTimeEnabled ? cleanDate(data.part_time_start_date) : null,
+                part_time_end_date: isPartTimeEnabled ? cleanDate(data.part_time_end_date) : null,
+                hep_b_dose1: cleanDate(data.hep_b_dose1),
+                hep_b_dose2: cleanDate(data.hep_b_dose2),
+                hep_b_dose3: cleanDate(data.hep_b_dose3),
                 permissions: data.permissions || [], 
-                can_manage_statistics: hasStatsPermission // 🆕 ربط الحقل بصلاحية المصفوفة
+                can_manage_statistics: hasStatsPermission
             };
 
             if (editMode && data.id) {
@@ -199,7 +187,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             }
         },
         onSuccess: () => {
-            toast.success(editMode ? 'تم تعديل البيانات بنجاح' : 'تم إضافة الموظف بنجاح');
+            toast.success(editMode ? 'تم التعديل بنجاح' : 'تم الإضافة بنجاح');
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
             setShowModal(false);
             onRefresh();
@@ -216,7 +204,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             toast.success('تم تحديث الحالة');
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
         },
-        onError: () => toast.error('فشل تحديث الحالة')
     });
 
     const syncMutation = useMutation({
@@ -225,13 +212,12 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             if (error) throw error;
         },
         onSuccess: () => {
-            toast.success('تمت مزامنة الأرصدة بنجاح');
+            toast.success('تمت المزامنة بنجاح');
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
         },
-        onError: (err: any) => toast.error(err.message)
     });
 
-    // 3. UI Logic
+    // 3. Logic & Handlers
     const handleFormSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         saveMutation.mutate(formData);
@@ -261,6 +247,28 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         return filtered;
     }, [employees, fName, fId, fSpec, fStatus, sortConfig]);
 
+    // ✅ حساب إحصائيات التخصصات (للقوة الفعلية النشطة فقط)
+    const specialtyStats = useMemo(() => {
+        const activeEmps = employees.filter(e => e.status === 'نشط');
+        const presentIds = dashboardStats?.presentIds || [];
+        
+        const stats = activeEmps.reduce((acc, emp) => {
+            if (!acc[emp.specialty]) acc[emp.specialty] = { total: 0, present: 0 };
+            acc[emp.specialty].total += 1;
+            if (presentIds.includes(emp.employee_id)) acc[emp.specialty].present += 1;
+            return acc;
+        }, {} as Record<string, { total: number, present: number }>);
+
+        // تحويلها لمصفوفة للترتيب والعرض
+        return Object.entries(stats).map(([name, data]) => ({
+            name,
+            total: data.total,
+            present: data.present,
+            absent: data.total - data.present
+        })).sort((a, b) => b.total - a.total);
+    }, [employees, dashboardStats]);
+
+
     const handleOpenAdd = () => {
         setFormData(initialFormState);
         setEditMode(false);
@@ -269,7 +277,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     };
 
     const handleOpenEdit = (emp: Employee) => {
-        // إذا كان يمتلك صلاحية الإحصائيات ولم تكن مضافة للمصفوفة، أضفها ليظهر الصندوق مفعل
         let currentPermissions = emp.permissions || [];
         if (emp.can_manage_statistics && !currentPermissions.includes('statistics_manager')) {
             currentPermissions = [...currentPermissions, 'statistics_manager'];
@@ -287,7 +294,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         setShowModal(true);
     };
 
-    // ✅ دالة فتح نافذة المكافآت
     const handleOpenReward = (emp: Employee) => {
         setRewardData({ empId: emp.employee_id, empName: emp.name, amount: 10, reason: '' });
         setShowRewardModal(true);
@@ -313,19 +319,8 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
     const togglePartTime = (enabled: boolean) => {
         setIsPartTimeEnabled(enabled);
-        if (!enabled) {
-            setFormData({ ...formData, part_time_start_date: '', part_time_end_date: '' });
-        }
+        if (!enabled) setFormData({ ...formData, part_time_start_date: '', part_time_end_date: '' });
     };
-
-    const handleExportEmployees = async () => {
-        const ws = XLSX.utils.json_to_sheet(employees);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "All_Employees");
-        XLSX.writeFile(wb, `Employees_${new Date().toISOString().split('T')[0]}.xlsx`);
-    };
-    const handleDownloadSample = () => {}; 
-    const handleExcelImport = async (data: any[]) => {}; 
 
     // --- View ---
     if (selectedEmp) {
@@ -348,7 +343,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
                 <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                     {[
-                        {id: 'profile', icon: User, label: 'البيانات والتعديل'},
+                        {id: 'profile', icon: User, label: 'البيانات'},
                         {id: 'attendance', icon: Clock, label: 'الحضور'},
                         {id: 'stats', icon: BarChart, label: 'الإحصائيات'},
                         {id: 'requests', icon: FileText, label: 'الطلبات'},
@@ -367,9 +362,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
                 <div className="bg-white p-6 rounded-[30px] border shadow-sm min-h-[500px]">
                     {loadingDetails ? (
-                        <div className="flex items-center justify-center h-40 text-gray-400 gap-2">
-                            <Loader2 className="w-6 h-6 animate-spin" /> جاري تحميل الملف...
-                        </div>
+                        <div className="flex items-center justify-center h-40 text-gray-400 gap-2"><Loader2 className="w-6 h-6 animate-spin" /> جاري تحميل الملف...</div>
                     ) : (
                         <>
                             {detailTab === 'profile' && <StaffProfile employee={selectedEmp} isEditable={true} onUpdate={() => queryClient.invalidateQueries({ queryKey: ['admin_employees'] })} />}
@@ -386,36 +379,103 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     }
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500 relative">
-            <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
-                <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800"><Users className="w-7 h-7 text-blue-600"/> شئون الموظفين</h2>
-                <div className="flex flex-wrap gap-2 justify-center">
+        <div className="space-y-6 animate-in fade-in duration-500">
+            
+            {/* 🚀 قسم الأدوات السريعة (Quick Actions) */}
+            <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar hide-scrollbar-mobile">
+                <button onClick={handleOpenAdd} className="shrink-0 flex items-center gap-2 bg-gradient-to-l from-blue-600 to-blue-800 text-white px-5 py-3 rounded-2xl font-bold hover:shadow-lg transition-all active:scale-95">
+                    <UserPlus className="w-5 h-5"/> إضافة موظف
+                </button>
+                <button onClick={() => toast('سيتم توجيهك لصفحة الألعاب...')} className="shrink-0 flex items-center gap-2 bg-purple-50 text-purple-700 border border-purple-200 px-5 py-3 rounded-2xl font-bold hover:bg-purple-100 transition-all active:scale-95">
+                    <Gamepad2 className="w-5 h-5"/> صالة الألعاب (Arcade)
+                </button>
+                <button onClick={() => toast('سيتم فتح نموذج إضافة OVR...')} className="shrink-0 flex items-center gap-2 bg-red-50 text-red-700 border border-red-200 px-5 py-3 rounded-2xl font-bold hover:bg-red-100 transition-all active:scale-95">
+                    <AlertTriangle className="w-5 h-5"/> بلاغ OVR سريع
+                </button>
+                <button onClick={() => toast('سيتم فتح نموذج إضافة مرور...')} className="shrink-0 flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200 px-5 py-3 rounded-2xl font-bold hover:bg-emerald-100 transition-all active:scale-95">
+                    <ClipboardList className="w-5 h-5"/> تسجيل مرور إداري
+                </button>
+                <button onClick={() => toast('سيتم فتح نافذة إرسال بريد...')} className="shrink-0 flex items-center gap-2 bg-orange-50 text-orange-700 border border-orange-200 px-5 py-3 rounded-2xl font-bold hover:bg-orange-100 transition-all active:scale-95">
+                    <Mail className="w-5 h-5"/> إرسال تعميم (بريد)
+                </button>
+            </div>
+
+            {/* 📊 قسم لوحة المعلومات السريعة (Dashboard Stats) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* قائمة القوة الفعلية بالتخصص */}
+                <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-50">
+                        <h3 className="font-black text-gray-800 flex items-center gap-2"><Stethoscope className="text-blue-600 w-5 h-5"/> القوة الفعلية (النشطة) لليوم</h3>
+                        <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">إجمالي النشطين: {specialtyStats.reduce((a, b) => a + b.total, 0)}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
+                        {specialtyStats.map(stat => (
+                            <div key={stat.name} className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100 hover:border-blue-200 transition-colors">
+                                <span className="font-bold text-gray-700 text-sm truncate max-w-[100px]">{stat.name}</span>
+                                <div className="flex items-center gap-3 text-xs font-bold text-gray-500">
+                                    <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md" title="العدد الإجمالي">كل: {stat.total}</span>
+                                    <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded-md" title="الحضور اليوم">ح: {stat.present}</span>
+                                    {stat.absent > 0 && <span className="text-red-500 bg-red-50 px-2 py-0.5 rounded-md" title="الغياب">غ: {stat.absent}</span>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* قائمة الطلبات والمهام المعلقة */}
+                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 flex flex-col gap-4">
+                    <div>
+                        <h3 className="font-black text-gray-800 flex items-center gap-2 mb-3"><FilePlus className="text-orange-500 w-4 h-4"/> طلبات معلقة ({dashboardStats?.pendingRequests?.length || 0})</h3>
+                        <div className="space-y-2">
+                            {dashboardStats?.pendingRequests?.length === 0 ? (
+                                <p className="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded-lg">لا توجد طلبات معلقة</p>
+                            ) : (
+                                dashboardStats?.pendingRequests?.map((req: any) => (
+                                    <div key={req.id} className="flex justify-between items-center bg-orange-50/50 p-2.5 rounded-lg border border-orange-100 text-xs font-bold">
+                                        <span className="text-gray-700 truncate w-32">{req.employee_name}</span>
+                                        <span className="text-orange-600 bg-white px-2 py-0.5 rounded-md shadow-sm">{req.type}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
                     
-                    <button onClick={handleOpenAdd} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 text-sm">
-                        <UserPlus className="w-4 h-4"/> إضافة موظف
-                    </button>
+                    <div>
+                        <h3 className="font-black text-gray-800 flex items-center gap-2 mb-3"><AlertTriangle className="text-red-500 w-4 h-4"/> بلاغات OVR مفتوحة ({dashboardStats?.ovrs?.length || 0})</h3>
+                        <div className="space-y-2">
+                            {dashboardStats?.ovrs?.length === 0 ? (
+                                <p className="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded-lg">لا توجد بلاغات مفتوحة</p>
+                            ) : (
+                                dashboardStats?.ovrs?.map((ovr: any) => (
+                                    <div key={ovr.id} className="flex justify-between items-center bg-red-50/50 p-2.5 rounded-lg border border-red-100 text-xs font-bold">
+                                        <span className="text-gray-700 truncate w-32">{ovr.incident_type}</span>
+                                        <span className={`px-2 py-0.5 rounded-md shadow-sm ${ovr.severity === 'عالي' || ovr.severity === 'High' ? 'bg-red-600 text-white' : 'bg-white text-red-600'}`}>
+                                            {ovr.severity}
+                                        </span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
 
-                    <button 
-                        onClick={() => { if(confirm('تأكيد المزامنة؟')) syncMutation.mutate(); }} 
-                        disabled={syncMutation.isPending}
-                        className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-100 transition-all shadow-sm text-sm"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? 'animate-spin' : ''}`}/> 
-                        {syncMutation.isPending ? 'جاري الحساب...' : 'مزامنة الأرصدة'}
-                    </button>
+            </div>
 
-                    <button onClick={handleExportEmployees} className="bg-green-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 transition-all shadow-lg shadow-green-200 text-sm">
-                        <FileSpreadsheet className="w-4 h-4"/> تصدير Excel
+            {/* 🔍 أدوات البحث والجدول */}
+            <div className="flex flex-col md:flex-row justify-between items-center border-t border-gray-200 pt-6 gap-4 mt-6">
+                <h2 className="text-xl font-black flex items-center gap-2 text-gray-800"><Users className="w-6 h-6 text-blue-600"/> إدارة وتعديل الموظفين</h2>
+                <div className="flex gap-2">
+                    <button onClick={() => { if(confirm('تأكيد المزامنة؟')) syncMutation.mutate(); }} disabled={syncMutation.isPending} className="bg-white text-blue-600 border border-blue-200 px-4 py-2 rounded-xl font-bold hover:bg-blue-50 transition-all text-sm flex items-center gap-2">
+                        <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? 'animate-spin' : ''}`}/> مزامنة الأرصدة
                     </button>
-
-                    <button onClick={handleDownloadSample} className="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 transition-all text-sm">
-                        <Download className="w-4 h-4"/> نموذج إكسيل
+                    <button onClick={handleExportEmployees} className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-100 transition-all text-sm">
+                        <FileSpreadsheet className="w-4 h-4"/> تصدير
                     </button>
-                    <ExcelUploadButton onData={handleExcelImport} label="رفع ملف إكسيل" />
                 </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-3xl border border-gray-100 shadow-inner">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white p-4 rounded-3xl border border-gray-100 shadow-sm">
                 <Input label="بحث بالاسم" value={fName} onChange={setFName} placeholder="اسم الموظف..." />
                 <Input label="بحث بالكود" value={fId} onChange={setFId} placeholder="كود الموظف..." />
                 <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e=>e.specialty)))]} value={fSpec} onChange={setFSpec} />
@@ -424,17 +484,13 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
             
             <div className="overflow-x-auto border rounded-[30px] bg-white shadow-sm max-h-[600px] overflow-y-auto custom-scrollbar">
                 <table className="w-full text-sm text-right min-w-[800px]">
-                    <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
+                    <thead className="bg-gray-50 font-black border-b sticky top-0 z-10 text-gray-600">
                         <tr>
                             <th className="p-4 text-center cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => handleSort('employee_id')}>
-                                <div className="flex items-center justify-center gap-1">
-                                   الكود {sortConfig.key === 'employee_id' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}
-                                </div>
+                                <div className="flex items-center justify-center gap-1">الكود {sortConfig.key === 'employee_id' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}</div>
                             </th>
                             <th className="p-4 cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => handleSort('name')}>
-                                <div className="flex items-center gap-1">
-                                   الاسم {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}
-                                </div>
+                                <div className="flex items-center gap-1">الاسم {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}</div>
                             </th>
                             <th className="p-4 text-center">التخصص</th>
                             <th className="p-4 text-center">آخر ظهور</th> 
@@ -455,42 +511,26 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     </div>
                                 </td>
                                 <td onClick={() => setSelectedEmp(emp)} className="p-4 text-xs font-bold text-gray-500 text-center cursor-pointer">{emp.specialty}</td>
-                                
-                                <td className="p-4 text-center">
-                                    {formatLastSeen(emp.last_seen || null)}
-                                </td>
-
+                                <td className="p-4 text-center">{formatLastSeen(emp.last_seen || null)}</td>
                                 <td className="p-4 text-center">
                                     <span className={`px-2 py-1 rounded text-xs font-bold ${
                                         emp.role === 'admin' ? 'bg-purple-100 text-purple-700' : 
                                         emp.role === 'head_of_dept' ? 'bg-orange-100 text-orange-700' : 
-                                        emp.role === 'quality_manager' ? 'bg-red-100 text-red-700' :
-                                        'bg-gray-100 text-gray-600'
+                                        emp.role === 'quality_manager' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
                                     }`}>
                                         {emp.role === 'admin' ? 'مدير' : emp.role === 'head_of_dept' ? 'رئيس قسم' : emp.role === 'quality_manager' ? 'مسؤول جودة' : 'مستخدم'}
                                     </span>
                                 </td>
                                 <td className="p-4 text-center flex justify-center gap-2 items-center">
-                                    {/* ✅ زر منح المكافأة */}
-                                    <button onClick={(e) => { e.stopPropagation(); handleOpenReward(emp); }} className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors" title="منح مكافأة">
-                                        <Gift className="w-4 h-4"/>
-                                    </button>
-
-                                    <button onClick={(e) => { e.stopPropagation(); setDetailTab('stats'); setSelectedEmp(emp); }} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors" title="إحصائيات">
-                                        <PieChart className="w-4 h-4"/>
-                                    </button>
-                                    
-                                    <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(emp); }} className="p-1.5 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-100 transition-colors" title="تعديل">
-                                        <Edit className="w-4 h-4"/>
-                                    </button>
-
+                                    <button onClick={(e) => { e.stopPropagation(); handleOpenReward(emp); }} className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors" title="منح مكافأة"><Gift className="w-4 h-4"/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); setDetailTab('stats'); setSelectedEmp(emp); }} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors" title="إحصائيات"><PieChart className="w-4 h-4"/></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleOpenEdit(emp); }} className="p-1.5 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-100 transition-colors" title="تعديل"><Edit className="w-4 h-4"/></button>
                                     <select 
                                         value={emp.status || 'نشط'} 
                                         onChange={(e) => statusMutation.mutate({ id: emp.id, status: e.target.value })}
                                         className={`px-2 py-1.5 rounded-lg text-xs font-black border-2 cursor-pointer outline-none transition-all ${
                                             emp.status === 'نشط' ? 'bg-green-50 border-green-200 text-green-700' :
-                                            emp.status === 'موقوف' ? 'bg-red-50 border-red-200 text-red-700' :
-                                            'bg-gray-50 border-gray-200 text-gray-700'
+                                            emp.status === 'موقوف' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-gray-50 border-gray-200 text-gray-700'
                                         }`}
                                         onClick={(e) => e.stopPropagation()} 
                                     >
@@ -518,29 +558,15 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                         <div className="p-6 space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">عدد النقاط</label>
-                                <input 
-                                    type="number"
-                                    className="w-full p-3 rounded-xl border bg-gray-50 font-bold text-center text-lg focus:border-indigo-500 outline-none"
-                                    value={rewardData.amount}
-                                    onChange={(e) => setRewardData({...rewardData, amount: Number(e.target.value)})}
-                                />
+                                <input type="number" className="w-full p-3 rounded-xl border bg-gray-50 font-bold text-center text-lg focus:border-indigo-500 outline-none" value={rewardData.amount} onChange={(e) => setRewardData({...rewardData, amount: Number(e.target.value)})} />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 mb-1">سبب المكافأة (سيظهر في الإشعار)</label>
-                                <textarea 
-                                    className="w-full p-3 rounded-xl border bg-gray-50 focus:border-indigo-500 outline-none text-sm resize-none h-20"
-                                    value={rewardData.reason}
-                                    onChange={(e) => setRewardData({...rewardData, reason: e.target.value})}
-                                    placeholder="مثال: التميز في العمل، تغطية غياب زميل..."
-                                />
+                                <textarea className="w-full p-3 rounded-xl border bg-gray-50 focus:border-indigo-500 outline-none text-sm resize-none h-20" value={rewardData.reason} onChange={(e) => setRewardData({...rewardData, reason: e.target.value})} placeholder="مثال: التميز في العمل، تغطية غياب زميل..." />
                             </div>
                             <div className="flex gap-3 pt-2">
                                 <button onClick={() => setShowRewardModal(false)} className="flex-1 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100">إلغاء</button>
-                                <button 
-                                    onClick={() => givePointsMutation.mutate()}
-                                    disabled={givePointsMutation.isPending || !rewardData.reason}
-                                    className="flex-1 py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex justify-center gap-2 disabled:opacity-50"
-                                >
+                                <button onClick={() => givePointsMutation.mutate()} disabled={givePointsMutation.isPending || !rewardData.reason} className="flex-1 py-3 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 flex justify-center gap-2 disabled:opacity-50">
                                     {givePointsMutation.isPending ? <Loader2 className="animate-spin w-5 h-5"/> : 'منح النقاط'}
                                 </button>
                             </div>
@@ -556,67 +582,47 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                         <div className="p-6 border-b flex justify-between items-center bg-gray-50">
                             <h3 className="text-xl font-black text-gray-800 flex items-center gap-2">
                                 {editMode ? <Edit className="w-6 h-6 text-yellow-600"/> : <UserPlus className="w-6 h-6 text-blue-600"/>}
-                                {editMode ? 'تعديل بيانات الموظف والصلاحيات' : 'إضافة موظف جديد'}
+                                {editMode ? 'تعديل بيانات الموظف' : 'إضافة موظف جديد'}
                             </h3>
                             <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-red-500 bg-white p-2 rounded-full shadow-sm"><X className="w-5 h-5"/></button>
                         </div>
                         
                         <form onSubmit={handleFormSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto custom-scrollbar">
-                            
-                            {/* 1. Basic Info */}
                             <div className="space-y-4">
                                 <h4 className="text-sm font-bold text-gray-500 border-b pb-2">البيانات الشخصية والوظيفية</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <Input label="الاسم الرباعي" value={formData.name} onChange={v => setFormData({...formData, name: v})} required />
                                     <Input label="كود الموظف (ID)" value={formData.employee_id} onChange={v => setFormData({...formData, employee_id: v})} required />
-                                    
-                                    {/* ✅ إضافة حقل الإيميل هنا */}
-                                    <Input label="البريد الإلكتروني (لتسجيل الدخول)" value={formData.email} onChange={v => setFormData({...formData, email: v})} />
-
+                                    <Input label="البريد الإلكتروني (تسجيل الدخول)" value={formData.email} onChange={v => setFormData({...formData, email: v})} />
                                     <Input label="الرقم القومي" value={formData.national_id} onChange={v => setFormData({...formData, national_id: v})} />
                                     <Input label="رقم الهاتف" value={formData.phone} onChange={v => setFormData({...formData, phone: v})} />
-                                    <Input label="العنوان (جديد)" value={formData.address} onChange={v => setFormData({...formData, address: v})} />
+                                    <Input label="العنوان" value={formData.address} onChange={v => setFormData({...formData, address: v})} />
                                     <Select label="النوع" options={['ذكر', 'أنثى']} value={formData.gender} onChange={v => setFormData({...formData, gender: v})} />
-                                    
-                                    <Select label="الحالة الاجتماعية (جديد)" options={['أعزب', 'متزوج', 'مطلق', 'أرمل']} value={formData.marital_status} onChange={v => setFormData({...formData, marital_status: v})} />
+                                    <Select label="الحالة الاجتماعية" options={['أعزب', 'متزوج', 'مطلق', 'أرمل']} value={formData.marital_status} onChange={v => setFormData({...formData, marital_status: v})} />
                                     <Input label="التخصص" value={formData.specialty} onChange={v => setFormData({...formData, specialty: v})} required />
                                     <Input label="الدرجة الوظيفية" value={formData.grade} onChange={v => setFormData({...formData, grade: v})} />
-                                    <Input label="المؤهل الدراسي (جديد)" value={formData.qualification} onChange={v => setFormData({...formData, qualification: v})} />
-                                    
+                                    <Input label="المؤهل الدراسي" value={formData.qualification} onChange={v => setFormData({...formData, qualification: v})} />
                                     <Input type="date" label="تاريخ التعيين" value={formData.join_date} onChange={v => setFormData({...formData, join_date: v})} />
                                     <Input type="date" label="تاريخ الإخلاء" value={formData.resignation_date} onChange={v => setFormData({...formData, resignation_date: v})} />
                                     <Select label="الحالة" options={['نشط', 'موقوف', 'إجازة', 'خارج المركز']} value={formData.status} onChange={v => setFormData({...formData, status: v})} />
-                                    
                                     <div>
                                         <label className="block text-sm font-bold text-gray-700 mb-1">الصلاحية (Role)</label>
-                                        <select 
-                                            className="w-full p-3 rounded-xl border bg-gray-50 focus:border-blue-500 outline-none font-bold text-gray-700"
-                                            value={formData.role}
-                                            onChange={e => setFormData({...formData, role: e.target.value})}
-                                        >
-                                            <option value="user">مستخدم عادي (User)</option>
-                                            <option value="head_of_dept">رئيس قسم (Head of Dept)</option>
-                                            <option value="quality_manager">مسؤول جودة (Quality Manager)</option>
-                                            <option value="admin">مدير نظام (Admin)</option>
+                                        <select className="w-full p-3 rounded-xl border bg-gray-50 focus:border-blue-500 outline-none font-bold text-gray-700" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
+                                            <option value="user">مستخدم عادي</option>
+                                            <option value="head_of_dept">رئيس قسم</option>
+                                            <option value="quality_manager">مسؤول جودة</option>
+                                            <option value="admin">مدير نظام</option>
                                         </select>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* ... باقي الأقسام كما هي (الصلاحيات، التطعيمات، المواعيد، الأرصدة) ... */}
                             <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
-                                <h4 className="text-sm font-black text-indigo-700 mb-3 flex items-center gap-2">
-                                    <ShieldCheck className="w-4 h-4"/> صلاحيات لوحة الإدارة (Permissions)
-                                </h4>
+                                <h4 className="text-sm font-black text-indigo-700 mb-3 flex items-center gap-2"><ShieldCheck className="w-4 h-4"/> صلاحيات لوحة الإدارة</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     {AVAILABLE_PERMISSIONS.map(perm => (
                                         <label key={perm.id} className="flex items-center gap-2 bg-white p-2 rounded-xl border cursor-pointer hover:border-indigo-300">
-                                            <input 
-                                                type="checkbox" 
-                                                className="w-5 h-5 accent-indigo-600"
-                                                checked={(formData.permissions || []).includes(perm.id)}
-                                                onChange={() => handlePermissionToggle(perm.id)}
-                                            />
+                                            <input type="checkbox" className="w-5 h-5 accent-indigo-600" checked={(formData.permissions || []).includes(perm.id)} onChange={() => handlePermissionToggle(perm.id)} />
                                             <span className="text-sm font-bold text-gray-700">{perm.label}</span>
                                         </label>
                                     ))}
@@ -624,17 +630,11 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                             </div>
 
                             <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
-                                <h4 className="text-sm font-black text-blue-700 mb-3 flex items-center gap-2">
-                                    <Syringe className="w-4 h-4"/> سجل التطعيمات (فيروس B)
-                                </h4>
+                                <h4 className="text-sm font-black text-blue-700 mb-3 flex items-center gap-2"><Syringe className="w-4 h-4"/> سجل التطعيمات (فيروس B)</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <Input type="date" label="الجرعة الأولى" value={formData.hep_b_dose1} onChange={v => setFormData({...formData, hep_b_dose1: v})} />
                                     <Input type="date" label="الجرعة الثانية" value={formData.hep_b_dose2} onChange={v => setFormData({...formData, hep_b_dose2: v})} />
                                     <Input type="date" label="الجرعة الثالثة" value={formData.hep_b_dose3} onChange={v => setFormData({...formData, hep_b_dose3: v})} />
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                                    <Input label="مكان التطعيم" value={formData.hep_b_location} onChange={v => setFormData({...formData, hep_b_location: v})} placeholder="المستشفى/المركز" />
-                                    <Input label="ملاحظات التطعيم" value={formData.hep_b_notes} onChange={v => setFormData({...formData, hep_b_notes: v})} />
                                 </div>
                             </div>
 
@@ -644,48 +644,22 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                     <Input type="time" label="وقت الحضور" value={formData.start_time} onChange={v => setFormData({...formData, start_time: v})} />
                                     <Input type="time" label="وقت الانصراف" value={formData.end_time} onChange={v => setFormData({...formData, end_time: v})} />
                                 </div>
-
                                 <div className={`p-4 rounded-2xl border transition-all ${isPartTimeEnabled ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50 border-gray-100'}`}>
                                     <div className="flex items-center justify-between mb-4">
-                                        <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                                            <Timer className={`w-5 h-5 ${isPartTimeEnabled ? 'text-indigo-600' : 'text-gray-400'}`}/>
-                                            تفعيل نظام العمل الجزئي (أيام محددة)؟
-                                        </label>
-                                        <div className="flex items-center gap-2">
-                                            <input 
-                                                type="checkbox" 
-                                                className="toggle-checkbox w-5 h-5 accent-indigo-600"
-                                                checked={isPartTimeEnabled}
-                                                onChange={(e) => togglePartTime(e.target.checked)}
-                                            />
-                                        </div>
+                                        <label className="text-sm font-bold text-gray-700 flex items-center gap-2"><Timer className={`w-5 h-5 ${isPartTimeEnabled ? 'text-indigo-600' : 'text-gray-400'}`}/> تفعيل نظام العمل الجزئي</label>
+                                        <input type="checkbox" className="w-5 h-5 accent-indigo-600" checked={isPartTimeEnabled} onChange={(e) => togglePartTime(e.target.checked)} />
                                     </div>
-
                                     {isPartTimeEnabled && (
                                         <div className="animate-in fade-in space-y-4">
                                             <div className="grid grid-cols-2 gap-3 bg-white p-3 rounded-xl border border-indigo-100">
                                                 <Input type="date" label="من تاريخ" value={formData.part_time_start_date} onChange={v => setFormData({...formData, part_time_start_date: v})} />
                                                 <Input type="date" label="إلى تاريخ" value={formData.part_time_end_date} onChange={v => setFormData({...formData, part_time_end_date: v})} />
                                             </div>
-                                            
                                             <div>
-                                                <label className="block text-xs font-bold text-indigo-700 mb-2">
-                                                    اختر أيام الحضور (خلال الفترة المحددة فقط):
-                                                </label>
+                                                <label className="block text-xs font-bold text-indigo-700 mb-2">أيام الحضور:</label>
                                                 <div className="flex flex-wrap gap-2">
                                                     {DAYS_OPTIONS.map(day => (
-                                                        <button
-                                                            type="button"
-                                                            key={day}
-                                                            onClick={() => handleDayToggle(day)}
-                                                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-                                                                (formData.work_days || []).includes(day)
-                                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
-                                                                    : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100'
-                                                            }`}
-                                                        >
-                                                            {day}
-                                                        </button>
+                                                        <button type="button" key={day} onClick={() => handleDayToggle(day)} className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${(formData.work_days || []).includes(day) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-500 border-gray-200'}`}>{day}</button>
                                                     ))}
                                                 </div>
                                             </div>
@@ -697,38 +671,28 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                             <div className="space-y-4">
                                 <h4 className="text-sm font-bold text-gray-500 border-b pb-2">الأرصدة والوضع</h4>
                                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                                    <Input type="number" label="رصيد اعتيادي" value={formData.leave_annual_balance} onChange={v => setFormData({...formData, leave_annual_balance: v})} />
-                                    <Input type="number" label="رصيد عارضة" value={formData.leave_casual_balance} onChange={v => setFormData({...formData, leave_casual_balance: v})} />
+                                    <Input type="number" label="اعتيادي" value={formData.leave_annual_balance} onChange={v => setFormData({...formData, leave_annual_balance: v})} />
+                                    <Input type="number" label="عارضة" value={formData.leave_casual_balance} onChange={v => setFormData({...formData, leave_casual_balance: v})} />
                                     <Input type="number" label="متبقي اعتيادي" value={formData.remaining_annual} onChange={v => setFormData({...formData, remaining_annual: v})} />
                                     <Input type="number" label="متبقي عارضة" value={formData.remaining_casual} onChange={v => setFormData({...formData, remaining_casual: v})} />
-                                    <Input type="number" label="إجمالي الغياب" value={formData.total_absence} onChange={v => setFormData({...formData, total_absence: v})} />
+                                    <Input type="number" label="غياب" value={formData.total_absence} onChange={v => setFormData({...formData, total_absence: v})} />
                                 </div>
 
                                 <div className="bg-pink-50 p-4 rounded-xl border border-pink-100">
                                     <div className="flex items-center gap-2 mb-3">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={formData.maternity === 'true'} 
-                                            onChange={e => setFormData({...formData, maternity: e.target.checked ? 'true' : 'false'})}
-                                            className="w-5 h-5 accent-pink-500"
-                                        />
+                                        <input type="checkbox" checked={formData.maternity === 'true'} onChange={e => setFormData({...formData, maternity: e.target.checked ? 'true' : 'false'})} className="w-5 h-5 accent-pink-500" />
                                         <label className="text-sm font-bold text-gray-700">في إجازة وضع / رضاعة</label>
                                     </div>
-
                                     {formData.maternity === 'true' && (
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in">
                                             <Input type="date" label="بداية الرضاعة" value={formData.nursing_start_date} onChange={v => setFormData({...formData, nursing_start_date: v})} />
                                             <Input type="date" label="نهاية الرضاعة" value={formData.nursing_end_date} onChange={v => setFormData({...formData, nursing_end_date: v})} />
                                             <div>
                                                 <label className="block text-xs font-bold text-gray-500 mb-1">وقت الرضاعة</label>
-                                                <select 
-                                                    className="w-full p-3 rounded-xl border bg-white focus:border-pink-500 outline-none text-sm"
-                                                    value={formData.nursing_time}
-                                                    onChange={e => setFormData({...formData, nursing_time: e.target.value})}
-                                                >
-                                                    <option value="">اختر التوقيت...</option>
-                                                    <option value="morning">صباحي (تأخير)</option>
-                                                    <option value="evening">مسائي (انصراف)</option>
+                                                <select className="w-full p-3 rounded-xl border bg-white focus:border-pink-500 outline-none text-sm" value={formData.nursing_time} onChange={e => setFormData({...formData, nursing_time: e.target.value})}>
+                                                    <option value="">اختر...</option>
+                                                    <option value="morning">صباحي</option>
+                                                    <option value="evening">مسائي</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -736,27 +700,9 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                                 </div>
                             </div>
 
-                            <div className="space-y-4">
-                                <h4 className="text-sm font-bold text-gray-500 border-b pb-2">بيانات إضافية</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <Input label="الدورات التدريبية" value={formData.training_courses} onChange={v => setFormData({...formData, training_courses: v})} />
-                                    <Input label="مهام إدارية" value={formData.admin_tasks} onChange={v => setFormData({...formData, admin_tasks: v})} />
-                                    <Input label="رابط الصورة الشخصية" value={formData.photo_url} onChange={v => setFormData({...formData, photo_url: v})} />
-                                    <Input label="الجزاءات" value={formData.penalties} onChange={v => setFormData({...formData, penalties: v})} />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات</label>
-                                    <textarea 
-                                        className="w-full p-3 rounded-xl border bg-gray-50 focus:border-blue-500 outline-none text-sm min-h-[80px]"
-                                        value={formData.notes}
-                                        onChange={e => setFormData({...formData, notes: e.target.value})}
-                                    ></textarea>
-                                </div>
-                            </div>
-
                             <div className="flex gap-3 pt-4 border-t">
-                                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">إلغاء</button>
-                                <button type="submit" disabled={saveMutation.isPending} className="flex-1 py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex justify-center items-center gap-2">
+                                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100">إلغاء</button>
+                                <button type="submit" disabled={saveMutation.isPending} className="flex-1 py-3 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 flex justify-center items-center gap-2">
                                     {saveMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>} 
                                     {saveMutation.isPending ? 'جاري الحفظ...' : (editMode ? 'حفظ التعديلات' : 'إضافة الموظف')}
                                 </button>
