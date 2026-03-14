@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+'use client';
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
@@ -7,9 +9,8 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { 
     CalendarRange, Save, Users, Search, Download, 
-    Trash2, CheckCircle2, AlertCircle, Calendar, Loader2
+    Trash2, CheckCircle2, AlertCircle, Calendar, Loader2, Printer, Eye
 } from 'lucide-react';
-// 1. ✅ استيراد React Query
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface DoctorObj {
@@ -18,7 +19,6 @@ interface DoctorObj {
     code: string;
 }
 
-// دوال مساعدة (خارج المكون)
 const normalizeString = (str: string) => {
     if (!str) return '';
     const englishDigits = str.replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
@@ -43,9 +43,12 @@ const formatDateForDB = (val: any): string | null => {
 
 export default function EveningSchedulesTab({ employees }: { employees: Employee[] }) {
     const queryClient = useQueryClient();
+    const printRef = useRef<HTMLDivElement>(null);
 
     // UI State
+    const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily');
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
     const [selectedDoctors, setSelectedDoctors] = useState<DoctorObj[]>([]);
     const [notes, setNotes] = useState('');
 
@@ -56,52 +59,57 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
     const [fStatus, setFStatus] = useState('نشط');
 
     // ------------------------------------------------------------------
-    // 1. 📥 جلب الجداول (Query)
+    // 1. 📥 جلب الجداول (Query) - معطل افتراضياً لتوفير الاستهلاك
     // ------------------------------------------------------------------
-    const { data: schedules = [], isLoading } = useQuery({
-        queryKey: ['evening_schedules_list'],
+    const { data: schedules = [], isLoading, refetch, isFetching } = useQuery({
+        queryKey: ['evening_schedules_list', selectedMonth],
         queryFn: async () => {
+            const startDate = `${selectedMonth}-01`;
+            const endDate = `${selectedMonth}-31`;
+
             const { data, error } = await supabase
                 .from('evening_schedules')
                 .select('*')
-                .order('date', { ascending: false })
-                .limit(60); // آخر 60 يوم
+                .gte('date', startDate)
+                .lte('date', endDate)
+                .order('date', { ascending: true });
             
             if (error) throw error;
             return data;
         },
-        staleTime: 1000 * 60 * 5, // تحديث كل 5 دقائق
+        enabled: false, // 🚫 منع التحميل التلقائي
+        staleTime: 1000 * 60 * 5,
     });
 
     // ------------------------------------------------------------------
-    // 2. 🔄 مزامنة النموذج مع التاريخ المختار (Effect dependent on Query Data)
+    // 2. 🔄 مزامنة النموذج مع التاريخ المختار
     // ------------------------------------------------------------------
     useEffect(() => {
-        const existing = schedules.find((s: any) => s.date === selectedDate);
-        if (existing) {
-            const mappedDoctors: DoctorObj[] = (existing.doctors || []).map((d: any) => {
-                if (typeof d === 'string') {
-                    const found = employees.find(e => e.name === d || e.employee_id === d);
-                    return found 
-                        ? { id: found.id, name: found.name, code: found.employee_id } 
-                        : { id: 'unknown', name: d, code: '?' };
-                }
-                return d;
-            });
-            
-            setSelectedDoctors(mappedDoctors);
-            setNotes(existing.notes || '');
-        } else {
-            setSelectedDoctors([]);
-            setNotes('');
+        if (viewMode === 'daily') {
+            const existing = schedules.find((s: any) => s.date === selectedDate);
+            if (existing) {
+                const mappedDoctors: DoctorObj[] = (existing.doctors || []).map((d: any) => {
+                    if (typeof d === 'string') {
+                        const found = employees.find(e => e.name === d || e.employee_id === d);
+                        return found 
+                            ? { id: found.id, name: found.name, code: found.employee_id } 
+                            : { id: 'unknown', name: d, code: '?' };
+                    }
+                    return d;
+                });
+                
+                setSelectedDoctors(mappedDoctors);
+                setNotes(existing.notes || '');
+            } else {
+                setSelectedDoctors([]);
+                setNotes('');
+            }
         }
-    }, [selectedDate, schedules, employees]);
+    }, [selectedDate, schedules, employees, viewMode]);
 
     // ------------------------------------------------------------------
     // 3. 🛠️ العمليات (Mutations)
     // ------------------------------------------------------------------
-
-    // أ) حفظ/تحديث جدول فردي
     const saveMutation = useMutation({
         mutationFn: async () => {
             if (!selectedDate) throw new Error("اختر التاريخ");
@@ -113,7 +121,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                 notes: notes
             };
 
-            // التحقق مما إذا كان السجل موجوداً لتحديد ID (للتحديث)
             const existing = schedules.find((s: any) => s.date === selectedDate);
             const finalPayload = existing ? { ...payload, id: existing.id } : payload;
 
@@ -122,12 +129,11 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         },
         onSuccess: () => {
             toast.success("تم حفظ الجدول بنجاح ✅");
-            queryClient.invalidateQueries({ queryKey: ['evening_schedules_list'] });
+            refetch(); // إعادة جلب البيانات للشهر الحالي
         },
         onError: (err: any) => toast.error(err.message)
     });
 
-    // ب) حذف جدول
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
             const { error } = await supabase.from('evening_schedules').delete().eq('id', id);
@@ -135,12 +141,11 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         },
         onSuccess: () => {
             toast.success("تم حذف الجدول");
-            queryClient.invalidateQueries({ queryKey: ['evening_schedules_list'] });
+            refetch();
         },
         onError: (err: any) => toast.error(err.message)
     });
 
-    // ج) استيراد من Excel (Complex Mutation)
     const excelMutation = useMutation({
         mutationFn: async (data: any[]) => {
             let inserted = 0, updated = 0, skipped = 0;
@@ -152,7 +157,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             const processedDates = new Set();
 
             for (const row of data) {
-                // استخراج التاريخ
                 const dateKey = Object.keys(row).find(k => k.includes('تاريخ') || k.toLowerCase().includes('date'));
                 const dateVal = dateKey ? row[dateKey] : (row['التاريخ'] || row['date'] || row['Date']);
                 const date = formatDateForDB(dateVal);
@@ -160,7 +164,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                 if (!date || processedDates.has(date)) continue;
                 processedDates.add(date);
 
-                // استخراج الأطباء
                 const inputValues: string[] = [];
                 Object.keys(row).forEach(key => {
                     const lowerKey = key.toLowerCase();
@@ -172,7 +175,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                     }
                 });
                 
-                // المطابقة
                 const doctorsObjects = inputValues.map(val => {
                     const searchVal = normalizeString(val);
                     const emp = employees.find(e => 
@@ -217,20 +219,16 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             return { inserted, updated, skipped, errors };
         },
         onSuccess: (res) => {
-            queryClient.invalidateQueries({ queryKey: ['evening_schedules_list'] });
-            
+            refetch();
             let msg = `✅ إضافة: ${res.inserted} | 🔄 تحديث: ${res.updated} | ⏭️ تجاهل: ${res.skipped}`;
             toast.success(msg, { duration: 5000 });
-            
-            if (res.errors.length > 0) {
-                alert(`⚠️ تنبيهات:\n` + res.errors.join('\n'));
-            }
+            if (res.errors.length > 0) alert(`⚠️ تنبيهات:\n` + res.errors.join('\n'));
         },
         onError: (err: any) => toast.error('فشل الاستيراد: ' + err.message)
     });
 
     // ------------------------------------------------------------------
-    // 4. 🎨 دوال المساعدة والعرض
+    // 4. 🎨 دوال العرض والطباعة
     // ------------------------------------------------------------------
 
     const handleDownloadSample = () => {
@@ -251,9 +249,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             setSelectedDoctors(prev => prev.filter(d => d.id !== emp.id));
         } else {
             setSelectedDoctors(prev => [...prev, {
-                id: emp.id,
-                name: emp.name,
-                code: emp.employee_id
+                id: emp.id, name: emp.name, code: emp.employee_id
             }]);
         }
     };
@@ -265,173 +261,270 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         (fStatus === 'all' || e.status === fStatus)
     );
 
+    // دالة لتجميع أطباء الجدول الشهري حسب التخصصات
+    const getMonthlyMatrix = () => {
+        // توليد أيام الشهر المختار
+        const [year, month] = selectedMonth.split('-');
+        const daysInMonth = new Date(Number(year), Number(month), 0).getDate();
+        
+        let matrix = [];
+        for (let i = 1; i <= daysInMonth; i++) {
+            const dateStr = `${selectedMonth}-${String(i).padStart(2, '0')}`;
+            const dateObj = new Date(dateStr);
+            const dayName = dateObj.toLocaleDateString('ar-EG', { weekday: 'long' });
+            
+            const daySchedule = schedules.find((s:any) => s.date === dateStr);
+            
+            // التصنيفات المطلوبة
+            let humanDoctors: string[] = [];
+            let dentists: string[] = [];
+            let pharmacists: string[] = [];
+            let nurses: string[] = [];
+            let admins: string[] = []; // كتبة/إداريين
+            let physiotherapists: string[] = [];
+
+            if (daySchedule && daySchedule.doctors) {
+                daySchedule.doctors.forEach((d: any) => {
+                    const emp = employees.find(e => e.id === d.id);
+                    if (emp) {
+                        const spec = emp.specialty || '';
+                        if (spec.includes('بشري') || spec.includes('طبيب')) humanDoctors.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
+                        else if (spec.includes('أسنان')) dentists.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
+                        else if (spec.includes('صيدل')) pharmacists.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
+                        else if (spec.includes('تمريض') || spec.includes('ممرض')) nurses.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
+                        else if (spec.includes('علاج طبيعي')) physiotherapists.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
+                        else admins.push(emp.name.split(' ')[0] + ' ' + (emp.name.split(' ')[1] || ''));
+                    } else {
+                        humanDoctors.push(d.name); // في حالة كان اسماً فقط وليس مسجلاً
+                    }
+                });
+            }
+
+            matrix.push({
+                date: dateStr,
+                dayNum: i,
+                dayName,
+                humanDoctors: humanDoctors.join(' ، '),
+                dentists: dentists.join(' ، '),
+                pharmacists: pharmacists.join(' ، '),
+                physiotherapists: physiotherapists.join(' ، '),
+                nurses: nurses.join(' ، '),
+                admins: admins.join(' ، '),
+                notes: daySchedule?.notes || ''
+            });
+        }
+        return matrix;
+    };
+
+    const handlePrint = () => {
+        if (!printRef.current) return;
+        const printContent = printRef.current.innerHTML;
+        const originalContent = document.body.innerHTML;
+        
+        document.body.innerHTML = `
+            <div dir="rtl" style="font-family: 'Tajawal', sans-serif; padding: 20px;">
+                <h1 style="text-align: center; margin-bottom: 20px; font-weight: bold;">جدول النوبتجية المسائية - شهر ${selectedMonth}</h1>
+                ${printContent}
+            </div>
+        `;
+        window.print();
+        document.body.innerHTML = originalContent;
+        window.location.reload(); // لإعادة تفاعل React بعد الطباعة
+    };
+
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
+            
+            {/* Header & Controls */}
             <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
                 <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800">
-                    <CalendarRange className="w-7 h-7 text-indigo-600"/> جداول النوبتجية
+                    <CalendarRange className="w-7 h-7 text-indigo-600"/> النوبتجية المسائية
                 </h2>
-                <div className="flex gap-2">
-                    <button 
-                        onClick={handleDownloadSample} 
-                        className="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 hover:text-indigo-600 transition-all shadow-sm text-sm"
-                    >
-                        <Download className="w-4 h-4"/> نموذج العينة
+                
+                {/* View Toggles */}
+                <div className="flex items-center bg-gray-100 p-1 rounded-xl">
+                    <button onClick={() => setViewMode('daily')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${viewMode === 'daily' ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                        إعداد يومي
                     </button>
-                    <ExcelUploadButton 
-                        onData={(data) => excelMutation.mutate(data)} 
-                        label={excelMutation.isPending ? "جاري المعالجة..." : "رفع الجدول"} 
-                    />
+                    <button onClick={() => { setViewMode('monthly'); refetch(); }} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center gap-2 ${viewMode === 'monthly' ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                        عرض شهري
+                    </button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-white p-6 rounded-[30px] border shadow-sm sticky top-4">
-                        <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                            <Calendar className="w-5 h-5 text-indigo-600"/> إعداد اليوم
-                        </h3>
-                        <div className="space-y-4">
-                            <Input type="date" label="التاريخ" value={selectedDate} onChange={setSelectedDate} />
-                            
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-1">الأطباء المختارون</label>
-                                <div className="min-h-[100px] p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-wrap gap-2 content-start">
-                                    {selectedDoctors.length === 0 && <span className="text-gray-400 text-xs w-full text-center py-4">لم يتم اختيار أحد</span>}
-                                    {selectedDoctors.map((doc, idx) => (
-                                        <span key={idx} className="bg-white text-indigo-700 px-3 py-1.5 rounded-full text-xs font-bold border border-indigo-200 flex items-center gap-2 shadow-sm animate-in zoom-in">
-                                            <span>{doc.name}</span>
-                                            <span className="bg-indigo-100 text-indigo-800 px-1.5 rounded text-[10px]">{doc.code}</span>
-                                            <button onClick={() => setSelectedDoctors(prev => prev.filter(d => d.id !== doc.id))} className="hover:text-red-500 transition-colors"><AlertCircle className="w-3 h-3"/></button>
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات</label>
-                                <textarea 
-                                    className="w-full p-3 rounded-xl border bg-gray-50 outline-none focus:border-indigo-500 min-h-[80px] text-sm font-medium"
-                                    value={notes}
-                                    onChange={e => setNotes(e.target.value)}
-                                    placeholder="ملاحظات النوبتجية..."
-                                />
-                            </div>
-
-                            <button 
-                                onClick={() => saveMutation.mutate()}
-                                disabled={saveMutation.isPending}
-                                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex justify-center items-center gap-2 disabled:opacity-50"
-                            >
-                                {saveMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>}
-                                اعتماد الجدول
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="lg:col-span-2 space-y-4">
-                    <div className="bg-gray-50 p-4 rounded-3xl border border-gray-100 grid grid-cols-2 md:grid-cols-4 gap-3 shadow-inner">
-                        <Input label="الاسم" value={fName} onChange={setFName} placeholder="بحث..." />
-                        <Input label="الكود" value={fId} onChange={setFId} placeholder="101..." />
-                        <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e=>e.specialty)))]} value={fSpec} onChange={setFSpec} />
-                        <Select label="الحالة" options={['all', 'نشط', 'موقوف']} value={fStatus} onChange={setFStatus} />
+            {/* =======================================================
+                VIEW 1: الإعداد اليومي (Daily Setup)
+            ======================================================= */}
+            {viewMode === 'daily' && (
+                <>
+                    <div className="flex justify-end gap-2">
+                        <button onClick={handleDownloadSample} className="bg-white text-gray-600 border border-gray-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 transition-all shadow-sm text-sm">
+                            <Download className="w-4 h-4"/> نموذج العينة
+                        </button>
+                        <ExcelUploadButton onData={(data) => excelMutation.mutate(data)} label={excelMutation.isPending ? "جاري المعالجة..." : "رفع من ملف إكسيل"} />
                     </div>
 
-                    <div className="bg-white border rounded-[30px] shadow-sm overflow-hidden h-[500px] flex flex-col">
-                        <div className="p-4 border-b bg-gray-50 font-bold text-gray-600 flex justify-between items-center">
-                            <span>قائمة الموظفين ({filteredEmployees.length})</span>
-                            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">اضغط للاختيار</span>
-                        </div>
-                        <div className="overflow-y-auto custom-scrollbar p-2 grid grid-cols-1 md:grid-cols-2 gap-2 content-start">
-                            {filteredEmployees.map(emp => {
-                                const isSelected = selectedDoctors.some(d => d.id === emp.id);
-                                return (
-                                    <div 
-                                        key={emp.id} 
-                                        onClick={() => toggleDoctor(emp)}
-                                        className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center gap-3 ${
-                                            isSelected 
-                                            ? 'bg-indigo-50 border-indigo-300 ring-1 ring-indigo-300' 
-                                            : 'bg-white border-gray-100 hover:border-indigo-200 hover:bg-gray-50'
-                                        }`}
-                                    >
-                                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>
-                                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white"/>}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* لوحة التحكم */}
+                        <div className="lg:col-span-1 space-y-6">
+                            <div className="bg-white p-6 rounded-[30px] border shadow-sm sticky top-4">
+                                <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
+                                    <Calendar className="w-5 h-5 text-indigo-600"/> إعداد اليوم
+                                </h3>
+                                <div className="space-y-4">
+                                    <div className="flex gap-2">
+                                        <div className="flex-1">
+                                            <Input type="date" label="التاريخ" value={selectedDate} onChange={setSelectedDate} />
                                         </div>
-                                        <div>
-                                            <div className="font-bold text-sm text-gray-800">{emp.name}</div>
-                                            <div className="text-xs text-gray-500 font-mono">{emp.specialty} • {emp.employee_id}</div>
+                                        <button onClick={() => refetch()} className="mt-6 bg-indigo-50 text-indigo-600 px-3 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition-colors flex items-center justify-center">
+                                            {isFetching ? <Loader2 className="w-5 h-5 animate-spin"/> : <Eye className="w-5 h-5"/>}
+                                        </button>
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">الأطباء المختارون ({selectedDoctors.length})</label>
+                                        <div className="min-h-[100px] p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-wrap gap-2 content-start">
+                                            {selectedDoctors.length === 0 && <span className="text-gray-400 text-xs w-full text-center py-4">لم يتم اختيار أحد</span>}
+                                            {selectedDoctors.map((doc, idx) => (
+                                                <span key={idx} className="bg-white text-indigo-700 px-3 py-1.5 rounded-full text-xs font-bold border border-indigo-200 flex items-center gap-2 shadow-sm animate-in zoom-in">
+                                                    <span>{doc.name}</span>
+                                                    <button onClick={() => setSelectedDoctors(prev => prev.filter(d => d.id !== doc.id))} className="hover:text-red-500 transition-colors"><X className="w-3 h-3"/></button>
+                                                </span>
+                                            ))}
                                         </div>
                                     </div>
-                                );
-                            })}
+
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">ملاحظات</label>
+                                        <textarea 
+                                            className="w-full p-3 rounded-xl border bg-gray-50 outline-none focus:border-indigo-500 min-h-[80px] text-sm font-medium"
+                                            value={notes}
+                                            onChange={e => setNotes(e.target.value)}
+                                            placeholder="مثال: د.سارة (بديل)..."
+                                        />
+                                    </div>
+
+                                    <button 
+                                        onClick={() => saveMutation.mutate()}
+                                        disabled={saveMutation.isPending}
+                                        className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex justify-center items-center gap-2 disabled:opacity-50"
+                                    >
+                                        {saveMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>}
+                                        حفظ جدول اليوم
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* قائمة الموظفين للاختيار */}
+                        <div className="lg:col-span-2 space-y-4">
+                            <div className="bg-gray-50 p-4 rounded-3xl border border-gray-100 grid grid-cols-2 md:grid-cols-4 gap-3 shadow-inner">
+                                <Input label="الاسم" value={fName} onChange={setFName} placeholder="بحث..." />
+                                <Input label="الكود" value={fId} onChange={setFId} placeholder="101..." />
+                                <Select label="التخصص" options={['all', ...Array.from(new Set(employees.map(e=>e.specialty)))]} value={fSpec} onChange={setFSpec} />
+                                <Select label="الحالة" options={['all', 'نشط', 'موقوف']} value={fStatus} onChange={setFStatus} />
+                            </div>
+
+                            <div className="bg-white border rounded-[30px] shadow-sm overflow-hidden h-[550px] flex flex-col">
+                                <div className="p-4 border-b bg-gray-50 font-bold text-gray-600 flex justify-between items-center">
+                                    <span>قائمة الموظفين للاختيار ({filteredEmployees.length})</span>
+                                </div>
+                                <div className="overflow-y-auto custom-scrollbar p-3 grid grid-cols-1 sm:grid-cols-2 gap-3 content-start">
+                                    {filteredEmployees.map(emp => {
+                                        const isSelected = selectedDoctors.some(d => d.id === emp.id);
+                                        return (
+                                            <div 
+                                                key={emp.id} 
+                                                onClick={() => toggleDoctor(emp)}
+                                                className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center gap-3 ${
+                                                    isSelected ? 'bg-indigo-50 border-indigo-400 shadow-sm' : 'bg-white border-gray-100 hover:border-indigo-200'
+                                                }`}
+                                            >
+                                                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>
+                                                    {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white"/>}
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold text-sm text-gray-800">{emp.name}</div>
+                                                    <div className="text-xs text-gray-500 font-mono">{emp.specialty} • {emp.employee_id}</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
+                </>
+            )}
 
-            <div className="bg-white rounded-[30px] border shadow-sm p-6">
-                <h3 className="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                    <CalendarRange className="w-5 h-5 text-gray-500"/> أرشيف الجداول (آخر 60 يوم)
-                </h3>
-                {isLoading ? <div className="text-center py-10"><Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-500"/></div> : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-right min-w-[600px]">
-                            <thead className="bg-gray-100 font-black text-gray-600">
-                                <tr>
-                                    <th className="p-4 rounded-r-xl">التاريخ</th>
-                                    <th className="p-4">طاقم النوبتجية</th>
-                                    <th className="p-4">ملاحظات</th>
-                                    <th className="p-4 rounded-l-xl w-20"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                                {schedules.map((sch: any) => (
-                                    <tr key={sch.id} className="hover:bg-gray-50 group">
-                                        <td className="p-4 font-mono font-bold text-indigo-600">{sch.date}</td>
-                                        <td className="p-4">
-                                            <div className="flex flex-wrap gap-1">
-                                                {sch.doctors && sch.doctors.map((d: any, i: number) => {
-                                                    const name = typeof d === 'string' ? d : d.name;
-                                                    const code = typeof d === 'object' && d.code ? ` (${d.code})` : '';
-                                                    return (
-                                                        <span key={i} className="bg-gray-100 px-2 py-1 rounded text-xs font-bold text-gray-700 border border-gray-200">
-                                                            {name}{code}
-                                                        </span>
-                                                    );
-                                                })}
-                                            </div>
-                                        </td>
-                                        <td className="p-4 text-gray-500">{sch.notes || '-'}</td>
-                                        <td className="p-4 text-center">
-                                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button 
-                                                    onClick={() => { setSelectedDate(sch.date); window.scrollTo({top:0, behavior:'smooth'}); }}
-                                                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                                                    title="تعديل"
-                                                >
-                                                    <Calendar className="w-4 h-4"/>
-                                                </button>
-                                                <button 
-                                                    onClick={() => {
-                                                        if(confirm("حذف هذا الجدول؟")) deleteMutation.mutate(sch.id);
-                                                    }}
-                                                    disabled={deleteMutation.isPending}
-                                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                    title="حذف"
-                                                >
-                                                    {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin"/> : <Trash2 className="w-4 h-4"/>}
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+            {/* =======================================================
+                VIEW 2: العرض الشهري (Monthly Matrix)
+            ======================================================= */}
+            {viewMode === 'monthly' && (
+                <div className="space-y-4 animate-in slide-in-from-right duration-300">
+                    <div className="bg-white p-4 rounded-3xl border shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            <Input type="month" label="اختر الشهر" value={selectedMonth} onChange={(v) => { setSelectedMonth(v); setTimeout(() => refetch(), 100); }} />
+                            <button onClick={() => refetch()} className="mt-6 bg-indigo-50 text-indigo-600 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors">
+                                {isFetching ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4"/>} عرض
+                            </button>
+                        </div>
+                        <button onClick={handlePrint} className="bg-gray-800 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-900 transition-all shadow-lg active:scale-95">
+                            <Printer className="w-5 h-5"/> طباعة الجدول (A4)
+                        </button>
                     </div>
-                )}
-            </div>
+
+                    <div className="bg-white rounded-3xl border shadow-sm overflow-hidden p-4">
+                        {isFetching ? (
+                            <div className="py-20 text-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto"/></div>
+                        ) : (
+                            <div className="overflow-x-auto print-container" ref={printRef}>
+                                <style type="text/css" media="print">
+                                    {`
+                                        @page { size: A4 landscape; margin: 10mm; }
+                                        body { -webkit-print-color-adjust: exact; background: white; }
+                                        .print-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                                        .print-table th, .print-table td { border: 1px solid #000; padding: 6px; text-align: center; }
+                                        .print-table th { background-color: #f3f4f6 !important; font-weight: bold; }
+                                        .bg-gray-50 { background-color: #f9fafb !important; }
+                                    `}
+                                </style>
+                                <table className="print-table w-full text-center whitespace-nowrap">
+                                    <thead>
+                                        <tr>
+                                            <th className="w-10">اليوم</th>
+                                            <th className="w-24">التاريخ</th>
+                                            <th>طبيب بشري</th>
+                                            <th>صيدلي</th>
+                                            <th>طبيب أسنان</th>
+                                            <th>علاج طبيعي</th>
+                                            <th>تمريض</th>
+                                            <th>إداري/كاتب</th>
+                                            <th>ملاحظات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {getMonthlyMatrix().map((day) => (
+                                            <tr key={day.date} className={day.dayName === 'الجمعة' ? 'bg-red-50 text-red-900 font-bold' : 'hover:bg-gray-50'}>
+                                                <td className="font-bold">{day.dayName.replace('ال', '')}</td>
+                                                <td className="font-mono text-xs">{day.date}</td>
+                                                <td className="text-blue-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.humanDoctors || '-'}</td>
+                                                <td className="text-emerald-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.pharmacists || '-'}</td>
+                                                <td className="text-purple-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.dentists || '-'}</td>
+                                                <td className="text-orange-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.physiotherapists || '-'}</td>
+                                                <td className="text-rose-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.nurses || '-'}</td>
+                                                <td className="text-gray-700 font-bold text-xs whitespace-normal max-w-[150px]">{day.admins || '-'}</td>
+                                                <td className="text-xs text-gray-500 whitespace-normal max-w-[100px]">{day.notes || '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
