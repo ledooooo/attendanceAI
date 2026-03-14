@@ -377,7 +377,26 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         let initialState: any = {};
         if (selectedGameType === 'xo')           initialState = { board: Array(9).fill(null), current_turn: player.id };
         else if (selectedGameType === 'connect4') initialState = { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: player.id };
-        else if (selectedGameType === 'chess')    initialState = {}; // ChessGame builds its own initial state
+        else if (selectedGameType === 'chess') {
+            // Build initial board inline so we don't import makeInitialBoard here
+            const order = ['R','N','B','Q','K','B','N','R'];
+            const b = Array.from({ length: 8 }, () => Array(8).fill(null));
+            for (let c = 0; c < 8; c++) {
+                b[0][c] = { type: order[c], color: 'b' };
+                b[1][c] = { type: 'P',      color: 'b' };
+                b[6][c] = { type: 'P',      color: 'w' };
+                b[7][c] = { type: order[c], color: 'w' };
+            }
+            initialState = {
+                board: b, turn: 'w',
+                castling: { wK: true, wQ: true, bK: true, bQ: true },
+                enPassant: null, halfmove: 0, moveHistory: [],
+                whiteTime: 300, blackTime: 300,
+                lastMoveAt: Date.now(),
+                currentTurn: player.id,
+                result: 'ongoing', drawOfferedBy: null,
+            };
+        }
         else if (selectedGameType === 'stopthebus') initialState = { letter: '', startedAt: 0, allAnswers: [], voteRound: 1 };
 
         const { data, error } = await supabase.from('live_matches').insert({
