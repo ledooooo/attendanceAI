@@ -97,6 +97,13 @@ export default function AdminFellowshipTab({
   const [tarList, setTarList]             = useState<any[]>([]);
   const [logSearch, setLogSearch]         = useState('');
 
+  // ── Question Bank states ───────────────────────────────────────────────────
+  const [bankQuestions, setBankQuestions]     = useState<any[]>([]);
+  const [bankSearch, setBankSearch]           = useState('');
+  const [bankSubject, setBankSubject]         = useState('');
+  const [selectedQIds, setSelectedQIds]       = useState<Set<string>>(new Set());
+  const [quizMode, setQuizMode]               = useState<'manual' | 'bank'>('manual');
+
   // ── Forms ─────────────────────────────────────────────────────────────────
   const [newTrainee,    setNewTrainee]    = useState({ employee_id: '', trainee_code: '', enrollment_date: '', expected_graduation: '' });
   const [newTrainer,    setNewTrainer]    = useState({ employee_id: '', trainer_code: '', title: '', is_scientific_supervisor: false });
@@ -185,6 +192,17 @@ export default function AdminFellowshipTab({
 
   useEffect(() => { fetchData(); }, []);
 
+  // ── Fetch question bank ────────────────────────────────────────────────────
+  const fetchBankQuestions = async (subject?: string, search?: string) => {
+    let query = supabase.from('fellowship_questions').select('id, subject, topic, difficulty, stem, option_a, option_b, option_c, option_d, option_e, correct_answer, explanation').order('subject').order('topic');
+    if (subject) query = query.eq('subject', subject);
+    if (search)  query = query.ilike('stem', `%${search}%`);
+    const { data } = await query.limit(60);
+    setBankQuestions(data || []);
+  };
+
+  useEffect(() => { if (quizMode === 'bank') fetchBankQuestions(bankSubject, bankSearch); }, [quizMode, bankSubject, bankSearch]);
+
   // ── Generic add ───────────────────────────────────────────────────────────
   const handleAdd = async (table: string, data: any, reset: () => void, msg: string) => {
     setSaving(true);
@@ -215,12 +233,33 @@ export default function AdminFellowshipTab({
   // ── Lecture submit ─────────────────────────────────────────────────────────
   const handleAddLecture = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
-    const validQ = quizQuestions.filter(q => q.question && q.correct_answer && q.options.every(o => o));
+
+    // في manual mode: استخدم الأسئلة اليدوية
+    // في bank mode: اجلب الأسئلة المختارة من البنك وحوّلها لنفس format
+    let finalQuestions: any[] = [];
+
+    if (quizMode === 'manual') {
+      finalQuestions = quizQuestions.filter(q => q.question && q.correct_answer && q.options.every(o => o));
+    } else {
+      // اجلب الأسئلة المختارة من البنك
+      const chosen = bankQuestions.filter(q => selectedQIds.has(q.id));
+      finalQuestions = chosen.map(q => ({
+        question:       q.stem,
+        options:        [q.option_a, q.option_b, q.option_c, q.option_d, ...(q.option_e ? [q.option_e] : [])],
+        correct_answer: q.correct_answer === 'A' ? q.option_a :
+                        q.correct_answer === 'B' ? q.option_b :
+                        q.correct_answer === 'C' ? q.option_c :
+                        q.correct_answer === 'D' ? q.option_d : q.option_e,
+        explanation:    q.explanation,
+        bank_question_id: q.id,  // مرجع للسؤال الأصلي
+      }));
+    }
+
     const payload = {
       ...newLecture,
       presenter_trainee_id: newLecture.presenter_type === 'trainee' ? newLecture.presenter_trainee_id : null,
       presenter_name: newLecture.presenter_type !== 'trainee' ? newLecture.presenter_name : null,
-      quiz_questions: validQ.length > 0 ? validQ : null,
+      quiz_questions: finalQuestions.length > 0 ? finalQuestions : null,
     };
     try {
       const { error } = await supabase.from('fellowship_lectures').insert(payload);
@@ -228,6 +267,8 @@ export default function AdminFellowshipTab({
       toast.success('✅ تم نشر المحاضرة');
       setNewLecture({ title: '', description: '', lecture_date: '', lecture_time: '', location: '', presenter_type: 'trainer', presenter_trainee_id: '', presenter_name: '' });
       setQuizQuestions([{ question: '', options: ['', '', '', ''], correct_answer: '' }]);
+      setSelectedQIds(new Set());
+      setQuizMode('manual');
       fetchData();
     } catch (e: any) { toast.error(e.message); }
     finally { setSaving(false); }
@@ -647,35 +688,124 @@ export default function AdminFellowshipTab({
                       <Field label="اسم المحاضر"><Input required value={newLecture.presenter_name} onChange={e => setNewLecture({...newLecture, presenter_name: e.target.value})} placeholder="د. فلان" /></Field>
                     )}
                   </div>
-                  {/* Quiz questions */}
+                  {/* ── Quiz: Manual or Bank ── */}
                   <div className="border-t pt-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-black text-gray-700">أسئلة الاختبار (اختياري)</p>
-                      <button type="button" onClick={() => setQuizQuestions([...quizQuestions, { question: '', options: ['','','',''], correct_answer: '' }])}
-                        className="text-[10px] font-black bg-orange-100 text-orange-700 px-3 py-1 rounded-lg hover:bg-orange-200 transition-colors">
-                        + إضافة سؤال
-                      </button>
-                    </div>
-                    {quizQuestions.map((q, i) => (
-                      <div key={i} className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2 relative">
-                        {quizQuestions.length > 1 && (
-                          <button type="button" onClick={() => setQuizQuestions(quizQuestions.filter((_,j) => j !== i))}
-                            className="absolute top-2 left-2 w-6 h-6 bg-red-100 text-red-500 rounded-full flex items-center justify-center hover:bg-red-200">
-                            <X size={12}/>
+                      <p className="text-xs font-black text-gray-700">أسئلة الاختبار</p>
+                      {/* Toggle manual / bank */}
+                      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+                        {(['manual','bank'] as const).map(m => (
+                          <button key={m} type="button" onClick={() => setQuizMode(m)}
+                            className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all ${quizMode === m ? 'bg-white shadow-sm text-orange-700' : 'text-gray-500'}`}>
+                            {m === 'manual' ? '✏️ يدوي' : '🗃️ من البنك'}
                           </button>
-                        )}
-                        <input value={q.question} onChange={e => handleQChange(i,'question',e.target.value)} placeholder={`السؤال ${i+1}`}
-                          className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg text-xs font-bold outline-none focus:border-orange-300" />
-                        <div className="grid grid-cols-2 gap-1.5">
-                          {q.options.map((opt, oi) => (
-                            <input key={oi} value={opt} onChange={e => handleQChange(i,'options',e.target.value,oi)} placeholder={`خيار ${oi+1}`}
-                              className="px-3 py-2 bg-white border border-gray-100 rounded-lg text-xs font-bold outline-none focus:border-orange-300" />
-                          ))}
-                        </div>
-                        <input value={q.correct_answer} onChange={e => handleQChange(i,'correct_answer',e.target.value)} placeholder="الإجابة الصحيحة (اكتبها حرفياً)"
-                          className="w-full px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold outline-none focus:border-emerald-400" />
+                        ))}
                       </div>
-                    ))}
+                    </div>
+
+                    {/* MANUAL MODE */}
+                    {quizMode === 'manual' && (
+                      <div className="space-y-3">
+                        <button type="button"
+                          onClick={() => setQuizQuestions([...quizQuestions, { question: '', options: ['','','',''], correct_answer: '' }])}
+                          className="text-[10px] font-black bg-orange-100 text-orange-700 px-3 py-1.5 rounded-lg hover:bg-orange-200 transition-colors w-full">
+                          + إضافة سؤال يدوي
+                        </button>
+                        {quizQuestions.map((q, i) => (
+                          <div key={i} className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2 relative">
+                            {quizQuestions.length > 1 && (
+                              <button type="button" onClick={() => setQuizQuestions(quizQuestions.filter((_,j) => j !== i))}
+                                className="absolute top-2 left-2 w-6 h-6 bg-red-100 text-red-500 rounded-full flex items-center justify-center hover:bg-red-200">
+                                <X size={12}/>
+                              </button>
+                            )}
+                            <input value={q.question} onChange={e => handleQChange(i,'question',e.target.value)}
+                              placeholder={`السؤال ${i+1}`}
+                              className="w-full px-3 py-2 bg-white border border-gray-100 rounded-lg text-xs font-bold outline-none focus:border-orange-300" />
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {q.options.map((opt, oi) => (
+                                <input key={oi} value={opt} onChange={e => handleQChange(i,'options',e.target.value,oi)}
+                                  placeholder={`خيار ${oi+1}`}
+                                  className="px-3 py-2 bg-white border border-gray-100 rounded-lg text-xs font-bold outline-none focus:border-orange-300" />
+                              ))}
+                            </div>
+                            <input value={q.correct_answer} onChange={e => handleQChange(i,'correct_answer',e.target.value)}
+                              placeholder="الإجابة الصحيحة (اكتبها حرفياً)"
+                              className="w-full px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold outline-none focus:border-emerald-400" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* BANK MODE */}
+                    {quizMode === 'bank' && (
+                      <div className="space-y-3">
+                        {/* Filters */}
+                        <div className="flex gap-2">
+                          <select value={bankSubject} onChange={e => setBankSubject(e.target.value)}
+                            className="flex-1 px-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:border-orange-300">
+                            <option value="">كل المواد</option>
+                            {[...new Set(bankQuestions.map(q => q.subject))].concat(
+                              ['الباطنة وطب المسنين','طب الأطفال','النساء والتوليد','الطب النفسي','طب المجتمع','الجلدية','أنف وأذن وحنجرة','طب العيون','الجراحة']
+                            ).filter((v,i,a) => a.indexOf(v) === i).map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                          <div className="relative flex-1">
+                            <Search size={12} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input value={bankSearch} onChange={e => setBankSearch(e.target.value)}
+                              placeholder="بحث في الأسئلة..."
+                              className="w-full pr-8 pl-3 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:border-orange-300" />
+                          </div>
+                        </div>
+
+                        {/* Selected count */}
+                        {selectedQIds.size > 0 && (
+                          <div className="flex items-center justify-between bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+                            <span className="text-xs font-black text-orange-700">✓ {selectedQIds.size} سؤال محدد</span>
+                            <button type="button" onClick={() => setSelectedQIds(new Set())}
+                              className="text-[10px] font-black text-orange-500 hover:text-red-500">مسح الكل</button>
+                          </div>
+                        )}
+
+                        {/* Questions list */}
+                        <div className="max-h-72 overflow-y-auto space-y-2 custom-scrollbar">
+                          {bankQuestions.length === 0 ? (
+                            <p className="text-xs font-bold text-gray-400 text-center py-6">
+                              {bankSubject || bankSearch ? 'لا توجد نتائج' : 'اختر مادة أو ابحث لعرض الأسئلة'}
+                            </p>
+                          ) : bankQuestions.map(q => {
+                            const checked = selectedQIds.has(q.id);
+                            const diffColor = q.difficulty === 'easy' ? 'text-emerald-600 bg-emerald-50' : q.difficulty === 'hard' ? 'text-rose-600 bg-rose-50' : 'text-amber-600 bg-amber-50';
+                            return (
+                              <div key={q.id}
+                                onClick={() => setSelectedQIds(prev => {
+                                  const s = new Set(prev);
+                                  s.has(q.id) ? s.delete(q.id) : s.add(q.id);
+                                  return s;
+                                })}
+                                className={`p-3 rounded-xl border cursor-pointer transition-all ${checked ? 'bg-orange-50 border-orange-300 shadow-sm' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
+                                <div className="flex items-start gap-2">
+                                  {/* Checkbox */}
+                                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all ${checked ? 'bg-orange-500 border-orange-500' : 'border-gray-300'}`}>
+                                    {checked && <CheckCircle2 size={12} className="text-white" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[11px] font-black text-gray-800 leading-snug line-clamp-2">{q.stem}</p>
+                                    <div className="flex items-center gap-2 mt-1.5">
+                                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${diffColor}`}>
+                                        {q.difficulty === 'easy' ? 'سهل' : q.difficulty === 'hard' ? 'صعب' : 'متوسط'}
+                                      </span>
+                                      <span className="text-[9px] font-bold text-gray-400">{q.topic}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <SaveBtn loading={saving} label="نشر المحاضرة" color="bg-orange-600 hover:bg-orange-700 shadow-orange-100" />
                 </form>
