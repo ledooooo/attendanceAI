@@ -9,12 +9,40 @@ import toast from 'react-hot-toast';
 interface AdminDocument {
     id: string;
     name: string;
-    originalName: string; // الاسم الفعلي في السيرفر لغرض الحذف
+    originalName: string; // الاسم المشفر في السيرفر لغرض الحذف
     type: string;
     url: string;
     size: string;
     created_at: string;
 }
+
+// =========================================================
+// 💡 دوال الترجمة الذكية لحل مشكلة الحروف العربية في السيرفرات
+// =========================================================
+const encodeFileName = (str: string) => {
+    // تحويل النص العربي إلى شفرة Hexadecimal (حروف إنجليزية وأرقام فقط)
+    return Array.from(new TextEncoder().encode(str))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+};
+
+const decodeFileName = (str: string) => {
+    // التأكد من أن النص هو شفرة Hexadecimal قبل فك التشفير
+    if (/^[0-9a-fA-F]+$/.test(str) && str.length % 2 === 0) {
+        try {
+            const match = str.match(/.{1,2}/g);
+            if (match) {
+                const bytes = new Uint8Array(match.map(byte => parseInt(byte, 16)));
+                return new TextDecoder().decode(bytes);
+            }
+        } catch (e) {
+            return str;
+        }
+    }
+    // إذا لم يكن مشفراً (مثلاً ملف قديم باللغة الإنجليزية)، نعرضه كما هو
+    return str.replace(/_/g, " "); 
+};
+// =========================================================
 
 export default function AdminDocumentsTab() {
     const [documents, setDocuments] = useState<AdminDocument[]>([]);
@@ -39,17 +67,20 @@ export default function AdminDocumentsTab() {
                 let type = 'other';
                 if (extension === 'pdf') type = 'pdf';
                 else if (['doc', 'docx'].includes(extension || '')) type = 'word';
-                else if (['xls', 'xlsx'].includes(extension || '')) type = 'excel';
+                else if (['xls', 'xlsx', 'csv'].includes(extension || '')) type = 'excel';
 
-                // تنظيف الاسم للعرض (حذف التوقيت والامتداد، واستبدال الشرطة السفلية بمسافة)
-                const displayName = file.name
-                    .replace(/_[0-9]+\.[a-zA-Z0-9]+$/, "") // حذف التوقيت الزمني من النهاية
-                    .replace(/_/g, " "); // إعادة المسافات
+                // فك التشفير لاستخراج الاسم العربي الأصلي
+                const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+                const parts = nameWithoutExt.split('_');
+                const timestamp = parts.pop(); // استبعاد التوقيت الزمني من نهاية الاسم
+                const encodedBaseName = parts.join('_'); // ما يتبقى هو الاسم المشفر
+                
+                const displayName = decodeFileName(encodedBaseName);
 
                 return {
                     id: file.id,
-                    name: displayName,
-                    originalName: file.name, // نحتفظ بالاسم الأصلي لعملية الحذف
+                    name: displayName || 'ملف بدون اسم',
+                    originalName: file.name, 
                     type: type,
                     url: publicUrlData.publicUrl,
                     size: (file.metadata?.size / 1024).toFixed(1) + ' KB',
@@ -77,21 +108,21 @@ export default function AdminDocumentsTab() {
         );
     }, [searchQuery, documents]);
 
-    // 3. رفع ملف جديد بمعالجة ذكية للاسم
+    // 3. رفع ملف جديد بشفرة آمنة
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
 
         setIsUploading(true);
-        const toastId = toast.loading('جاري رفع الملف...');
+        const toastId = toast.loading('جاري رفع الملف السري...');
 
         try {
-            const fileExt = file.name.split('.').pop();
+            const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
             const baseName = file.name.replace(/\.[^/.]+$/, "");
             
-            // ✅ الفلتر الذكي: استبدال أي مسافة أو رمز خاص بشرطة سفلية ليقبله السيرفر
-            const safeBaseName = baseName.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '_');
-            const fileName = `${safeBaseName}_${Date.now()}.${fileExt}`;
+            // ✅ تشفير الاسم العربي لضمان قبول السيرفر له بنسبة 100%
+            const safeEncodedName = encodeFileName(baseName);
+            const fileName = `${safeEncodedName}_${Date.now()}.${fileExt}`;
 
             const { error } = await supabase.storage.from('admin_docs').upload(fileName, file);
             
@@ -110,7 +141,7 @@ export default function AdminDocumentsTab() {
 
     // 4. حذف ملف
     const handleDelete = async (originalFileName: string, docName: string) => {
-        if (!confirm(`هل أنت متأكد من حذف ${docName}؟`)) return;
+        if (!confirm(`هل أنت متأكد من حذف الملف "${docName}"؟`)) return;
 
         try {
             const { error } = await supabase.storage.from('admin_docs').remove([originalFileName]);
@@ -170,7 +201,7 @@ export default function AdminDocumentsTab() {
                 <label className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md cursor-pointer active:scale-95">
                     {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
                     {isUploading ? 'جاري الرفع...' : 'رفع ملف جديد'}
-                    <input type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx,.xls,.xlsx" disabled={isUploading} />
+                    <input type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.doc,.docx,.xls,.xlsx,.csv" disabled={isUploading} />
                 </label>
             </div>
 
@@ -180,7 +211,7 @@ export default function AdminDocumentsTab() {
                     <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input 
                         type="text"
-                        placeholder="ابحث عن نموذج (مثال: إجازة، سياسات، تقييم)..."
+                        placeholder="ابحث عن نموذج بالاسم..."
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pr-11 pl-4 font-bold text-sm focus:border-indigo-500 outline-none transition-all"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -205,7 +236,7 @@ export default function AdminDocumentsTab() {
                     {filteredDocs.map((doc) => (
                         <div 
                             key={doc.id} 
-                            className={`p-5 rounded-[2rem] border transition-all group flex flex-col justify-between ${getFileColor(doc.type)} shadow-sm hover:shadow-md`}
+                            className={`p-5 rounded-[2rem] border transition-all group flex flex-col justify-between ${getFileColor(doc.type)} shadow-sm hover:shadow-md hover:-translate-y-1`}
                         >
                             <div className="flex items-start justify-between mb-4">
                                 <div className="bg-white p-3 rounded-2xl shadow-sm border border-white">
