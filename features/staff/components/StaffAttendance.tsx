@@ -1,12 +1,13 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { 
     Clock, Calendar, CheckCircle2, XCircle, 
-    AlertTriangle, Star, Info, FileCheck, Loader2, Baby, Printer
+    AlertTriangle, Star, Info, FileCheck, Loader2, Baby, Printer, DownloadCloud
 } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { Employee, AttendanceRule } from '../../../types';
 import StaffNewRequest from './StaffNewRequest';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 
 const DAYS_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const DEFAULT_WORK_DAYS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"]; 
@@ -150,9 +151,9 @@ export default function StaffAttendance({
 
         const customWorkDays = Array.isArray(employee.work_days) ? employee.work_days : [];
 
-        // حساب تواريخ الأسبوع الحالي (من السبت للجمعة)
+        // حساب تواريخ الأسبوع الحالي
         const today = new Date();
-        const currentDayIdx = today.getDay(); // الأحد = 0، السبت = 6
+        const currentDayIdx = today.getDay(); 
         const diffToSat = currentDayIdx === 6 ? 0 : currentDayIdx + 1;
         const startOfCurrentWeek = new Date(today);
         startOfCurrentWeek.setDate(today.getDate() - diffToSat);
@@ -206,7 +207,6 @@ export default function StaffAttendance({
                 if (isWorkDay && (info.inStatusColor === 'orange' || info.inStatusColor === 'red')) late++;
                 totalHours += info.hours;
                 
-                // إضافة ساعات هذا الأسبوع
                 if (currentDate >= startOfCurrentWeek && currentDate <= endOfCurrentWeek) {
                     weeklyHours += info.hours;
                 }
@@ -259,30 +259,62 @@ export default function StaffAttendance({
         queryClient.invalidateQueries({ queryKey: ['staff_month_data'] });
     };
 
-    // ✅ دالة الطباعة المحدثة للحصول على ورقة A4 مثالية بـ حواف 0.5 سم من كل الاتجاهات
+    // ✅ دالة الطباعة المحدثة والمتوافقة مع كافة الموبايلات والديسكتوب لإنشاء PDF مباشر
     const handlePrint = () => {
         if (!printRef.current) return;
         const printContent = printRef.current.innerHTML;
-        const originalContent = document.body.innerHTML;
         
-        document.body.innerHTML = `
-            <div dir="rtl" style="font-family: 'Tajawal', sans-serif; margin: 0; padding: 0; width: 100%; box-sizing: border-box;">
-                <div style="text-align: center; margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 10px;">
-                    <h2 style="margin: 0 0 5px 0; font-size: 18px; font-weight: bold;">تقرير الحضور والانصراف التفصيلي</h2>
+        // إنشاء نافذة طباعة جديدة (الطريقة الأفضل للموبايل لتجنب تفريغ الشاشة)
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            toast.error('يرجى السماح بالنوافذ المنبثقة (Pop-ups) للطباعة');
+            return;
+        }
+
+        printWindow.document.write(`
+            <html dir="rtl" lang="ar">
+            <head>
+                <title>تقرير حضور وانصراف - ${employee.name}</title>
+                <style>
+                    @page { size: A4 portrait; margin: 1cm; }
+                    body { font-family: 'Tajawal', Arial, sans-serif; background: white; margin: 0; padding: 0; -webkit-print-color-adjust: exact; color: #000; }
+                    .print-table { width: 100%; border-collapse: collapse; font-size: 11px; line-height: 1.3; text-align: center; }
+                    .print-table th, .print-table td { border: 1px solid #222 !important; padding: 6px !important; }
+                    .print-table th { background-color: #f3f4f6 !important; font-weight: bold; font-size: 12px; }
+                    
+                    /* إظهار وإخفاء العناصر الخاصة بالطباعة */
+                    .print-show { display: table-cell !important; }
+                    .mobile-only-info { display: none !important; }
+                    .print-no-click { display: none !important; }
+                    
+                    /* ألوان خفيفة للطباعة */
+                    .bg-red-50 { background-color: #fee2e2 !important; }
+                    .bg-gray-50 { background-color: #f9fafb !important; }
+                </style>
+            </head>
+            <body>
+                <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
+                    <h2 style="margin: 0 0 5px 0; font-size: 20px; font-weight: bold;">تقرير الحضور والانصراف التفصيلي</h2>
                     <h4 style="margin: 0 0 5px 0; font-size: 14px;">الموظف: ${employee.name} | الكود: ${employee.employee_id} | التخصص: ${employee.specialty}</h4>
-                    <p style="margin: 0; font-size: 12px; font-weight: bold; color: #555;">عن شهر: ${new Date(viewMonth).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</p>
+                    <p style="margin: 0; font-size: 13px; font-weight: bold; color: #555;">عن شهر: ${new Date(viewMonth).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</p>
                 </div>
                 ${printContent}
-                
-                <div style="display: flex; justify-content: space-between; margin-top: 15px; font-weight: bold; font-size: 12px; padding: 0 40px;">
+                <div style="display: flex; justify-content: space-between; margin-top: 30px; font-weight: bold; font-size: 13px; padding: 0 40px;">
                     <div>توقيع الموظف:<br/><br/>..............................</div>
                     <div>اعتماد شؤون العاملين:<br/><br/>..............................</div>
                 </div>
-            </div>
-        `;
-        window.print();
-        document.body.innerHTML = originalContent;
-        window.location.reload(); 
+                <script>
+                    window.onload = function() { 
+                        setTimeout(function() {
+                            window.print(); 
+                            window.close();
+                        }, 500);
+                    }
+                </script>
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
     };
 
     return (
@@ -309,8 +341,10 @@ export default function StaffAttendance({
                             <input type="month" value={viewMonth} onChange={handleMonthChange} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
                         </div>
                     </div>
-                    <button onClick={handlePrint} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-900 transition-all shadow-sm shrink-0">
-                        <Printer className="w-4 h-4"/> <span className="hidden md:inline">طباعة PDF</span>
+                    {/* ✅ زرار الطباعة وتحميل الـ PDF يعمل بتناغم تام على الموبايل والديسكتوب */}
+                    <button onClick={handlePrint} className="bg-gray-800 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-900 transition-all shadow-sm shrink-0 w-auto">
+                        <DownloadCloud className="w-4 h-4 md:hidden"/> <Printer className="w-4 h-4 hidden md:block"/> 
+                        <span className="text-xs md:text-sm">تحميل PDF / طباعة</span>
                     </button>
                 </div>
             </div>
@@ -337,7 +371,6 @@ export default function StaffAttendance({
                     <span className="text-sm md:text-xl font-black text-gray-800">{stats.late}</span>
                     <span className="text-[9px] md:text-[10px] text-gray-400 font-bold">تأخيرات</span>
                 </div>
-                {/* كارت ساعات العمل الأسبوعية (الجديد) */}
                 <div className="bg-blue-50/50 border border-blue-100 p-2 md:p-3 rounded-2xl shadow-sm flex flex-col items-center justify-center gap-0.5 md:gap-1">
                     <div className="p-1.5 bg-blue-100 text-blue-600 rounded-full"><Clock className="w-4 h-4 md:w-5 md:h-5"/></div>
                     <span className="text-sm md:text-xl font-black text-blue-700">{stats.weeklyHours} <span className="text-[9px] font-normal">س</span></span>
@@ -351,39 +384,15 @@ export default function StaffAttendance({
             </div>
 
             {/* 📋 جدول العرض مع خصائص التصغير (Mobile) والطباعة (Print) */}
-            <div className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden w-full" ref={printRef}>
-                {/* ✅ CSS مخصص لترتيب الورقة المطبوعة لـ A4 بشكل متكامل وتجريدها من خصائص التمرير (Scroll) */}
-                <style type="text/css" media="print">
-                    {`
-                        @page { size: A4 portrait; margin: 0.5cm; }
-                        body { background: white !important; margin: 0 !important; padding: 0 !important; }
-                        
-                        /* إزالة السكرول وضمان طباعة جميع الصفوف */
-                        .print-container { overflow: visible !important; height: auto !important; max-height: none !important; }
-                        .custom-scrollbar { overflow: visible !important; }
-                        
-                        /* إعدادات الجدول للطباعة */
-                        .print-table { width: 100% !important; border-collapse: collapse; font-size: 11px; line-height: 1.1; }
-                        .print-table th, .print-table td { border: 1px solid #444 !important; padding: 4px 4px !important; text-align: center !important; height: 18px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                        .print-table th { background-color: #f3f4f6 !important; font-weight: bold; }
-                        
-                        /* إخفاء جملة (اضغط لتقديم طلب) من الطباعة */
-                        .print-no-click { display: none !important; }
-                        
-                        /* إظهار الأعمدة المخفية في الموبايل لكي تظهر في الطباعة بشكل طبيعي */
-                        .print-show { display: table-cell !important; }
-                        .mobile-only-info { display: none !important; }
-                    `}
-                </style>
-                <div className="w-full overflow-x-auto custom-scrollbar print-container">
-                    <table className="w-full text-center text-xs md:text-sm print-table">
-                        <thead className="bg-gray-50/80 font-black text-gray-600 border-b">
+            {/* ✅ تم إضافة السكرول الرأسي والـ Sticky Header هنا */}
+            <div className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-sm border border-gray-100 w-full overflow-hidden">
+                <div className="w-full max-h-[65vh] overflow-y-auto overflow-x-auto custom-scrollbar print-container" ref={printRef}>
+                    <table className="w-full text-center text-xs md:text-sm print-table relative">
+                        <thead className="bg-gray-100 font-black text-gray-700 border-b sticky top-0 z-10 shadow-sm">
                             <tr>
-                                {/* ✅ العمود الأول: التاريخ واليوم معاً */}
                                 <th className="p-3 md:p-4">التاريخ واليوم</th>
                                 <th className="p-3 md:p-4">الحضور</th>
                                 <th className="p-3 md:p-4">الانصراف</th>
-                                {/* ✅ العمود الرابع: عدد الساعات */}
                                 <th className="p-3 md:p-4">ساعات العمل</th>
                                 {/* أعمدة تظهر في الديسكتوب والطباعة فقط */}
                                 <th className="p-3 md:p-4 hidden md:table-cell print-show">حالة الحضور</th>
@@ -394,15 +403,15 @@ export default function StaffAttendance({
                             {isLoading ? (
                                 <tr><td colSpan={6} className="p-10 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2"/>جاري تحميل البيانات...</td></tr>
                             ) : tableRows.map((row: any) => {
-                                // تحديد لون السطر بناءً على الحالة (تبادلي أو مخصص للغياب/الإجازة)
+                                // ✅ تأثير (Zebra Striping) ألوان مريحة مع تمييز الغياب/الاجازات
                                 const rowClass = `
                                     transition-colors
-                                    ${row.type === 'absent' ? 'bg-red-50/50 cursor-pointer hover:bg-red-100/60' : 
-                                      row.type === 'leave' ? 'bg-purple-50/40' : 
-                                      row.type === 'holiday' ? 'bg-orange-50/40' : 
-                                      row.type === 'not_required' ? 'bg-gray-100/60 opacity-70' : 
-                                      !row.isWorkDay ? 'bg-gray-50' : 
-                                      'bg-white even:bg-slate-50/40 hover:bg-blue-50/30'}
+                                    ${row.type === 'absent' ? 'bg-red-50/40 cursor-pointer hover:bg-red-100/50' : 
+                                      row.type === 'leave' ? 'bg-purple-50/30' : 
+                                      row.type === 'holiday' ? 'bg-orange-50/30' : 
+                                      row.type === 'not_required' ? 'bg-gray-100/50 opacity-60' : 
+                                      !row.isWorkDay ? 'bg-gray-100' : 
+                                      'bg-white even:bg-slate-50/50 hover:bg-blue-50/30'}
                                 `;
 
                                 return (
@@ -411,7 +420,6 @@ export default function StaffAttendance({
                                     className={rowClass}
                                     onClick={() => row.type === 'absent' && setSelectedAbsenceDate(row.dateStr)}
                                 >
-                                    {/* العمود الأول: التاريخ واليوم */}
                                     <td className="p-2 md:p-4 text-gray-700">
                                         <div className="font-mono font-bold text-xs md:text-sm">{row.dateStr.split('-').reverse().join('/')}</div>
                                         <div className={`text-[10px] md:text-xs font-bold mt-0.5 ${!row.isWorkDay ? 'text-gray-400' : 'text-gray-500'}`}>{row.dayName}</div>
@@ -422,58 +430,57 @@ export default function StaffAttendance({
                                         )}
                                     </td>
                                     
-                                    {/* العمود الثاني: الحضور */}
-                                    <td className="p-2 md:p-4">
-                                        {row.type === 'present' ? (
-                                            <div className="flex flex-col items-center gap-0.5">
-                                                <span className="font-mono font-black text-gray-800 text-xs md:text-sm">{row.data.cin}</span>
-                                                {/* الموبايل: حالة الحضور أسفل التوقيت */}
-                                                <span className={`block md:hidden mobile-only-info text-[8px] px-1.5 py-0.5 rounded border ${getColorClass(row.data.inStatusColor)}`}>
-                                                    {row.data.inStatus}
-                                                </span>
+                                    {/* ✅ دمج الحضور والانصراف في حالة الغياب أو الإجازة لكتابة التبرير بوضوح في المنتصف */}
+                                    {row.type === 'absent' ? (
+                                        <td colSpan={2} className="p-2 md:p-4 border-l border-r border-red-100/50">
+                                            <div className="flex flex-col items-center justify-center gap-1">
+                                                <span className="text-red-500 text-xs md:text-sm font-black block">غــيــاب</span>
+                                                <span className="text-[9px] text-red-400 font-bold print-no-click bg-white/50 px-2 py-0.5 rounded-full">(اضغط لتقديم طلب تبرير)</span>
                                             </div>
-                                        ) : row.type === 'leave' ? (
-                                            <span className="text-purple-600 text-[9px] md:text-[10px] font-bold block bg-purple-50 p-1 rounded-md max-w-[80px] mx-auto truncate border border-purple-100">إجازة: {row.data.type}</span>
-                                        ) : row.type === 'holiday' ? (
-                                            <span className="text-orange-600 text-[9px] md:text-[10px] font-bold block bg-orange-50 p-1 rounded-md max-w-[80px] mx-auto truncate border border-orange-100">عطلة: {row.data.name}</span>
-                                        ) : row.type === 'absent' ? (
-                                            <div className="flex flex-col items-center gap-0.5">
-                                                <span className="text-red-500 text-[10px] md:text-xs font-bold block">غياب</span>
-                                                {/* ✅ جملة اضغط لتقديم طلب مع إخفائها في الطباعة */}
-                                                <span className="text-[8px] text-red-400 font-bold print-no-click">(اضغط لتقديم طلب)</span>
-                                            </div>
-                                        ) : row.type === 'not_required' ? (
-                                            <span className="text-gray-400 text-[9px] md:text-xs font-bold">{row.notRequiredReason}</span>
-                                        ) : !row.isWorkDay && !row.isFuture ? (
-                                            <span className="text-gray-400 text-[9px] md:text-[10px] font-bold">راحة</span>
-                                        ) : <span className="text-gray-300">-</span>}
-                                    </td>
+                                        </td>
+                                    ) : row.type === 'leave' || row.type === 'holiday' || row.type === 'not_required' || (!row.isWorkDay && !row.isFuture) ? (
+                                        <td colSpan={2} className="p-2 md:p-4">
+                                            {row.type === 'leave' ? (
+                                                <span className="text-purple-600 text-[10px] md:text-xs font-bold block bg-purple-50 p-1.5 rounded-lg max-w-[120px] mx-auto truncate border border-purple-100">إجازة: {row.data.type}</span>
+                                            ) : row.type === 'holiday' ? (
+                                                <span className="text-orange-600 text-[10px] md:text-xs font-bold block bg-orange-50 p-1.5 rounded-lg max-w-[120px] mx-auto truncate border border-orange-100">عطلة: {row.data.name}</span>
+                                            ) : row.type === 'not_required' ? (
+                                                <span className="text-gray-400 text-[10px] md:text-xs font-bold">{row.notRequiredReason}</span>
+                                            ) : (
+                                                <span className="text-gray-400 text-[10px] md:text-xs font-bold">راحة أسبوعية</span>
+                                            )}
+                                        </td>
+                                    ) : (
+                                        <>
+                                            <td className="p-2 md:p-4">
+                                                <div className="flex flex-col items-center gap-0.5">
+                                                    <span className="font-mono font-black text-gray-800 text-xs md:text-sm">{row.data.cin || '-'}</span>
+                                                    <span className={`block md:hidden mobile-only-info text-[8px] px-1.5 py-0.5 rounded border mt-1 ${getColorClass(row.data.inStatusColor)}`}>
+                                                        {row.data.inStatus}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="p-2 md:p-4">
+                                                <div className="flex flex-col items-center gap-0.5">
+                                                    <span className="font-mono font-black text-gray-800 text-xs md:text-sm">{row.data.cout || '-'}</span>
+                                                    {row.data.cout && (
+                                                        <span className={`block md:hidden mobile-only-info text-[8px] px-1.5 py-0.5 rounded border mt-1 ${getColorClass(row.data.outStatusColor)}`}>
+                                                            {row.data.outStatus}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </>
+                                    )}
 
-                                    {/* العمود الثالث: الانصراف */}
-                                    <td className="p-2 md:p-4">
-                                        {row.type === 'present' && row.data.cout ? (
-                                            <div className="flex flex-col items-center gap-0.5">
-                                                <span className="font-mono font-black text-gray-800 text-xs md:text-sm">{row.data.cout}</span>
-                                                {/* الموبايل: حالة الانصراف أسفل التوقيت */}
-                                                <span className={`block md:hidden mobile-only-info text-[8px] px-1.5 py-0.5 rounded border ${getColorClass(row.data.outStatusColor)}`}>
-                                                    {row.data.outStatus}
-                                                </span>
-                                            </div>
-                                        ) : <span className="text-gray-300">-</span>}
-                                    </td>
-
-                                    {/* ✅ العمود الرابع: عدد ساعات العمل */}
                                     <td className="p-2 md:p-4 font-mono font-black text-blue-600">
                                         {row.type === 'present' && row.data.hours > 0 ? (
                                             <div className="bg-blue-50 border border-blue-100 px-2 py-1 rounded-lg w-fit mx-auto">
                                                 {row.data.hours} <span className="text-[9px] font-normal">س</span>
                                             </div>
-                                        ) : row.type === 'not_required' ? (
-                                            <span className="text-gray-400 text-[9px] md:text-xs font-normal">غير مطالب</span>
                                         ) : <span className="text-gray-300">-</span>}
                                     </td>
 
-                                    {/* الأعمدة الإضافية للديسكتوب والطباعة فقط */}
                                     <td className="p-4 hidden md:table-cell print-show">
                                         {row.type === 'present' && (
                                             <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${getColorClass(row.data.inStatusColor)}`}>{row.data.inStatus}</span>
