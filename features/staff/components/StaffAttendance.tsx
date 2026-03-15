@@ -206,7 +206,6 @@ export default function StaffAttendance({
                 if (isWorkDay && (info.inStatusColor === 'orange' || info.inStatusColor === 'red')) late++;
                 totalHours += info.hours;
                 
-                // إضافة ساعات هذا الأسبوع
                 if (currentDate >= startOfCurrentWeek && currentDate <= endOfCurrentWeek) {
                     weeklyHours += info.hours;
                 }
@@ -259,21 +258,22 @@ export default function StaffAttendance({
         queryClient.invalidateQueries({ queryKey: ['staff_month_data'] });
     };
 
+    // ✅ دالة الطباعة المحدثة للحصول على ورقة A4 مثالية بـ حواف 0.5 سم من كل الاتجاهات
     const handlePrint = () => {
         if (!printRef.current) return;
         const printContent = printRef.current.innerHTML;
         const originalContent = document.body.innerHTML;
         
         document.body.innerHTML = `
-            <div dir="rtl" style="font-family: 'Tajawal', sans-serif; margin: 0; padding: 0; width: 100%;">
-                <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px;">
-                    <h2 style="margin: 0; font-size: 20px; font-weight: bold;">تقرير الحضور والانصراف التفصيلي</h2>
-                    <h4 style="margin: 5px 0; font-size: 16px;">الموظف: ${employee.name} | الكود: ${employee.employee_id}</h4>
-                    <p style="margin: 0; font-size: 14px; font-weight: bold; color: #555;">تقرير شهر: ${viewMonth}</p>
+            <div dir="rtl" style="font-family: 'Tajawal', sans-serif; margin: 0; padding: 0; width: 100%; box-sizing: border-box;">
+                <div style="text-align: center; margin-bottom: 10px; border-bottom: 2px solid #000; padding-bottom: 10px;">
+                    <h2 style="margin: 0 0 5px 0; font-size: 18px; font-weight: bold;">تقرير الحضور والانصراف التفصيلي</h2>
+                    <h4 style="margin: 0 0 5px 0; font-size: 14px;">الموظف: ${employee.name} | الكود: ${employee.employee_id} | التخصص: ${employee.specialty}</h4>
+                    <p style="margin: 0; font-size: 12px; font-weight: bold; color: #555;">عن شهر: ${new Date(viewMonth).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</p>
                 </div>
                 ${printContent}
                 
-                <div style="display: flex; justify-content: space-between; margin-top: 30px; font-weight: bold; font-size: 14px; padding: 0 40px;">
+                <div style="display: flex; justify-content: space-between; margin-top: 15px; font-weight: bold; font-size: 12px; padding: 0 40px;">
                     <div>توقيع الموظف:<br/><br/>..............................</div>
                     <div>اعتماد شؤون العاملين:<br/><br/>..............................</div>
                 </div>
@@ -336,7 +336,6 @@ export default function StaffAttendance({
                     <span className="text-sm md:text-xl font-black text-gray-800">{stats.late}</span>
                     <span className="text-[9px] md:text-[10px] text-gray-400 font-bold">تأخيرات</span>
                 </div>
-                {/* كارت ساعات العمل الأسبوعية (الجديد) */}
                 <div className="bg-blue-50/50 border border-blue-100 p-2 md:p-3 rounded-2xl shadow-sm flex flex-col items-center justify-center gap-0.5 md:gap-1">
                     <div className="p-1.5 bg-blue-100 text-blue-600 rounded-full"><Clock className="w-4 h-4 md:w-5 md:h-5"/></div>
                     <span className="text-sm md:text-xl font-black text-blue-700">{stats.weeklyHours} <span className="text-[9px] font-normal">س</span></span>
@@ -350,19 +349,31 @@ export default function StaffAttendance({
             </div>
 
             {/* 📋 جدول العرض مع خصائص التصغير (Mobile) والطباعة (Print) */}
-            <div className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden print-container" ref={printRef}>
-                {/* CSS مخصص لترتيب الورقة المطبوعة */}
+            <div className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden w-full" ref={printRef}>
+                {/* ✅ CSS مخصص لترتيب الورقة المطبوعة لـ A4 بشكل متكامل وتجريدها من خصائص التمرير (Scroll) */}
                 <style type="text/css" media="print">
                     {`
-                        @page { size: A4 portrait; margin: 1cm; }
-                        .print-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-                        .print-table th, .print-table td { border: 1px solid #333 !important; padding: 4px !important; text-align: center !important; }
+                        @page { size: A4 portrait; margin: 0.5cm; }
+                        body { background: white !important; margin: 0 !important; padding: 0 !important; }
+                        
+                        /* إزالة السكرول وضمان طباعة جميع الصفوف */
+                        .print-container { overflow: visible !important; height: auto !important; max-height: none !important; }
+                        .custom-scrollbar { overflow: visible !important; }
+                        
+                        /* إعدادات الجدول للطباعة */
+                        .print-table { width: 100% !important; border-collapse: collapse; font-size: 11px; line-height: 1.1; }
+                        .print-table th, .print-table td { border: 1px solid #444 !important; padding: 3px 4px !important; text-align: center !important; height: 18px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                         .print-table th { background-color: #f3f4f6 !important; font-weight: bold; }
+                        
+                        /* إخفاء جملة (اضغط لتقديم طلب) من الطباعة */
+                        .print-no-click { display: none !important; }
+                        
+                        /* إظهار الأعمدة المخفية في الموبايل لكي تظهر في الطباعة بشكل طبيعي */
                         .print-show { display: table-cell !important; }
                         .mobile-only-info { display: none !important; }
                     `}
                 </style>
-                <div className="w-full">
+                <div className="w-full overflow-x-auto custom-scrollbar print-container">
                     <table className="w-full text-center text-xs md:text-sm print-table">
                         <thead className="bg-gray-50/80 font-black text-gray-600 border-b">
                             <tr>
@@ -424,7 +435,11 @@ export default function StaffAttendance({
                                         ) : row.type === 'holiday' ? (
                                             <span className="text-orange-600 text-[9px] md:text-[10px] font-bold block bg-orange-50 p-1 rounded-md max-w-[80px] mx-auto truncate">عطلة: {row.data.name}</span>
                                         ) : row.type === 'absent' ? (
-                                            <span className="text-red-500 text-[10px] md:text-xs font-bold block">غياب</span>
+                                            <div className="flex flex-col items-center gap-0.5">
+                                                <span className="text-red-500 text-[10px] md:text-xs font-bold block">غياب</span>
+                                                {/* ✅ جملة اضغط لتقديم طلب مع إخفائها في الطباعة */}
+                                                <span className="text-[8px] text-red-400 font-bold print-no-click">(اضغط لتقديم طلب)</span>
+                                            </div>
                                         ) : row.type === 'not_required' ? (
                                             <span className="text-gray-400 text-[9px] md:text-xs font-bold">{row.notRequiredReason}</span>
                                         ) : !row.isWorkDay && !row.isFuture ? (
