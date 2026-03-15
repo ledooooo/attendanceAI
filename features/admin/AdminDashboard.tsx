@@ -9,7 +9,7 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus, GraduationCap // ✅ استيراد GraduationCap لأيقونة الزمالة
+    Trash2, UserPlus, GraduationCap, FolderOpen // ✅ استيراد أيقونة ملفات المدير
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -47,6 +47,9 @@ import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
 
 // ✅ استيراد لوحة تحكم الزمالة (التي أنشأناها)
 import AdminFellowshipTab from './components/AdminFellowshipTab'; 
+
+// ✅ استيراد التبويب الجديد لملفات المدير
+import AdminDocumentsTab from './components/AdminDocumentsTab';
 
 // ✅ دالة بديلة لـ dayjs لحساب "منذ متى" بالعربية
 const formatTimeAgo = (dateString: string) => {
@@ -173,8 +176,14 @@ export default function AdminDashboard() {
         refetchInterval: 30000, 
     });
 
+    // ✅ التعديل الذكي: السحب يعمل فقط من الربع الأيمن من الشاشة (منعاً للخطأ أثناء تصفح الجداول)
     const swipeHandlers = useSwipeable({
-        onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
+        onSwipedLeft: (eventData) => { 
+            // window.innerWidth * 0.75 تمثل 75% من الشاشة، أي أن البداية يجب أن تكون في الـ 25% اليمنى فقط
+            if (eventData.initial[0] > window.innerWidth * 0.75) {
+                setIsSidebarOpen(true); 
+            }
+        },
         onSwipedRight: () => setIsSidebarOpen(false),
         trackMouse: true, delta: 50,
     });
@@ -203,13 +212,14 @@ export default function AdminDashboard() {
             case 'assets': return <AssetsManager />;
             case 'training': return <TrainingManager />;
             case 'library-manager': return <AdminLibraryManager />;
+            case 'admin-documents': return <AdminDocumentsTab />; // ✅ التبويب الجديد
             case 'data-reports': return <AdminDataReports employees={employees || []} />;
             case 'absence-report': return <AbsenceReportTab />;
             case 'tasks': return <TasksManager employees={employees || []} />;
             case 'vaccinations': return <VaccinationsTab employees={employees || []} />;
             case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
          // case 'visitors_dashboard': return <AdminVisitorsDashboard />; 
-            case 'fellowship': return <AdminFellowshipTab />; // ✅ استدعاء واجهة إدارة الزمالة
+            case 'fellowship': return <AdminFellowshipTab />;
             default: return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
         }
     };
@@ -341,7 +351,6 @@ export default function AdminDashboard() {
                                                         <div>
                                                             <h5 className="text-xs font-bold text-gray-800">{notif.title}</h5>
                                                             <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{notif.message}</p>
-                                                            {/* ✅ استخدام الدالة البديلة هنا */}
                                                             <span className="text-[9px] text-gray-400 mt-1 block">{formatTimeAgo(notif.created_at)}</span>
                                                         </div>
                                                     </div>
@@ -382,8 +391,7 @@ export default function AdminDashboard() {
 // قائمة القائمة الجانبية المحدثة
 const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
- // { id: 'visitors_dashboard', label: 'بوابة الزائرين', icon: UserPlus }, 
-    { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap }, // ✅ تمت إضافة زر الزمالة هنا
+    { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
     { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
@@ -404,6 +412,7 @@ const menuItems = [
     { id: 'assets', label: 'العهد', icon: Box },
     { id: 'absence-report', label: 'الغياب', icon: FileX },
     { id: 'library-manager', label: 'المكتبة', icon: FileArchive },
+    { id: 'admin-documents', label: 'ملفات المدير', icon: FolderOpen }, // ✅ تمت الإضافة هنا
     { id: 'data-reports', label: 'البيانات', icon: Database },
     { id: 'staff_admin', label: 'إدارة', icon: UserCog },
     { id: 'send_reports', label: 'بريد', icon: Mail },
