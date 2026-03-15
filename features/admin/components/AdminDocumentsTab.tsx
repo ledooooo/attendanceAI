@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 interface AdminDocument {
     id: string;
     name: string;
+    originalName: string; // الاسم الفعلي في السيرفر لغرض الحذف
     type: string;
     url: string;
     size: string;
@@ -25,36 +26,37 @@ export default function AdminDocumentsTab() {
     const fetchDocuments = async () => {
         setIsLoading(true);
         try {
-            // قراءة محتويات المجلد admin_docs
             const { data, error } = await supabase.storage.from('admin_docs').list();
             
             if (error) throw error;
             
-            // استبعاد الملف الـ placeholder الخفي الخاص بـ supabase
             const validFiles = data.filter(file => file.name !== '.emptyFolderPlaceholder');
 
             const formattedDocs = validFiles.map(file => {
-                // استخراج الرابط المباشر للملف
                 const { data: publicUrlData } = supabase.storage.from('admin_docs').getPublicUrl(file.name);
                 
-                // تحديد نوع الملف من امتداده
                 const extension = file.name.split('.').pop()?.toLowerCase();
                 let type = 'other';
                 if (extension === 'pdf') type = 'pdf';
                 else if (['doc', 'docx'].includes(extension || '')) type = 'word';
                 else if (['xls', 'xlsx'].includes(extension || '')) type = 'excel';
 
+                // تنظيف الاسم للعرض (حذف التوقيت والامتداد، واستبدال الشرطة السفلية بمسافة)
+                const displayName = file.name
+                    .replace(/_[0-9]+\.[a-zA-Z0-9]+$/, "") // حذف التوقيت الزمني من النهاية
+                    .replace(/_/g, " "); // إعادة المسافات
+
                 return {
                     id: file.id,
-                    name: file.name.replace(/\.[^/.]+$/, ""), // إزالة الامتداد من الاسم للعرض
+                    name: displayName,
+                    originalName: file.name, // نحتفظ بالاسم الأصلي لعملية الحذف
                     type: type,
                     url: publicUrlData.publicUrl,
-                    size: (file.metadata?.size / 1024).toFixed(1) + ' KB', // تحويل الحجم لكيلوبايت
+                    size: (file.metadata?.size / 1024).toFixed(1) + ' KB',
                     created_at: file.created_at
                 };
             });
 
-            // ترتيب الملفات الأحدث أولاً
             setDocuments(formattedDocs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
         } catch (error: any) {
             console.error('Error fetching docs:', error);
@@ -68,14 +70,14 @@ export default function AdminDocumentsTab() {
         fetchDocuments();
     }, []);
 
-    // 2. الفلترة المحلية (لا تستهلك داتا بيز)
+    // 2. الفلترة المحلية 
     const filteredDocs = useMemo(() => {
         return documents.filter(doc => 
             doc.name.toLowerCase().includes(searchQuery.toLowerCase())
         );
     }, [searchQuery, documents]);
 
-    // 3. رفع ملف جديد أوتوماتيكياً
+    // 3. رفع ملف جديد بمعالجة ذكية للاسم
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -84,35 +86,34 @@ export default function AdminDocumentsTab() {
         const toastId = toast.loading('جاري رفع الملف...');
 
         try {
-            // منع تكرار الأسماء بإضافة طابع زمني
             const fileExt = file.name.split('.').pop();
-            const fileName = `${file.name.replace(/\.[^/.]+$/, "")}_${Date.now()}.${fileExt}`;
+            const baseName = file.name.replace(/\.[^/.]+$/, "");
+            
+            // ✅ الفلتر الذكي: استبدال أي مسافة أو رمز خاص بشرطة سفلية ليقبله السيرفر
+            const safeBaseName = baseName.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '_');
+            const fileName = `${safeBaseName}_${Date.now()}.${fileExt}`;
 
             const { error } = await supabase.storage.from('admin_docs').upload(fileName, file);
             
             if (error) throw error;
 
             toast.success('تم رفع الملف بنجاح!', { id: toastId });
-            fetchDocuments(); // تحديث القائمة أوتوماتيكياً
+            fetchDocuments(); 
         } catch (error: any) {
             console.error('Upload error:', error);
             toast.error('فشل رفع الملف', { id: toastId });
         } finally {
             setIsUploading(false);
-            if (event.target) event.target.value = ''; // تفريغ الـ input
+            if (event.target) event.target.value = ''; 
         }
     };
 
     // 4. حذف ملف
-    const handleDelete = async (fileNameWithExt: string, docName: string) => {
+    const handleDelete = async (originalFileName: string, docName: string) => {
         if (!confirm(`هل أنت متأكد من حذف ${docName}؟`)) return;
 
         try {
-            // يجب استخراج الاسم الفعلي للملف مع امتداده من الـ URL أو تمريره، للتبسيط سنقوم باستخراجه من الرابط
-            const urlParts = fileNameWithExt.split('/');
-            const actualFileName = decodeURIComponent(urlParts[urlParts.length - 1]);
-
-            const { error } = await supabase.storage.from('admin_docs').remove([actualFileName]);
+            const { error } = await supabase.storage.from('admin_docs').remove([originalFileName]);
             if (error) throw error;
 
             toast.success('تم حذف الملف');
@@ -165,7 +166,7 @@ export default function AdminDocumentsTab() {
                     </p>
                 </div>
                 
-                {/* زر الرفع المخفي كـ Input */}
+                {/* زر الرفع */}
                 <label className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md cursor-pointer active:scale-95">
                     {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
                     {isUploading ? 'جاري الرفع...' : 'رفع ملف جديد'}
@@ -179,7 +180,7 @@ export default function AdminDocumentsTab() {
                     <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input 
                         type="text"
-                        placeholder="ابحث عن نموذج..."
+                        placeholder="ابحث عن نموذج (مثال: إجازة، سياسات، تقييم)..."
                         className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pr-11 pl-4 font-bold text-sm focus:border-indigo-500 outline-none transition-all"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -197,7 +198,7 @@ export default function AdminDocumentsTab() {
                 <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
                     <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-lg font-black text-gray-600 mb-1">لا توجد ملفات</h3>
-                    <p className="text-sm font-bold text-gray-400">قم برفع ملفاتك الأولى لتظهر هنا أوتوماتيكياً.</p>
+                    <p className="text-sm font-bold text-gray-400">قم برفع ملفاتك الإدارية لتظهر هنا أوتوماتيكياً.</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -214,10 +215,10 @@ export default function AdminDocumentsTab() {
                                     <span className="bg-white/60 text-gray-600 px-2 py-1 rounded-lg text-[10px] font-black border border-gray-200">
                                         {doc.size}
                                     </span>
-                                    {/* زر الحذف */}
+                                    {/* زر الحذف يرسل الاسم الأصلي للملف */}
                                     <button 
-                                        onClick={() => handleDelete(doc.url, doc.name)}
-                                        className="p-1.5 bg-white text-red-500 rounded-lg border border-red-100 hover:bg-red-50 transition-colors"
+                                        onClick={() => handleDelete(doc.originalName, doc.name)}
+                                        className="p-1.5 bg-white text-red-500 rounded-lg border border-red-100 hover:bg-red-50 transition-colors shadow-sm"
                                         title="حذف الملف"
                                     >
                                         <Trash2 className="w-3.5 h-3.5" />
