@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
@@ -11,7 +9,7 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus, GraduationCap
+    Trash2, UserPlus, GraduationCap // ✅ استيراد GraduationCap لأيقونة الزمالة
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -30,7 +28,7 @@ import BirthdayWidget from './components/BirthdayWidget';
 import EOMManager from './components/EOMManager';
 import AdminMessagesTab from './components/AdminMessagesTab';
 import QualityDashboard from './components/QualityDashboard'; 
-import AdminDocumentsTab from './components/AdminDocumentsTab'; // ✅ استيراد مكتبة الملفات والنماذج الإدارية
+import AdminLibraryManager from './components/AdminLibraryManager'; 
 import AdminDataReports from './components/AdminDataReports'; 
 import AbsenceReportTab from './components/AbsenceReportTab';
 import TasksManager from './components/TasksManager';
@@ -43,8 +41,14 @@ import SupervisorsManager from './components/SupervisorsManager';
 import StatisticsManager from './components/StatisticsManager';
 import CompetitionsManager from './components/CompetitionsManager';
 import AdminSupervisorRounds from './components/AdminSupervisorRounds';
-import AdminFellowshipTab from './components/AdminFellowshipTab';
 
+// ✅ استيراد بوابة الزائرين
+import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
+
+// ✅ استيراد لوحة تحكم الزمالة (التي أنشأناها)
+import AdminFellowshipTab from './components/AdminFellowshipTab'; 
+
+// ✅ دالة بديلة لـ dayjs لحساب "منذ متى" بالعربية
 const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -57,54 +61,17 @@ const formatTimeAgo = (dateString: string) => {
     return date.toLocaleDateString('ar-EG');
 };
 
-const menuItems = [
-    { id: 'home', label: 'الرئيسية', icon: Home },
-    { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap },
-    { id: 'doctors', label: 'شئون الموظفين', icon: Users },
-    { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
-    { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
-    { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: 0 },
-    { id: 'tasks', label: 'التكليفات', icon: CheckSquare, badge: 0 },
-    { id: 'all_messages', label: 'الرسائل', icon: MessageCircle, badge: 0 },
-    { id: 'quality', label: 'الجودة (OVR)', icon: AlertTriangle, badge: 0 },
-    { id: 'supervisors', label: 'المشرفين', icon: ShieldCheck, badge: 0 },
-    { id: 'supervisor-rounds', label: 'المرور', icon: MapPin },
-    { id: 'reports', label: 'التقارير', icon: FileBarChart },
-    { id: 'statistics', label: 'الإحصائيات', icon: BarChart3 },
-    { id: 'evaluations', label: 'التقييمات', icon: Activity },
-    { id: 'news', label: 'الأخبار', icon: Newspaper },
-    { id: 'competitions', label: 'المسابقات', icon: Swords },
-    { id: 'gamification', label: 'النقاط', icon: Trophy },
-    { id: 'vaccinations', label: 'التطعيمات', icon: Syringe },
-    { id: 'training', label: 'التدريب', icon: BookOpen },
-    { id: 'assets', label: 'العهد', icon: Box },
-    { id: 'absence-report', label: 'الغياب', icon: FileX },
-    { id: 'library-manager', label: 'المكتبة', icon: FileArchive }, // ✅ تم إضافة مكتبة النماذج هنا
-    { id: 'data-reports', label: 'البيانات', icon: Database },
-    { id: 'staff_admin', label: 'إدارة', icon: UserCog },
-    { id: 'send_reports', label: 'بريد', icon: Mail },
-    { id: 'settings', label: 'الإعدادات', icon: Settings },
-];
-
-const MobileNavItem = ({ icon: Icon, label, active, onClick, badge }: any) => (
-    <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-colors w-14 ${active ? 'text-blue-600' : 'text-gray-400'}`}>
-        <div className={`p-1 rounded-lg transition-all relative ${active ? 'bg-blue-50' : ''}`}>
-            <Icon className={`w-5 h-5 ${active ? 'fill-current' : ''}`} />
-            {badge > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
-        </div>
-        <span className="text-[9px] font-bold">{label}</span>
-    </button>
-);
-
 export default function AdminDashboard() {
     const { signOut, user } = useAuth();
     const queryClient = useQueryClient();
     
+    // UI State
     const [activeTab, setActiveTab] = useState('home');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
     const notifRef = useRef<HTMLDivElement>(null);
 
+    // إغلاق قائمة الإشعارات عند النقر خارجها
     useEffect(() => {
         function handleClickOutside(event: any) {
             if (notifRef.current && !notifRef.current.contains(event.target)) {
@@ -115,6 +82,7 @@ export default function AdminDashboard() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [notifRef]);
 
+    // --- Data Queries ---
     const { data: employees = [], isLoading: isLoadingEmployees, refetch: refetchEmployees } = useQuery({
         queryKey: ['admin_employees'],
         queryFn: async () => {
@@ -144,6 +112,7 @@ export default function AdminDashboard() {
 
     const currentAdminEmployee = employees.find(e => e.id === user?.id) || ({} as Employee);
 
+    // --- Notifications Query ---
     const { data: notifications = [] } = useQuery({
         queryKey: ['admin_notifications_list'],
         queryFn: async () => {
@@ -154,7 +123,7 @@ export default function AdminDashboard() {
                 .limit(20);
             return data || [];
         },
-        enabled: showNotifications 
+        enabled: showNotifications // Fetch only when opened
     });
 
     const markAsReadMutation = useMutation({
@@ -171,6 +140,7 @@ export default function AdminDashboard() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin_notifications_list'] })
     });
 
+    // --- Badges & Settings ---
     const { data: settings } = useQuery({
         queryKey: ['general_settings'],
         queryFn: async () => {
@@ -203,16 +173,10 @@ export default function AdminDashboard() {
         refetchInterval: 30000, 
     });
 
-    // ✅ تحديث دالة السحب: تعمل فقط إذا بدأ السحب من الربع الأيمن (25%) من الشاشة
     const swipeHandlers = useSwipeable({
-        onSwipedLeft: (eventData) => { 
-            if (eventData.initial[0] > window.innerWidth * 0.75) {
-                setIsSidebarOpen(true); 
-            }
-        },
+        onSwipedLeft: (eventData) => { if (eventData.initial[0] > window.innerWidth / 2) setIsSidebarOpen(true); },
         onSwipedRight: () => setIsSidebarOpen(false),
-        trackMouse: true, 
-        delta: 50,
+        trackMouse: true, delta: 50,
     });
 
     // --- Content Renderer ---
@@ -238,13 +202,14 @@ export default function AdminDashboard() {
             case 'quality': return <QualityDashboard />;
             case 'assets': return <AssetsManager />;
             case 'training': return <TrainingManager />;
-            case 'library-manager': return <AdminDocumentsTab />; // ✅ ربط مكتبة النماذج هنا
+            case 'library-manager': return <AdminLibraryManager />;
             case 'data-reports': return <AdminDataReports employees={employees || []} />;
             case 'absence-report': return <AbsenceReportTab />;
             case 'tasks': return <TasksManager employees={employees || []} />;
             case 'vaccinations': return <VaccinationsTab employees={employees || []} />;
             case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
-            case 'fellowship': return <AdminFellowshipTab />;
+         // case 'visitors_dashboard': return <AdminVisitorsDashboard />; 
+            case 'fellowship': return <AdminFellowshipTab />; // ✅ استدعاء واجهة إدارة الزمالة
             default: return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
         }
     };
@@ -338,7 +303,7 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="flex items-center gap-3" ref={notifRef}>
-                        {/* زر الإشعارات הפعّال */}
+                        {/* زر الإشعارات الفعال */}
                         <div className="relative">
                             <button 
                                 onClick={() => setShowNotifications(!showNotifications)}
@@ -376,6 +341,7 @@ export default function AdminDashboard() {
                                                         <div>
                                                             <h5 className="text-xs font-bold text-gray-800">{notif.title}</h5>
                                                             <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">{notif.message}</p>
+                                                            {/* ✅ استخدام الدالة البديلة هنا */}
                                                             <span className="text-[9px] text-gray-400 mt-1 block">{formatTimeAgo(notif.created_at)}</span>
                                                         </div>
                                                     </div>
@@ -412,3 +378,44 @@ export default function AdminDashboard() {
         </div>
     );
 }
+
+// قائمة القائمة الجانبية المحدثة
+const menuItems = [
+    { id: 'home', label: 'الرئيسية', icon: Home },
+ // { id: 'visitors_dashboard', label: 'بوابة الزائرين', icon: UserPlus }, 
+    { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap }, // ✅ تمت إضافة زر الزمالة هنا
+    { id: 'doctors', label: 'شئون الموظفين', icon: Users },
+    { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
+    { id: 'schedules', label: 'جداول النوبتجية', icon: CalendarRange },
+    { id: 'leaves', label: 'طلبات الإجازات', icon: ClipboardList, badge: 0 },
+    { id: 'tasks', label: 'التكليفات', icon: CheckSquare, badge: 0 },
+    { id: 'all_messages', label: 'الرسائل', icon: MessageCircle, badge: 0 },
+    { id: 'quality', label: 'الجودة (OVR)', icon: AlertTriangle, badge: 0 },
+    { id: 'supervisors', label: 'المشرفين', icon: ShieldCheck, badge: 0 },
+    { id: 'supervisor-rounds', label: 'المرور', icon: MapPin },
+    { id: 'reports', label: 'التقارير', icon: FileBarChart },
+    { id: 'statistics', label: 'الإحصائيات', icon: BarChart3 },
+    { id: 'evaluations', label: 'التقييمات', icon: Activity },
+    { id: 'news', label: 'الأخبار', icon: Newspaper },
+    { id: 'competitions', label: 'المسابقات', icon: Swords },
+    { id: 'gamification', label: 'النقاط', icon: Trophy },
+    { id: 'vaccinations', label: 'التطعيمات', icon: Syringe },
+    { id: 'training', label: 'التدريب', icon: BookOpen },
+    { id: 'assets', label: 'العهد', icon: Box },
+    { id: 'absence-report', label: 'الغياب', icon: FileX },
+    { id: 'library-manager', label: 'المكتبة', icon: FileArchive },
+    { id: 'data-reports', label: 'البيانات', icon: Database },
+    { id: 'staff_admin', label: 'إدارة', icon: UserCog },
+    { id: 'send_reports', label: 'بريد', icon: Mail },
+    { id: 'settings', label: 'الإعدادات', icon: Settings },
+];
+
+const MobileNavItem = ({ icon: Icon, label, active, onClick, badge }: any) => (
+    <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-colors w-14 ${active ? 'text-blue-600' : 'text-gray-400'}`}>
+        <div className={`p-1 rounded-lg transition-all relative ${active ? 'bg-blue-50' : ''}`}>
+            <Icon className={`w-5 h-5 ${active ? 'fill-current' : ''}`} />
+            {badge > 0 && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
+        </div>
+        <span className="text-[9px] font-bold">{label}</span>
+    </button>
+);
