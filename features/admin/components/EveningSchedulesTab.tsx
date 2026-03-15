@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
@@ -260,7 +260,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         (fStatus === 'all' || e.status === fStatus)
     );
 
-    // ✅ دالة توليد الجدول الشهري: توزيع ذكي وتجميع الفائض لضمان عدم ضياع أي موظف
+    // ✅ دالة توليد الجدول الشهري
     const getMonthlyMatrix = () => {
         const [year, month] = selectedMonth.split('-');
         const daysInMonth = new Date(Number(year), Number(month), 0).getDate();
@@ -281,7 +281,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
             let nurses: string[] = [];
             let clerks: string[] = [];
             let admins: string[] = [];
-            let others: string[] = []; // لحفظ أي تخصص غير معروف وعرضه في الملاحظات
+            let others: string[] = []; 
 
             if (daySchedule && daySchedule.doctors) {
                 daySchedule.doctors.forEach((d: any) => {
@@ -289,7 +289,6 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                     const shortName = emp ? emp.name.split(' ').slice(0, 2).join(' ') : d.name;
                     const spec = emp ? (emp.specialty || '') : '';
                     
-                    // استخدام (includes) مع أجزاء الكلمات لتجنب مشاكل الـ (ي/ى) والهمزات
                     if (spec.includes('بشر') || spec === 'طبيب') humanDoctors.push(shortName);
                     else if (spec.includes('سنان')) dentists.push(shortName);
                     else if (spec.includes('صيدل')) pharmacists.push(shortName);
@@ -302,14 +301,12 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                 });
             }
 
-            // تجميع الملاحظات مع أسماء الموظفين غير المصنفين لضمان ظهور الجميع
             const finalNotes = [daySchedule?.notes, ...others].filter(Boolean).join(' - ');
 
             matrix.push({
                 date: dateStr,
                 dayNum: i,
                 dayName,
-                // العمود 1 يأخذ الأول، والعمود 2 يجمع الباقي (إن وُجِدوا) لضمان كتابة الجميع
                 humanDoc1: humanDoctors[0] || '-',
                 humanDoc2: humanDoctors.slice(1).join(' / ') || '-',
                 dentist1: dentists[0] || '-',
@@ -326,16 +323,38 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
         return matrix;
     };
 
-    // ✅ دالة الطباعة المضبوطة لصفحة واحدة (A4 Landscape) مع كافة الأعمدة
+    // ✅ دالة الطباعة الاحترافية للورقة الرسمية
     const handlePrint = () => {
         if (!printRef.current) return;
         const printContent = printRef.current.innerHTML;
         const originalContent = document.body.innerHTML;
+        const [year, month] = selectedMonth.split('-');
         
         document.body.innerHTML = `
-            <div dir="rtl" style="font-family: 'Tajawal', sans-serif; padding: 0; margin: 0;">
-                <h4 style="text-align: center; margin: 5px 0 10px 0; font-weight: bold; font-size: 16px;">جدول النوبتجية المسائية - شهر ${selectedMonth}</h4>
+            <div dir="rtl" style="font-family: 'Tajawal', Arial, sans-serif; padding: 0; margin: 0; font-size: 12px; font-weight: bold; width: 100%;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 10px;">
+                    <div style="text-align: right; line-height: 1.4;">
+                        <div>وزارة الصحة والسكان</div>
+                        <div>إدارة شمال الجيزة الطبية</div>
+                        <div>مركز طب أسرة غرب المطار</div>
+                    </div>
+                    <div style="text-align: center; font-size: 16px;">
+                        <span style="border: 2px solid #000; padding: 5px 15px; border-radius: 8px;">
+                            جدول نوبتجية شهر ( ${month} ) لعام ( ${year} )
+                        </span>
+                    </div>
+                    <div style="text-align: left; width: 150px; font-size: 10px;">
+                        تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')}
+                    </div>
+                </div>
+
                 ${printContent}
+                
+                <div style="display: flex; justify-content: space-between; margin-top: 15px; padding: 0 40px; font-size: 13px;">
+                    <div>الموظف المختص:<br/><br/>..............................</div>
+                    <div>مدير المركز:<br/><br/>..............................</div>
+                </div>
             </div>
         `;
         window.print();
@@ -489,17 +508,17 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                             <div className="py-20 text-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto"/></div>
                         ) : (
                             <div className="overflow-x-auto print-container" ref={printRef}>
-                                {/* ستايل طباعة فائق التجهيز لتقليص المساحات وإدراج 13 عموداً و31 صفاً في A4 Landscape */}
+                                {/* ✅ ستايل طباعة رسمي فائق الدقة بـ هوامش 0.5 سم */}
                                 <style type="text/css" media="print">
                                     {`
-                                        @page { size: A4 landscape; margin: 5mm; }
-                                        body { -webkit-print-color-adjust: exact; background: white; }
+                                        @page { size: A4 landscape; margin: 0.5cm; }
+                                        body { -webkit-print-color-adjust: exact; background: white; margin: 0; padding: 0; }
                                         .print-table { width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.1; table-layout: fixed; }
                                         .print-table th, .print-table td { border: 1px solid #333; padding: 1px 2px; text-align: center; height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                                         .print-table th { background-color: #e5e7eb !important; font-weight: bold; font-size: 10px; }
                                         .bg-red-50 { background-color: #fef2f2 !important; }
                                         
-                                        /* توزيع عرض الأعمدة لتناسب A4 */
+                                        /* تحديد النسب المئوية للأعمدة للتأكد من احتوائها في الورقة */
                                         .col-day { width: 4%; }
                                         .col-date { width: 6%; }
                                         .col-doc { width: 9%; }
@@ -526,7 +545,7 @@ export default function EveningSchedulesTab({ employees }: { employees: Employee
                                     </thead>
                                     <tbody>
                                         {getMonthlyMatrix().map((day) => (
-                                            <tr key={day.date} className={`border-t border-gray-200 ${day.dayName === 'الجمعة' ? 'bg-red-50/50 text-red-900 font-bold' : 'hover:bg-gray-50'}`}>
+                                            <tr key={day.date} className={`border-t border-gray-200 ${day.dayName === 'الجمعة' ? 'bg-red-50 text-red-900 font-bold' : 'hover:bg-gray-50'}`}>
                                                 <td className="font-bold text-[10px]">{day.dayName.replace('ال', '')}</td>
                                                 <td className="font-mono text-[10px]">{day.date}</td>
                                                 <td className="text-blue-800 font-bold text-[10px]">{day.humanDoc1}</td>
