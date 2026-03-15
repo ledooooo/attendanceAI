@@ -5,18 +5,18 @@ import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const BOTTLE_COUNT  = 6;
-const ROUND_SECS    = 45;
+const BOTTLE_COUNT  = 5;
+const ROUND_SECS    = 60;
+const MAX_ATTEMPTS  = 8;
 const REWARD_SECS   = 20;
 
-// ─── Vivid contrasting colors ─────────────────────────────────────────────────
+// ─── Vivid contrasting colors (5 only) ───────────────────────────────────────
 const COLORS = [
     { id: 'red',    label: 'أحمر',   bg: '#ef4444', light: '#fca5a5', dark: '#991b1b', glow: '#fbbf24' },
     { id: 'blue',   label: 'أزرق',   bg: '#3b82f6', light: '#93c5fd', dark: '#1e3a8a', glow: '#60a5fa' },
     { id: 'green',  label: 'أخضر',   bg: '#22c55e', light: '#86efac', dark: '#14532d', glow: '#4ade80' },
     { id: 'yellow', label: 'أصفر',   bg: '#eab308', light: '#fde047', dark: '#713f12', glow: '#fbbf24' },
     { id: 'purple', label: 'بنفسجي', bg: '#a855f7', light: '#d8b4fe', dark: '#4c1d95', glow: '#c084fc' },
-    { id: 'orange', label: 'برتقالي',bg: '#f97316', light: '#fdba74', dark: '#7c2d12', glow: '#fb923c' },
 ];
 
 type ColorId = typeof COLORS[number]['id'];
@@ -173,8 +173,8 @@ function useSound() {
 }
 
 // ─── Bottle SVG ───────────────────────────────────────────────────────────────
-function Bottle({ colorId, selected, correct, index, onClick, shake }: {
-    colorId: ColorId; selected: boolean; correct: boolean; index: number;
+function Bottle({ colorId, selected, index, onClick, shake }: {
+    colorId: ColorId; selected: boolean; index: number;
     onClick: () => void; shake: boolean;
 }) {
     const color = COLORS.find(c => c.id === colorId)!;
@@ -192,12 +192,6 @@ function Bottle({ colorId, selected, correct, index, onClick, shake }: {
             {selected && (
                 <div className="absolute -inset-2 rounded-2xl border-3 border-dashed border-white/80 animate-pulse"
                     style={{ borderWidth: 3 }}/>
-            )}
-            {/* Correct indicator */}
-            {correct && !selected && (
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white z-10 flex items-center justify-center">
-                    <span className="text-[8px] text-white font-black">✓</span>
-                </div>
             )}
             {/* Bottle SVG */}
             <svg viewBox="0 0 44 90" className="w-10 h-20 drop-shadow-lg" xmlns="http://www.w3.org/2000/svg">
@@ -330,12 +324,13 @@ interface Props {
 
 // ─── Player state in game ─────────────────────────────────────────────────────
 interface PlayerGS {
-    id:        string;
-    name:      string;
-    order:     ColorId[];     // current arrangement
-    attempts:  ColorId[][];   // history of checked attempts
-    solved:    boolean;
-    solvedAt:  number | null;
+    id:         string;
+    name:       string;
+    order:      ColorId[];     // current arrangement
+    attempts:   ColorId[][];   // history of checked attempts
+    solved:     boolean;
+    eliminated: boolean;       // used all attempts without solving
+    solvedAt:   number | null;
 }
 
 interface BottleGS {
@@ -357,9 +352,11 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     const status: string    = match.status ?? 'waiting';
 
     const myPS = players.find(p => p.id === myId);
-    const myOrder: ColorId[]    = myPS?.order    ?? [];
-    const myAttempts: ColorId[][] = myPS?.attempts ?? [];
-    const mySolved  = myPS?.solved ?? false;
+    const myOrder: ColorId[]      = myPS?.order      ?? [];
+    const myAttempts: ColorId[][] = myPS?.attempts   ?? [];
+    const mySolved     = myPS?.solved     ?? false;
+    const myEliminated = myPS?.eliminated ?? false;
+    const attemptsLeft = MAX_ATTEMPTS - myAttempts.length;
 
     // ── Local UI state ────────────────────────────────────────────────────────
     const [selected, setSelected]     = useState<number | null>(null);
@@ -477,32 +474,59 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
 
     // ── Check attempt ─────────────────────────────────────────────────────────
     const handleCheck = async () => {
-        if (checking || mySolved || status !== 'playing') return;
+        if (checking || mySolved || myEliminated || status !== 'playing') return;
         setChecking(true);
         const correct = countCorrect(myOrder, secret);
         setLastResult(correct);
+        const newAttempts = [...myAttempts, [...myOrder]];
+        const isLastAttempt = newAttempts.length >= MAX_ATTEMPTS;
 
         if (correct === BOTTLE_COUNT) {
+            // Solved!
             play('perfect');
-            const newAttempts = [...myAttempts, myOrder];
             const updatedPlayers = players.map(p =>
                 p.id === myId
-                    ? { ...p, attempts: newAttempts, solved: true, solvedAt: Date.now() }
+                    ? { ...p, attempts: newAttempts, solved: true, eliminated: false, solvedAt: Date.now() }
                     : p
             );
-            // Check if all solved or this is first
-            const allSolved = updatedPlayers.every(p => p.solved);
             const firstSolver = !gs.winnerId;
             const winnerId = firstSolver ? myId : gs.winnerId;
-
+            const allDone = updatedPlayers.every(p => p.solved || p.eliminated);
             await supabase.from('live_matches').update({
-                status: firstSolver ? 'reward_time' : allSolved ? 'reward_time' : 'playing',
+                status: firstSolver ? 'reward_time' : allDone ? 'reward_time' : 'playing',
+                winner_id: winnerId,
+                game_state: { ...gs, players: updatedPlayers, winnerId },
+            }).eq('id', match.id);
+        } else if (isLastAttempt) {
+            // Used all attempts without solving → eliminated
+            play('wrong');
+            const updatedPlayers = players.map(p =>
+                p.id === myId
+                    ? { ...p, attempts: newAttempts, eliminated: true }
+                    : p
+            );
+            // Check if all done (solved or eliminated)
+            const allDone = updatedPlayers.every(p => p.solved || p.eliminated);
+            let winnerId = gs.winnerId;
+            let newStatus = 'playing';
+            if (allDone && !winnerId) {
+                // Nobody solved → winner is best score in last attempt
+                const best = [...updatedPlayers]
+                    .filter(p => !p.eliminated)
+                    .sort((a, b) => (a.solvedAt ?? 0) - (b.solvedAt ?? 0));
+                winnerId = best[0]?.id ?? null;
+                newStatus = 'reward_time';
+            } else if (allDone) {
+                newStatus = 'reward_time';
+            }
+            await supabase.from('live_matches').update({
+                status: newStatus,
                 winner_id: winnerId,
                 game_state: { ...gs, players: updatedPlayers, winnerId },
             }).eq('id', match.id);
         } else {
+            // Normal wrong attempt
             play(correct > 0 ? 'correct' : 'wrong');
-            const newAttempts = [...myAttempts, [...myOrder]];
             const updatedPlayers = players.map(p =>
                 p.id === myId ? { ...p, attempts: newAttempts } : p
             );
@@ -525,10 +549,11 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         const secretOrder = makeSecret();
         const matchPlayers: PlayerGS[] = match.players.map((p: any) => ({
             id: p.id, name: p.name,
-            order:    makeScrambled(secretOrder),
-            attempts: [],
-            solved:   false,
-            solvedAt: null,
+            order:      makeScrambled(secretOrder),
+            attempts:   [],
+            solved:     false,
+            eliminated: false,
+            solvedAt:   null,
         }));
         await supabase.from('live_matches').update({
             status: 'playing',
@@ -541,12 +566,6 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         }).eq('id', match.id);
     };
 
-    // ── Correct positions for current order ───────────────────────────────────
-    const correctPositions = useMemo(
-        () => myOrder.map((c, i) => c === secret[i]),
-        [myOrder, secret]
-    );
-
     const timerPct  = timeLeft / ROUND_SECS;
     const timerColor = timerPct < 0.25 ? '#ef4444' : timerPct < 0.5 ? '#f97316' : '#22c55e';
 
@@ -555,6 +574,8 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         if (a.solved && !b.solved) return -1;
         if (!a.solved && b.solved) return 1;
         if (a.solved && b.solved) return (a.solvedAt ?? 0) - (b.solvedAt ?? 0);
+        if (a.eliminated && !b.eliminated) return 1;
+        if (!a.eliminated && b.eliminated) return -1;
         const aScore = countCorrect(a.attempts.at(-1) ?? [], secret);
         const bScore = countCorrect(b.attempts.at(-1) ?? [], secret);
         return bScore - aScore;
@@ -607,12 +628,31 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
             {/* Header */}
             <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-3 text-white shadow-lg">
                 <div className="flex items-center justify-between mb-2">
-                    <div>
-                        <p className="text-xs font-black text-indigo-200">المحاولة #{myAttempts.length + 1}</p>
+                    <div className="flex-1 min-w-0">
+                        {/* Attempts dots */}
+                        <div className="flex items-center gap-1.5 mb-1">
+                            {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
+                                <div key={i} className={`rounded-full transition-all ${
+                                    i < myAttempts.length
+                                        ? (myAttempts[i] && countCorrect(myAttempts[i], secret) === BOTTLE_COUNT
+                                            ? 'w-3 h-3 bg-green-400'
+                                            : 'w-2.5 h-2.5 bg-white/40')
+                                        : i === myAttempts.length
+                                            ? 'w-3 h-3 bg-yellow-300 animate-pulse'
+                                            : 'w-2.5 h-2.5 bg-white/20'
+                                }`}/>
+                            ))}
+                            <span className="text-[10px] font-black text-indigo-200 mr-1">
+                                {attemptsLeft} متبقية
+                            </span>
+                        </div>
                         {lastResult !== null && (
-                            <p className={`text-sm font-black ${lastResult === BOTTLE_COUNT ? 'text-green-300' : lastResult >= 4 ? 'text-yellow-300' : 'text-red-300'}`}>
+                            <p className={`text-sm font-black ${
+                                lastResult === BOTTLE_COUNT ? 'text-green-300' :
+                                lastResult >= 4 ? 'text-yellow-300' : 'text-red-300'
+                            }`}>
                                 {lastResult === BOTTLE_COUNT ? '🎉 مثالي!' :
-                                 lastResult > 0 ? `✅ ${lastResult} من ${BOTTLE_COUNT} في مكانها الصح` :
+                                 lastResult > 0 ? `✅ ${lastResult} من ${BOTTLE_COUNT} في مكانها` :
                                  '❌ لا شيء في مكانه'}
                             </p>
                         )}
@@ -642,9 +682,11 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                             const score = countCorrect(lastAttempt, secret);
                             return (
                                 <div key={p.id} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                    p.solved ? 'bg-green-400/30 text-green-200' : 'bg-white/15 text-white/80'
+                                    p.solved     ? 'bg-green-400/30 text-green-200' :
+                                    p.eliminated ? 'bg-red-400/30 text-red-300' :
+                                    'bg-white/15 text-white/80'
                                 }`}>
-                                    {p.solved ? '✓' : `${score}/${BOTTLE_COUNT}`} {p.name}
+                                    {p.solved ? '✓' : p.eliminated ? '✗' : `${score}/${BOTTLE_COUNT}`} {p.name}
                                 </div>
                             );
                         })}
@@ -653,11 +695,11 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
             </div>
 
             {/* My bottles */}
-            {!mySolved ? (
+            {!mySolved && !myEliminated ? (
                 <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-2xl p-4 shadow-xl">
-                    <p className="text-[10px] font-black text-gray-400 text-center mb-3">
+                    <p className="text-[10px] font-black text-center mb-3 text-gray-400">
                         {selected !== null
-                            ? `اختر الزجاجة الثانية للتبديل`
+                            ? 'اختر الزجاجة الثانية للتبديل'
                             : 'اضغط زجاجة ثم اضغط الثانية لتبديلهما'}
                     </p>
                     <div className="flex justify-center gap-2 mb-4">
@@ -665,34 +707,45 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                             <Bottle
                                 key={i} colorId={cid} index={i}
                                 selected={selected === i}
-                                correct={correctPositions[i]}
                                 shake={shakeIdx === i}
                                 onClick={() => handleBottleClick(i)}
                             />
                         ))}
                     </div>
-                    {/* Position numbers */}
+                    {/* Position numbers — always neutral */}
                     <div className="flex justify-center gap-2 mb-4 px-2">
                         {myOrder.map((_, i) => (
-                            <div key={i} className={`w-10 text-center text-[10px] font-black ${
-                                correctPositions[i] ? 'text-green-400' : 'text-gray-600'
-                            }`}>
+                            <div key={i} className="w-10 text-center text-[10px] font-black text-gray-500">
                                 {i + 1}
                             </div>
                         ))}
                     </div>
                     <button onClick={handleCheck} disabled={checking}
-                        className="w-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white py-3.5 rounded-xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+                        className={`w-full text-white py-3.5 rounded-xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2 ${
+                            attemptsLeft === 1
+                                ? 'bg-gradient-to-r from-red-500 to-rose-600'
+                                : attemptsLeft <= 3
+                                    ? 'bg-gradient-to-r from-orange-500 to-amber-500'
+                                    : 'bg-gradient-to-r from-indigo-500 to-violet-600'
+                        }`}>
                         {checking
                             ? <Loader2 className="w-5 h-5 animate-spin"/>
-                            : <><CheckCircle className="w-5 h-5"/> تحقق من الترتيب</>}
+                            : <><CheckCircle className="w-5 h-5"/>
+                                {attemptsLeft === 1 ? '⚠️ آخر محاولة! تحقق' : `تحقق (${attemptsLeft} محاولة متبقية)`}
+                              </>}
                     </button>
                 </div>
-            ) : (
+            ) : mySolved ? (
                 <div className="bg-green-900/80 rounded-2xl p-4 text-center border-2 border-green-400">
                     <Trophy className="w-10 h-10 text-yellow-300 mx-auto mb-2 animate-bounce"/>
                     <p className="font-black text-white text-lg">رتّبتها! 🎉</p>
                     <p className="text-green-300 text-xs mt-1">في انتظار باقي اللاعبين...</p>
+                </div>
+            ) : (
+                <div className="bg-red-900/80 rounded-2xl p-4 text-center border-2 border-red-400">
+                    <p className="text-4xl mb-2">😞</p>
+                    <p className="font-black text-white text-lg">انتهت محاولاتك!</p>
+                    <p className="text-red-300 text-xs mt-1">استنفدت الـ {MAX_ATTEMPTS} محاولات</p>
                 </div>
             )}
 
@@ -813,7 +866,9 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                             <p className="flex-1 font-black text-sm text-gray-800">{p.name}{p.id === myId && ' (أنت)'}</p>
                             {p.solved
                                 ? <span className="text-xs font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full">✓ حلّها</span>
-                                : <span className="text-xs font-black text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{lastScore}/{BOTTLE_COUNT}</span>
+                                : p.eliminated
+                                    ? <span className="text-xs font-black text-red-500 bg-red-100 px-2 py-0.5 rounded-full">✗ انتهت</span>
+                                    : <span className="text-xs font-black text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{lastScore}/{BOTTLE_COUNT}</span>
                             }
                         </div>
                     );
