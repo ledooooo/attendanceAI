@@ -2,14 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
-import { ExcelUploadButton } from '../../../components/ui/ExcelUploadButton';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { 
-    Download, Users, ArrowRight, User, Clock, FileText, 
-    Award, BarChart, Inbox, ArrowUpDown, ArrowUp, ArrowDown, PieChart, 
-    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Baby, Timer, Info, Syringe, ShieldCheck, Mail,
-    Gift, Gamepad2, AlertTriangle, FilePlus, Stethoscope, ClipboardList
+    Users, ArrowRight, User, Clock, FileText, 
+    Award, BarChart, Inbox, ArrowUp, ArrowDown, PieChart, 
+    RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, Timer, Syringe, ShieldCheck, Gift
 } from 'lucide-react';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -59,7 +57,8 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     const [fId, setFId] = useState('');
     const [fSpec, setFSpec] = useState('all');
     const [fStatus, setFStatus] = useState('نشط');
-    const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'employee_id' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+    // ✅ دعم الترتيب (Sort) للاسم والتخصص والكود
+    const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'employee_id' | 'specialty' | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
     const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
     const [detailTab, setDetailTab] = useState('profile');
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -88,24 +87,6 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         hep_b_dose1: '', hep_b_dose2: '', hep_b_dose3: '', hep_b_notes: '', hep_b_location: ''
     };
     const [formData, setFormData] = useState(initialFormState);
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    const { data: dashboardStats } = useQuery({
-        queryKey: ['admin_dashboard_summary', todayStr],
-        queryFn: async () => {
-            const [attRes, reqRes, ovrRes] = await Promise.all([
-                supabase.from('attendance').select('employee_id').eq('date', todayStr).in('status', ['حضور', 'مأمورية', 'إذن']),
-                supabase.from('leave_requests').select('id, employee_name, type, created_at').eq('status', 'معلق').limit(5),
-                supabase.from('quality_reports').select('id, incident_type, severity').eq('status', 'مفتوح').limit(5)
-                    .catch(() => ({ data: [] })) 
-            ]);
-            return {
-                presentIds: attRes.data?.map(a => a.employee_id) || [],
-                pendingRequests: reqRes.data || [],
-                ovrs: ovrRes?.data || []
-            };
-        }
-    });
 
     const { data: empData = { attendance: [], requests: [], evals: [], messages: [] }, isLoading: loadingDetails } = useQuery({
         queryKey: ['employee_full_details', selectedEmp?.employee_id],
@@ -213,20 +194,18 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         saveMutation.mutate(formData);
     };
 
-    const handleSort = (key: 'name' | 'employee_id') => {
+    const handleSort = (key: 'name' | 'employee_id' | 'specialty') => {
         let direction: 'asc' | 'desc' = 'asc';
         if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
         setSortConfig({ key, direction });
     };
 
-    // ✅ دالة التصدير المفقودة
     const handleExportEmployees = () => {
         if (employees.length === 0) {
             toast.error("لا توجد بيانات لتصديرها");
             return;
         }
         
-        // تجهيز البيانات لملف الإكسيل (تنظيف البيانات ليكون الملف مقروء)
         const exportData = employees.map(emp => ({
             "الكود": emp.employee_id,
             "الاسم": emp.name,
@@ -247,6 +226,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
         XLSX.writeFile(wb, `بيانات_الموظفين_${new Date().toLocaleDateString('ar-EG')}.xlsx`);
     };
 
+    // ✅ تحديث دالة الترتيب (Sort) لتدعم التخصص
     const sortedEmployees = useMemo(() => {
         let filtered = employees.filter(e => 
             (e.name.includes(fName)) && (e.employee_id.includes(fId)) && 
@@ -255,34 +235,15 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
 
         if (sortConfig.key !== null) {
             filtered.sort((a, b) => {
-                // @ts-ignore
-                if (a[sortConfig.key!] < b[sortConfig.key!]) return sortConfig.direction === 'asc' ? -1 : 1;
-                // @ts-ignore
-                if (a[sortConfig.key!] > b[sortConfig.key!]) return sortConfig.direction === 'asc' ? 1 : -1;
+                const aVal = a[sortConfig.key!] || '';
+                const bVal = b[sortConfig.key!] || '';
+                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
             });
         }
         return filtered;
     }, [employees, fName, fId, fSpec, fStatus, sortConfig]);
-
-    const specialtyStats = useMemo(() => {
-        const activeEmps = employees.filter(e => e.status === 'نشط');
-        const presentIds = dashboardStats?.presentIds || [];
-        
-        const stats = activeEmps.reduce((acc, emp) => {
-            if (!acc[emp.specialty]) acc[emp.specialty] = { total: 0, present: 0 };
-            acc[emp.specialty].total += 1;
-            if (presentIds.includes(emp.employee_id)) acc[emp.specialty].present += 1;
-            return acc;
-        }, {} as Record<string, { total: number, present: number }>);
-
-        return Object.entries(stats).map(([name, data]) => ({
-            name,
-            total: data.total,
-            present: data.present,
-            absent: data.total - data.present
-        })).sort((a, b) => b.total - a.total);
-    }, [employees, dashboardStats]);
 
     const handleOpenAdd = () => {
         setFormData(initialFormState);
@@ -395,91 +356,17 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             
-            <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar hide-scrollbar-mobile">
-                <button onClick={handleOpenAdd} className="shrink-0 flex items-center gap-2 bg-gradient-to-l from-blue-600 to-blue-800 text-white px-5 py-3 rounded-2xl font-bold hover:shadow-lg transition-all active:scale-95">
-                    <UserPlus className="w-5 h-5"/> إضافة موظف
-                </button>
-                <button onClick={() => toast('سيتم توجيهك لصفحة الألعاب...')} className="shrink-0 flex items-center gap-2 bg-purple-50 text-purple-700 border border-purple-200 px-5 py-3 rounded-2xl font-bold hover:bg-purple-100 transition-all active:scale-95">
-                    <Gamepad2 className="w-5 h-5"/> صالة الألعاب (Arcade)
-                </button>
-                <button onClick={() => toast('سيتم فتح نموذج إضافة OVR...')} className="shrink-0 flex items-center gap-2 bg-red-50 text-red-700 border border-red-200 px-5 py-3 rounded-2xl font-bold hover:bg-red-100 transition-all active:scale-95">
-                    <AlertTriangle className="w-5 h-5"/> بلاغ OVR سريع
-                </button>
-                <button onClick={() => toast('سيتم فتح نموذج إضافة مرور...')} className="shrink-0 flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-200 px-5 py-3 rounded-2xl font-bold hover:bg-emerald-100 transition-all active:scale-95">
-                    <ClipboardList className="w-5 h-5"/> تسجيل مرور إداري
-                </button>
-                <button onClick={() => toast('سيتم فتح نافذة إرسال بريد...')} className="shrink-0 flex items-center gap-2 bg-orange-50 text-orange-700 border border-orange-200 px-5 py-3 rounded-2xl font-bold hover:bg-orange-100 transition-all active:scale-95">
-                    <Mail className="w-5 h-5"/> إرسال تعميم (بريد)
-                </button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 p-5">
-                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-50">
-                        <h3 className="font-black text-gray-800 flex items-center gap-2"><Stethoscope className="text-blue-600 w-5 h-5"/> القوة الفعلية (النشطة) لليوم</h3>
-                        <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-full">إجمالي النشطين: {specialtyStats.reduce((a, b) => a + b.total, 0)}</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
-                        {specialtyStats.map(stat => (
-                            <div key={stat.name} className="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100 hover:border-blue-200 transition-colors">
-                                <span className="font-bold text-gray-700 text-sm truncate max-w-[100px]">{stat.name}</span>
-                                <div className="flex items-center gap-3 text-xs font-bold text-gray-500">
-                                    <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md" title="العدد الإجمالي">كل: {stat.total}</span>
-                                    <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded-md" title="الحضور اليوم">ح: {stat.present}</span>
-                                    {stat.absent > 0 && <span className="text-red-500 bg-red-50 px-2 py-0.5 rounded-md" title="الغياب">غ: {stat.absent}</span>}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 flex flex-col gap-4">
-                    <div>
-                        <h3 className="font-black text-gray-800 flex items-center gap-2 mb-3"><FilePlus className="text-orange-500 w-4 h-4"/> طلبات معلقة ({dashboardStats?.pendingRequests?.length || 0})</h3>
-                        <div className="space-y-2">
-                            {dashboardStats?.pendingRequests?.length === 0 ? (
-                                <p className="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded-lg">لا توجد طلبات معلقة</p>
-                            ) : (
-                                dashboardStats?.pendingRequests?.map((req: any) => (
-                                    <div key={req.id} className="flex justify-between items-center bg-orange-50/50 p-2.5 rounded-lg border border-orange-100 text-xs font-bold">
-                                        <span className="text-gray-700 truncate w-32">{req.employee_name}</span>
-                                        <span className="text-orange-600 bg-white px-2 py-0.5 rounded-md shadow-sm">{req.type}</span>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <h3 className="font-black text-gray-800 flex items-center gap-2 mb-3"><AlertTriangle className="text-red-500 w-4 h-4"/> بلاغات OVR مفتوحة ({dashboardStats?.ovrs?.length || 0})</h3>
-                        <div className="space-y-2">
-                            {dashboardStats?.ovrs?.length === 0 ? (
-                                <p className="text-xs text-gray-400 text-center py-2 bg-gray-50 rounded-lg">لا توجد بلاغات مفتوحة</p>
-                            ) : (
-                                dashboardStats?.ovrs?.map((ovr: any) => (
-                                    <div key={ovr.id} className="flex justify-between items-center bg-red-50/50 p-2.5 rounded-lg border border-red-100 text-xs font-bold">
-                                        <span className="text-gray-700 truncate w-32">{ovr.incident_type}</span>
-                                        <span className={`px-2 py-0.5 rounded-md shadow-sm ${ovr.severity === 'عالي' || ovr.severity === 'High' ? 'bg-red-600 text-white' : 'bg-white text-red-600'}`}>
-                                            {ovr.severity}
-                                        </span>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            <div className="flex flex-col md:flex-row justify-between items-center border-t border-gray-200 pt-6 gap-4 mt-6">
+            {/* Header & Actions */}
+            <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
                 <h2 className="text-xl font-black flex items-center gap-2 text-gray-800"><Users className="w-6 h-6 text-blue-600"/> إدارة وتعديل الموظفين</h2>
-                <div className="flex gap-2">
-                    <button onClick={() => { if(confirm('تأكيد المزامنة؟')) syncMutation.mutate(); }} disabled={syncMutation.isPending} className="bg-white text-blue-600 border border-blue-200 px-4 py-2 rounded-xl font-bold hover:bg-blue-50 transition-all text-sm flex items-center gap-2">
+                <div className="flex gap-2 flex-wrap justify-center">
+                    <button onClick={handleOpenAdd} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-all text-sm shadow-md active:scale-95">
+                        <UserPlus className="w-4 h-4"/> إضافة موظف
+                    </button>
+                    <button onClick={() => { if(confirm('تأكيد المزامنة؟')) syncMutation.mutate(); }} disabled={syncMutation.isPending} className="bg-white text-blue-600 border border-blue-200 px-4 py-2 rounded-xl font-bold hover:bg-blue-50 transition-all text-sm flex items-center gap-2 active:scale-95">
                         <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? 'animate-spin' : ''}`}/> مزامنة الأرصدة
                     </button>
-                    {/* ✅ إعادة تفعيل زر تصدير الإكسيل بنجاح */}
-                    <button onClick={handleExportEmployees} className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-100 transition-all text-sm">
+                    <button onClick={handleExportEmployees} className="bg-green-50 text-green-700 border border-green-200 px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-100 transition-all text-sm active:scale-95">
                         <FileSpreadsheet className="w-4 h-4"/> تصدير Excel
                     </button>
                 </div>
@@ -502,7 +389,10 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                             <th className="p-4 cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => handleSort('name')}>
                                 <div className="flex items-center gap-1">الاسم {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}</div>
                             </th>
-                            <th className="p-4 text-center">التخصص</th>
+                            {/* ✅ إضافة النقر لترتيب التخصص */}
+                            <th className="p-4 text-center cursor-pointer hover:bg-gray-200 transition-colors" onClick={() => handleSort('specialty')}>
+                                <div className="flex items-center justify-center gap-1">التخصص {sortConfig.key === 'specialty' && (sortConfig.direction === 'asc' ? <ArrowUp className="w-4 h-4 text-blue-600"/> : <ArrowDown className="w-4 h-4 text-blue-600"/>)}</div>
+                            </th>
                             <th className="p-4 text-center">آخر ظهور</th> 
                             <th className="p-4 text-center">الصلاحية</th>
                             <th className="p-4 text-center">إجراءات</th>
@@ -556,6 +446,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 </table>
             </div>
 
+            {/* Modal for Rewards */}
             {showRewardModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-sm overflow-hidden zoom-in-95">
@@ -584,6 +475,7 @@ export default function DoctorsTab({ employees, onRefresh, centerId }: { employe
                 </div>
             )}
 
+            {/* Modal for Add/Edit Employee */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 my-8">
