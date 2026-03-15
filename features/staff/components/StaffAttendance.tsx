@@ -206,6 +206,7 @@ export default function StaffAttendance({
                 if (isWorkDay && (info.inStatusColor === 'orange' || info.inStatusColor === 'red')) late++;
                 totalHours += info.hours;
                 
+                // إضافة ساعات هذا الأسبوع
                 if (currentDate >= startOfCurrentWeek && currentDate <= endOfCurrentWeek) {
                     weeklyHours += info.hours;
                 }
@@ -336,6 +337,7 @@ export default function StaffAttendance({
                     <span className="text-sm md:text-xl font-black text-gray-800">{stats.late}</span>
                     <span className="text-[9px] md:text-[10px] text-gray-400 font-bold">تأخيرات</span>
                 </div>
+                {/* كارت ساعات العمل الأسبوعية (الجديد) */}
                 <div className="bg-blue-50/50 border border-blue-100 p-2 md:p-3 rounded-2xl shadow-sm flex flex-col items-center justify-center gap-0.5 md:gap-1">
                     <div className="p-1.5 bg-blue-100 text-blue-600 rounded-full"><Clock className="w-4 h-4 md:w-5 md:h-5"/></div>
                     <span className="text-sm md:text-xl font-black text-blue-700">{stats.weeklyHours} <span className="text-[9px] font-normal">س</span></span>
@@ -362,7 +364,7 @@ export default function StaffAttendance({
                         
                         /* إعدادات الجدول للطباعة */
                         .print-table { width: 100% !important; border-collapse: collapse; font-size: 11px; line-height: 1.1; }
-                        .print-table th, .print-table td { border: 1px solid #444 !important; padding: 3px 4px !important; text-align: center !important; height: 18px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .print-table th, .print-table td { border: 1px solid #444 !important; padding: 4px 4px !important; text-align: center !important; height: 18px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                         .print-table th { background-color: #f3f4f6 !important; font-weight: bold; }
                         
                         /* إخفاء جملة (اضغط لتقديم طلب) من الطباعة */
@@ -377,50 +379,50 @@ export default function StaffAttendance({
                     <table className="w-full text-center text-xs md:text-sm print-table">
                         <thead className="bg-gray-50/80 font-black text-gray-600 border-b">
                             <tr>
-                                <th className="p-3 md:p-4">التاريخ</th>
-                                <th className="p-3 md:p-4">اليوم</th>
+                                {/* ✅ العمود الأول: التاريخ واليوم معاً */}
+                                <th className="p-3 md:p-4">التاريخ واليوم</th>
                                 <th className="p-3 md:p-4">الحضور</th>
                                 <th className="p-3 md:p-4">الانصراف</th>
+                                {/* ✅ العمود الرابع: عدد الساعات */}
+                                <th className="p-3 md:p-4">ساعات العمل</th>
+                                {/* أعمدة تظهر في الديسكتوب والطباعة فقط */}
                                 <th className="p-3 md:p-4 hidden md:table-cell print-show">حالة الحضور</th>
                                 <th className="p-3 md:p-4 hidden md:table-cell print-show">حالة الانصراف</th>
-                                <th className="p-3 md:p-4 hidden md:table-cell print-show">إجمالي الساعات</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {isLoading ? (
-                                <tr><td colSpan={7} className="p-10 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2"/>جاري تحميل البيانات...</td></tr>
-                            ) : tableRows.map((row: any) => (
+                                <tr><td colSpan={6} className="p-10 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto mb-2"/>جاري تحميل البيانات...</td></tr>
+                            ) : tableRows.map((row: any) => {
+                                // تحديد لون السطر بناءً على الحالة (تبادلي أو مخصص للغياب/الإجازة)
+                                const rowClass = `
+                                    transition-colors
+                                    ${row.type === 'absent' ? 'bg-red-50/50 cursor-pointer hover:bg-red-100/60' : 
+                                      row.type === 'leave' ? 'bg-purple-50/40' : 
+                                      row.type === 'holiday' ? 'bg-orange-50/40' : 
+                                      row.type === 'not_required' ? 'bg-gray-100/60 opacity-70' : 
+                                      !row.isWorkDay ? 'bg-gray-50' : 
+                                      'bg-white even:bg-slate-50/40 hover:bg-blue-50/30'}
+                                `;
+
+                                return (
                                 <tr 
                                     key={row.dateStr} 
-                                    className={`
-                                        transition-colors
-                                        ${!row.isWorkDay ? 'bg-gray-50/70' : 'hover:bg-gray-50'}
-                                        ${row.type === 'absent' ? 'bg-red-50/40 cursor-pointer hover:bg-red-100/50' : ''}
-                                        ${row.type === 'leave' ? 'bg-purple-50/30' : ''}
-                                        ${row.type === 'holiday' ? 'bg-orange-50/30' : ''}
-                                        ${row.type === 'not_required' ? 'bg-gray-100/50 opacity-60' : ''} 
-                                    `}
+                                    className={rowClass}
                                     onClick={() => row.type === 'absent' && setSelectedAbsenceDate(row.dateStr)}
                                 >
-                                    <td className="p-2 md:p-4 font-bold text-gray-700">
-                                        <span className="font-mono">{row.dateStr.split('-').reverse().join('/')}</span>
-                                        {/* الموبايل: عرض الساعات أسفل التاريخ */}
-                                        {row.type === 'present' && row.data.hours > 0 && (
-                                            <div className="block md:hidden mobile-only-info text-[9px] text-blue-600 mt-0.5 bg-blue-50 rounded px-1 w-fit mx-auto border border-blue-100 font-black">
-                                                {row.data.hours} ساعة
-                                            </div>
-                                        )}
+                                    {/* العمود الأول: التاريخ واليوم */}
+                                    <td className="p-2 md:p-4 text-gray-700">
+                                        <div className="font-mono font-bold text-xs md:text-sm">{row.dateStr.split('-').reverse().join('/')}</div>
+                                        <div className={`text-[10px] md:text-xs font-bold mt-0.5 ${!row.isWorkDay ? 'text-gray-400' : 'text-gray-500'}`}>{row.dayName}</div>
                                         {row.isNursing && row.isWorkDay && (
-                                            <span className="block text-[8px] md:text-[9px] bg-pink-100 text-pink-600 px-1.5 py-0.5 rounded w-fit mx-auto mt-1 flex items-center gap-1 justify-center">
+                                            <span className="block text-[8px] md:text-[9px] bg-pink-100 text-pink-600 px-1.5 py-0.5 rounded w-fit mx-auto mt-1 flex items-center gap-1 justify-center border border-pink-200">
                                                 <Baby className="w-2.5 h-2.5"/> رضاعة
                                             </span>
                                         )}
                                     </td>
                                     
-                                    <td className={`p-2 md:p-4 font-bold ${!row.isWorkDay ? 'text-gray-400 text-[10px] md:text-sm' : 'text-gray-600 text-xs md:text-sm'}`}>
-                                        {row.dayName}
-                                    </td>
-                                    
+                                    {/* العمود الثاني: الحضور */}
                                     <td className="p-2 md:p-4">
                                         {row.type === 'present' ? (
                                             <div className="flex flex-col items-center gap-0.5">
@@ -431,9 +433,9 @@ export default function StaffAttendance({
                                                 </span>
                                             </div>
                                         ) : row.type === 'leave' ? (
-                                            <span className="text-purple-600 text-[9px] md:text-[10px] font-bold block bg-purple-50 p-1 rounded-md max-w-[80px] mx-auto truncate">إجازة: {row.data.type}</span>
+                                            <span className="text-purple-600 text-[9px] md:text-[10px] font-bold block bg-purple-50 p-1 rounded-md max-w-[80px] mx-auto truncate border border-purple-100">إجازة: {row.data.type}</span>
                                         ) : row.type === 'holiday' ? (
-                                            <span className="text-orange-600 text-[9px] md:text-[10px] font-bold block bg-orange-50 p-1 rounded-md max-w-[80px] mx-auto truncate">عطلة: {row.data.name}</span>
+                                            <span className="text-orange-600 text-[9px] md:text-[10px] font-bold block bg-orange-50 p-1 rounded-md max-w-[80px] mx-auto truncate border border-orange-100">عطلة: {row.data.name}</span>
                                         ) : row.type === 'absent' ? (
                                             <div className="flex flex-col items-center gap-0.5">
                                                 <span className="text-red-500 text-[10px] md:text-xs font-bold block">غياب</span>
@@ -447,6 +449,7 @@ export default function StaffAttendance({
                                         ) : <span className="text-gray-300">-</span>}
                                     </td>
 
+                                    {/* العمود الثالث: الانصراف */}
                                     <td className="p-2 md:p-4">
                                         {row.type === 'present' && row.data.cout ? (
                                             <div className="flex flex-col items-center gap-0.5">
@@ -456,6 +459,17 @@ export default function StaffAttendance({
                                                     {row.data.outStatus}
                                                 </span>
                                             </div>
+                                        ) : <span className="text-gray-300">-</span>}
+                                    </td>
+
+                                    {/* ✅ العمود الرابع: عدد ساعات العمل */}
+                                    <td className="p-2 md:p-4 font-mono font-black text-blue-600">
+                                        {row.type === 'present' && row.data.hours > 0 ? (
+                                            <div className="bg-blue-50 border border-blue-100 px-2 py-1 rounded-lg w-fit mx-auto">
+                                                {row.data.hours} <span className="text-[9px] font-normal">س</span>
+                                            </div>
+                                        ) : row.type === 'not_required' ? (
+                                            <span className="text-gray-400 text-[9px] md:text-xs font-normal">غير مطالب</span>
                                         ) : <span className="text-gray-300">-</span>}
                                     </td>
 
@@ -471,16 +485,8 @@ export default function StaffAttendance({
                                             <span className={`px-2 py-1 rounded-lg text-xs font-bold border ${getColorClass(row.data.outStatusColor)}`}>{row.data.outStatus}</span>
                                         )}
                                     </td>
-
-                                    <td className="p-4 font-mono font-black text-blue-600 hidden md:table-cell print-show">
-                                        {row.type === 'present' && row.data.hours > 0 ? (
-                                            <span>{row.data.hours} س</span>
-                                        ) : row.type === 'not_required' ? (
-                                            <span className="text-gray-400 text-xs font-normal">غير مطالب</span>
-                                        ) : ''}
-                                    </td>
                                 </tr>
-                            ))}
+                            )})}
                         </tbody>
                     </table>
                 </div>
