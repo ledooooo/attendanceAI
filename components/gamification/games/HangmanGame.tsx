@@ -616,9 +616,15 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
                         </div>
                     </div>
                     <button onClick={handleStart}
-                        className="w-full bg-gradient-to-r from-rose-500 to-pink-700 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all">
+                        disabled={match.players?.length < 2}
+                        className="w-full bg-gradient-to-r from-rose-500 to-pink-700 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
                         🎮 ابدأ اللعبة
                     </button>
+                    {match.players?.length < 2 && (
+                        <p className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl text-center">
+                            ⏳ في انتظار لاعب آخر للانضمام...
+                        </p>
+                    )}
                 </>
             ) : (
                 <div className="flex items-center gap-2 justify-center text-sm font-bold text-gray-400 py-6 bg-gray-50 rounded-2xl">

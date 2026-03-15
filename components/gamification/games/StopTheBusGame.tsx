@@ -592,9 +592,9 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
         else    toast.error('إجابة خاطئة — حظ أوفر 😅');
     };
 
-    // ── Host start ────────────────────────────────────────────────────────────
-    const isHost = players.length > 0 &&
-        [...players].sort((a, b) => a.id.localeCompare(b.id))[0]?.id === myId;
+    // ── Host: المضيف هو أول لاعب دخل الغرفة (من match.players) ───────────────
+    const isHost = (match.players?.length ?? 0) > 0 &&
+        [...(match.players ?? [])].sort((a: any, b: any) => a.id.localeCompare(b.id))[0]?.id === myId;
 
     const handleStart = async () => {
         await supabase.from('live_matches').update({
@@ -632,10 +632,18 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                 ))}
             </div>
             {isHost ? (
-                <button onClick={handleStart}
-                    className="bg-gradient-to-r from-violet-500 to-purple-700 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all">
-                    🎲 ابدأ اللعبة
-                </button>
+                <div className="flex flex-col items-center gap-2">
+                    <button onClick={handleStart}
+                        disabled={players.length < 2}
+                        className="bg-gradient-to-r from-violet-500 to-purple-700 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
+                        🎲 ابدأ اللعبة
+                    </button>
+                    {players.length < 2 && (
+                        <p className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                            ⏳ في انتظار لاعب آخر للانضمام...
+                        </p>
+                    )}
+                </div>
             ) : (
                 <div className="flex items-center gap-2 justify-center text-sm font-bold text-gray-400">
                     <Loader2 className="w-4 h-4 animate-spin"/> في انتظار المضيف...

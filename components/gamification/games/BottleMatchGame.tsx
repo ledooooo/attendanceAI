@@ -364,6 +364,20 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     const [timeLeft, setTimeLeft]     = useState(ROUND_SECS);
     const [checking, setChecking]     = useState(false);
     const [lastResult, setLastResult] = useState<number | null>(null);
+    // localOrder: instant UI update — synced from DB on mount/change
+    const [localOrder, setLocalOrder] = useState<ColorId[]>([]);
+
+    // Sync localOrder when DB order changes (on join or new game)
+    useEffect(() => {
+        if (myPS?.order && myPS.order.length > 0) {
+            setLocalOrder(myPS.order);
+        }
+    }, [myPS?.order?.join(','), status]);
+
+    // Reset lastResult when new game starts
+    useEffect(() => {
+        if (status === 'playing') setLastResult(null);
+    }, [gs.startedAt]);
 
     // Reward question state
     const [question, setQuestion]   = useState<any>(null);
@@ -447,20 +461,14 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     // ── Swap two bottles ──────────────────────────────────────────────────────
     const handleBottleClick = (idx: number) => {
         if (mySolved || status !== 'playing') return;
-        if (selected === null) {
-            setSelected(idx);
-            return;
-        }
-        if (selected === idx) {
-            setSelected(null);
-            return;
-        }
-        // Swap
-        const newOrder = [...myOrder];
+        if (selected === null) { setSelected(idx); return; }
+        if (selected === idx)  { setSelected(null); return; }
+        const newOrder = [...localOrder];
         [newOrder[selected], newOrder[idx]] = [newOrder[idx], newOrder[selected]];
         play('swap');
         setSelected(null);
-        updateMyOrder(newOrder);
+        setLocalOrder(newOrder);   // instant UI
+        updateMyOrder(newOrder);   // async DB
     };
 
     const updateMyOrder = async (newOrder: ColorId[]) => {
@@ -476,9 +484,9 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     const handleCheck = async () => {
         if (checking || mySolved || myEliminated || status !== 'playing') return;
         setChecking(true);
-        const correct = countCorrect(myOrder, secret);
+        const correct = countCorrect(localOrder, secret);
         setLastResult(correct);
-        const newAttempts = [...myAttempts, [...myOrder]];
+        const newAttempts = [...myAttempts, [...localOrder]];
         const isLastAttempt = newAttempts.length >= MAX_ATTEMPTS;
 
         if (correct === BOTTLE_COUNT) {
@@ -534,7 +542,7 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                 game_state: { ...gs, players: updatedPlayers },
             }).eq('id', match.id);
             // Shake wrong bottles
-            myOrder.forEach((cid, i) => {
+            localOrder.forEach((cid, i) => {
                 if (cid !== secret[i]) {
                     setTimeout(() => setShakeIdx(i), i * 60);
                     setTimeout(() => setShakeIdx(null), i * 60 + 350);
@@ -604,10 +612,18 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                 ))}
             </div>
             {isHost ? (
-                <button onClick={handleStart}
-                    className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all">
-                    🎮 ابدأ اللعبة
-                </button>
+                <div className="flex flex-col items-center gap-2">
+                    <button onClick={handleStart}
+                        disabled={match.players?.length < 2}
+                        className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
+                        🎮 ابدأ اللعبة
+                    </button>
+                    {match.players?.length < 2 && (
+                        <p className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                            ⏳ في انتظار لاعب آخر للانضمام...
+                        </p>
+                    )}
+                </div>
             ) : (
                 <div className="flex items-center gap-2 justify-center text-sm font-bold text-gray-400">
                     <Loader2 className="w-4 h-4 animate-spin"/> في انتظار المضيف...
@@ -703,7 +719,7 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                             : 'اضغط زجاجة ثم اضغط الثانية لتبديلهما'}
                     </p>
                     <div className="flex justify-center gap-2 mb-4">
-                        {myOrder.map((cid, i) => (
+                        {localOrder.map((cid, i) => (
                             <Bottle
                                 key={i} colorId={cid} index={i}
                                 selected={selected === i}
@@ -714,13 +730,13 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                     </div>
                     {/* Position numbers — always neutral */}
                     <div className="flex justify-center gap-2 mb-4 px-2">
-                        {myOrder.map((_, i) => (
+                        {localOrder.map((_, i) => (
                             <div key={i} className="w-10 text-center text-[10px] font-black text-gray-500">
                                 {i + 1}
                             </div>
                         ))}
                     </div>
-                    <button onClick={handleCheck} disabled={checking}
+                    <button onClick={handleCheck} disabled={checking || attemptsLeft <= 0}
                         className={`w-full text-white py-3.5 rounded-xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2 ${
                             attemptsLeft === 1
                                 ? 'bg-gradient-to-r from-red-500 to-rose-600'
