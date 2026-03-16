@@ -458,24 +458,24 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     const [checking, setChecking]     = useState(false);
     const [lastResult, setLastResult] = useState<number | null>(null);
     const [swapPair, setSwapPair]     = useState<[number, number] | null>(null);
-    // localOrder: instant UI — initialized from DB directly, then kept in sync
-    const [localOrder, setLocalOrder] = useState<ColorId[]>(() => myPS?.order ?? []);
+    // optimisticOrder: local optimistic state shown in UI before DB round-trip
+    const [optimisticOrder, setOptimisticOrder] = useState<ColorId[] | null>(null);
 
-    // Sync localOrder whenever the DB copy changes (new game, first load)
-    useEffect(() => {
-        if (myPS?.order && myPS.order.length > 0) {
-            setLocalOrder(prev =>
-                // Only overwrite if it looks like we haven't made any local moves yet
-                prev.length === 0 ? myPS.order : prev
-            );
-        }
-    }, [status]); // run when game starts
+    // The order we actually show — optimistic if available, else from DB
+    const displayOrder: ColorId[] = optimisticOrder ?? myOrder;
 
-    // Always sync on fresh game start
+    // Clear optimistic when DB catches up
     useEffect(() => {
-        if (myPS?.order && myPS.order.length > 0) {
-            setLocalOrder(myPS.order);
+        if (myOrder.length > 0 && optimisticOrder) {
+            // DB has caught up — clear optimistic
+            setOptimisticOrder(null);
         }
+    }, [myOrder.join(',')]);
+
+    // Reset on new game
+    useEffect(() => {
+        setOptimisticOrder(null);
+        setLastResult(null);
     }, [gs.startedAt]);
 
     // Reward question state
@@ -565,17 +565,16 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
 
         const fromIdx = selected;
         const toIdx   = idx;
-        const newOrder = [...localOrder];
+        const newOrder = [...displayOrder];
         [newOrder[fromIdx], newOrder[toIdx]] = [newOrder[toIdx], newOrder[fromIdx]];
 
-        // Trigger swap animation
         setSwapPair([fromIdx, toIdx]);
         setTimeout(() => setSwapPair(null), 300);
 
         play('swap');
         setSelected(null);
-        setLocalOrder(newOrder);
-        updateMyOrder(newOrder);
+        setOptimisticOrder(newOrder);  // instant UI
+        updateMyOrder(newOrder);        // async DB
     };
 
     const updateMyOrder = async (newOrder: ColorId[]) => {
@@ -590,11 +589,11 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     // ── Check attempt ─────────────────────────────────────────────────────────
     const handleCheck = async () => {
         if (checking || mySolved || myEliminated || status !== 'playing') return;
-        // Safety: use DB order as fallback if localOrder somehow empty
-        const orderToCheck = localOrder.length === BOTTLE_COUNT
-            ? localOrder
-            : (myPS?.order ?? []);
-        if (orderToCheck.length !== BOTTLE_COUNT) return;
+        // Use displayOrder (optimistic or DB) — must have correct length
+        const orderToCheck = displayOrder.length === BOTTLE_COUNT ? displayOrder : myOrder;
+        if (orderToCheck.length !== BOTTLE_COUNT) {
+            toast.error('انتظر لحظة...'); return;
+        }
         setChecking(true);
         const correct = countCorrect(orderToCheck, secret);
         setLastResult(correct);
@@ -850,7 +849,7 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                             : 'اضغط زجاجة ثم اضغط الثانية لتبديلهما'}
                     </p>
                     <div className="relative flex justify-center gap-3 mb-5">
-                        {localOrder.map((cid, i) => (
+                        {displayOrder.map((cid, i) => (
                             <Bottle
                                 key={i} colorId={cid} index={i}
                                 selected={selected === i}
@@ -862,7 +861,7 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                     </div>
                     {/* Position numbers */}
                     <div className="relative flex justify-center gap-3 mb-4 px-2">
-                        {localOrder.map((_, i) => (
+                        {displayOrder.map((_, i) => (
                             <div key={i} className="w-11 text-center text-[11px] font-black"
                                 style={{ color: 'rgba(255,255,255,0.3)' }}>
                                 {i + 1}
