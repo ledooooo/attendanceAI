@@ -6,8 +6,8 @@ import { Employee } from '../../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BOTTLE_COUNT  = 5;
-const ROUND_SECS    = 60;
-const MAX_ATTEMPTS  = 8;
+const ROUND_SECS    = 90;
+const MAX_ATTEMPTS  = 10;
 const REWARD_SECS   = 20;
 
 // ─── Vivid contrasting colors (5 only) ───────────────────────────────────────
@@ -256,9 +256,8 @@ function AttemptRow({ attempt, secret, num }: { attempt: ColorId[]; secret: Colo
             <div className="flex gap-1 flex-1">
                 {attempt.map((cid, i) => {
                     const color = COLORS.find(c => c.id === cid)!;
-                    const isCorrect = cid === secret[i];
                     return (
-                        <div key={i} className={`w-5 h-5 rounded-full border-2 ${isCorrect ? 'border-green-300 scale-110' : 'border-white/20'}`}
+                        <div key={i} className="w-5 h-5 rounded-full border-2 border-white/20"
                             style={{ background: color.bg }}/>
                     );
                 })}
