@@ -9,25 +9,21 @@ import toast from 'react-hot-toast';
 interface AdminDocument {
     id: string;
     name: string;
-    originalName: string; // الاسم المشفر في السيرفر لغرض الحذف
+    originalName: string; 
     type: string;
     url: string;
     size: string;
     created_at: string;
 }
 
-// =========================================================
-// 💡 دوال الترجمة الذكية لحل مشكلة الحروف العربية في السيرفرات
-// =========================================================
+// دوال الترجمة الذكية لحل مشكلة الحروف العربية في السيرفرات
 const encodeFileName = (str: string) => {
-    // تحويل النص العربي إلى شفرة Hexadecimal (حروف إنجليزية وأرقام فقط)
     return Array.from(new TextEncoder().encode(str))
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
 };
 
 const decodeFileName = (str: string) => {
-    // التأكد من أن النص هو شفرة Hexadecimal قبل فك التشفير
     if (/^[0-9a-fA-F]+$/.test(str) && str.length % 2 === 0) {
         try {
             const match = str.match(/.{1,2}/g);
@@ -39,10 +35,8 @@ const decodeFileName = (str: string) => {
             return str;
         }
     }
-    // إذا لم يكن مشفراً (مثلاً ملف قديم باللغة الإنجليزية)، نعرضه كما هو
     return str.replace(/_/g, " "); 
 };
-// =========================================================
 
 export default function AdminDocumentsTab() {
     const [documents, setDocuments] = useState<AdminDocument[]>([]);
@@ -50,12 +44,10 @@ export default function AdminDocumentsTab() {
     const [isLoading, setIsLoading] = useState(true);
     const [isUploading, setIsUploading] = useState(false);
 
-    // 1. جلب الملفات أوتوماتيكياً من Supabase Storage
     const fetchDocuments = async () => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase.storage.from('admin_docs').list();
-            
             if (error) throw error;
             
             const validFiles = data.filter(file => file.name !== '.emptyFolderPlaceholder');
@@ -69,11 +61,10 @@ export default function AdminDocumentsTab() {
                 else if (['doc', 'docx'].includes(extension || '')) type = 'word';
                 else if (['xls', 'xlsx', 'csv'].includes(extension || '')) type = 'excel';
 
-                // فك التشفير لاستخراج الاسم العربي الأصلي
                 const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
                 const parts = nameWithoutExt.split('_');
-                const timestamp = parts.pop(); // استبعاد التوقيت الزمني من نهاية الاسم
-                const encodedBaseName = parts.join('_'); // ما يتبقى هو الاسم المشفر
+                const timestamp = parts.pop(); 
+                const encodedBaseName = parts.join('_'); 
                 
                 const displayName = decodeFileName(encodedBaseName);
 
@@ -101,31 +92,27 @@ export default function AdminDocumentsTab() {
         fetchDocuments();
     }, []);
 
-    // 2. الفلترة المحلية 
     const filteredDocs = useMemo(() => {
         return documents.filter(doc => 
             doc.name.toLowerCase().includes(searchQuery.toLowerCase())
         );
     }, [searchQuery, documents]);
 
-    // 3. رفع ملف جديد بشفرة آمنة
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
 
         setIsUploading(true);
-        const toastId = toast.loading('جاري رفع الملف السري...');
+        const toastId = toast.loading('جاري رفع الملف...');
 
         try {
             const fileExt = file.name.split('.').pop()?.toLowerCase() || '';
             const baseName = file.name.replace(/\.[^/.]+$/, "");
             
-            // ✅ تشفير الاسم العربي لضمان قبول السيرفر له بنسبة 100%
             const safeEncodedName = encodeFileName(baseName);
             const fileName = `${safeEncodedName}_${Date.now()}.${fileExt}`;
 
             const { error } = await supabase.storage.from('admin_docs').upload(fileName, file);
-            
             if (error) throw error;
 
             toast.success('تم رفع الملف بنجاح!', { id: toastId });
@@ -139,7 +126,6 @@ export default function AdminDocumentsTab() {
         }
     };
 
-    // 4. حذف ملف
     const handleDelete = async (originalFileName: string, docName: string) => {
         if (!confirm(`هل أنت متأكد من حذف الملف "${docName}"؟`)) return;
 
@@ -169,17 +155,50 @@ export default function AdminDocumentsTab() {
         return 'bg-gray-50 border-gray-100 group-hover:border-gray-300';
     };
 
-    const handleAction = (doc: AdminDocument) => {
+    // ✅ برمجة الطباعة المباشرة الصامتة للـ PDF
+    const handleAction = async (doc: AdminDocument) => {
         if (doc.type === 'pdf') {
-            window.open(doc.url, '_blank');
+            const toastId = toast.loading(`جاري تحضير ${doc.name} للطباعة المباشرة...`);
+            try {
+                // سحب الملف כـ Blob لتجاوز الحماية (CORS) والسماح للطباعة المباشرة
+                const response = await fetch(doc.url);
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                
+                // إنشاء نافذة iframe مخفية ووضع الملف فيها
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = blobUrl;
+                document.body.appendChild(iframe);
+                
+                // أمر الطباعة يتم بمجرد تحميل الإطار المخفي
+                iframe.onload = () => {
+                    setTimeout(() => {
+                        iframe.contentWindow?.focus();
+                        iframe.contentWindow?.print();
+                        toast.success('تم فتح نافذة الطباعة بنجاح! 🖨️', { id: toastId });
+                        
+                        // تنظيف الذاكرة بعد قليل
+                        setTimeout(() => {
+                            document.body.removeChild(iframe);
+                            URL.revokeObjectURL(blobUrl);
+                        }, 15000);
+                    }, 500);
+                };
+            } catch (error) {
+                console.error('Print Error:', error);
+                toast.error('حدثت مشكلة في الطباعة الصامتة، سيتم الفتح في نافذة جديدة', { id: toastId });
+                window.open(doc.url, '_blank');
+            }
         } else {
+            // الوورد والاكسيل يتم تحميلهما أوتوماتيكياً
             const link = document.createElement('a');
             link.href = doc.url;
             link.download = doc.name;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-            toast.success(`جاري تحميل ${doc.name} للطباعة`, { icon: '⬇️' });
+            toast.success(`تم تحميل ملف الوورد/الاكسيل للطباعة`, { icon: '⬇️' });
         }
     };
 
@@ -197,7 +216,6 @@ export default function AdminDocumentsTab() {
                     </p>
                 </div>
                 
-                {/* زر الرفع */}
                 <label className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md cursor-pointer active:scale-95">
                     {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
                     {isUploading ? 'جاري الرفع...' : 'رفع ملف جديد'}
@@ -246,7 +264,6 @@ export default function AdminDocumentsTab() {
                                     <span className="bg-white/60 text-gray-600 px-2 py-1 rounded-lg text-[10px] font-black border border-gray-200">
                                         {doc.size}
                                     </span>
-                                    {/* زر الحذف يرسل الاسم الأصلي للملف */}
                                     <button 
                                         onClick={() => handleDelete(doc.originalName, doc.name)}
                                         className="p-1.5 bg-white text-red-500 rounded-lg border border-red-100 hover:bg-red-50 transition-colors shadow-sm"
@@ -270,9 +287,10 @@ export default function AdminDocumentsTab() {
                                 <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
                                     {doc.type.toUpperCase()}
                                 </span>
+                                {/* ✅ الزر الذكي يعتمد طباعة للـ PDF وتحميلاً للوورد والاكسيل */}
                                 <button 
                                     onClick={() => handleAction(doc)}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-colors active:scale-95 ${
                                         doc.type === 'pdf' 
                                             ? 'bg-red-600 text-white hover:bg-red-700 shadow-md shadow-red-200' 
                                             : doc.type === 'word'
@@ -281,7 +299,7 @@ export default function AdminDocumentsTab() {
                                     }`}
                                 >
                                     {doc.type === 'pdf' ? <Printer className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
-                                    {doc.type === 'pdf' ? 'عرض وطباعة' : 'تنزيل للطباعة'}
+                                    {doc.type === 'pdf' ? 'طباعة مباشرة' : 'تنزيل للطباعة'}
                                 </button>
                             </div>
                         </div>
