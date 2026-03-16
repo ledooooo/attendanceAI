@@ -6,17 +6,17 @@ import { Employee } from '../../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BOTTLE_COUNT  = 5;
-const ROUND_SECS    = 60;
-const MAX_ATTEMPTS  = 8;
+const ROUND_SECS    = 120;
+const MAX_ATTEMPTS  = 10;
 const REWARD_SECS   = 20;
 
-// ─── Vivid contrasting colors (5 only) ───────────────────────────────────────
+// ─── Colors ───────────────────────────────────────────────────────────────────
 const COLORS = [
-    { id: 'red',    label: 'أحمر',   bg: '#ef4444', light: '#fca5a5', dark: '#991b1b', glow: '#fbbf24' },
-    { id: 'blue',   label: 'أزرق',   bg: '#3b82f6', light: '#93c5fd', dark: '#1e3a8a', glow: '#60a5fa' },
-    { id: 'green',  label: 'أخضر',   bg: '#22c55e', light: '#86efac', dark: '#14532d', glow: '#4ade80' },
-    { id: 'yellow', label: 'أصفر',   bg: '#eab308', light: '#fde047', dark: '#713f12', glow: '#fbbf24' },
-    { id: 'purple', label: 'بنفسجي', bg: '#a855f7', light: '#d8b4fe', dark: '#4c1d95', glow: '#c084fc' },
+    { id: 'black',  label: 'أسود',       bg: '#1f2937', light: '#6b7280', dark: '#000000', glow: '#9ca3af' },
+    { id: 'red',    label: 'أحمر',       bg: '#dc2626', light: '#fca5a5', dark: '#7f1d1d', glow: '#f87171' },
+    { id: 'yellow', label: 'أصفر',       bg: '#ca8a04', light: '#fde68a', dark: '#713f12', glow: '#fde047' },
+    { id: 'green',  label: 'أخضر',       bg: '#16a34a', light: '#86efac', dark: '#14532d', glow: '#4ade80' },
+    { id: 'lblue',  label: 'أزرق فاتح',  bg: '#0ea5e9', light: '#bae6fd', dark: '#0c4a6e', glow: '#7dd3fc' },
 ];
 
 type ColorId = typeof COLORS[number]['id'];
@@ -178,69 +178,95 @@ function Bottle({ colorId, selected, index, onClick, shake }: {
     onClick: () => void; shake: boolean;
 }) {
     const color = COLORS.find(c => c.id === colorId)!;
+    const uid = `${colorId}${index}`;
     return (
         <button
             onClick={onClick}
-            className={`relative flex flex-col items-center gap-1 transition-all duration-200 select-none
-                ${selected ? 'scale-110 -translate-y-2' : 'hover:scale-105 hover:-translate-y-1'}
-                ${shake ? 'animate-[wiggle_0.3s_ease-in-out]' : ''}
-                active:scale-95
-            `}
-            style={{ animationDelay: `${index * 0.05}s` }}
+            className="relative flex flex-col items-center gap-1 select-none focus:outline-none"
+            style={{
+                transform: selected ? 'scale(1.15) translateY(-10px)' : 'scale(1)',
+                transition: 'transform 0.2s cubic-bezier(0.34,1.56,0.64,1)',
+                filter: selected
+                    ? `drop-shadow(0 0 10px ${color.glow}) drop-shadow(0 6px 12px rgba(0,0,0,0.5))`
+                    : 'drop-shadow(0 4px 8px rgba(0,0,0,0.4))',
+                animation: shake ? 'wiggle 0.35s ease-in-out' : undefined,
+            }}
         >
-            {/* Selection ring */}
-            {selected && (
-                <div className="absolute -inset-2 rounded-2xl border-3 border-dashed border-white/80 animate-pulse"
-                    style={{ borderWidth: 3 }}/>
-            )}
-            {/* Bottle SVG */}
-            <svg viewBox="0 0 44 90" className="w-10 h-20 drop-shadow-lg" xmlns="http://www.w3.org/2000/svg">
+            <svg viewBox="0 0 48 100" className="w-12 h-24" xmlns="http://www.w3.org/2000/svg">
                 <defs>
-                    <linearGradient id={`fill-${colorId}`} x1="0" y1="0" x2="1" y2="0">
+                    <linearGradient id={`b${uid}`} x1="0" y1="0" x2="1" y2="0">
                         <stop offset="0%"   stopColor={color.dark}/>
-                        <stop offset="35%"  stopColor={color.bg}/>
+                        <stop offset="30%"  stopColor={color.bg}/>
                         <stop offset="65%"  stopColor={color.light}/>
-                        <stop offset="100%" stopColor={color.bg}/>
+                        <stop offset="100%" stopColor={color.dark}/>
                     </linearGradient>
-                    <linearGradient id={`glass-${colorId}`} x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%"   stopColor={color.dark} stopOpacity="0.7"/>
-                        <stop offset="40%"  stopColor={color.bg}   stopOpacity="0.85"/>
-                        <stop offset="70%"  stopColor={color.light} stopOpacity="0.5"/>
-                        <stop offset="100%" stopColor={color.bg}   stopOpacity="0.7"/>
+                    <linearGradient id={`l${uid}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%"   stopColor={color.bg} stopOpacity="0.95"/>
+                        <stop offset="100%" stopColor={color.dark} stopOpacity="0.98"/>
                     </linearGradient>
-                    {selected && (
-                        <filter id={`glow-${colorId}`}>
-                            <feGaussianBlur stdDeviation="3" result="blur"/>
-                            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-                        </filter>
-                    )}
+                    <radialGradient id={`g${uid}`} cx="35%" cy="30%" r="65%">
+                        <stop offset="0%"   stopColor={color.light} stopOpacity="0.6"/>
+                        <stop offset="100%" stopColor="transparent"/>
+                    </radialGradient>
+                    <clipPath id={`c${uid}`}>
+                        <path d="M9 26 Q7 30 7 36 L7 82 Q7 90 16 90 L32 90 Q41 90 41 82 L41 36 Q41 30 39 26 Z"/>
+                    </clipPath>
+                    <filter id={`f${uid}`}>
+                        <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor={color.dark} floodOpacity="0.5"/>
+                    </filter>
                 </defs>
 
-                {/* Bottle neck */}
-                <rect x="15" y="4" width="14" height="18" rx="3"
-                    fill={`url(#fill-${colorId})`} stroke={color.dark} strokeWidth="1.2"/>
-                {/* Cap */}
-                <rect x="13" y="1" width="18" height="7" rx="3"
-                    fill={color.dark} stroke={color.dark} strokeWidth="0.8"/>
-                {/* Bottle body */}
-                <path d="M8 22 Q6 26 6 32 L6 76 Q6 84 14 84 L30 84 Q38 84 38 76 L38 32 Q38 26 36 22 Z"
-                    fill={`url(#glass-${colorId})`}
-                    stroke={color.dark} strokeWidth="1.2"
-                    filter={selected ? `url(#glow-${colorId})` : undefined}/>
+                {/* Bottle shadow */}
+                <ellipse cx="24" cy="96" rx="13" ry="2.5" fill="black" opacity="0.3"/>
+
+                {/* Neck */}
+                <path d="M17 10 L17 26 L31 26 L31 10 Q31 6 28 6 L20 6 Q17 6 17 10 Z"
+                    fill={`url(#b${uid})`} stroke={color.dark} strokeWidth="0.8"/>
+
+                {/* Cap with groove */}
+                <rect x="14" y="2" width="20" height="9" rx="4.5"
+                    fill={color.dark}/>
+                <rect x="14" y="7" width="20" height="2" rx="0"
+                    fill="black" opacity="0.25"/>
+                <rect x="16" y="3" width="9" height="3" rx="1.5"
+                    fill="white" opacity="0.3"/>
+
+                {/* Body */}
+                <path d="M9 26 Q7 30 7 36 L7 82 Q7 90 16 90 L32 90 Q41 90 41 82 L41 36 Q41 30 39 26 Z"
+                    fill={`url(#l${uid})`} stroke={color.dark} strokeWidth="0.8"
+                    filter={`url(#f${uid})`}/>
+
                 {/* Liquid fill */}
-                <clipPath id={`clip-${colorId}-${index}`}>
-                    <path d="M8 22 Q6 26 6 32 L6 76 Q6 84 14 84 L30 84 Q38 84 38 76 L38 32 Q38 26 36 22 Z"/>
-                </clipPath>
-                <rect x="6" y="35" width="32" height="49"
-                    fill={`url(#fill-${colorId})`} opacity="0.9"
-                    clipPath={`url(#clip-${colorId}-${index})`}/>
-                {/* Shine */}
-                <ellipse cx="15" cy="45" rx="3" ry="12" fill="white" opacity="0.25"/>
-                <ellipse cx="14" cy="31" rx="2" ry="4" fill="white" opacity="0.35"/>
+                <rect x="7" y="40" width="34" height="52"
+                    fill={`url(#b${uid})`} opacity="0.85"
+                    clipPath={`url(#c${uid})`}/>
+
+                {/* Liquid surface */}
+                <path d="M8 40 Q18 36 28 40 Q36 43 41 40"
+                    stroke={color.light} strokeWidth="1.5" fill="none" opacity="0.7"
+                    clipPath={`url(#c${uid})`}/>
+
+                {/* Glass highlight */}
+                <path d="M9 30 Q7 50 7 70" stroke="white" strokeWidth="2.5"
+                    opacity="0.15" fill="none" strokeLinecap="round"/>
+
+                {/* Shine streak */}
+                <ellipse cx="15" cy="52" rx="2" ry="14"
+                    fill="white" opacity="0.28" clipPath={`url(#c${uid})`}/>
+
+                {/* Neck shine */}
+                <ellipse cx="21" cy="17" rx="2" ry="5"
+                    fill="white" opacity="0.35"/>
+
+                {/* Radial glow when selected */}
+                {selected && (
+                    <ellipse cx="24" cy="58" rx="18" ry="30"
+                        fill={`url(#g${uid})`} clipPath={`url(#c${uid})`}/>
+                )}
             </svg>
 
-            {/* Color label */}
-            <span className="text-[9px] font-black text-white/80 tracking-tight">
+            <span className="text-[10px] font-black"
+                style={{ color: color.glow, textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
                 {color.label}
             </span>
         </button>
@@ -253,13 +279,12 @@ function AttemptRow({ attempt, secret, num }: { attempt: ColorId[]; secret: Colo
     return (
         <div className="flex items-center gap-2 bg-white/10 rounded-xl px-2 py-1.5">
             <span className="text-[10px] font-black text-white/60 w-4">{num}</span>
-            <div className="flex gap-1 flex-1">
+            <div className="flex gap-1.5 flex-1">
                 {attempt.map((cid, i) => {
                     const color = COLORS.find(c => c.id === cid)!;
-                    const isCorrect = cid === secret[i];
                     return (
-                        <div key={i} className={`w-5 h-5 rounded-full border-2 ${isCorrect ? 'border-green-300 scale-110' : 'border-white/20'}`}
-                            style={{ background: color.bg }}/>
+                        <div key={i} className="w-5 h-5 rounded-full border border-white/20 shadow-sm"
+                            style={{ background: `radial-gradient(circle at 35% 30%, ${color.light}, ${color.bg} 60%, ${color.dark})` }}/>
                     );
                 })}
             </div>
@@ -364,15 +389,6 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     const [timeLeft, setTimeLeft]     = useState(ROUND_SECS);
     const [checking, setChecking]     = useState(false);
     const [lastResult, setLastResult] = useState<number | null>(null);
-    // localOrder: instant UI update — synced from DB on mount/change
-    const [localOrder, setLocalOrder] = useState<ColorId[]>([]);
-
-    // Sync localOrder when DB order changes (on join or new game)
-    useEffect(() => {
-        if (myPS?.order && myPS.order.length > 0) {
-            setLocalOrder(myPS.order);
-        }
-    }, [myPS?.order?.join(','), status]);
 
     // Reset lastResult when new game starts
     useEffect(() => {
@@ -463,12 +479,11 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         if (mySolved || status !== 'playing') return;
         if (selected === null) { setSelected(idx); return; }
         if (selected === idx)  { setSelected(null); return; }
-        const newOrder = [...localOrder];
+        const newOrder = [...myOrder];
         [newOrder[selected], newOrder[idx]] = [newOrder[idx], newOrder[selected]];
         play('swap');
         setSelected(null);
-        setLocalOrder(newOrder);   // instant UI
-        updateMyOrder(newOrder);   // async DB
+        updateMyOrder(newOrder);
     };
 
     const updateMyOrder = async (newOrder: ColorId[]) => {
@@ -484,9 +499,9 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     const handleCheck = async () => {
         if (checking || mySolved || myEliminated || status !== 'playing') return;
         setChecking(true);
-        const correct = countCorrect(localOrder, secret);
+        const correct = countCorrect(myOrder, secret);
         setLastResult(correct);
-        const newAttempts = [...myAttempts, [...localOrder]];
+        const newAttempts = [...myAttempts, [...myOrder]];
         const isLastAttempt = newAttempts.length >= MAX_ATTEMPTS;
 
         if (correct === BOTTLE_COUNT) {
@@ -542,7 +557,7 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                 game_state: { ...gs, players: updatedPlayers },
             }).eq('id', match.id);
             // Shake wrong bottles
-            localOrder.forEach((cid, i) => {
+            myOrder.forEach((cid, i) => {
                 if (cid !== secret[i]) {
                     setTimeout(() => setShakeIdx(i), i * 60);
                     setTimeout(() => setShakeIdx(null), i * 60 + 350);
@@ -712,14 +727,19 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
 
             {/* My bottles */}
             {!mySolved && !myEliminated ? (
-                <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-2xl p-4 shadow-xl">
-                    <p className="text-[10px] font-black text-center mb-3 text-gray-400">
-                        {selected !== null
-                            ? 'اختر الزجاجة الثانية للتبديل'
-                            : 'اضغط زجاجة ثم اضغط الثانية لتبديلهما'}
+                <div className="rounded-2xl p-4 shadow-2xl relative overflow-hidden"
+                    style={{ background: 'linear-gradient(145deg, #0f0c29 0%, #1a1040 50%, #0d1117 100%)' }}>
+                    <style>{`@keyframes wiggle{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px) rotate(-5deg)}40%{transform:translateX(7px) rotate(5deg)}60%{transform:translateX(-4px) rotate(-3deg)}80%{transform:translateX(4px) rotate(3deg)}}`}</style>
+                    {/* Subtle glow spots */}
+                    <div className="absolute top-2 left-4 w-20 h-20 rounded-full opacity-10"
+                        style={{ background: 'radial-gradient(circle, #818cf8, transparent)' }}/>
+                    <div className="absolute bottom-2 right-4 w-16 h-16 rounded-full opacity-10"
+                        style={{ background: 'radial-gradient(circle, #34d399, transparent)' }}/>
+                    <p className="relative text-[10px] font-black text-center mb-4 text-white/40 tracking-widest">
+                        {selected !== null ? '← اختر الزجاجة الثانية للتبديل' : 'اضغط زجاجتين لتبديلهما'}
                     </p>
-                    <div className="flex justify-center gap-2 mb-4">
-                        {localOrder.map((cid, i) => (
+                    <div className="relative flex justify-center gap-3 mb-2">
+                        {myOrder.map((cid, i) => (
                             <Bottle
                                 key={i} colorId={cid} index={i}
                                 selected={selected === i}
@@ -728,10 +748,11 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                             />
                         ))}
                     </div>
-                    {/* Position numbers — always neutral */}
-                    <div className="flex justify-center gap-2 mb-4 px-2">
-                        {localOrder.map((_, i) => (
-                            <div key={i} className="w-10 text-center text-[10px] font-black text-gray-500">
+                    {/* Position numbers */}
+                    <div className="flex justify-center gap-3 mb-4 px-2">
+                        {myOrder.map((_, i) => (
+                            <div key={i} className="w-12 text-center text-[10px] font-black"
+                                style={{ color: 'rgba(255,255,255,0.25)' }}>
                                 {i + 1}
                             </div>
                         ))}
