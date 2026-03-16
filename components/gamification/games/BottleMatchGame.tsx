@@ -50,12 +50,12 @@ const COLORS = [
     },
     {
         id: 'cream',
-        label: 'لبني',
-        bg:    '#e8d5b7',
-        light: '#fdf6ec',
-        dark:  '#92400e',
-        cap:   '#d4a574',
-        shine: '#fef3c7',
+        label: 'أزرق فاتح',
+        bg:    '#38bdf8',
+        light: '#e0f2fe',
+        dark:  '#0c4a6e',
+        cap:   '#0284c7',
+        shine: '#bae6fd',
     },
 ];
 
@@ -458,19 +458,24 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     const [checking, setChecking]     = useState(false);
     const [lastResult, setLastResult] = useState<number | null>(null);
     const [swapPair, setSwapPair]     = useState<[number, number] | null>(null);
-    // localOrder: instant UI update — synced from DB on mount/change
-    const [localOrder, setLocalOrder] = useState<ColorId[]>([]);
+    // localOrder: instant UI — initialized from DB directly, then kept in sync
+    const [localOrder, setLocalOrder] = useState<ColorId[]>(() => myPS?.order ?? []);
 
-    // Sync localOrder when DB order changes (on join or new game)
+    // Sync localOrder whenever the DB copy changes (new game, first load)
+    useEffect(() => {
+        if (myPS?.order && myPS.order.length > 0) {
+            setLocalOrder(prev =>
+                // Only overwrite if it looks like we haven't made any local moves yet
+                prev.length === 0 ? myPS.order : prev
+            );
+        }
+    }, [status]); // run when game starts
+
+    // Always sync on fresh game start
     useEffect(() => {
         if (myPS?.order && myPS.order.length > 0) {
             setLocalOrder(myPS.order);
         }
-    }, [myPS?.order?.join(','), status]);
-
-    // Reset lastResult when new game starts
-    useEffect(() => {
-        if (status === 'playing') setLastResult(null);
     }, [gs.startedAt]);
 
     // Reward question state
@@ -585,10 +590,15 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
     // ── Check attempt ─────────────────────────────────────────────────────────
     const handleCheck = async () => {
         if (checking || mySolved || myEliminated || status !== 'playing') return;
+        // Safety: use DB order as fallback if localOrder somehow empty
+        const orderToCheck = localOrder.length === BOTTLE_COUNT
+            ? localOrder
+            : (myPS?.order ?? []);
+        if (orderToCheck.length !== BOTTLE_COUNT) return;
         setChecking(true);
-        const correct = countCorrect(localOrder, secret);
+        const correct = countCorrect(orderToCheck, secret);
         setLastResult(correct);
-        const newAttempts = [...myAttempts, [...localOrder]];
+        const newAttempts = [...myAttempts, [...orderToCheck]];
         const isLastAttempt = newAttempts.length >= MAX_ATTEMPTS;
 
         if (correct === BOTTLE_COUNT) {
@@ -644,7 +654,7 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                 game_state: { ...gs, players: updatedPlayers },
             }).eq('id', match.id);
             // Shake wrong bottles
-            localOrder.forEach((cid, i) => {
+            orderToCheck.forEach((cid, i) => {
                 if (cid !== secret[i]) {
                     setTimeout(() => setShakeIdx(i), i * 60);
                     setTimeout(() => setShakeIdx(null), i * 60 + 350);
