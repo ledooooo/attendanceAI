@@ -267,7 +267,10 @@ export default function MoveTheMatch({ onStart, onComplete }: Props) {
                         const ev = readEq(cur, puzzle.eq);
                         if (ev && isValid(ev)) {
                             setAnswered(true); setIsCorrect(true); setIsActive(false);
-                            const pts = Math.max(10, Math.floor(timeLeft * 0.50));
+                            
+                            // ✅ تعديل احتساب النقاط ليكون أقصى حد 30 نقطة وأدنى حد 5 نقاط
+                            const pts = Math.min(30, Math.max(5, Math.floor(timeLeft * 0.35)));
+                            
                             toast.success(`🔥 عبقري! +${pts} نقطة`); setTimeout(() => { onComplete(pts, true); }, 3000);
                         }
                         return cur;
@@ -386,7 +389,7 @@ export default function MoveTheMatch({ onStart, onComplete }: Props) {
                                 <line x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
                                     stroke={STICK_HI} strokeWidth={3} strokeLinecap="round" opacity={0.5}/>
                                 <line x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
-                                    stroke={STICK_EDGE} strokeWidth={1.5} strokeLinecap="round" opacity={0.5}/>
+                                    stroke={STICK_EDGE} strokeWidth={1.5} strokeLinecap="round" opacity={0.55}/>
                             </g>
                         ))
                     )}
