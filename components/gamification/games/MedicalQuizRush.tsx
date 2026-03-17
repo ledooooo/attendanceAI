@@ -85,7 +85,14 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
             } else {
                 setIsActive(false);
                 const finalScore = score + (isCorrect ? 1 : 0);
-                const total = applyMultiplier(finalScore * 3 + Math.floor(timeLeft / 3), diffProfile);
+                
+                // حساب النقاط الأساسية ثم تطبيق المضاعف
+                const rawTotal = finalScore * 3 + Math.floor(timeLeft / 3);
+                let total = applyMultiplier(rawTotal, diffProfile);
+                
+                // ✅ جعل الحد الأقصى للنقاط 30 نقطة فقط مهما بلغ الحساب
+                total = Math.min(30, total);
+                
                 if (finalScore >= 3) {
                     toast.success(`رائع! ${finalScore}/5 إجابات صحيحة! 🎉`);
                     onComplete(total, true);
