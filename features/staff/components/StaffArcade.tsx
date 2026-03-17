@@ -16,7 +16,6 @@ import ArcadeLeaderboard from './arcade/ArcadeLeaderboard';
 import BonusQuestion from './arcade/BonusQuestion';
 
 import SpinAndAnswerGame        from '../../../components/gamification/games/SpinAndAnswerGame';
-import WordScrambleGame         from '../../../components/gamification/games/WordScrambleGame';
 import SafeCrackerGame          from '../../../components/gamification/games/SafeCrackerGame';
 import MemoryMatchGame          from '../../../components/gamification/games/MemoryMatchGame';
 import MedicalQuizRush          from '../../../components/gamification/games/MedicalQuizRush';
@@ -26,10 +25,9 @@ import LiveGamesArena           from '../../../components/gamification/LiveGames
 
 interface Props { employee: Employee; deepLinkRoomId?: string | null; }
 
-// ─── 7 Solo Games ─────────────────────────────────────────────────────────────
+// ─── 6 Solo Games ─────────────────────────────────────────────────────────────
 const GAME_CATALOG = [
     { key: 'spin',     title: 'عجلة الحظ',      icon: Dices,      gradient: 'from-fuchsia-500 to-pink-600',  bg: 'from-fuchsia-50 to-pink-50',  border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
-    { key: 'scramble', title: 'فك الكلمة',       icon: Timer,      gradient: 'from-blue-500 to-cyan-600',     bg: 'from-blue-50 to-cyan-50',     border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '5-20',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
     { key: 'safe',     title: 'الخزنة السرية',   icon: Lock,       gradient: 'from-emerald-500 to-teal-600',  bg: 'from-emerald-50 to-teal-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق', pts: '20',    tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
     { key: 'memory',   title: 'تطابق الذاكرة',   icon: Gamepad2,   gradient: 'from-orange-500 to-amber-600',  bg: 'from-orange-50 to-amber-50',  border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',  pts: '20',    tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
     { key: 'quiz',     title: 'سباق المعرفة',    icon: Brain,      gradient: 'from-indigo-500 to-purple-600', bg: 'from-indigo-50 to-purple-50', border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة', pts: '5-25',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
@@ -54,7 +52,7 @@ function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelec
                 </div>
             </div>
 
-            {/* 7-game grid */}
+            {/* 6-game grid */}
             <div className="grid grid-cols-2 gap-2">
                 {GAME_CATALOG.map(g => {
                     const Icon = g.icon;
@@ -164,7 +162,6 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
         const simple = { onStart: props.onStart, onComplete: props.onComplete };
         switch (key) {
             case 'spin':     return <SpinAndAnswerGame {...props}/>;
-            case 'scramble': return <WordScrambleGame {...props}/>;
             case 'safe':     return <SafeCrackerGame {...simple}/>;
             case 'memory':   return <MemoryMatchGame {...simple}/>;
             case 'quiz':     return <MedicalQuizRush {...props}/>;
