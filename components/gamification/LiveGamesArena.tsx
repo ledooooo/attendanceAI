@@ -15,6 +15,8 @@ import StopTheBusGame from './games/StopTheBusGame';
 import ChessGame from './games/ChessGame';
 import HangmanGame from './games/HangmanGame';
 import BottleMatchGame from './games/BottleMatchGame';
+import PuzzleGame from './games/PuzzleGame';
+import MemoryGame from './games/MemoryGame';
 
 // ─── Beautiful Avatars ────────────────────────────────────────────────────────
 // Each avatar has: emoji, gradient bg, label
@@ -48,6 +50,8 @@ const GAME_TYPES = [
     { key: 'chess',      label: 'شطرنج',             icon: '♟️',   desc: 'شطرنج كلاسيكي',      color: 'from-amber-500 to-orange-600', minPlayers: 2, maxPlayers: 2  },
     { key: 'hangman',    label: 'المشنقة',           icon: '🪢',   desc: 'خمّن الكلمة الطبية', color: 'from-rose-500 to-pink-700',    minPlayers: 2, maxPlayers: 8  },
     { key: 'bottlematch',label: 'ترتيب الزجاجات',   icon: '🍾',   desc: 'رتّب الألوان السرية', color: 'from-cyan-500 to-indigo-600',  minPlayers: 2, maxPlayers: 6  },
+    { key: 'puzzle',     label: 'لعبة الأرقام',     icon: '🔢',   desc: 'رتّب 1 إلى 15',       color: 'from-amber-600 to-orange-700', minPlayers: 2, maxPlayers: 6  },
+    { key: 'memory',     label: 'لعبة الذاكرة',     icon: '🧠',   desc: 'اقلب وطابق البطاقات', color: 'from-indigo-600 to-violet-700', minPlayers: 2, maxPlayers: 2  },
     { key: 'stopthebus', label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',   color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
 ];
 
@@ -403,6 +407,8 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         }
         else if (selectedGameType === 'hangman')     initialState = {};
         else if (selectedGameType === 'bottlematch') initialState = {};
+        else if (selectedGameType === 'puzzle')      initialState = {};
+        else if (selectedGameType === 'memory')      initialState = {};
         else if (selectedGameType === 'stopthebus')  initialState = { letter: '', startedAt: 0, allAnswers: [], voteRound: 1 };
 
         const { data, error } = await supabase.from('live_matches').insert({
@@ -427,7 +433,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             symbol: match.game_type === 'xo' ? 'O' : match.game_type === 'connect4' ? 'Y' : match.game_type === 'chess' ? '♚' : undefined,
         };
 
-        const newStatus = (match.game_type === 'stopthebus' || match.game_type === 'hangman' || match.game_type === 'bottlematch') ? 'waiting' : 'playing';
+        const newStatus = (match.game_type === 'stopthebus' || match.game_type === 'hangman' || match.game_type === 'bottlematch' || match.game_type === 'puzzle' || match.game_type === 'memory') ? 'waiting' : 'playing';
         const updatedPlayers = [...match.players, player];
 
         const { data: updated, error } = await supabase.from('live_matches').update({
@@ -652,8 +658,8 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             {view === 'playing' && currentMatch && (
                 <div className="flex-1 flex flex-col">
 
-                    {/* Players header — hidden for stopthebus, hangman, bottlematch */}
-                    {currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch' && (
+                    {/* Players header — hidden for stopthebus, hangman, bottlematch, puzzle, memory */}
+                    {currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch' && currentMatch.game_type !== 'puzzle' && currentMatch.game_type !== 'memory' && (
                         <div className="px-3 py-3 flex justify-between items-center border-b border-gray-100 bg-white">
                             {/* Me */}
                             <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all ${currentMatch.game_state?.current_turn === me?.id ? 'border-green-400 bg-green-50 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
@@ -691,11 +697,11 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
                     {/* Game area */}
                     <div className={`flex-1 flex flex-col ${
-                        currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch'
+                        currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch' && currentMatch.game_type !== 'puzzle' && currentMatch.game_type !== 'memory'
                             ? 'items-center justify-center p-3' : ''
                     }`}>
-                        {/* WAITING (non-stopthebus, non-hangman, non-bottlematch) */}
-                        {currentMatch.status === 'waiting' && currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch' && (
+                        {/* WAITING (non-stopthebus, non-hangman, non-bottlematch, non-puzzle, non-memory) */}
+                        {currentMatch.status === 'waiting' && currentMatch.game_type !== 'stopthebus' && currentMatch.game_type !== 'hangman' && currentMatch.game_type !== 'bottlematch' && currentMatch.game_type !== 'puzzle' && currentMatch.game_type !== 'memory' && (
                             <div className="text-center">
                                 <Loader2 className="w-14 h-14 text-indigo-200 animate-spin mx-auto mb-4"/>
                                 <h3 className="text-lg font-black text-indigo-900">في انتظار المنافس...</h3>
@@ -754,6 +760,16 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                         {/* ── BOTTLE MATCH ── */}
                         {currentMatch.game_type === 'bottlematch' && (
                             <BottleMatchGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+
+                        {/* ── PUZZLE ── */}
+                        {currentMatch.game_type === 'puzzle' && (
+                            <PuzzleGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+
+                        {/* ── MEMORY ── */}
+                        {currentMatch.game_type === 'memory' && (
+                            <MemoryGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
 
                         {/* ── HANGMAN ── */}
