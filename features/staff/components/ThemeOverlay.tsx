@@ -74,6 +74,11 @@ export default function ThemeOverlay({ employee }: Props) {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-15px); }
         }
+        @keyframes floatUp {
+            0% { transform: translateY(110vh) scale(0.8); opacity: 0; }
+            20% { opacity: 1; }
+            100% { transform: translateY(-20vh) scale(1.2); opacity: 0; }
+        }
         @keyframes bounce-in {
             0% { transform: scale(0) rotate(-180deg); opacity: 0; }
             50% { transform: scale(1.2) rotate(10deg); }
@@ -105,6 +110,7 @@ export default function ThemeOverlay({ employee }: Props) {
         .animate-fall { animation: fall 12s linear infinite; }
         .animate-float { animation: float 4s ease-in-out infinite; }
         .animate-float-slow { animation: floatSlow 6s ease-in-out infinite; }
+        .animate-float-up { animation: floatUp 8s ease-in infinite; }
         .animate-bounce-in { animation: bounce-in 1s ease-out forwards; }
         .animate-glow { animation: glow 2s ease-in-out infinite; }
         .animate-twinkle { animation: twinkle 2s ease-in-out infinite; }
@@ -126,13 +132,77 @@ export default function ThemeOverlay({ employee }: Props) {
             
             <div className="fixed inset-0 pointer-events-none z-[100] overflow-hidden">
                 
+                {/* 🕌 ثيم عيد الفطر المبارك */}
+                {finalTheme === 'eid_fitr' && (
+                    <>
+                        {/* خلفية احتفالية مبهجة بألوان العيد */}
+                        <div className="absolute inset-0 bg-gradient-to-br from-cyan-100/40 via-blue-50/30 to-emerald-100/40 pointer-events-none"></div>
+
+                        {/* رسالة العيد الرئيسية */}
+                        <div className="absolute top-16 md:top-24 left-1/2 transform -translate-x-1/2 z-20 animate-bounce-in w-[90%] max-w-md">
+                            <div className="relative">
+                                {/* توهج خلفي */}
+                                <div className="absolute inset-0 bg-cyan-400 blur-2xl opacity-40 rounded-full animate-pulse-glow"></div>
+                                
+                                {/* البطاقة */}
+                                <div className="relative bg-gradient-to-b from-white/95 to-cyan-50/95 backdrop-blur-md px-6 py-6 md:px-10 md:py-8 rounded-[2.5rem] shadow-2xl border-4 border-cyan-200 text-center">
+                                    <div className="flex justify-center gap-3 mb-4 text-4xl md:text-5xl">
+                                        <span className="animate-float" style={{ animationDelay: '0s' }}>🌙</span>
+                                        <span className="animate-float" style={{ animationDelay: '0.2s' }}>🕌</span>
+                                        <span className="animate-float" style={{ animationDelay: '0.4s' }}>🎈</span>
+                                    </div>
+                                    <h2 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent mb-3 leading-tight drop-shadow-sm">
+                                        عيد الفطر المبارك
+                                    </h2>
+                                    <p className="text-base md:text-lg font-bold text-cyan-800 bg-cyan-100/50 py-2 px-4 rounded-xl border border-cyan-200 inline-block">
+                                        تقبل الله منا ومنكم صالح الأعمال ✨
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* بالونات تتصاعد من الأسفل */}
+                        <div className="absolute inset-0 overflow-hidden pointer-events-none z-10">
+                            {[...Array(12)].map((_, i) => (
+                                <div 
+                                    key={`balloon-${i}`} 
+                                    className="absolute animate-float-up"
+                                    style={{ 
+                                        left: `${Math.random() * 95}%`,
+                                        bottom: '-20%',
+                                        animationDelay: `${Math.random() * 5}s`,
+                                        animationDuration: `${6 + Math.random() * 4}s`,
+                                        opacity: 0.8 + Math.random() * 0.2
+                                    }}
+                                >
+                                    <span className="text-4xl md:text-6xl drop-shadow-xl filter hue-rotate-[${Math.random() * 360}deg]">🎈</span>
+                                </div>
+                            ))}
+                            
+                            {/* حلويات وزينة تتساقط من الأعلى */}
+                            {[...Array(15)].map((_, i) => (
+                                <div 
+                                    key={`sweet-${i}`} 
+                                    className="absolute animate-fall text-2xl md:text-3xl drop-shadow-lg"
+                                    style={{ 
+                                        left: `${Math.random() * 100}%`,
+                                        top: '-10vh',
+                                        animationDelay: `${Math.random() * 8}s`,
+                                        animationDuration: `${7 + Math.random() * 6}s`
+                                    }}
+                                >
+                                    {i % 3 === 0 ? '🍬' : i % 3 === 1 ? '🎉' : '🍪'}
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+
                 {/* 🏮 ثيم رمضان المحسّن: فوانيس متطورة مع نجوم وهلال */}
                 {finalTheme === 'ramadan' && (
                     <>
-                        {/* خلفية سماء ليلية خفيفة */}
                         <div className="absolute inset-0 bg-gradient-to-b from-indigo-900/5 via-purple-900/3 to-transparent pointer-events-none"></div>
                         
-                        {/* نجوم متلألئة في الخلفية */}
                         <div className="absolute top-0 left-0 w-full">
                             {[...Array(12)].map((_, i) => (
                                 <Star 
@@ -150,7 +220,6 @@ export default function ThemeOverlay({ employee }: Props) {
                             ))}
                         </div>
 
-                        {/* هلال رمضان مع رسالة رمضان كريم */}
                         <div className="absolute top-6 md:top-10 right-6 md:right-12 flex items-center gap-3 animate-float-slow">
                             <Moon className="w-10 h-10 md:w-12 md:h-12 text-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.8)]" />
                             <span className="text-sm md:text-base font-black bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent drop-shadow-lg">
@@ -158,32 +227,17 @@ export default function ThemeOverlay({ employee }: Props) {
                             </span>
                         </div>
 
-                        {/* الفوانيس المحسّنة */}
                         <div className="flex justify-around px-2 md:px-10 w-full absolute top-0">
                             {[1, 2, 3, 4, 5, 6].map((i) => {
                                 const isEven = i % 2 === 0;
-                                // تصغير الحبل بمقدار الربع (من h-16/h-24 إلى h-12/h-18)
                                 const ropeHeight = isEven ? 'h-12 md:h-18' : 'h-18 md:h-24';
-                                // تصغير الفانوس بمقدار الثلث تقريباً (من w-12/w-16 إلى w-8/w-11)
                                 const lanternSize = isEven ? 'w-8 md:w-11' : 'w-9 md:w-13';
                                 
                                 return (
-                                    <div 
-                                        key={i} 
-                                        className={`${isEven ? 'animate-swing' : 'animate-swing-hard'} flex flex-col items-center`} 
-                                        style={{ animationDelay: `${i * 0.3}s` }}
-                                    >
-                                        {/* الحبل المحسّن */}
+                                    <div key={i} className={`${isEven ? 'animate-swing' : 'animate-swing-hard'} flex flex-col items-center`} style={{ animationDelay: `${i * 0.3}s` }}>
                                         <div className={`w-[3px] ${ropeHeight} bg-gradient-to-b from-yellow-200 via-yellow-400 to-yellow-600 rounded-full shadow-sm`}></div>
-                                        
-                                        {/* الفانوس مع توهج محسّن */}
                                         <div className="relative animate-bounce-in" style={{ animationDelay: `${i * 0.2}s` }}>
-                                            <img 
-                                                src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjhltmO3A0zBEoi111UNoYQ2Ag9q6hSd6neT3tlGBEoHsiv1dvpZHcg14JRabMZkfacrYb4BMauec1BkbJtwjyhJoB5s10tUlGF9VvRnETwjcAxmKJpBF2mpgxh2QPpi9ZxBIZTDLbQQ_95Griuzxn00vXKX2nzd6TMy8Qzhi_CBJSTPBm9tP_ssmKmSb5c/s320/fanoos.png"
-                                                alt="Ramadan Lantern" 
-                                                className={`${lanternSize} object-contain animate-glow`}
-                                            />
-                                            {/* توهج إضافي */}
+                                            <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjhltmO3A0zBEoi111UNoYQ2Ag9q6hSd6neT3tlGBEoHsiv1dvpZHcg14JRabMZkfacrYb4BMauec1BkbJtwjyhJoB5s10tUlGF9VvRnETwjcAxmKJpBF2mpgxh2QPpi9ZxBIZTDLbQQ_95Griuzxn00vXKX2nzd6TMy8Qzhi_CBJSTPBm9tP_ssmKmSb5c/s320/fanoos.png" alt="Ramadan Lantern" className={`${lanternSize} object-contain animate-glow`} />
                                             <div className="absolute inset-0 bg-yellow-300/20 blur-xl rounded-full"></div>
                                         </div>
                                     </div>
@@ -196,10 +250,8 @@ export default function ThemeOverlay({ employee }: Props) {
                 {/* 🎉 ثيم عيد الميلاد المحسّن: احتفال كامل */}
                 {finalTheme === 'birthday' && (
                     <>
-                        {/* خلفية احتفالية خفيفة */}
                         <div className="absolute inset-0 bg-gradient-to-br from-pink-100/20 via-purple-100/20 to-blue-100/20"></div>
 
-                        {/* كونفيتي متساقط */}
                         {showConfetti && (
                             <div className="absolute inset-0">
                                 {[...Array(30)].map((_, i) => {
@@ -207,28 +259,15 @@ export default function ThemeOverlay({ employee }: Props) {
                                     const shapes = ['w-2 h-6 rounded-full', 'w-3 h-3 rounded-full', 'w-4 h-1 rounded'];
                                     
                                     return (
-                                        <div
-                                            key={i}
-                                            className={`absolute animate-confetti ${colors[Math.floor(Math.random() * colors.length)]} ${shapes[Math.floor(Math.random() * shapes.length)]}`}
-                                            style={{
-                                                left: `${Math.random() * 100}%`,
-                                                top: '-10vh',
-                                                animationDelay: `${Math.random() * 3}s`,
-                                                animationDuration: `${4 + Math.random() * 3}s`
-                                            }}
-                                        />
+                                        <div key={i} className={`absolute animate-confetti ${colors[Math.floor(Math.random() * colors.length)]} ${shapes[Math.floor(Math.random() * shapes.length)]}`} style={{ left: `${Math.random() * 100}%`, top: '-10vh', animationDelay: `${Math.random() * 3}s`, animationDuration: `${4 + Math.random() * 3}s` }} />
                                     );
                                 })}
                             </div>
                         )}
 
-                        {/* رسالة عيد الميلاد الرئيسية */}
                         <div className="absolute top-12 md:top-20 left-1/2 transform -translate-x-1/2 z-10 animate-bounce-in">
                             <div className="relative">
-                                {/* توهج خلفي */}
                                 <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 blur-2xl opacity-50 rounded-full animate-pulse-glow"></div>
-                                
-                                {/* البطاقة */}
                                 <div className="relative bg-gradient-to-br from-white to-pink-50 backdrop-blur-lg px-8 py-4 md:px-12 md:py-6 rounded-3xl shadow-2xl border-4 border-pink-300">
                                     <div className="flex flex-col items-center gap-2">
                                         <div className="flex items-center gap-2 text-3xl md:text-4xl">
@@ -244,11 +283,7 @@ export default function ThemeOverlay({ employee }: Props) {
                                         </p>
                                         <div className="flex gap-1 mt-2">
                                             {[...Array(5)].map((_, i) => (
-                                                <Sparkles 
-                                                    key={i} 
-                                                    className="w-4 h-4 text-yellow-500 animate-twinkle" 
-                                                    style={{ animationDelay: `${i * 0.2}s` }}
-                                                />
+                                                <Sparkles key={i} className="w-4 h-4 text-yellow-500 animate-twinkle" style={{ animationDelay: `${i * 0.2}s` }} />
                                             ))}
                                         </div>
                                     </div>
@@ -256,26 +291,17 @@ export default function ThemeOverlay({ employee }: Props) {
                             </div>
                         </div>
 
-                        {/* بالونات وهدايا متحركة */}
                         <div className="absolute inset-0 flex justify-around items-end pb-10 px-4">
                             {[1, 2, 3, 4, 5, 6, 7].map((i) => (
                                 <div key={i} className="flex flex-col items-center gap-2">
-                                    {/* البالون */}
-                                    <span 
-                                        className="text-5xl md:text-6xl animate-float drop-shadow-lg" 
-                                        style={{ animationDelay: `${i * 0.4}s` }}
-                                    >
+                                    <span className="text-5xl md:text-6xl animate-float drop-shadow-lg" style={{ animationDelay: `${i * 0.4}s` }}>
                                         {i % 3 === 0 ? '🎈' : i % 3 === 1 ? '🎁' : '🎀'}
                                     </span>
-                                    {/* الخيط */}
-                                    {i % 3 === 0 && (
-                                        <div className="w-[2px] h-12 md:h-20 bg-gradient-to-b from-pink-400 to-transparent"></div>
-                                    )}
+                                    {i % 3 === 0 && <div className="w-[2px] h-12 md:h-20 bg-gradient-to-b from-pink-400 to-transparent"></div>}
                                 </div>
                             ))}
                         </div>
 
-                        {/* أيقونات طائرة إضافية */}
                         <div className="absolute top-1/3 left-8 animate-float">
                             <Gift className="w-12 h-12 md:w-16 md:h-16 text-pink-500 drop-shadow-xl" />
                         </div>
@@ -288,42 +314,22 @@ export default function ThemeOverlay({ employee }: Props) {
                 {/* ❄️ ثيم الكريسماس المحسّن: ثلج واقعي */}
                 {finalTheme === 'christmas' && (
                     <>
-                        {/* خلفية شتوية */}
                         <div className="absolute inset-0 bg-gradient-to-b from-blue-100/10 to-transparent"></div>
-
-                        {/* ثلج متساقط بأحجام مختلفة */}
                         <div className="absolute inset-0">
                             {[...Array(25)].map((_, i) => {
                                 const size = ['text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl'][Math.floor(Math.random() * 5)];
-                                
                                 return (
-                                    <span 
-                                        key={i} 
-                                        className={`absolute text-white ${size} animate-fall drop-shadow-md`}
-                                        style={{ 
-                                            left: `${Math.random() * 100}%`,
-                                            top: '-10vh',
-                                            animationDelay: `${Math.random() * 8}s`,
-                                            animationDuration: `${8 + Math.random() * 8}s`,
-                                            opacity: 0.7 + Math.random() * 0.3
-                                        }}
-                                    >
+                                    <span key={i} className={`absolute text-white ${size} animate-fall drop-shadow-md`} style={{ left: `${Math.random() * 100}%`, top: '-10vh', animationDelay: `${Math.random() * 8}s`, animationDuration: `${8 + Math.random() * 8}s`, opacity: 0.7 + Math.random() * 0.3 }}>
                                         ❄
                                     </span>
                                 );
                             })}
                         </div>
-
-                        {/* رسالة كريسماس */}
                         <div className="absolute top-10 left-1/2 transform -translate-x-1/2 animate-float">
                             <div className="bg-gradient-to-r from-red-600 to-green-600 text-white px-8 py-3 rounded-full font-black text-lg md:text-xl shadow-2xl border-2 border-white">
-                                <span className="flex items-center gap-2">
-                                    ❄️ Merry Christmas! 🎄
-                                </span>
+                                <span className="flex items-center gap-2">❄️ Merry Christmas! 🎄</span>
                             </div>
                         </div>
-
-                        {/* شجرة كريسماس صغيرة */}
                         <div className="absolute bottom-8 right-8 md:bottom-12 md:right-16 text-6xl md:text-8xl animate-float-slow drop-shadow-2xl">
                             🎄
                         </div>
@@ -333,53 +339,29 @@ export default function ThemeOverlay({ employee }: Props) {
                 {/* 🎊 ثيم العيد المحسّن: احتفال مبهج */}
                 {finalTheme === 'eid' && (
                     <>
-                        {/* خلفية احتفالية */}
                         <div className="absolute inset-0 bg-gradient-to-br from-emerald-100/10 via-teal-100/10 to-green-100/10"></div>
-
-                        {/* رسالة العيد الرئيسية */}
                         <div className="absolute top-12 md:top-16 left-1/2 transform -translate-x-1/2 z-10 animate-bounce-in">
                             <div className="relative">
                                 <div className="absolute inset-0 bg-emerald-500 blur-2xl opacity-40 rounded-full"></div>
                                 <div className="relative bg-gradient-to-br from-white to-emerald-50 backdrop-blur-lg px-10 py-5 rounded-3xl shadow-2xl border-4 border-emerald-300">
                                     <div className="flex flex-col items-center gap-3">
                                         <div className="flex items-center gap-2">
-                                            {[...Array(5)].map((_, i) => (
-                                                <Sparkles 
-                                                    key={i} 
-                                                    className="w-6 h-6 text-emerald-500 animate-twinkle" 
-                                                    style={{ animationDelay: `${i * 0.15}s` }}
-                                                />
-                                            ))}
+                                            {[...Array(5)].map((_, i) => <Sparkles key={i} className="w-6 h-6 text-emerald-500 animate-twinkle" style={{ animationDelay: `${i * 0.15}s` }} />)}
                                         </div>
                                         <h2 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
                                             عيد مبارك
                                         </h2>
-                                        <p className="text-lg font-bold text-emerald-700">
-                                            كل عام وأنتم بخير 🌙
-                                        </p>
+                                        <p className="text-lg font-bold text-emerald-700">كل عام وأنتم بخير 🌙</p>
                                     </div>
                                 </div>
                             </div>
                         </div>
-
-                        {/* زينة العيد المتحركة */}
                         <div className="flex justify-between px-4 md:px-8 pt-6 w-full absolute top-0">
-                            {[...Array(10)].map((_, i) => (
-                                <span 
-                                    key={i} 
-                                    className={`text-3xl md:text-4xl ${i % 2 === 0 ? 'animate-swing' : 'animate-swing-hard'} drop-shadow-lg`}
-                                    style={{ animationDelay: `${i * 0.2}s` }}
-                                >
-                                    {i % 3 === 0 ? '🎊' : i % 3 === 1 ? '🎉' : '✨'}
-                                </span>
-                            ))}
+                            {[...Array(10)].map((_, i) => <span key={i} className={`text-3xl md:text-4xl ${i % 2 === 0 ? 'animate-swing' : 'animate-swing-hard'} drop-shadow-lg`} style={{ animationDelay: `${i * 0.2}s` }}>{i % 3 === 0 ? '🎊' : i % 3 === 1 ? '🎉' : '✨'}</span>)}
                         </div>
-
-                        {/* هلال ونجمة العيد */}
                         <div className="absolute bottom-12 left-8 md:left-16 animate-float-slow">
                             <div className="flex items-center gap-2 text-5xl md:text-6xl drop-shadow-2xl">
-                                <span className="animate-twinkle">⭐</span>
-                                <span className="animate-float" style={{ animationDelay: '0.5s' }}>🌙</span>
+                                <span className="animate-twinkle">⭐</span><span className="animate-float" style={{ animationDelay: '0.5s' }}>🌙</span>
                             </div>
                         </div>
                     </>
