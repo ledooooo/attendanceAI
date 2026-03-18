@@ -11,7 +11,6 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
-  // ✅ تمت إضافة 'themes' هنا
   const [activeTab, setActiveTab] = useState<'general' | 'rules' | 'holidays' | 'links' | 'themes'>('general');
 
   // 1. بيانات الإعدادات العامة
@@ -29,7 +28,7 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
     links_urls: [] as string[],
     holidays_name: [] as string[],
     holidays_date: [] as string[],
-    active_theme: 'default' // ✅ تمت إضافة حقل الثيم
+    active_theme: 'default' // ✅ جلب الثيم
   });
 
   // 2. بيانات قواعد الحضور
@@ -52,11 +51,12 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
     { value: 'gray', label: 'رمادي (محايد)', bg: 'bg-gray-500' },
   ];
 
-  // خيارات الثيمات المتاحة
+  // ✅ خيارات الثيمات المتاحة (تمت إضافة عيد الفطر)
   const themeOptions = [
       { id: 'default', name: 'الوضع الافتراضي', icon: '🏢', desc: 'بدون زينة إضافية' },
       { id: 'ramadan', name: 'شهر رمضان', icon: '🏮', desc: 'فوانيس وزينة رمضانية' },
-      { id: 'eid', name: 'الأعياد', icon: '🎉', desc: 'بالونات وزينة العيد' },
+      { id: 'eid_fitr', name: 'عيد الفطر', icon: '🕌', desc: 'زينة وبالونات عيد الفطر' },
+      { id: 'eid', name: 'الأعياد العامة', icon: '🎉', desc: 'بالونات وزينة الأعياد' },
       { id: 'christmas', name: 'رأس السنة', icon: '❄️', desc: 'تساقط الثلوج' }
   ];
 
@@ -84,7 +84,7 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
             links_urls: data.links_urls || [],
             holidays_name: data.holidays_name || [],
             holidays_date: data.holidays_date || [],
-            active_theme: data.active_theme || 'default' // ✅ جلب الثيم المحفوظ
+            active_theme: data.active_theme || 'default' 
         });
       }
     } catch (err) {
@@ -208,7 +208,7 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                 { id: 'rules', label: 'قواعد الحضور', icon: Clock },
                 { id: 'holidays', label: 'العطلات', icon: Calendar },
                 { id: 'links', label: 'الروابط', icon: Globe },
-                { id: 'themes', label: 'المظهر والمناسبات', icon: Palette }, // ✅ تمت إضافة التبويب
+                { id: 'themes', label: 'المظهر والمناسبات', icon: Palette },
             ].map((tab) => (
                 <button
                     key={tab.id}
@@ -474,20 +474,20 @@ export default function SettingsTab({ onUpdateName }: { onUpdateName?: () => voi
                         </p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
                         {themeOptions.map((theme) => (
                             <button
                                 key={theme.id}
                                 onClick={() => setFormData({ ...formData, active_theme: theme.id })}
-                                className={`flex flex-col items-center p-6 rounded-2xl border-2 transition-all ${
+                                className={`flex flex-col items-center p-4 md:p-6 rounded-2xl border-2 transition-all ${
                                     formData.active_theme === theme.id
                                     ? 'border-emerald-500 bg-emerald-50 ring-4 ring-emerald-100'
                                     : 'border-gray-100 bg-white hover:border-emerald-200 hover:bg-emerald-50/50'
                                 }`}
                             >
-                                <span className="text-4xl mb-3 block">{theme.icon}</span>
-                                <h4 className="font-black text-gray-800 mb-1">{theme.name}</h4>
-                                <p className="text-[10px] text-gray-500 font-bold text-center">{theme.desc}</p>
+                                <span className="text-3xl md:text-4xl mb-3 block">{theme.icon}</span>
+                                <h4 className="font-black text-gray-800 mb-1 text-sm md:text-base text-center">{theme.name}</h4>
+                                <p className="text-[9px] md:text-[10px] text-gray-500 font-bold text-center leading-tight">{theme.desc}</p>
                             </button>
                         ))}
                     </div>
