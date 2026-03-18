@@ -66,9 +66,15 @@ export default function ThemeOverlay({ employee }: Props) {
             0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
             100% { transform: translateY(105vh) rotate(720deg); opacity: 0; }
         }
+        @keyframes fallAndFade {
+            0% { transform: translateY(-5vh) rotate(0deg); opacity: 1; }
+            40% { opacity: 1; }
+            80% { transform: translateY(40vh) rotate(360deg); opacity: 0; }
+            100% { transform: translateY(40vh) rotate(360deg); opacity: 0; }
+        }
         @keyframes float {
             0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-15px) rotate(5deg); }
+            50% { transform: translateY(-20px) rotate(3deg); }
         }
         @keyframes floatSlow {
             0%, 100% { transform: translateY(0); }
@@ -105,11 +111,12 @@ export default function ThemeOverlay({ employee }: Props) {
             100% { background-position: 200% center; }
         }
         
-        .animate-swing { animation: swing 4s ease-in-out infinite; transform-origin: top center; }
-        .animate-swing-hard { animation: swingHard 3s ease-in-out infinite; transform-origin: top center; }
+        .animate-swing { animation: swing 3s ease-in-out infinite; transform-origin: top center; }
+        .animate-swing-hard { animation: swingHard 2.5s ease-in-out infinite; transform-origin: top center; }
         .animate-fall { animation: fall 12s linear infinite; }
-        .animate-float { animation: float 5s ease-in-out infinite; }
-        .animate-float-slow { animation: floatSlow 7s ease-in-out infinite; }
+        .animate-fall-fade { animation: fallAndFade 6s linear infinite; }
+        .animate-float { animation: float 4s ease-in-out infinite; }
+        .animate-float-slow { animation: floatSlow 6s ease-in-out infinite; }
         .animate-float-up { animation: floatUp 8s ease-in infinite; }
         .animate-bounce-in { animation: bounce-in 1s ease-out forwards; }
         .animate-glow { animation: glow 2s ease-in-out infinite; }
@@ -130,58 +137,75 @@ export default function ThemeOverlay({ employee }: Props) {
         <>
             <style>{animations}</style>
             
+            {/* الحاوية الأساسية - لا تعيق اللمس (pointer-events-none) */}
             <div className="fixed inset-0 pointer-events-none z-[100] overflow-hidden">
                 
-                {/* 🕌 ثيم عيد الفطر المبارك (هادئ ومناسب للموبايل) */}
+                {/* 🕌 ثيم عيد الفطر المبارك (التصميم الهادئ الجديد للموبايل) */}
                 {finalTheme === 'eid_fitr' && (
                     <>
-                        {/* خلفية شفافة جداً لا تعوق الرؤية */}
-                        <div className="absolute inset-0 bg-gradient-to-b from-blue-50/20 via-transparent to-emerald-50/20 pointer-events-none"></div>
+                        {/* خلفية زرقاء خفيفة جداً من الأعلى والأسفل فقط، والمنتصف شفاف بالكامل */}
+                        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-blue-50/70 to-transparent pointer-events-none"></div>
+                        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-blue-50/70 to-transparent pointer-events-none"></div>
 
-                        {/* لافتة علوية صغيرة وأنيقة (لا تعوق المنتصف) */}
-                        <div className="absolute top-2 md:top-6 left-1/2 transform -translate-x-1/2 z-20 animate-bounce-in w-11/12 max-w-sm pointer-events-none">
-                            <div className="bg-white/80 backdrop-blur-md px-4 py-2 rounded-full shadow-sm border border-cyan-100 text-center flex items-center justify-center gap-2">
-                                <span className="text-xl animate-float-slow">🌙</span>
-                                <h2 className="text-xs md:text-sm font-black bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">
-                                    عيد الفطر المبارك - تقبل الله منا ومنكم
+                        {/* النص الذهبي الصغير بالأعلى (يظهر بهدوء) */}
+                        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-30 w-full text-center">
+                            <div className="bg-white/40 backdrop-blur-[2px] px-6 py-1.5 rounded-full inline-block border border-amber-100/50 shadow-sm">
+                                <h2 className="text-xs md:text-sm font-black bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
+                                    كل عام وأنتم بخير - عيد الفطر المبارك
                                 </h2>
-                                <span className="text-xl animate-float-slow" style={{ animationDelay: '1s' }}>🕌</span>
                             </div>
                         </div>
 
-                        {/* زينة الأطراف العلوية (Party Poppers و ملبس) */}
-                        <div className="absolute top-[-10px] left-0 right-0 flex justify-between px-2 md:px-8 pointer-events-none opacity-90">
-                            {/* الزاوية العلوية اليسرى */}
-                            <div className="flex gap-2 items-start">
-                                <span className="text-4xl md:text-5xl animate-swing origin-top drop-shadow-md">🎉</span>
-                                <span className="text-xl md:text-2xl animate-float-slow mt-8" style={{ animationDelay: '1s' }}>🍬</span>
-                                <span className="text-sm md:text-lg animate-float mt-16" style={{ animationDelay: '2.5s' }}>🍬</span>
-                            </div>
-                            {/* الزاوية العلوية اليمنى */}
-                            <div className="flex gap-2 items-start">
-                                <span className="text-sm md:text-lg animate-float mt-16" style={{ animationDelay: '1.5s' }}>🍬</span>
-                                <span className="text-xl md:text-2xl animate-float-slow mt-8" style={{ animationDelay: '0.5s' }}>🍬</span>
-                                <span className="text-4xl md:text-5xl animate-swing-hard origin-top text-right transform -scale-x-100 drop-shadow-md">🎉</span>
-                            </div>
+                        {/* زينة المفرقعات (Poppers) الثابتة في الزوايا العلوية */}
+                        <div className="absolute top-2 left-4 md:left-8 animate-swing-hard origin-top opacity-80">
+                            <span className="text-2xl md:text-3xl drop-shadow-md">🎉</span>
+                        </div>
+                        <div className="absolute top-2 right-4 md:right-8 animate-swing origin-top opacity-80">
+                            <span className="text-2xl md:text-3xl drop-shadow-md">🎉</span>
+                        </div>
+                        
+                        {/* تساقط خفيف للملبس والحلويات يختفي (يتلاشى) قبل الوصول لمنتصف الشاشة */}
+                        <div className="absolute inset-0 overflow-hidden pointer-events-none z-10">
+                            {[...Array(12)].map((_, i) => (
+                                <div 
+                                    key={`sweet-${i}`} 
+                                    className="absolute text-base md:text-lg drop-shadow-sm animate-fall-fade"
+                                    style={{ 
+                                        left: `${Math.random() * 95}%`,
+                                        top: '-5vh',
+                                        animationDelay: `${Math.random() * 5}s`,
+                                        animationDuration: `${5 + Math.random() * 3}s`
+                                    }}
+                                >
+                                    {i % 4 === 0 ? '🍬' : i % 4 === 1 ? '🍭' : i % 4 === 2 ? '🎊' : '✨'}
+                                </div>
+                            ))}
                         </div>
 
-                        {/* زينة الأطراف السفلية (بالونات ملونة و ملبس) */}
-                        <div className="absolute bottom-[-10px] left-0 right-0 flex justify-between items-end px-2 md:px-8 pointer-events-none opacity-90 pb-2 md:pb-6">
-                            {/* الزاوية السفلية اليسرى */}
-                            <div className="flex items-end gap-1 md:gap-2">
-                                <span className="text-3xl md:text-4xl animate-float drop-shadow-md">🎉</span>
-                                <span className="text-4xl md:text-5xl animate-float filter hue-rotate-[90deg] drop-shadow-md" style={{ animationDelay: '0.5s' }}>🎈</span>
-                                <span className="text-xl md:text-2xl animate-float-slow mb-6" style={{ animationDelay: '2s' }}>🍬</span>
-                                <span className="text-3xl md:text-4xl animate-float-slow filter hue-rotate-[180deg] drop-shadow-md" style={{ animationDelay: '1.2s' }}>🎈</span>
-                            </div>
-                            
-                            {/* الزاوية السفلية اليمنى */}
-                            <div className="flex items-end gap-1 md:gap-2">
-                                <span className="text-3xl md:text-4xl animate-float-slow filter hue-rotate-[270deg] drop-shadow-md" style={{ animationDelay: '1.8s' }}>🎈</span>
-                                <span className="text-xl md:text-2xl animate-float mb-8" style={{ animationDelay: '0.8s' }}>🍬</span>
-                                <span className="text-4xl md:text-5xl animate-float drop-shadow-md" style={{ animationDelay: '0.2s' }}>🎈</span>
-                                <span className="text-3xl md:text-4xl animate-float transform -scale-x-100 drop-shadow-md" style={{ animationDelay: '0.9s' }}>🎉</span>
-                            </div>
+                        {/* بلالين ملونة هادئة تتحرك بلطف أسفل الشاشة (يمين ويسار فقط) */}
+                        <div className="absolute bottom-[-10px] left-4 md:left-12 flex gap-1 z-20">
+                            {[...Array(3)].map((_, i) => (
+                                <div key={`bl-L-${i}`} className="animate-float" style={{ animationDelay: `${i * 0.7}s` }}>
+                                    <span 
+                                        className="text-4xl md:text-5xl drop-shadow-md inline-block" 
+                                        style={{ filter: `hue-rotate(${i * 75 + 40}deg)` }}
+                                    >
+                                        🎈
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="absolute bottom-[-10px] right-4 md:right-12 flex gap-1 z-20">
+                            {[...Array(3)].map((_, i) => (
+                                <div key={`bl-R-${i}`} className="animate-float" style={{ animationDelay: `${i * 0.7 + 0.3}s` }}>
+                                    <span 
+                                        className="text-4xl md:text-5xl drop-shadow-md inline-block" 
+                                        style={{ filter: `hue-rotate(${i * 75 + 180}deg)` }}
+                                    >
+                                        🎈
+                                    </span>
+                                </div>
+                            ))}
                         </div>
                     </>
                 )}
@@ -324,7 +348,7 @@ export default function ThemeOverlay({ employee }: Props) {
                     </>
                 )}
 
-                {/* 🎊 ثيم الأعياد العامة */}
+                {/* 🎊 ثيم الأعياد العامة (النسخة القديمة المدمجة) */}
                 {finalTheme === 'eid' && (
                     <>
                         <div className="absolute inset-0 bg-gradient-to-br from-emerald-100/10 via-teal-100/10 to-green-100/10"></div>
