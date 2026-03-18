@@ -52,7 +52,7 @@ export default function ThemeOverlay({ employee }: Props) {
 
     if (finalTheme === 'default') return null;
 
-    // --- التأثيرات الحركية المحسّنة ---
+    // --- التأثيرات الحركية ---
     const animations = `
         @keyframes swing {
             0%, 100% { transform: rotate(-6deg); }
@@ -66,33 +66,22 @@ export default function ThemeOverlay({ employee }: Props) {
             0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
             100% { transform: translateY(105vh) rotate(720deg); opacity: 0; }
         }
-        @keyframes fallAndFade {
-            0% { transform: translateY(-5vh) rotate(0deg); opacity: 1; }
-            40% { opacity: 1; }
-            80% { transform: translateY(40vh) rotate(360deg); opacity: 0; }
-            100% { transform: translateY(40vh) rotate(360deg); opacity: 0; }
-        }
         @keyframes float {
             0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-20px) rotate(3deg); }
+            50% { transform: translateY(-15px) rotate(5deg); }
         }
         @keyframes floatSlow {
             0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
-        }
-        @keyframes floatUp {
-            0% { transform: translateY(110vh) scale(0.8); opacity: 0; }
-            20% { opacity: 1; }
-            100% { transform: translateY(-20vh) scale(1.2); opacity: 0; }
+            50% { transform: translateY(-8px); }
         }
         @keyframes bounce-in {
-            0% { transform: scale(0) rotate(-180deg); opacity: 0; }
-            50% { transform: scale(1.2) rotate(10deg); }
+            0% { transform: scale(0) rotate(-10deg); opacity: 0; }
+            50% { transform: scale(1.1) rotate(5deg); }
             100% { transform: scale(1) rotate(0deg); opacity: 1; }
         }
         @keyframes glow {
-            0%, 100% { filter: drop-shadow(0 0 8px rgba(250,204,21,0.6)); }
-            50% { filter: drop-shadow(0 0 20px rgba(250,204,21,0.9)); }
+            0%, 100% { filter: drop-shadow(0 0 5px rgba(250,204,21,0.5)); }
+            50% { filter: drop-shadow(0 0 15px rgba(250,204,21,0.8)); }
         }
         @keyframes twinkle {
             0%, 100% { opacity: 1; transform: scale(1); }
@@ -106,106 +95,90 @@ export default function ThemeOverlay({ employee }: Props) {
             0%, 100% { box-shadow: 0 0 20px rgba(236, 72, 153, 0.5); }
             50% { box-shadow: 0 0 40px rgba(236, 72, 153, 0.8); }
         }
-        @keyframes shimmer {
-            0% { background-position: -200% center; }
-            100% { background-position: 200% center; }
-        }
         
         .animate-swing { animation: swing 3s ease-in-out infinite; transform-origin: top center; }
         .animate-swing-hard { animation: swingHard 2.5s ease-in-out infinite; transform-origin: top center; }
         .animate-fall { animation: fall 12s linear infinite; }
-        .animate-fall-fade { animation: fallAndFade 6s linear infinite; }
         .animate-float { animation: float 4s ease-in-out infinite; }
         .animate-float-slow { animation: floatSlow 6s ease-in-out infinite; }
-        .animate-float-up { animation: floatUp 8s ease-in infinite; }
         .animate-bounce-in { animation: bounce-in 1s ease-out forwards; }
         .animate-glow { animation: glow 2s ease-in-out infinite; }
         .animate-twinkle { animation: twinkle 2s ease-in-out infinite; }
         .animate-confetti { animation: confetti-fall 5s linear infinite; }
         .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
-        .shimmer-bg {
-            background: linear-gradient(90deg, 
-                rgba(255,255,255,0) 0%, 
-                rgba(255,255,255,0.3) 50%, 
-                rgba(255,255,255,0) 100%);
-            background-size: 200% 100%;
-            animation: shimmer 3s infinite;
-        }
     `;
 
     return (
         <>
             <style>{animations}</style>
             
-            {/* الحاوية الأساسية - لا تعيق اللمس (pointer-events-none) */}
             <div className="fixed inset-0 pointer-events-none z-[100] overflow-hidden">
                 
-                {/* 🕌 ثيم عيد الفطر المبارك (التصميم الهادئ الجديد للموبايل) */}
+                {/* 🕌 ثيم عيد الفطر المبارك (هادئ ومناسب للموبايل) */}
                 {finalTheme === 'eid_fitr' && (
                     <>
-                        {/* خلفية زرقاء خفيفة جداً من الأعلى والأسفل فقط، والمنتصف شفاف بالكامل */}
-                        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-blue-50/70 to-transparent pointer-events-none"></div>
-                        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-blue-50/70 to-transparent pointer-events-none"></div>
+                        {/* خلفية خفيفة جداً لا تعيق الرؤية */}
+                        <div className="absolute inset-0 bg-gradient-to-br from-cyan-50/20 via-transparent to-yellow-50/20 pointer-events-none"></div>
 
-                        {/* النص الذهبي الصغير بالأعلى (يظهر بهدوء) */}
-                        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-30 w-full text-center">
-                            <div className="bg-white/40 backdrop-blur-[2px] px-6 py-1.5 rounded-full inline-block border border-amber-100/50 shadow-sm">
-                                <h2 className="text-xs md:text-sm font-black bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-600 bg-clip-text text-transparent">
-                                    كل عام وأنتم بخير - عيد الفطر المبارك
-                                </h2>
+                        {/* 🌟 رسالة العيد العلوية (بخط ذهبي صغير) */}
+                        <div className="absolute top-2 md:top-4 left-1/2 transform -translate-x-1/2 w-full text-center animate-bounce-in z-50 pointer-events-none">
+                            <h2 className="text-xs md:text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 via-yellow-600 to-yellow-500 drop-shadow-[0_1px_2px_rgba(250,204,21,0.5)]">
+                                ✨ كل عام وانتم بخير - عيد الفطر المبارك ✨
+                            </h2>
+                        </div>
+
+                        {/* 🏮 زينة متدلية من الأعلى فقط */}
+                        <div className="absolute top-0 left-0 w-full flex justify-around px-2 md:px-16 pointer-events-none z-40">
+                            {[
+                                { icon: '🌙', height: 'h-8 md:h-12', delay: '0s', type: 'swing' },
+                                { icon: '⭐', height: 'h-12 md:h-20', delay: '0.3s', type: 'swing-hard' },
+                                { icon: '🍬', height: 'h-10 md:h-16', delay: '0.6s', type: 'swing' },
+                                { icon: '🌙', height: 'h-14 md:h-24', delay: '0.2s', type: 'swing-hard' },
+                                { icon: '🍬', height: 'h-10 md:h-16', delay: '0.5s', type: 'swing' },
+                                { icon: '⭐', height: 'h-8 md:h-12', delay: '0.1s', type: 'swing-hard' },
+                            ].map((item, i) => (
+                                <div key={i} className={`flex flex-col items-center ${item.type === 'swing' ? 'animate-swing' : 'animate-swing-hard'}`} style={{ animationDelay: item.delay }}>
+                                    <div className={`w-[1px] md:w-[2px] ${item.height} bg-gradient-to-b from-yellow-300 to-yellow-500/30`}></div>
+                                    <div className="text-base md:text-xl drop-shadow-md animate-glow">{item.icon}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* 🎈 زينة ثابتة بالأسفل (بالونات وملبس) لا تغطي المنتصف */}
+                        <div className="absolute bottom-0 left-0 w-full h-24 md:h-32 pointer-events-none flex justify-between items-end px-2 md:px-12 overflow-hidden z-40 pb-2 md:pb-0">
+                            
+                            {/* بالونات جهة اليمين */}
+                            <div className="flex items-end gap-1 md:gap-2">
+                                <div className="animate-float" style={{ animationDelay: '0.2s' }}>
+                                    <div className="text-3xl md:text-4xl drop-shadow-lg filter hue-rotate-15">🎈</div>
+                                    <div className="w-[1px] h-8 md:h-12 bg-gray-300/40 mx-auto"></div>
+                                </div>
+                                <div className="animate-float-slow mb-2 md:mb-4" style={{ animationDelay: '1s' }}>
+                                    <div className="text-2xl md:text-3xl drop-shadow-lg filter hue-rotate-45">🎈</div>
+                                    <div className="w-[1px] h-6 md:h-8 bg-gray-300/40 mx-auto"></div>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* زينة المفرقعات (Poppers) الثابتة في الزوايا العلوية */}
-                        <div className="absolute top-2 left-4 md:left-8 animate-swing-hard origin-top opacity-80">
-                            <span className="text-2xl md:text-3xl drop-shadow-md">🎉</span>
-                        </div>
-                        <div className="absolute top-2 right-4 md:right-8 animate-swing origin-top opacity-80">
-                            <span className="text-2xl md:text-3xl drop-shadow-md">🎉</span>
-                        </div>
-                        
-                        {/* تساقط خفيف للملبس والحلويات يختفي (يتلاشى) قبل الوصول لمنتصف الشاشة */}
-                        <div className="absolute inset-0 overflow-hidden pointer-events-none z-10">
-                            {[...Array(12)].map((_, i) => (
-                                <div 
-                                    key={`sweet-${i}`} 
-                                    className="absolute text-base md:text-lg drop-shadow-sm animate-fall-fade"
-                                    style={{ 
-                                        left: `${Math.random() * 95}%`,
-                                        top: '-5vh',
-                                        animationDelay: `${Math.random() * 5}s`,
-                                        animationDuration: `${5 + Math.random() * 3}s`
-                                    }}
-                                >
-                                    {i % 4 === 0 ? '🍬' : i % 4 === 1 ? '🍭' : i % 4 === 2 ? '🎊' : '✨'}
-                                </div>
-                            ))}
-                        </div>
+                            {/* حلويات (ملبس) مبعثرة بمنتصف الشاشة من الأسفل فقط */}
+                            <div className="flex gap-3 md:gap-8 pb-2 md:pb-4 opacity-80">
+                                {['🍬', '🍪', '🍬', '🍫'].map((sweet, i) => (
+                                    <div key={i} className="text-sm md:text-xl animate-float drop-shadow-sm" style={{ animationDelay: `${i * 0.4}s` }}>
+                                        {sweet}
+                                    </div>
+                                ))}
+                            </div>
 
-                        {/* بلالين ملونة هادئة تتحرك بلطف أسفل الشاشة (يمين ويسار فقط) */}
-                        <div className="absolute bottom-[-10px] left-4 md:left-12 flex gap-1 z-20">
-                            {[...Array(3)].map((_, i) => (
-                                <div key={`bl-L-${i}`} className="animate-float" style={{ animationDelay: `${i * 0.7}s` }}>
-                                    <span 
-                                        className="text-4xl md:text-5xl drop-shadow-md inline-block" 
-                                        style={{ filter: `hue-rotate(${i * 75 + 40}deg)` }}
-                                    >
-                                        🎈
-                                    </span>
+                            {/* بالونات جهة اليسار */}
+                            <div className="flex items-end gap-1 md:gap-2">
+                                <div className="animate-float-slow mb-3 md:mb-6" style={{ animationDelay: '0.5s' }}>
+                                    <div className="text-2xl md:text-3xl drop-shadow-lg filter hue-rotate-90">🎈</div>
+                                    <div className="w-[1px] h-8 md:h-10 bg-gray-300/40 mx-auto"></div>
                                 </div>
-                            ))}
-                        </div>
-                        <div className="absolute bottom-[-10px] right-4 md:right-12 flex gap-1 z-20">
-                            {[...Array(3)].map((_, i) => (
-                                <div key={`bl-R-${i}`} className="animate-float" style={{ animationDelay: `${i * 0.7 + 0.3}s` }}>
-                                    <span 
-                                        className="text-4xl md:text-5xl drop-shadow-md inline-block" 
-                                        style={{ filter: `hue-rotate(${i * 75 + 180}deg)` }}
-                                    >
-                                        🎈
-                                    </span>
+                                <div className="animate-float" style={{ animationDelay: '0.8s' }}>
+                                    <div className="text-3xl md:text-4xl drop-shadow-lg filter hue-rotate-180">🎈</div>
+                                    <div className="w-[1px] h-12 md:h-16 bg-gray-300/40 mx-auto"></div>
                                 </div>
-                            ))}
+                            </div>
                         </div>
                     </>
                 )}
@@ -348,7 +321,7 @@ export default function ThemeOverlay({ employee }: Props) {
                     </>
                 )}
 
-                {/* 🎊 ثيم الأعياد العامة (النسخة القديمة المدمجة) */}
+                {/* 🎊 ثيم الأعياد العامة (القديم) */}
                 {finalTheme === 'eid' && (
                     <>
                         <div className="absolute inset-0 bg-gradient-to-br from-emerald-100/10 via-teal-100/10 to-green-100/10"></div>
