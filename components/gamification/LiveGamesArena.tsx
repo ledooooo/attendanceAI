@@ -7,7 +7,8 @@ import confetti from 'canvas-confetti';
 import {
     Swords, UserX, Trophy, Users, Clock,
     Play, X, CheckCircle2, BrainCircuit, Loader2, Trash2, Timer, Hand, Grid3x3, Bus,
-    Link2, Share2, Sparkles, RefreshCw, Bell, BellOff, Smartphone
+    Link2, Share2, Sparkles, RefreshCw, Bell, BellOff, Smartphone,
+    Send, Wifi, WifiOff, ChevronDown, ChevronUp
 } from 'lucide-react';
 import Connect4Game from './games/Connect4Game';
 import XOGame from './games/XOGame';
@@ -295,6 +296,225 @@ function PushToggle({ userId }: { userId: string }) {
     );
 }
 
+// ─── Admin Online Users Panel ─────────────────────────────────────────────────
+// Shows employees whose last_seen is within the last 5 minutes,
+// lets the admin pick one (or all) and send a room-invite notification.
+interface OnlineEmployee {
+    employee_id: string;
+    name: string;
+    specialty: string | null;
+    photo_url: string | null;
+    last_seen: string | null;
+}
+
+function AdminOnlinePanel({ adminEmployee, currentMatchId, gameLabel }: {
+    adminEmployee: Employee;
+    currentMatchId: string | null;
+    gameLabel: string;
+}) {
+    const [online, setOnline] = useState<OnlineEmployee[]>([]);
+    const [sending, setSending] = useState<Record<string, boolean>>({});
+    const [sent, setSent] = useState<Record<string, boolean>>({});
+    const [collapsed, setCollapsed] = useState(false);
+    const [sendingAll, setSendingAll] = useState(false);
+
+    // Fetch online employees (last_seen within 5 min, exclude self)
+    const fetchOnline = async () => {
+        const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const { data } = await supabase
+            .from('employees')
+            .select('employee_id, name, specialty, photo_url, last_seen')
+            .gte('last_seen', cutoff)
+            .neq('employee_id', String(adminEmployee.employee_id))
+            .neq('role', 'admin')
+            .order('last_seen', { ascending: false });
+        if (data) setOnline(data as OnlineEmployee[]);
+    };
+
+    useEffect(() => {
+        fetchOnline();
+        // Refresh every 30 seconds
+        const iv = setInterval(fetchOnline, 30_000);
+
+        // Realtime: watch last_seen changes
+        const channel = supabase.channel('online_presence_admin')
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'employees',
+                filter: `role=neq.admin`,
+            }, () => { fetchOnline(); })
+            .subscribe();
+
+        return () => { clearInterval(iv); supabase.removeChannel(channel); };
+    }, [adminEmployee.employee_id]);
+
+    const sendInvite = async (emp: OnlineEmployee) => {
+        if (!currentMatchId) return;
+        const link = getRoomLink(currentMatchId);
+        setSending(p => ({ ...p, [emp.employee_id]: true }));
+
+        // Insert notification into notifications table
+        await supabase.from('notifications').insert({
+            user_id: String(emp.employee_id),
+            title: `🎮 دعوة لعبة من ${adminEmployee.name?.split(' ')[0] || 'المدير'}`,
+            message: `تم دعوتك للانضمام لغرفة ${gameLabel}! اضغط هنا للانضمام 👉 ${link}`,
+            type: 'competition',
+            is_read: false,
+        });
+
+        // Also try push notification
+        await sendPushToUser(
+            String(emp.employee_id),
+            `🎮 دعوة لعبة من ${adminEmployee.name?.split(' ')[0] || 'المدير'}`,
+            `انضم لغرفة ${gameLabel} الآن!`,
+            link,
+        );
+
+        setSending(p => ({ ...p, [emp.employee_id]: false }));
+        setSent(p => ({ ...p, [emp.employee_id]: true }));
+        toast.success(`تم إرسال الدعوة لـ ${emp.name?.split(' ')[0]} ✅`);
+        // Reset sent badge after 10s
+        setTimeout(() => setSent(p => ({ ...p, [emp.employee_id]: false })), 10_000);
+    };
+
+    const sendToAll = async () => {
+        if (!currentMatchId || online.length === 0) return;
+        setSendingAll(true);
+        await Promise.all(online.map(emp => sendInvite(emp)));
+        setSendingAll(false);
+        toast.success(`تم إرسال الدعوة لـ ${online.length} موظف أونلاين! 🎉`);
+    };
+
+    // Time ago
+    const timeAgo = (iso: string | null) => {
+        if (!iso) return '';
+        const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+        if (secs < 60) return 'الآن';
+        if (secs < 3600) return `منذ ${Math.floor(secs / 60)} د`;
+        return `منذ ${Math.floor(secs / 3600)} س`;
+    };
+
+    // Initials helper
+    const initials = (name: string) => name?.split(' ').slice(0, 2).map(n => n[0]).join('') || '؟';
+    const styleIdx = (id: string) => id.charCodeAt(0) % AVATAR_STYLES.length;
+
+    return (
+        <div className="bg-white rounded-2xl border-2 border-green-200 shadow-sm overflow-hidden">
+            {/* Header */}
+            <button
+                onClick={() => setCollapsed(p => !p)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white"
+            >
+                <div className="flex items-center gap-2">
+                    <div className="relative">
+                        <Wifi className="w-4 h-4"/>
+                        {online.length > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-yellow-400 text-gray-900 text-[9px] font-black rounded-full flex items-center justify-center">{online.length}</span>
+                        )}
+                    </div>
+                    <span className="font-black text-sm">
+                        الموظفون أونلاين الآن
+                        {online.length === 0 && <span className="text-green-200 font-bold text-xs mr-1">(لا أحد)</span>}
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
+                    {currentMatchId && online.length > 0 && !collapsed && (
+                        <button
+                            onClick={e => { e.stopPropagation(); sendToAll(); }}
+                            disabled={sendingAll}
+                            className="flex items-center gap-1 bg-white/20 hover:bg-white/30 border border-white/30 text-white px-2.5 py-1 rounded-lg text-[11px] font-black transition-all active:scale-95"
+                        >
+                            {sendingAll ? <Loader2 className="w-3 h-3 animate-spin"/> : <Send className="w-3 h-3"/>}
+                            دعوة الكل
+                        </button>
+                    )}
+                    {collapsed ? <ChevronDown className="w-4 h-4"/> : <ChevronUp className="w-4 h-4"/>}
+                </div>
+            </button>
+
+            {/* Body */}
+            {!collapsed && (
+                <div className="p-3">
+                    {online.length === 0 ? (
+                        <div className="text-center py-5">
+                            <WifiOff className="w-8 h-8 text-gray-200 mx-auto mb-2"/>
+                            <p className="text-xs font-bold text-gray-400">لا يوجد موظفون متصلون حالياً</p>
+                            <p className="text-[10px] text-gray-300 mt-0.5">يتحدث عن آخر 5 دقائق</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar">
+                            {online.map(emp => {
+                                const isSending = sending[emp.employee_id];
+                                const isSent = sent[emp.employee_id];
+                                const idx = styleIdx(emp.employee_id);
+                                const style = AVATAR_STYLES[idx];
+                                return (
+                                    <div key={emp.employee_id}
+                                        className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-gray-50 transition-colors">
+                                        {/* Avatar */}
+                                        <div className="relative flex-shrink-0">
+                                            {emp.photo_url ? (
+                                                <img src={emp.photo_url} alt={emp.name}
+                                                    className={`w-9 h-9 rounded-full object-cover ring-2 ${style.ring}`}/>
+                                            ) : (
+                                                <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${style.bg} flex items-center justify-center ring-2 ${style.ring}`}>
+                                                    <span className="text-white font-black text-xs">{initials(emp.name)}</span>
+                                                </div>
+                                            )}
+                                            {/* Green dot */}
+                                            <span className="absolute bottom-0 left-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white"/>
+                                        </div>
+
+                                        {/* Info */}
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-black text-gray-800 truncate">{emp.name}</p>
+                                            <div className="flex items-center gap-1.5">
+                                                {emp.specialty && (
+                                                    <span className="text-[10px] text-gray-400 font-bold truncate max-w-[90px]">{emp.specialty}</span>
+                                                )}
+                                                <span className="text-[9px] text-green-500 font-bold">{timeAgo(emp.last_seen)}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Invite button */}
+                                        <button
+                                            onClick={() => sendInvite(emp)}
+                                            disabled={isSending || isSent || !currentMatchId}
+                                            className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-black text-[11px] transition-all active:scale-95 ${
+                                                isSent
+                                                    ? 'bg-green-100 text-green-700 border border-green-200'
+                                                    : !currentMatchId
+                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                        : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+                                            }`}
+                                        >
+                                            {isSending ? (
+                                                <Loader2 className="w-3 h-3 animate-spin"/>
+                                            ) : isSent ? (
+                                                <><CheckCircle2 className="w-3 h-3"/> تم</>
+                                            ) : (
+                                                <><Send className="w-3 h-3"/> دعوة</>
+                                            )}
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Hint */}
+                    {!currentMatchId && (
+                        <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 font-bold text-center">
+                            أنشئ غرفة أولاً لتتمكن من إرسال الدعوات
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 interface LiveGamesArenaProps {
     employee: Employee;
@@ -324,8 +544,13 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
     // ── Rematch state ──────────────────────────────────────────────────────────
     const [rematchLoading, setRematchLoading] = useState(false);
-    const [rematchOfferedTo, setRematchOfferedTo] = useState<string | null>(null);  // opponentId we sent to
-    const [rematchRequestFrom, setRematchRequestFrom] = useState<string | null>(null); // opponentId who asked us
+    const [rematchOfferedTo, setRematchOfferedTo] = useState<string | null>(null);
+    const [rematchRequestFrom, setRematchRequestFrom] = useState<string | null>(null);
+
+    // ── Admin ──────────────────────────────────────────────────────────────────
+    const isAdmin = (employee as any).role === 'admin';
+    // Track the active waiting room ID so admin can send invites
+    const [adminActiveRoomId, setAdminActiveRoomId] = useState<string | null>(null);
 
     // ── Auto-delete timer ──────────────────────────────────────────────────────
     useEffect(() => {
@@ -527,6 +752,8 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         subscribeToPush(String(employee.employee_id));
 
         setCurrentMatch(data); setView('playing');
+        // Admin: track this room id for inviting online employees
+        if (isAdmin) setAdminActiveRoomId(data.id);
     };
 
     // ── Join match ─────────────────────────────────────────────────────────────
@@ -710,6 +937,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         setTimeLeft(null);
         setRematchOfferedTo(null);
         setRematchRequestFrom(null);
+        setAdminActiveRoomId(null);
     };
 
     const amIWinner = currentMatch?.winner_id === employee.employee_id;
@@ -754,6 +982,15 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                             إنشاء تحدي {GAME_TYPES.find(g => g.key === selectedGameType)?.label} ⚔️
                         </button>
                     </div>
+
+                    {/* Admin: Online employees panel */}
+                    {isAdmin && (
+                        <AdminOnlinePanel
+                            adminEmployee={employee}
+                            currentMatchId={adminActiveRoomId}
+                            gameLabel={GAME_TYPES.find(g => g.key === selectedGameType)?.label || 'لعبة'}
+                        />
+                    )}
 
                     {/* Waiting rooms */}
                     <div>
@@ -926,6 +1163,16 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                                             className="bg-red-50 text-red-500 border border-red-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-red-100 active:scale-95 transition-all text-sm shadow-sm">
                                             <Trash2 size={16}/> إلغاء الغرفة
                                         </button>
+                                    </div>
+                                )}
+                                {/* Admin: invite online employees while waiting */}
+                                {isAdmin && currentMatch.status === 'waiting' && (
+                                    <div className="mt-4 w-full max-w-sm mx-auto">
+                                        <AdminOnlinePanel
+                                            adminEmployee={employee}
+                                            currentMatchId={currentMatch.id}
+                                            gameLabel={GAME_TYPES.find(g => g.key === currentMatch.game_type)?.label || 'لعبة'}
+                                        />
                                     </div>
                                 )}
                             </div>
