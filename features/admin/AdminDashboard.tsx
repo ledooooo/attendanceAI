@@ -9,7 +9,7 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus, GraduationCap, FolderOpen, Gamepad2 // ✅ استيراد أيقونة الألعاب
+    Trash2, UserPlus, GraduationCap, FolderOpen, Gamepad2
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -47,12 +47,10 @@ import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
 import AdminFellowshipTab from './components/AdminFellowshipTab'; 
 import AdminDocumentsTab from './components/AdminDocumentsTab';
 
-// ✅ استيراد مكونات الألعاب التي طلبتها
+// ✅ المكونات الخاصة بصالة الألعاب
 import StaffArcade from '../staff/components/StaffArcade';
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
-import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
-import CalculatorsMenu from '../../calculators/CalculatorsMenu';
 
 const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -218,7 +216,7 @@ export default function AdminDashboard() {
             case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
             case 'fellowship': return <AdminFellowshipTab />;
             
-            // ✅ تبويب الألعاب المجمع الجديد
+            // ✅ تبويب الألعاب المجمع (تمت إزالة لوحة الصدارة والآلات الحاسبة)
             case 'arcade': 
                 return (
                     <div className="space-y-6 animate-in fade-in duration-500">
@@ -228,22 +226,15 @@ export default function AdminDashboard() {
                             </h2>
                         </div>
                         
+                        {/* شريط مستوى وخبرة المدير */}
                         <LevelProgressBar employee={currentAdminEmployee} />
                         
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div className="lg:col-span-2">
-                                <StaffArcade employee={currentAdminEmployee} />
-                            </div>
-                            <div className="space-y-6">
-                                <LeaderboardWidget currentEmployeeId={currentAdminEmployee?.employee_id} />
-                                <div className="bg-white rounded-[2rem] shadow-sm border p-4">
-                                    <h3 className="font-black text-gray-800 mb-4 px-2">الآلات الحاسبة الطبية</h3>
-                                    <CalculatorsMenu />
-                                </div>
-                            </div>
+                        {/* ساحة الألعاب بكامل العرض */}
+                        <div className="w-full">
+                            <StaffArcade employee={currentAdminEmployee} />
                         </div>
                         
-                        {/* Quiz Modal will handle its own display logic internally */}
+                        {/* المسابقة اليومية (تظهر فقط إن لم يقم بحلها) */}
                         <DailyQuizModal employee={currentAdminEmployee} />
                     </div>
                 );
@@ -417,7 +408,7 @@ export default function AdminDashboard() {
 // قائمة القائمة الجانبية المحدثة
 const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
-    { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 }, // ✅ التبويب الجديد
+    { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
     { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
