@@ -9,7 +9,7 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus, GraduationCap, FolderOpen // ✅ استيراد أيقونة ملفات المدير
+    Trash2, UserPlus, GraduationCap, FolderOpen, Gamepad2 // ✅ استيراد أيقونة الألعاب
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -42,16 +42,18 @@ import StatisticsManager from './components/StatisticsManager';
 import CompetitionsManager from './components/CompetitionsManager';
 import AdminSupervisorRounds from './components/AdminSupervisorRounds';
 
-// ✅ استيراد بوابة الزائرين
+// Visitors & Fellowship
 import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
-
-// ✅ استيراد لوحة تحكم الزمالة (التي أنشأناها)
 import AdminFellowshipTab from './components/AdminFellowshipTab'; 
-
-// ✅ استيراد التبويب الجديد لملفات المدير
 import AdminDocumentsTab from './components/AdminDocumentsTab';
 
-// ✅ دالة بديلة لـ dayjs لحساب "منذ متى" بالعربية
+// ✅ استيراد مكونات الألعاب التي طلبتها
+import StaffArcade from '../staff/components/StaffArcade';
+import DailyQuizModal from '../../components/gamification/DailyQuizModal';
+import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
+import LevelProgressBar from '../../components/gamification/LevelProgressBar';
+import CalculatorsMenu from '../../calculators/CalculatorsMenu';
+
 const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -74,7 +76,6 @@ export default function AdminDashboard() {
     const [showNotifications, setShowNotifications] = useState(false);
     const notifRef = useRef<HTMLDivElement>(null);
 
-    // إغلاق قائمة الإشعارات عند النقر خارجها
     useEffect(() => {
         function handleClickOutside(event: any) {
             if (notifRef.current && !notifRef.current.contains(event.target)) {
@@ -126,7 +127,7 @@ export default function AdminDashboard() {
                 .limit(20);
             return data || [];
         },
-        enabled: showNotifications // Fetch only when opened
+        enabled: showNotifications 
     });
 
     const markAsReadMutation = useMutation({
@@ -143,7 +144,6 @@ export default function AdminDashboard() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin_notifications_list'] })
     });
 
-    // --- Badges & Settings ---
     const { data: settings } = useQuery({
         queryKey: ['general_settings'],
         queryFn: async () => {
@@ -176,10 +176,8 @@ export default function AdminDashboard() {
         refetchInterval: 30000, 
     });
 
-    // ✅ التعديل الذكي: السحب يعمل فقط من الربع الأيمن من الشاشة (منعاً للخطأ أثناء تصفح الجداول)
     const swipeHandlers = useSwipeable({
         onSwipedLeft: (eventData) => { 
-            // window.innerWidth * 0.75 تمثل 75% من الشاشة، أي أن البداية يجب أن تكون في الـ 25% اليمنى فقط
             if (eventData.initial[0] > window.innerWidth * 0.75) {
                 setIsSidebarOpen(true); 
             }
@@ -212,14 +210,44 @@ export default function AdminDashboard() {
             case 'assets': return <AssetsManager />;
             case 'training': return <TrainingManager />;
             case 'library-manager': return <AdminLibraryManager />;
-            case 'admin-documents': return <AdminDocumentsTab />; // ✅ التبويب الجديد
+            case 'admin-documents': return <AdminDocumentsTab />; 
             case 'data-reports': return <AdminDataReports employees={employees || []} />;
             case 'absence-report': return <AbsenceReportTab />;
             case 'tasks': return <TasksManager employees={employees || []} />;
             case 'vaccinations': return <VaccinationsTab employees={employees || []} />;
             case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
-         // case 'visitors_dashboard': return <AdminVisitorsDashboard />; 
             case 'fellowship': return <AdminFellowshipTab />;
+            
+            // ✅ تبويب الألعاب المجمع الجديد
+            case 'arcade': 
+                return (
+                    <div className="space-y-6 animate-in fade-in duration-500">
+                        <div className="flex items-center justify-between border-b pb-4">
+                            <h2 className="text-2xl font-black flex items-center gap-2 text-indigo-700">
+                                <Gamepad2 className="w-8 h-8"/> صالة الألعاب والتحديات
+                            </h2>
+                        </div>
+                        
+                        <LevelProgressBar employee={currentAdminEmployee} />
+                        
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <div className="lg:col-span-2">
+                                <StaffArcade employee={currentAdminEmployee} />
+                            </div>
+                            <div className="space-y-6">
+                                <LeaderboardWidget currentEmployeeId={currentAdminEmployee?.employee_id} />
+                                <div className="bg-white rounded-[2rem] shadow-sm border p-4">
+                                    <h3 className="font-black text-gray-800 mb-4 px-2">الآلات الحاسبة الطبية</h3>
+                                    <CalculatorsMenu />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Quiz Modal will handle its own display logic internally */}
+                        <DailyQuizModal employee={currentAdminEmployee} />
+                    </div>
+                );
+
             default: return <HomeTab employees={allActiveUsers} setActiveTab={setActiveTab} />;
         }
     };
@@ -313,7 +341,6 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="flex items-center gap-3" ref={notifRef}>
-                        {/* زر الإشعارات الفعال */}
                         <div className="relative">
                             <button 
                                 onClick={() => setShowNotifications(!showNotifications)}
@@ -325,7 +352,6 @@ export default function AdminDashboard() {
                                 )}
                             </button>
 
-                            {/* قائمة الإشعارات المنسدلة */}
                             {showNotifications && (
                                 <div className="absolute left-0 mt-3 w-80 md:w-96 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-in slide-in-from-top-2">
                                     <div className="p-3 border-b bg-gray-50/50 flex justify-between items-center">
@@ -391,6 +417,7 @@ export default function AdminDashboard() {
 // قائمة القائمة الجانبية المحدثة
 const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
+    { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 }, // ✅ التبويب الجديد
     { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
     { id: 'attendance', label: 'سجلات البصمة', icon: Clock },
@@ -412,7 +439,7 @@ const menuItems = [
     { id: 'assets', label: 'العهد', icon: Box },
     { id: 'absence-report', label: 'الغياب', icon: FileX },
     { id: 'library-manager', label: 'المكتبة', icon: FileArchive },
-    { id: 'admin-documents', label: 'ملفات المدير', icon: FolderOpen }, // ✅ تمت الإضافة هنا
+    { id: 'admin-documents', label: 'ملفات المدير', icon: FolderOpen }, 
     { id: 'data-reports', label: 'البيانات', icon: Database },
     { id: 'staff_admin', label: 'إدارة', icon: UserCog },
     { id: 'send_reports', label: 'بريد', icon: Mail },
