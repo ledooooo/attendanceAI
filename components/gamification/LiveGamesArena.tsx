@@ -654,37 +654,35 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
     const playWinSound = () => {
         try {
-            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-            if (!AudioCtx) return;
-            const ctx = new AudioCtx();
-            const notes = [523, 659, 784, 1047, 1319];
-            notes.forEach((freq, i) => {
-                const osc  = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.type = 'triangle';
-                osc.frequency.value = freq;
-                const t = ctx.currentTime + i * 0.13;
-                gain.gain.setValueAtTime(0.001, t);
-                gain.gain.linearRampToValueAtTime(0.3, t + 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-                osc.start(t);
-                osc.stop(t + 0.5);
-            });
-        } catch (_) { /* silent */ }
+            const audio = new Audio('https://raw.githubusercontent.com/ledooooo/attendanceAI/main/public/applause.mp3');
+            audio.volume = 0.8;
+            audio.play().catch(() => {});
+        } catch (_) {}
     };
 
     const fireConfetti = () => {
-        const colors = ['#f59e0b', '#10b981', '#6366f1', '#ec4899', '#f97316', '#ffffff'];
-        // Burst from left
-        confetti({ particleCount: 100, angle: 60, spread: 65, origin: { x: 0, y: 0.7 }, zIndex: 9999, colors });
-        // Burst from right
-        confetti({ particleCount: 100, angle: 120, spread: 65, origin: { x: 1, y: 0.7 }, zIndex: 9999, colors });
-        // Second wave from center top after 350ms
+        // Create a dedicated full-screen canvas on document.body so confetti renders above everything
+        const canvas = document.createElement('canvas');
+        canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:99999;';
+        document.body.appendChild(canvas);
+
+        const myConfetti = confetti.create(canvas, { resize: true, useWorker: false });
+        const colors = ['#f59e0b', '#10b981', '#6366f1', '#ec4899', '#f97316', '#fbbf24', '#ffffff'];
+
+        // Wave 1 — left burst
+        myConfetti({ particleCount: 120, angle: 60, spread: 70, origin: { x: 0, y: 0.7 }, colors, zIndex: 99999 });
+        // Wave 1 — right burst
+        myConfetti({ particleCount: 120, angle: 120, spread: 70, origin: { x: 1, y: 0.7 }, colors, zIndex: 99999 });
+
+        // Wave 2 — center shower
         setTimeout(() => {
-            confetti({ particleCount: 150, angle: 90, spread: 120, origin: { x: 0.5, y: 0.3 }, zIndex: 9999, colors });
-        }, 350);
+            myConfetti({ particleCount: 200, angle: 90, spread: 160, origin: { x: 0.5, y: 0.2 }, colors, zIndex: 99999 });
+        }, 400);
+
+        // Remove canvas after animation finishes
+        setTimeout(() => {
+            canvas.remove();
+        }, 5000);
     };
 
     const grantPoints = async (pts: number) => {
@@ -693,9 +691,10 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         if (onCooldown) { toast.success('فوز رائع! (النقاط تضاف مرة كل ساعة)', { icon: '🎮' }); return; }
         await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: pts });
         await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: pts, reason: `فوز في الألعاب الجماعية 🏆` });
-        toast.success(`🏆 مبروك! تمت إضافة ${pts} نقطة!`, { style: { background: '#22c55e', color: '#fff', fontWeight: 'bold' }, duration: 4000 });
+        // Fire effects immediately — don't wait for DB
         playWinSound();
         fireConfetti();
+        toast.success(`🏆 مبروك! تمت إضافة ${pts} نقطة!`, { style: { background: '#22c55e', color: '#fff', fontWeight: 'bold' }, duration: 4000 });
     };
 
     const recordResult = async (result: 'win' | 'loss' | 'draw', game: string, opponentName: string) => {
