@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Employee } from '../../../types';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import confetti from 'canvas-confetti';
 import {
     Loader2, Zap, Gamepad2, Tv2,
     ArrowRight, Trophy,
@@ -77,6 +78,29 @@ function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelec
     );
 }
 
+// ─── Win effects ──────────────────────────────────────────────────────────────
+function playWinSound() {
+    try {
+        const audio = new Audio('https://raw.githubusercontent.com/ledooooo/attendanceAI/main/public/applause.mp3');
+        audio.volume = 0.8;
+        audio.play().catch(() => {});
+    } catch (_) {}
+}
+
+function fireConfetti() {
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:99999;';
+    document.body.appendChild(canvas);
+    const myConfetti = confetti.create(canvas, { resize: true, useWorker: false });
+    const colors = ['#f59e0b','#10b981','#6366f1','#ec4899','#f97316','#fbbf24','#ffffff'];
+    myConfetti({ particleCount: 120, angle: 60,  spread: 70,  origin: { x: 0,   y: 0.7 }, colors, zIndex: 99999 });
+    myConfetti({ particleCount: 120, angle: 120, spread: 70,  origin: { x: 1,   y: 0.7 }, colors, zIndex: 99999 });
+    setTimeout(() => {
+        myConfetti({ particleCount: 200, angle: 90, spread: 160, origin: { x: 0.5, y: 0.2 }, colors, zIndex: 99999 });
+    }, 400);
+    setTimeout(() => canvas.remove(), 5000);
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
     const queryClient = useQueryClient();
@@ -128,6 +152,8 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             if (!result) return;
             const { isWin, points, gameName } = result;
             if (isWin && points > 0) {
+                playWinSound();
+                fireConfetti();
                 toast.success(`بطل! كسبت ${points} نقطة 🎉`, { duration: 4000, icon: '🏆', style: { background: '#10b981', color: 'white', fontWeight: 'bold' } });
                 const bonusPts = Math.max(5, Math.round(points * 0.5));
                 setBonusState({ show: true, pts: bonusPts, gameName });
@@ -143,6 +169,8 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
 
     const handleBonusFinish = async (earned: number) => {
         if (earned > 0) {
+            playWinSound();
+            fireConfetti();
             await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: earned });
             await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: earned, reason: `سؤال مكافأة 🎁` });
             queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
