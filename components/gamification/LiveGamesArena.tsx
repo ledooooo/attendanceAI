@@ -648,8 +648,41 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
     const checkCooldown = async () => {
         const { data } = await supabase.from('points_ledger').select('id').eq('employee_id', employee.employee_id)
-            .like('reason', '%التحدي المباشر%').gte('created_at', new Date(Date.now() - 3600000).toISOString()).limit(1);
+            .like('reason', '%الألعاب الجماعية%').gte('created_at', new Date(Date.now() - 3600000).toISOString()).limit(1);
         return data && data.length > 0;
+    };
+
+    const playWinSound = () => {
+        try {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            // Victory fanfare: ascending notes
+            const notes = [523, 659, 784, 1047, 1319];
+            notes.forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'triangle';
+                osc.frequency.value = freq;
+                const t = ctx.currentTime + i * 0.12;
+                gain.gain.setValueAtTime(0, t);
+                gain.gain.linearRampToValueAtTime(0.35, t + 0.04);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+                osc.start(t);
+                osc.stop(t + 0.45);
+            });
+        } catch { /* silent fallback */ }
+    };
+
+    const fireConfetti = () => {
+        // Left burst
+        confetti({ particleCount: 120, angle: 60, spread: 70, origin: { x: 0, y: 0.65 }, zIndex: 9999, colors: ['#f59e0b','#10b981','#6366f1','#ec4899','#f97316'] });
+        // Right burst
+        confetti({ particleCount: 120, angle: 120, spread: 70, origin: { x: 1, y: 0.65 }, zIndex: 9999, colors: ['#f59e0b','#10b981','#6366f1','#ec4899','#f97316'] });
+        // Center stars burst after 400ms
+        setTimeout(() => {
+            confetti({ particleCount: 80, spread: 100, origin: { x: 0.5, y: 0.5 }, zIndex: 9999, shapes: ['star'], colors: ['#fbbf24','#fff','#a78bfa'] });
+        }, 400);
     };
 
     const grantPoints = async (pts: number) => {
@@ -657,9 +690,10 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         const onCooldown = await checkCooldown();
         if (onCooldown) { toast.success('فوز رائع! (النقاط تضاف مرة كل ساعة)', { icon: '🎮' }); return; }
         await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: pts });
-        await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: pts, reason: `فوز في التحدي المباشر 🏆` });
-        toast.success(`مبروك! تمت إضافة ${pts} نقطة! 🎉`, { style: { background: '#22c55e', color: '#fff' } });
-        confetti({ particleCount: 200, spread: 100, zIndex: 9999 });
+        await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: pts, reason: `فوز في الألعاب الجماعية 🏆` });
+        toast.success(`مبروك! تمت إضافة ${pts} نقطة! 🎉`, { style: { background: '#22c55e', color: '#fff' }, duration: 4000 });
+        playWinSound();
+        fireConfetti();
     };
 
     const recordResult = async (result: 'win' | 'loss' | 'draw', game: string, opponentName: string) => {
@@ -1263,7 +1297,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                         </button>
                         <div>
                             <h3 className="text-lg font-black text-gray-800">لوحة النتائج 🏆</h3>
-                            <p className="text-xs text-gray-400 font-bold">إجمالي نتائج الألعاب المباشرة</p>
+                            <p className="text-xs text-gray-400 font-bold">إجمالي نتائج الألعاب الجماعية</p>
                         </div>
                     </div>
 
@@ -1324,3 +1358,4 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         </div>
     );
 }
+
