@@ -57,54 +57,18 @@ const MEDICAL_BADGES = [
 // ─── AI Question Generator ────────────────────────────────────────────────────
 async function generateAIQuestion(
     specialty: string,
-    level: number,     // 1-15
+    level: number,
     usedTopics: string[]
 ): Promise<{ question: string; options: string[]; correct: number; explanation: string; topic: string } | null> {
-    const difficulty = level <= 5 ? 'متوسطة' : level <= 10 ? 'صعبة' : 'صعبة جداً وعميقة';
-    const specFocus  = level % 3 === 0 ? `متخصصة في ${specialty}` : level % 3 === 1 ? 'طبية عامة' : `متخصصة في ${specialty} مع مفاهيم عامة`;
-    const avoidTopics = usedTopics.length > 0 ? `تجنب هذه المواضيع التي سبق طرحها: ${usedTopics.join('، ')}` : '';
-
-    const prompt = `أنت خبير في وضع أسئلة امتحانات طبية على مستوى عالٍ جداً.
-
-ضع سؤالاً واحداً ${specFocus} بمستوى صعوبة ${difficulty}.
-${avoidTopics}
-المستوى: ${level} من 15 (كلما زاد الرقم كلما زادت الصعوبة والعمق).
-
-⚠️ مهم جداً:
-- السؤال يجب أن يكون واقعياً وعملياً، وليس نظرياً بحتاً
-- الخيارات الخاطئة يجب أن تكون منطقية ومحيّرة لمن لا يعرف جيداً
-- المستوى 11-15: أسئلة نادرة، حالات سريرية معقدة، تفاصيل دقيقة جداً
-- لا تذكر أي تلميح في صياغة السؤال
-
-أجب بـ JSON فقط بهذا الشكل:
-{
-  "question": "نص السؤال",
-  "options": ["الخيار أ", "الخيار ب", "الخيار ج", "الخيار د"],
-  "correct": 0,
-  "explanation": "شرح مختصر للإجابة الصحيحة",
-  "topic": "موضوع السؤال بكلمة أو كلمتين"
-}
-
-حيث correct هو رقم الخيار الصحيح (0-3).`;
-
     try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1000,
-                messages: [{ role: 'user', content: prompt }],
-            }),
+        const { data, error } = await supabase.functions.invoke('generate-beast-question', {
+            body: { specialty, level, usedTopics },
         });
-        const data = await response.json();
-        const text = data.content?.[0]?.text || '';
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) return null;
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length !== 4) return null;
-        return parsed;
-    } catch {
+        if (error) { console.error('Edge function error:', error); return null; }
+        if (!data?.question || !Array.isArray(data.options) || data.options.length !== 4) return null;
+        return data;
+    } catch (err) {
+        console.error('generateAIQuestion error:', err);
         return null;
     }
 }
