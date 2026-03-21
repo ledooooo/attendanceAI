@@ -61,11 +61,33 @@ async function generateAIQuestion(
     usedTopics: string[]
 ): Promise<{ question: string; options: string[]; correct: number; explanation: string; topic: string } | null> {
     try {
-        const { data, error } = await supabase.functions.invoke('generate-beast-question', {
-            body: { specialty, level, usedTopics },
-        });
-        if (error) { console.error('Edge function error:', error); return null; }
-        if (!data?.question || !Array.isArray(data.options) || data.options.length !== 4) return null;
+        // نستخدم fetch مباشرة مع الـ anon key عشان نتجاوز مشكلة الـ 401
+        const supabaseUrl  = (supabase as any).supabaseUrl  as string;
+        const supabaseKey  = (supabase as any).supabaseKey  as string;
+
+        const res = await fetch(
+            `${supabaseUrl}/functions/v1/generate-beast-question`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type':  'application/json',
+                    'apikey':        supabaseKey,
+                    'Authorization': `Bearer ${supabaseKey}`,
+                },
+                body: JSON.stringify({ specialty, level, usedTopics }),
+            }
+        );
+
+        if (!res.ok) {
+            console.error('Function HTTP error:', res.status, await res.text());
+            return null;
+        }
+
+        const data = await res.json();
+        if (!data?.question || !Array.isArray(data.options) || data.options.length !== 4) {
+            console.error('Invalid question structure:', data);
+            return null;
+        }
         return data;
     } catch (err) {
         console.error('generateAIQuestion error:', err);
