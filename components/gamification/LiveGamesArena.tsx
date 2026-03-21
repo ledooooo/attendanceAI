@@ -57,7 +57,7 @@ const GAME_TYPES = [
     { key: 'stopthebus', label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',   color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
 ];
 
-const BASE_URL = 'https://gharb-alpha.vercel.app';
+const BEAST_MIN_POINTS = 50; // ⚠️ TEST MODE — غيّرها لـ 5000 بعد التيست
 
 function getRoomLink(matchId: string) {
     return `${BASE_URL}${window.location.pathname}#room=${matchId}`;
@@ -542,19 +542,52 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                         <p className="text-indigo-100 text-xs mb-4">اختر لعبة وتحدى زميلك أونلاين</p>
 
                         <div className="grid grid-cols-3 gap-2 mb-4">
-                            {GAME_TYPES.map(g => (
-                                <button key={g.key} onClick={() => setSelectedGameType(g.key)}
-                                    className={`py-2 px-1 rounded-xl font-black text-xs transition-all border-2 ${selectedGameType === g.key ? 'bg-white text-indigo-700 border-white' : 'bg-white/20 text-white border-white/30 hover:bg-white/30'}`}>
-                                    <span className="text-xl block mb-0.5">{g.icon}</span>
-                                    <span>{g.label}</span>
-                                </button>
-                            ))}
+                            {GAME_TYPES.map(g => {
+                                const isBeast  = g.key === 'beast';
+                                const locked   = isBeast && (employee.total_points || 0) < BEAST_MIN_POINTS;
+                                return (
+                                    <button key={g.key}
+                                        onClick={() => !locked && setSelectedGameType(g.key)}
+                                        className={`py-2 px-1 rounded-xl font-black text-xs transition-all border-2 relative ${
+                                            locked
+                                                ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                                                : selectedGameType === g.key
+                                                    ? 'bg-white text-indigo-700 border-white'
+                                                    : 'bg-white/20 text-white border-white/30 hover:bg-white/30'
+                                        }`}>
+                                        <span className="text-xl block mb-0.5">{g.icon}</span>
+                                        <span>{g.label}</span>
+                                        {locked && (
+                                            <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[8px] font-black px-1 py-0.5 rounded-full">
+                                                🔒
+                                            </span>
+                                        )}
+                                        {isBeast && !locked && (
+                                            <span className="absolute -top-1.5 -right-1.5 bg-yellow-400 text-gray-900 text-[8px] font-black px-1 py-0.5 rounded-full">
+                                                VIP
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
 
-                        <button onClick={() => { setJoiningMatchId(null); setView('identity_setup'); }}
-                            className="bg-yellow-400 text-indigo-900 px-6 py-3 rounded-xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all w-full text-sm">
-                            إنشاء تحدي {GAME_TYPES.find(g => g.key === selectedGameType)?.label} ⚔️
-                        </button>
+                        {/* Beast locked warning */}
+                        {selectedGameType === 'beast' && (employee.total_points || 0) < BEAST_MIN_POINTS ? (
+                            <div className="bg-red-500/20 border border-red-400/30 rounded-2xl p-3 text-center mb-2">
+                                <p className="text-red-300 font-black text-sm">🔒 تحتاج {BEAST_MIN_POINTS.toLocaleString('ar')} نقطة للدخول</p>
+                                <p className="text-red-400/70 text-xs mt-0.5">رصيدك: {(employee.total_points || 0).toLocaleString('ar')} نقطة</p>
+                            </div>
+                        ) : (
+                            <button onClick={() => { setJoiningMatchId(null); setView('identity_setup'); }}
+                                className={`px-6 py-3 rounded-xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all w-full text-sm ${
+                                    selectedGameType === 'beast'
+                                        ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-gray-900'
+                                        : 'bg-yellow-400 text-indigo-900'
+                                }`}>
+                                {selectedGameType === 'beast' ? '🦁 ادخل ليفل الوحش ⚔️' : `إنشاء تحدي ${GAME_TYPES.find(g => g.key === selectedGameType)?.label} ⚔️`}
+                            </button>
+                        )}
                     </div>
 
                     {/* Waiting rooms */}
