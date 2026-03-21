@@ -133,7 +133,7 @@ serve(async (req) => {
         const GEMINI    = Deno.env.get('GEMINI_API_KEY')    || 'AIzaSyAQidu9zWmr-gI8O3z0rcVipUfwLk2CYFo';
         const OPENAI    = Deno.env.get('OPENAI_API_KEY')    || '';
         const ANTHROPIC = Deno.env.get('ANTHROPIC_API_KEY') || '';
-        const GROQ      = Deno.env.get('GROQ_API_KEY')      || '';
+        const GROQ      = Deno.env.get('GROQ_API_KEY')      || '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';
 
         const chain = [
             GEMINI    && { name: 'Gemini',  fn: () => callGemini(prompt,  GEMINI)    },
