@@ -47,16 +47,36 @@ function parseJSON(text) {
 }
 
 async function callGemini(prompt, key) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
-    const r = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 800 } }),
-    });
-    if (!r.ok) throw new Error(`Gemini ${r.status}: ${await r.text()}`);
-    const d = await r.json();
-    const q = parseJSON(d.candidates?.[0]?.content?.parts?.[0]?.text || '');
-    if (!valid(q)) throw new Error('Gemini: invalid structure');
-    return { ...q, provider: 'Gemini' };
+    // جرب أكتر من model بالترتيب
+    const models = [
+        'gemini-2.0-flash',
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-flash-002',
+        'gemini-1.5-pro-latest',
+        'gemini-pro',
+    ];
+    for (const model of models) {
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+            const r = await fetch(url, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 800 } }),
+            });
+            if (!r.ok) {
+                const errText = await r.text();
+                if (r.status === 404) continue; // جرب المودل الجاي
+                throw new Error(`Gemini ${r.status}: ${errText}`);
+            }
+            const d = await r.json();
+            const q = parseJSON(d.candidates?.[0]?.content?.parts?.[0]?.text || '');
+            if (!valid(q)) continue; // جرب المودل الجاي
+            return { ...q, provider: `Gemini(${model})` };
+        } catch (e) {
+            if (String(e).includes('404')) continue;
+            throw e;
+        }
+    }
+    throw new Error('Gemini: all models failed');
 }
 
 async function callOpenAI(prompt, key) {
