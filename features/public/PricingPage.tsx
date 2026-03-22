@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, FileText, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, FileText, CheckCircle2, XCircle, FileCheck } from 'lucide-react';
 
 export default function PricingPage() {
   const services = [
