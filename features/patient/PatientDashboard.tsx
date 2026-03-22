@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { 
   Menu, X, User, Home, Activity, 
   MessageSquare, BookOpen, Phone, Share2, Heart, 
-  Loader2, ChevronLeft, Baby, HeartPulse, Building2, LogIn, LogOut, Lock, FileText, Users, CalendarIcon, Calculator,
+  Loader2, ChevronLeft, Baby, HeartPulse, CheckCircle2, Building2, LogIn, LogOut, Lock, FileText, Users, CalendarIcon, Calculator,
   Search, LayoutList, LayoutGrid, ChevronRight, Stethoscope, Clock, Grip
 } from 'lucide-react';
 
