@@ -9,7 +9,7 @@ import {
     Award, BarChart, Inbox, ArrowUp, ArrowDown, PieChart, 
     RefreshCw, FileSpreadsheet, UserPlus, X, Save, Edit, Loader2, 
     Timer, Syringe, ShieldCheck, Gift,
-    CheckCircle2, XCircle, FileCheck, AlertTriangle, Star // ✅ هذه هي الأيقونات التي كانت تسبب الشاشة البيضاء
+    CheckCircle2, XCircle, FileCheck, AlertTriangle, Star // ✅ تم إضافة الأيقونات هنا
 } from 'lucide-react';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
