@@ -130,10 +130,10 @@ serve(async (req) => {
         const { specialty, level, usedTopics } = await req.json();
         const prompt = buildPrompt(specialty || 'طب عام', Number(level) || 1, usedTopics || []);
 
-        const GEMINI    = Deno.env.get('GEMINI_API_KEY')    || 'AIzaSyAQidu9zWmr-gI8O3z0rcVipUfwLk2CYFo';
+        const GEMINI    = Deno.env.get('GEMINI_API_KEY')    || '';
         const OPENAI    = Deno.env.get('OPENAI_API_KEY')    || '';
         const ANTHROPIC = Deno.env.get('ANTHROPIC_API_KEY') || '';
-        const GROQ      = Deno.env.get('GROQ_API_KEY')      || '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';
+        const GROQ      = Deno.env.get('GROQ_API_KEY')      || '';
 
         const chain = [
             GEMINI    && { name: 'Gemini',  fn: () => callGemini(prompt,  GEMINI)    },
