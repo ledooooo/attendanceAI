@@ -18,10 +18,10 @@ import PatientComplaints from './tabs/PatientComplaints';
 import PatientAppointments from './tabs/PatientAppointments';
 import CalculatorsMenu from '../../calculators/CalculatorsMenu';
 
-import ContactPage from '../../pages/public/ContactPage';
-import Prices from '../../pages/public/Prices'; // ✅ تم استدعاء الصفحة الجديدة هنا
-import StaffDirectoryPage from '../../pages/public/StaffDirectoryPage';
-import SurveyPage from '../../pages/public/SurveyPage';
+import ContactPage from '../public/ContactPage';
+import Prices from '../public/Prices'; 
+import StaffDirectoryPage from '../public/StaffDirectoryPage';
+import SurveyPage from '../public/SurveyPage';
 
 interface Article {
   id: string;
