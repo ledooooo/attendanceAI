@@ -9,7 +9,7 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus, GraduationCap, FolderOpen, Gamepad2
+    Trash2, UserPlus, GraduationCap, FolderOpen, CheckCircle2, XCircle, FileCheck, Gamepad2
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
