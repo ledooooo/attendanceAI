@@ -18,6 +18,8 @@ import HangmanGame from './games/HangmanGame';
 import BottleMatchGame from './games/BottleMatchGame';
 import PuzzleGame from './games/PuzzleGame';
 import MemoryGame from './games/MemoryGame';
+import BeastLevelGame from './games/BeastLevelGame';
+
 
 // ─── Beautiful Avatars ────────────────────────────────────────────────────────
 const AVATAR_STYLES = [
@@ -1260,6 +1262,13 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                         {currentMatch.game_type === 'hangman' && (
                             <HangmanGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
+
+                        {/* ── BEAST LEVEL 🦁 ── */}
+                        {currentMatch.game_type === 'beast' && (
+                            <BeastLevelGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+
+                        
                         {/* STOP THE BUS */}
                         {currentMatch.game_type === 'stopthebus' && (
                             <StopTheBusGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
