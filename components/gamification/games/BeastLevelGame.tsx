@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MIN_POINTS    = 50;    // ⚠️ TEST MODE — غيّرها لـ 5000 بعد التيست
+const MIN_POINTS    = 5000;    // ⚠️ TEST MODE — غيّرها لـ 5000 بعد التيست
 const TOTAL_STEPS   = 15;     // 15 سؤال زي البرنامج
 const STEP_SECS     = [       // وقت كل سؤال حسب مستواه
     30, 30, 30, 28, 28,       // 1-5  سهل
