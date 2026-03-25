@@ -20,6 +20,10 @@ import ContactPage from './pages/public/ContactPage';
 import StaffDirectoryPage from './pages/public/StaffDirectoryPage';
 import SurveyPage from './pages/public/SurveyPage';
 
+// 🖥️ 5. استيراد شاشات النداء الآلي (Queue System)
+import QueueScreen from './queue/QueueScreen';
+import PatientQueueTracker from './queue/PatientQueueTracker';
+
 import { supabase } from './supabaseClient';
 import { requestNotificationPermission } from './utils/pushNotifications';
 import { Toaster } from 'react-hot-toast';
@@ -63,6 +67,16 @@ const AppContent = () => {
   
   // ✅ مسار الزائر العام ليفتح لوحة المريض كزائر
   if (currentPath === '/guest') return <PatientDashboard isGuest={true} />; 
+
+  // 🖥️ مسار شاشة التلفزيون (يستقبل ID الشاشة من الرابط مثل: /tv-screen?id=123)
+  if (currentPath === '/tv-screen') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const screenId = urlParams.get('id') || '';
+      return <QueueScreen screenId={screenId} />;
+  }
+
+  // 📱 مسار تتبع المريض (مسار عام للمرضى لمتابعة دورهم)
+  if (currentPath === '/queue') return <PatientQueueTracker />;
 
   const { user, employeeProfile, loading, isAdmin } = useAuth();
 
