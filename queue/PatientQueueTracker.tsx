@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../supabaseClient';
+import { supabase } from '../supabaseClient';
 import { Clock, Activity, ArrowRight } from 'lucide-react';
 
 export default function PatientQueueTracker() {
