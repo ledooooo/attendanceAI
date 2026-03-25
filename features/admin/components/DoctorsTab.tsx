@@ -34,6 +34,7 @@ const AVAILABLE_PERMISSIONS = [
     { id: 'training_manager', label: 'مسؤول التدريب والتعليم المستمر' },
     { id: 'assets_manager', label: 'مسؤول العهد والأصول' },
     { id: 'statistics_manager', label: 'مدخل إحصائيات العمل' }
+    { id: 'queue_manager', label: 'مسؤول النداء الآلي (الاستقبال)' }
 ];
 
 const formatLastSeen = (dateString: string | null) => {
