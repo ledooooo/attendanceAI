@@ -9,7 +9,7 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus, GraduationCap, FolderOpen, CheckCircle2, XCircle, FileCheck, Gamepad2, MonitorUp // ✅ تمت إضافة أيقونة شاشة النداء
+    Trash2, UserPlus, GraduationCap, MonitorPlay, Tv, FolderOpen, CheckCircle2, XCircle, FileCheck, Gamepad2, MonitorUp // ✅ تمت إضافة أيقونة شاشة النداء
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -41,7 +41,7 @@ import SupervisorsManager from './components/SupervisorsManager';
 import StatisticsManager from './components/StatisticsManager';
 import CompetitionsManager from './components/CompetitionsManager';
 import AdminSupervisorRounds from './components/AdminSupervisorRounds';
-
+import AdminQueueSettings from '../../queue/AdminQueueSettings';
 // Visitors & Fellowship
 import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
 import AdminFellowshipTab from './components/AdminFellowshipTab'; 
@@ -203,6 +203,7 @@ export default function AdminDashboard() {
             case 'statistics': return <StatisticsManager />;
             case 'send_reports': return <SendReportsTab />;
             case 'news': return <NewsManagementTab />;
+            case 'queue-settings': return <AdminQueueSettings />;
             case 'supervisor-rounds': return <AdminSupervisorRounds />;
             case 'competitions': return <CompetitionsManager />;
             case 'motivation': return <div className="space-y-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div>;
@@ -407,6 +408,7 @@ export default function AdminDashboard() {
 const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
     { id: 'queue-control', label: 'النداء الآلي', icon: MonitorUp }, // ✅ التبويب الجديد للنداء الآلي
+    { id: 'queue-settings', label: 'إعدادات النداء', icon: MonitorPlay },
     { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
     { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
