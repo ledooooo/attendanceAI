@@ -54,7 +54,7 @@ const GAME_TYPES = [
     { key: 'puzzle',      label: 'لعبة الأرقام',     icon: '🔢',   desc: 'رتّب 1 إلى 15',        color: 'from-amber-600 to-orange-700', minPlayers: 2, maxPlayers: 6  },
     { key: 'memory',      label: 'لعبة الذاكرة',     icon: '🧠',   desc: 'اقلب وطابق البطاقات',  color: 'from-indigo-600 to-violet-700', minPlayers: 2, maxPlayers: 2  },
     { key: 'stopthebus',  label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',    color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
-    { key: 'beastlevel',  label: 'من سيربح المليون', icon: '🦁',   desc: 'أسئلة طبية متدرجة',   color: 'from-red-600 to-orange-600',   minPlayers: 2, maxPlayers: 8  },
+    { key: 'beastlevel',  label: 'ليفل الوحش', icon: '🦁',   desc: 'أسئلة طبية متدرجة',   color: 'from-red-600 to-orange-600',   minPlayers: 2, maxPlayers: 8  },
 ];
 
 const BASE_URL = 'https://gharb-alpha.vercel.app';
