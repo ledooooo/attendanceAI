@@ -157,6 +157,7 @@ export default function AdminQueueSettings() {
                                         </div>
                                     </div>
                                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <a href={`/tv-screen?id=${screen.id}`} target="_blank" rel="noreferrer" className="p-2 bg-white text-emerald-600 rounded-lg shadow-sm hover:bg-emerald-50 text-xs font-bold flex items-center gap-1">شاشات العرض</a>
                                         <button onClick={() => handleEditScreen(screen)} className="p-2 bg-white text-blue-600 rounded-lg shadow-sm hover:bg-blue-50"><Edit className="w-4 h-4"/></button>
                                         <button onClick={() => handleDelete('q_screens', screen.id)} className="p-2 bg-white text-red-600 rounded-lg shadow-sm hover:bg-red-50"><Trash2 className="w-4 h-4"/></button>
                                     </div>
