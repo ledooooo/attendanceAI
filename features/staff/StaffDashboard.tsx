@@ -378,7 +378,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     ...(hasAdminAccess ? [{ id: 'admin', label: 'لوحة الإدارة', icon: Settings }] : []),
-    { id: 'queue-control', label: 'النداء الآلي', icon: MonitorUp, isNew: true }, // ✅ التبويب الجديد
+    ...(hasQueueAccess ? [{ id: 'queue-control', label: 'النداء الآلي', icon: MonitorUp, isNew: true }] : []),
     { id: 'tasks', label: 'التكليفات', icon: ListTodo, badge: staffBadges.tasks },
     { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight, badge: staffBadges.swaps },
     { id: 'messages', label: 'الرسائل', icon: Inbox, badge: staffBadges.messages },
