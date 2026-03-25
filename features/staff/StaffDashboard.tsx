@@ -13,9 +13,8 @@ import {
     Share2, Info, Moon, FileText, ListTodo, 
     Link as LinkIcon, AlertTriangle, ShieldCheck, ArrowLeftRight, Bell, BookOpen, 
     Settings, ShoppingBag, Trophy, Star, Check, CheckSquare, ShoppingCart, Gamepad2, Sparkles,
-    Smartphone, BellRing, Calculator, BookOpen, DownloadCloud, Stethoscope // ✅ تمت إضافة Stethoscope
+    Smartphone, BellRing, Calculator, DownloadCloud, Stethoscope, MonitorUp // ✅ تمت إضافة MonitorUp هنا
 } from 'lucide-react';
-
 
 // استيراد المكونات الفرعية
 import StaffProfile from './components/StaffProfile';
@@ -42,8 +41,8 @@ import StaffTrainingCenter from './components/StaffTrainingCenter';
 import ThemeOverlay from './components/ThemeOverlay';
 import StaffArcade from './components/StaffArcade';
 
-// ✅ استيراد تبويب عيادتي الجديد للأطباء
-// import DoctorClinic from './components/DoctorClinic';
+// ✅ استيراد لوحة تحكم النداء للموظفين
+import QueueControl from '../../queue/QueueControl';
 
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
 import LeaderboardWidget from '../../components/gamification/LeaderboardWidget';
@@ -76,7 +75,6 @@ export default function StaffDashboard({ employee }: Props) {
 
   const hasAdminAccess = employee.role === 'admin' || (employee.permissions && employee.permissions.length > 0);
   
-  // ✅ دالة بسيطة للتحقق مما إذا كان الموظف طبيباً (لعرض تبويب عيادتي)
   const isDoctor = ['طب الأسرة', 'طبيب بشرى', 'النساء والتوليد', 'الباطنة', 'الأسنان'].includes(employee.specialty || '');
 
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
@@ -380,7 +378,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'news', label: 'الرئيسية', icon: LayoutDashboard, badge: staffBadges.news },
     { id: 'profile', label: 'الملف الشخصي', icon: User },
     ...(hasAdminAccess ? [{ id: 'admin', label: 'لوحة الإدارة', icon: Settings }] : []),
- // ...(isDoctor ? [{ id: 'clinic', label: 'عيادتي', icon: Stethoscope }] : []), // ✅ إضافة زر العيادة للأطباء فقط
+    { id: 'queue-control', label: 'النداء الآلي', icon: MonitorUp, isNew: true }, // ✅ التبويب الجديد
     { id: 'tasks', label: 'التكليفات', icon: ListTodo, badge: staffBadges.tasks },
     { id: 'shift-requests', label: 'طلبات التبديل', icon: ArrowLeftRight, badge: staffBadges.swaps },
     { id: 'messages', label: 'الرسائل', icon: Inbox, badge: staffBadges.messages },
@@ -646,10 +644,11 @@ export default function StaffDashboard({ employee }: Props) {
                         </div>
                     )}
                     
+                    {/* ✅ التبويب الجديد للنداء الآلي */}
+                    {activeTab === 'queue-control' && <QueueControl />}
+
                     {activeTab === 'profile' && <StaffProfile employee={employee} isEditable={false} />}
                     {activeTab === 'admin' && hasAdminAccess && <AdministrationTab employee={employee} />}
-                    {/* ✅ إضافة عرض مكون العيادة */}
-                 // {activeTab === 'clinic' && isDoctor && <DoctorClinic employee={employee} />}
                     {activeTab === 'library' && <StaffLibrary />}
                     {activeTab === 'attendance' && <StaffAttendance attendance={attendanceData} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} employee={employee} />}
                     {activeTab === 'evening-schedule' && <EmployeeEveningSchedule employeeId={employee.id} employeeCode={employee.employee_id} employeeName={employee.name} specialty={employee.specialty} />}
