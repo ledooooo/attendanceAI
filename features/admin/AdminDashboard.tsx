@@ -9,7 +9,7 @@ import {
     Newspaper, Trophy, AlertTriangle, MessageCircle, Home, FileArchive, 
     Database, BellRing, Smartphone, FileX, Loader2, Box, CheckSquare, Syringe, 
     LayoutDashboard, UserCog, ShieldCheck, BarChart3, BookOpen, MapPin, Swords,
-    Trash2, UserPlus, GraduationCap, FolderOpen, CheckCircle2, XCircle, FileCheck, Gamepad2
+    Trash2, UserPlus, GraduationCap, FolderOpen, CheckCircle2, XCircle, FileCheck, Gamepad2, MonitorUp // ✅ تمت إضافة أيقونة شاشة النداء
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -47,10 +47,13 @@ import AdminVisitorsDashboard from './components/AdminVisitorsDashboard';
 import AdminFellowshipTab from './components/AdminFellowshipTab'; 
 import AdminDocumentsTab from './components/AdminDocumentsTab';
 
-// ✅ المكونات الخاصة بصالة الألعاب
+// Arcade
 import StaffArcade from '../staff/components/StaffArcade';
 import DailyQuizModal from '../../components/gamification/DailyQuizModal';
 import LevelProgressBar from '../../components/gamification/LevelProgressBar';
+
+// ✅ استيراد لوحة تحكم النداء
+import QueueControl from '../../queue/QueueControl';
 
 const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
@@ -216,7 +219,9 @@ export default function AdminDashboard() {
             case 'gamification': return <div className="space-y-4"><GamificationManager /><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><BirthdayWidget employees={employees || []} /><EOMManager /></div></div>;
             case 'fellowship': return <AdminFellowshipTab />;
             
-            // ✅ تبويب الألعاب المجمع (تمت إزالة لوحة الصدارة والآلات الحاسبة)
+            // ✅ تبويب النداء الآلي للمدير بصلاحيات كاملة
+            case 'queue-control': return <QueueControl isAdmin={true} />;
+
             case 'arcade': 
                 return (
                     <div className="space-y-6 animate-in fade-in duration-500">
@@ -225,16 +230,10 @@ export default function AdminDashboard() {
                                 <Gamepad2 className="w-8 h-8"/> صالة الألعاب والتحديات
                             </h2>
                         </div>
-                        
-                        {/* شريط مستوى وخبرة المدير */}
                         <LevelProgressBar employee={currentAdminEmployee} />
-                        
-                        {/* ساحة الألعاب بكامل العرض */}
                         <div className="w-full">
                             <StaffArcade employee={currentAdminEmployee} />
                         </div>
-                        
-                        {/* المسابقة اليومية (تظهر فقط إن لم يقم بحلها) */}
                         <DailyQuizModal employee={currentAdminEmployee} />
                     </div>
                 );
@@ -322,7 +321,6 @@ export default function AdminDashboard() {
             {/* --- Main Content --- */}
             <div className="flex-1 flex flex-col min-w-0 bg-gray-100/30 relative">
                 
-                {/* Header */}
                 <header className="h-16 bg-white border-b flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-[0_1px_3px_rgba(0,0,0,0.02)] shrink-0">
                     <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors active:scale-95 border border-gray-200">
@@ -408,6 +406,7 @@ export default function AdminDashboard() {
 // قائمة القائمة الجانبية المحدثة
 const menuItems = [
     { id: 'home', label: 'الرئيسية', icon: Home },
+    { id: 'queue-control', label: 'النداء الآلي', icon: MonitorUp }, // ✅ التبويب الجديد للنداء الآلي
     { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2 },
     { id: 'fellowship', label: 'أكاديمية الزمالة', icon: GraduationCap },
     { id: 'doctors', label: 'شئون الموظفين', icon: Users },
