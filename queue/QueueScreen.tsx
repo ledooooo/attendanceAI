@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../supabaseClient';
+import { supabase } from '../supabaseClient';
 import { Maximize, Volume2 } from 'lucide-react';
 
 export default function QueueScreen({ screenId }: { screenId: string }) {
