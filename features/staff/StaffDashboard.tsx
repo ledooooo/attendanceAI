@@ -74,7 +74,7 @@ export default function StaffDashboard({ employee }: Props) {
   const [pendingMandatoryTraining, setPendingMandatoryTraining] = useState<any>(null);
 
   const hasAdminAccess = employee.role === 'admin' || (employee.permissions && employee.permissions.length > 0);
-  
+  const hasQueueAccess = employee.permissions?.includes('queue_manager');
   const isDoctor = ['طب الأسرة', 'طبيب بشرى', 'النساء والتوليد', 'الباطنة', 'الأسنان'].includes(employee.specialty || '');
 
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
