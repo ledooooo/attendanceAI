@@ -41,7 +41,7 @@ type EvaluationItem = {
 
 type Evaluations = Record<string, Record<string, EvaluationItem>>;
 
-// ─── Question helpers (unchanged) ─────────────────────────────────────────────
+// ─── Question helpers ─────────────────────────────────────────────────────────
 const normalizeQuestion = (rawQ: any) => {
     let questionText = rawQ.question || rawQ.question_text || '';
     if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`;
@@ -97,7 +97,7 @@ const fetchQuestion = async (employee: Employee) => {
     return null;
 };
 
-// ─── Audio (unchanged) ────────────────────────────────────────────────────────
+// ─── Audio ────────────────────────────────────────────────────────────────────
 function useSound() {
     const ctx = useRef<AudioContext | null>(null);
     const get = () => {
@@ -215,51 +215,71 @@ function AnswerForm({ letter, answers, onChange, disabled }: {
     );
 }
 
-// ─── Answers Comparison Table (with alias reveal) ─────────────────────────────
-function AnswersTable({ records, letter, myId }: {
-    records: PlayerRecord[]; letter: string; myId: string;
+// ─── NEW: Comparison Table (all players answers side by side) ─────────────────
+function ComparisonTable({ records, letter, myId, players }: {
+    records: PlayerRecord[];
+    letter: string;
+    myId: string;
+    players: any[];
 }) {
-    const getName = (p: PlayerRecord) => {
-        if (p.playerId === myId) return 'أنت';
-        return p.playerName;
+    // Get display name for each player
+    const getPlayerName = (playerId: string) => {
+        if (playerId === myId) return 'أنت';
+        const player = players.find(p => p.id === playerId);
+        return player?.name || records.find(r => r.playerId === playerId)?.playerName || 'لاعب';
     };
+
+    // Sort records so that current user is first (optional)
+    const sortedRecords = [...records].sort((a, b) => {
+        if (a.playerId === myId) return -1;
+        if (b.playerId === myId) return 1;
+        return 0;
+    });
+
     return (
-        <div className="space-y-2">
-            <div className="px-1">
-                <p className="text-xs font-black text-gray-500">إجابات اللاعبين:</p>
+        <div className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] border-collapse">
+                    <thead>
+                        <tr className="bg-gradient-to-r from-violet-500 to-purple-700 text-white">
+                            <th className="px-4 py-3 text-right font-black text-sm border-l border-purple-600 sticky right-0 bg-violet-600">
+                                الفئة
+                            </th>
+                            {sortedRecords.map(rec => (
+                                <th key={rec.playerId} className="px-3 py-3 text-center font-black text-sm border-r border-purple-600 min-w-[100px]">
+                                    {getPlayerName(rec.playerId)}
+                                    {rec.stopped && <span className="block text-[10px] text-purple-200">🏁 أنهى</span>}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {CATEGORIES.map(cat => (
+                            <tr key={cat.key} className="border-b border-gray-100 hover:bg-gray-50">
+                                <td className="px-4 py-3 font-black text-sm sticky right-0 bg-white border-l border-gray-200">
+                                    <span className="ml-2">{cat.emoji}</span>
+                                    {cat.label}
+                                </td>
+                                {sortedRecords.map(rec => {
+                                    const answer = rec.answers[cat.key]?.trim() || '';
+                                    const isValid = answer.startsWith(letter) && answer.length > 1;
+                                    return (
+                                        <td key={rec.playerId} className="px-3 py-3 text-center border-r border-gray-100">
+                                            {answer ? (
+                                                <span className={`text-sm font-bold ${isValid ? 'text-green-700' : 'text-red-500 line-through'}`}>
+                                                    {answer}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-300 text-xs">—</span>
+                                            )}
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
             </div>
-            {CATEGORIES.map(cat => (
-                <div key={cat.key} className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-                    <div className="bg-gray-50 px-3 py-1.5 flex items-center gap-1.5 border-b border-gray-100">
-                        <span className="text-base">{cat.emoji}</span>
-                        <span className="text-xs font-black text-gray-600">{cat.label}</span>
-                    </div>
-                    {records.map(p => {
-                        const val   = p.answers[cat.key]?.trim() ?? '';
-                        const valid = val.startsWith(letter) && val.length > 1;
-                        const isMe  = p.playerId === myId;
-                        return (
-                            <div key={p.playerId} className={`flex items-center gap-2 px-3 py-2 border-b border-gray-50 last:border-0 ${isMe ? 'bg-blue-50/60' : ''}`}>
-                                <span className={`text-[10px] font-black flex-shrink-0 truncate ${isMe ? 'text-blue-600' : 'text-gray-400'}`}
-                                    style={{ maxWidth: 80 }}>
-                                    {getName(p)}
-                                    {p.stopped && <span className="text-green-600"> 🏁</span>}
-                                </span>
-                                {val ? (
-                                    <>
-                                        <span className={`text-sm font-bold flex-1 ${valid ? 'text-gray-800' : 'text-red-400 line-through'}`}>{val}</span>
-                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${valid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-500'}`}>
-                                            {valid ? '✓' : '✗'}
-                                        </span>
-                                    </>
-                                ) : (
-                                    <span className="text-xs text-gray-300 flex-1 italic">لا يوجد</span>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            ))}
         </div>
     );
 }
@@ -675,7 +695,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     const [submitting, setSubmitting] = useState(false);
 
     // Evaluation phase
-    const [evaluationPhase, setEvaluationPhase] = useState<'waiting' | 'evaluating' | 'results'>('waiting');
+    const [evaluationPhase, setEvaluationPhase] = useState<'waiting' | 'comparison' | 'evaluating' | 'results'>('waiting');
     const [finalized, setFinalized] = useState(false);
     const [awarded, setAwarded] = useState(false);
 
@@ -733,7 +753,8 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             if (evaluations) {
                 setEvaluationPhase('results');
             } else {
-                setEvaluationPhase('evaluating');
+                // Show comparison table first, then evaluation
+                setEvaluationPhase('comparison');
             }
         }
     }, [status, evaluations]);
@@ -774,7 +795,12 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
         }).eq('id', match.id);
     };
 
-    // ── Save evaluations and award points (with double-award prevention) ──────
+    // ── Move from comparison to evaluation ────────────────────────────────────
+    const startEvaluation = () => {
+        setEvaluationPhase('evaluating');
+    };
+
+    // ── Save evaluations and award points ─────────────────────────────────────
     const handleSaveEvaluation = async (evals: Evaluations, finalize: boolean) => {
         if (awarded) return;
 
@@ -801,7 +827,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             totals[rec.playerId] = total;
         });
 
-        // Award points (ensure no double award)
+        // Award points
         for (const [playerId, pts] of Object.entries(totals)) {
             if (pts > 0) {
                 if (playerId === employee.employee_id) {
@@ -927,10 +953,11 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     );
 
     // ─────────────────────────────────────────────────────────────────────────
-    // FINISHED – Evaluation / Results
+    // FINISHED – Comparison / Evaluation / Results
     // ─────────────────────────────────────────────────────────────────────────
     if (status === 'finished') {
-        if (evaluationPhase === 'evaluating') {
+        // Step 1: Show comparison table
+        if (evaluationPhase === 'comparison') {
             return (
                 <div className="flex flex-col gap-3 py-2 px-3 animate-in fade-in duration-400" dir="rtl">
                     <div className="bg-gradient-to-br from-violet-500 to-purple-700 text-white rounded-2xl p-4 text-center">
@@ -938,7 +965,43 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         <h3 className="font-black text-lg">انتهت الجولة!</h3>
                         <p className="text-purple-100 text-xs mt-0.5">حرف الجولة: {letter}</p>
                     </div>
-                    <AnswersTable records={records} letter={letter} myId={myId} />
+
+                    <div className="bg-white rounded-2xl p-3">
+                        <p className="text-sm font-black text-gray-700 mb-2 text-center">📊 إجابات جميع اللاعبين</p>
+                        <ComparisonTable records={records} letter={letter} myId={myId} players={players} />
+                    </div>
+
+                    {isHost ? (
+                        <button
+                            onClick={startEvaluation}
+                            className="w-full bg-gradient-to-r from-indigo-600 to-violet-700 text-white py-3 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+                        >
+                            <BrainCircuit className="w-5 h-5" /> بدء التقييم
+                        </button>
+                    ) : (
+                        <div className="bg-gray-50 rounded-2xl p-4 text-center border-2 border-gray-200">
+                            <Loader2 className="w-6 h-6 animate-spin text-indigo-400 mx-auto mb-2" />
+                            <p className="text-sm font-bold text-gray-600">جاري انتظار المضيف لبدء التقييم...</p>
+                        </div>
+                    )}
+
+                    <button onClick={onExit} className="text-xs font-bold text-gray-400 hover:text-gray-600 py-1 text-center">
+                        ← العودة إلى الصالة
+                    </button>
+                </div>
+            );
+        }
+
+        // Step 2: Evaluation phase (host evaluates, others watch realtime)
+        if (evaluationPhase === 'evaluating') {
+            return (
+                <div className="flex flex-col gap-3 py-2 px-3 animate-in fade-in duration-400" dir="rtl">
+                    <div className="bg-gradient-to-br from-violet-500 to-purple-700 text-white rounded-2xl p-4 text-center">
+                        <div className="text-3xl mb-1">🚌</div>
+                        <h3 className="font-black text-lg">تقييم الإجابات</h3>
+                        <p className="text-purple-100 text-xs mt-0.5">حرف الجولة: {letter}</p>
+                    </div>
+
                     <EvaluationPanel
                         records={records}
                         letter={letter}
@@ -949,15 +1012,17 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         isHost={isHost}
                         matchId={match.id}
                     />
+
                     {!isHost && (
                         <button onClick={onExit} className="text-xs font-bold text-gray-400 hover:text-gray-600 py-1 text-center">
-                            ← العودة إلى الصالة (لن تؤثر النقاط بعد)
+                            ← العودة إلى الصالة
                         </button>
                     )}
                 </div>
             );
         }
 
+        // Step 3: Show final results
         if (evaluationPhase === 'results') {
             return (
                 <div className="flex flex-col gap-3 py-2 px-3" dir="rtl">
