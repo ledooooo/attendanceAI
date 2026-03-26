@@ -53,7 +53,12 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
             setClinics(clincsData || []);
         };
         fetchData();
+// في ملف QueueScreen.tsx (حوالي السطر 58)
+const currentSettings = screenDataRef.current?.settings || defaultSettings;
 
+if (isStartedRef.current && currentSettings.enable_speech !== false) {
+    playQueueAudio(alert.message, targetClinic.audio_code || 'clinic1', targetClinic.name, isMutedRef.current, alert.type);
+}
         const clinicsSub = supabase.channel('clinics_changes_screen')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'q_clinics', filter: `screen_id=eq.${screenId}` }, (payload) => {
                 setClinics(prev => prev.map(c => c.id === payload.new.id ? payload.new : c));
