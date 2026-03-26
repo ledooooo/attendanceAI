@@ -1,5 +1,3 @@
-// src/utils/queueAudio.ts
-
 export const playQueueAudio = async (
     number: string | number,
     clinicAudioCode: string,
@@ -7,41 +5,59 @@ export const playQueueAudio = async (
     isMuted: boolean,
     type: 'call' | 'transfer' = 'call'
 ) => {
+    // 1. الخروج إذا كان الصوت مكتوماً
     if (isMuted) return;
 
-    // ⚠️ ضع رابط مجلد sound الخاص بك على جيتهاب هنا
-    // تأكد أن الرابط يبدأ بـ raw.githubusercontent.com
-    const BASE_URL = 'https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/sound/';
+    // 2. تحديد المسار الأساسي (مجلد public/sound)
+    const BASE_URL = '/sound/';
 
-    // تحديد تسلسل الملفات بناءً على نوع النداء
+    // 3. ترتيب الملفات الصوتية المطلوبة
     const urls = type === 'call'
         ? [`${BASE_URL}ring.mp3`, `${BASE_URL}${number}.mp3`, `${BASE_URL}${clinicAudioCode}.mp3`]
         : [`${BASE_URL}emergency.mp3`, `${BASE_URL}${number}.mp3`, `${BASE_URL}${clinicAudioCode}.mp3`];
 
-    // النص الاحتياطي في حال فشل تحميل الصوت
+    // 4. النص الاحتياطي للنطق الآلي
     const fallbackText = type === 'call'
         ? `العميل رقم ${number}، التوجه إلى ${clinicName}`
         : `العميل رقم ${number}، محول إلى ${clinicName}`;
 
-    try {
-        // تشغيل الملفات بالتتابع (ملف تلو الآخر)
-        for (const url of urls) {
+    let hasError = false;
+
+    // 5. محاولة تشغيل الملفات بالترتيب
+    for (const url of urls) {
+        try {
             await new Promise<void>((resolve, reject) => {
                 const audio = new Audio(url);
+                
+                // الانتقال للملف التالي عند انتهاء الحالي
                 audio.onended = () => resolve();
-                audio.onerror = () => reject(new Error(`Failed to load ${url}`));
-                audio.play().catch(reject);
+                
+                // في حالة فشل الملف (غير موجود، صيغة غير مدعومة)
+                audio.onerror = () => {
+                    console.error(`❌ الملف الصوتي غير موجود أو تالف: ${url}`);
+                    reject(new Error(`File not found: ${url}`));
+                };
+                
+                // تشغيل
+                audio.play().catch((err) => {
+                    console.error(`❌ المتصفح منع التشغيل للملف: ${url}`, err);
+                    reject(err);
+                });
             });
+        } catch (error) {
+            hasError = true;
+            break; // الخروج من حلقة التشغيل فور فشل أي ملف
         }
-    } catch (error) {
-        console.warn("⚠️ فشل تشغيل الملفات الصوتية، جاري تشغيل النطق الآلي (TTS)...", error);
-        
-        // النطق الآلي كبديل
+    }
+
+    // 6. إذا فشل أي ملف من الملفات الحقيقية، قم بتشغيل الـ TTS فوراً
+    if (hasError) {
+        console.warn("⚠️ تم التحويل إلى النطق الآلي (TTS) بسبب غياب أحد الملفات الصوتية");
         if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel(); // إيقاف أي نطق سابق
+            window.speechSynthesis.cancel(); 
             const utterance = new SpeechSynthesisUtterance(fallbackText);
-            utterance.lang = 'ar-SA'; // نطق بلكنة عربية
-            utterance.rate = 0.85; // سرعة النطق
+            utterance.lang = 'ar-SA';
+            utterance.rate = 0.85;
             window.speechSynthesis.speak(utterance);
         }
     }
