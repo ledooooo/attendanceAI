@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { 
     Monitor, Stethoscope, Plus, Edit, Trash2, X, Save, 
-    Video, Type, Lock, RotateCcw, Loader2, Play, Pause, Volume2, VolumeX, Settings2
+    Video, Type, Lock, RotateCcw, Loader2, Play, Pause, Volume2, VolumeX, Settings2, Mic, MicOff
 } from 'lucide-react';
 
 const defaultSettings = {
@@ -16,7 +16,8 @@ const defaultSettings = {
     color_bg: '#111827',
     color_card: '#1f2937',
     color_text: '#ffffff',
-    color_marquee: '#2563eb'
+    color_marquee: '#2563eb',
+    enable_speech: true // ✅ تفعيل النطق افتراضياً
 };
 
 export default function AdminQueueSettings() {
@@ -103,7 +104,7 @@ export default function AdminQueueSettings() {
         }
     });
 
-    // إرسال أمر للتحكم في فيديو الشاشة عن بُعد
+    // ✅ إرسال أمر للتحكم في فيديو الشاشة عن بُعد
     const sendVideoCommand = async (screenId: string, cmd: string) => {
         try {
             await supabase.from('q_alerts').insert({
@@ -139,7 +140,7 @@ export default function AdminQueueSettings() {
             <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
                 <div>
                     <h2 className="text-2xl font-black text-gray-800">إعدادات نظام النداء الآلي</h2>
-                    <p className="text-sm font-bold text-gray-500 mt-1">إدارة الشاشات، المقاسات، الألوان، وأزرار التحكم</p>
+                    <p className="text-sm font-bold text-gray-500 mt-1">إدارة الشاشات، المقاسات، الألوان، النطق، وأزرار الفيديو</p>
                 </div>
                 <button 
                     onClick={() => { if(confirm('هل أنت متأكد من تصفير جميع العدادات لليوم الجديد؟')) resetAllQueuesMutation.mutate(); }}
@@ -189,11 +190,15 @@ export default function AdminQueueSettings() {
                                 <div className="space-y-2 text-xs font-bold text-gray-600 bg-white p-3 rounded-xl border mb-4">
                                     <p className="flex items-center gap-2"><Type className="w-4 h-4 text-indigo-400"/> <span className="truncate">{screen.marquee_text}</span></p>
                                     <p className="flex items-center gap-2"><Video className="w-4 h-4 text-pink-400"/> <span className="truncate" dir="ltr">{screen.video_url || 'لا يوجد فيديو'}</span></p>
+                                    <p className={`flex items-center gap-2 ${screen.settings?.enable_speech === false ? 'text-red-500' : 'text-emerald-600'}`}>
+                                        {screen.settings?.enable_speech === false ? <MicOff className="w-4 h-4"/> : <Mic className="w-4 h-4"/>} 
+                                        <span>{screen.settings?.enable_speech === false ? 'النطق معطل' : 'النطق مفعل'}</span>
+                                    </p>
                                 </div>
                                 
                                 {/* 🔴 أزرار التحكم عن بعد في الفيديو */}
                                 <div className="pt-4 border-t border-gray-200">
-                                    <p className="text-[10px] font-black text-gray-500 mb-2 uppercase">التحكم المباشر في الشاشة (Remote Control)</p>
+                                    <p className="text-[10px] font-black text-gray-500 mb-2 uppercase">التحكم المباشر في فيديو الشاشة</p>
                                     <div className="flex items-center gap-2">
                                         <button onClick={() => sendVideoCommand(screen.id, 'play')} className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 flex-1 flex justify-center"><Play className="w-4 h-4"/></button>
                                         <button onClick={() => sendVideoCommand(screen.id, 'pause')} className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 flex-1 flex justify-center"><Pause className="w-4 h-4"/></button>
@@ -242,9 +247,9 @@ export default function AdminQueueSettings() {
                 </div>
             )}
 
-            {/* Screen Settings Modal (Tabs for Basics and Design) */}
+            {/* Modal for Screen (إعدادات الشاشة والمقاسات) */}
             {showScreenModal && editingItem && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
                         <div className="p-5 border-b bg-gray-50 flex justify-between items-center">
                             <h3 className="font-black text-lg">{editingItem.id ? 'إعدادات الشاشة' : 'إضافة شاشة جديدة'}</h3>
@@ -275,14 +280,24 @@ export default function AdminQueueSettings() {
                             </div>
 
                             <div className="space-y-4">
-                                <h4 className="font-black text-rose-600 border-b pb-2 flex items-center gap-2"><Settings2 className="w-4 h-4"/> إعدادات التصميم والألوان</h4>
+                                <h4 className="font-black text-rose-600 border-b pb-2 flex items-center gap-2"><Settings2 className="w-4 h-4"/> إعدادات التصميم، الألوان والنطق</h4>
                                 <div className="grid grid-cols-2 gap-4">
+                                    
+                                    {/* ✅ زر تفعيل/إيقاف النطق */}
+                                    <div className="col-span-2 flex items-center justify-between bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                                        <div>
+                                            <span className="font-bold text-emerald-800 block flex items-center gap-1"><Mic className="w-4 h-4"/> تفعيل النطق الصوتي</span>
+                                            <span className="text-[10px] text-emerald-600">سيتم نطق النداء الآلي (صوتيات أو TTS) في هذه الشاشة</span>
+                                        </div>
+                                        <input type="checkbox" className="w-5 h-5 accent-emerald-600 cursor-pointer" checked={editingItem.settings.enable_speech !== false} onChange={e => setEditingItem({...editingItem, settings: {...editingItem.settings, enable_speech: e.target.checked}})} />
+                                    </div>
+
                                     <div className="col-span-2">
                                         <label className="block text-xs font-bold text-gray-600 mb-1 flex justify-between">
                                             <span>نسبة عرض كروت العيادات (%)</span>
                                             <span className="text-indigo-600">{editingItem.settings.layout_clinics_width}% عيادات - {100 - editingItem.settings.layout_clinics_width}% فيديو</span>
                                         </label>
-                                        <input type="range" min="10" max="90" className="w-full accent-indigo-600" value={editingItem.settings.layout_clinics_width} onChange={e => setEditingItem({...editingItem, settings: {...editingItem.settings, layout_clinics_width: Number(e.target.value)}})} />
+                                        <input type="range" min="10" max="90" className="w-full accent-indigo-600 cursor-pointer" value={editingItem.settings.layout_clinics_width} onChange={e => setEditingItem({...editingItem, settings: {...editingItem.settings, layout_clinics_width: Number(e.target.value)}})} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-gray-600 mb-1">عدد الأعمدة للكروت</label>
@@ -319,7 +334,7 @@ export default function AdminQueueSettings() {
                 </div>
             )}
 
-            {/* Modal for Clinic (نفس الكود السابق مع إضافة audio_code) */}
+            {/* Modal for Clinic */}
             {showClinicModal && editingItem && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95">
