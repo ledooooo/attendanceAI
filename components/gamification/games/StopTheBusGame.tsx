@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer, Save, Copy, RefreshCw } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer, Save, Copy, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
@@ -215,7 +215,7 @@ function AnswerForm({ letter, answers, onChange, disabled }: {
     );
 }
 
-// ─── Mobile-Friendly Comparison Cards (instead of horizontal table) ───────────
+// ─── Mobile-Friendly Comparison Cards (Category-based display) ───────────────
 function ComparisonCards({ records, letter, myId, players }: {
     records: PlayerRecord[];
     letter: string;
@@ -228,7 +228,7 @@ function ComparisonCards({ records, letter, myId, players }: {
         return player?.name || records.find(r => r.playerId === playerId)?.playerName || 'لاعب';
     };
 
-    // Sort so current user is first
+    // Sort records so current user is first
     const sortedRecords = [...records].sort((a, b) => {
         if (a.playerId === myId) return -1;
         if (b.playerId === myId) return 1;
@@ -267,7 +267,7 @@ function ComparisonCards({ records, letter, myId, players }: {
                             </div>
                         </div>
 
-                        {/* Answers Grid - 2 columns on mobile, 3 on tablet, 4 on desktop */}
+                        {/* Answers Grid */}
                         <div className="p-3">
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                                 {CATEGORIES.map(cat => {
@@ -313,8 +313,8 @@ function ComparisonCards({ records, letter, myId, players }: {
     );
 }
 
-// ─── Enhanced Evaluation Panel with auto‑detect duplicates ───────────────────
-function EvaluationPanel({
+// ─── NEW: Category-Based Evaluation Panel ─────────────────────────────────────
+function CategoryEvaluationPanel({
     records,
     letter,
     players,
@@ -340,72 +340,78 @@ function EvaluationPanel({
         const init: Evaluations = {};
         records.forEach(rec => {
             init[rec.playerId] = {};
-            Object.keys(rec.answers).forEach(cat => {
-                init[rec.playerId][cat] = { status: 'pending', points: 0 };
+            CATEGORIES.forEach(cat => {
+                init[rec.playerId][cat.key] = { status: 'pending', points: 0 };
             });
         });
         return init;
     });
     const [saving, setSaving] = useState(false);
-    const [savingPlayer, setSavingPlayer] = useState<string | null>(null);
-    const [completedPlayers, setCompletedPlayers] = useState<Set<string>>(new Set());
+    const [savingCategory, setSavingCategory] = useState<string | null>(null);
+    const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
-    // Auto-detect duplicate answers across players
-    const findDuplicates = (): Array<{ category: string; players: string[]; answer: string }> => {
-        const duplicates: Array<{ category: string; players: string[]; answer: string }> = [];
-        for (const cat of CATEGORIES) {
-            const answersMap = new Map<string, string[]>();
-            for (const rec of records) {
-                const ans = rec.answers[cat.key]?.trim().toLowerCase();
-                if (ans && ans.length > 0 && ans.startsWith(letter.toLowerCase())) {
-                    if (!answersMap.has(ans)) answersMap.set(ans, []);
-                    answersMap.get(ans)!.push(rec.playerId);
-                }
+    const getPlayerName = (playerId: string) => {
+        if (playerId === myId) return 'أنت';
+        const player = players.find(p => p.id === playerId);
+        return player?.name || records.find(r => r.playerId === playerId)?.playerName || 'لاعب';
+    };
+
+    // Auto-detect duplicate answers for a specific category
+    const findDuplicatesInCategory = (categoryKey: string): Array<{ playerId: string; answer: string }> => {
+        const answersMap = new Map<string, string[]>();
+        records.forEach(rec => {
+            const ans = rec.answers[categoryKey]?.trim().toLowerCase();
+            if (ans && ans.length > 0 && ans.startsWith(letter.toLowerCase())) {
+                if (!answersMap.has(ans)) answersMap.set(ans, []);
+                answersMap.get(ans)!.push(rec.playerId);
             }
-            for (const [answer, playerIds] of answersMap.entries()) {
-                if (playerIds.length > 1) {
-                    duplicates.push({ category: cat.key, players: playerIds, answer });
-                }
+        });
+        
+        const duplicates: Array<{ playerId: string; answer: string }> = [];
+        for (const [answer, playerIds] of answersMap.entries()) {
+            if (playerIds.length > 1) {
+                playerIds.forEach(playerId => {
+                    duplicates.push({ playerId, answer });
+                });
             }
         }
         return duplicates;
     };
 
-    const autoMarkDuplicates = () => {
-        const duplicates = findDuplicates();
+    const autoMarkDuplicatesForCategory = (categoryKey: string) => {
+        const duplicates = findDuplicatesInCategory(categoryKey);
         if (duplicates.length === 0) {
-            toast('لا توجد إجابات مكررة', { icon: '🔍' });
+            toast(`لا توجد إجابات مكررة في ${CATEGORIES.find(c => c.key === categoryKey)?.label}`, { icon: '🔍' });
             return;
         }
+        
         setLocalEvals(prev => {
             const updated = { ...prev };
-            for (const dup of duplicates) {
-                for (const playerId of dup.players) {
-                    if (updated[playerId] && updated[playerId][dup.category]) {
-                        updated[playerId][dup.category] = { status: 'duplicate', points: 5 };
-                    }
+            duplicates.forEach(dup => {
+                if (updated[dup.playerId] && updated[dup.playerId][categoryKey]) {
+                    updated[dup.playerId][categoryKey] = { status: 'duplicate', points: 5 };
                 }
-            }
+            });
             return updated;
         });
-        toast.success(`تم وضع علامة "مكرر" على ${duplicates.length} فئة`, { icon: '🔄' });
+        toast.success(`تم وضع علامة "مكرر" على ${duplicates.length} إجابة في ${CATEGORIES.find(c => c.key === categoryKey)?.label}`, { icon: '🔄' });
     };
 
-    const updatePlayerCategory = (playerId: string, category: string, status: EvaluationStatus) => {
+    const updateAnswerEvaluation = (playerId: string, categoryKey: string, status: EvaluationStatus) => {
         const points = status === 'correct' ? 10 : status === 'duplicate' ? 5 : 0;
         setLocalEvals(prev => ({
             ...prev,
             [playerId]: {
                 ...prev[playerId],
-                [category]: { status, points },
+                [categoryKey]: { status, points },
             },
         }));
     };
 
-    const savePlayerEvaluation = async (playerId: string) => {
-        if (savingPlayer) return;
-        setSavingPlayer(playerId);
-        // Save only this player's evaluations to DB
+    const saveCategoryEvaluation = async (categoryKey: string) => {
+        if (savingCategory) return;
+        setSavingCategory(categoryKey);
+        
         const { data: currentMatch } = await supabase
             .from('live_matches')
             .select('game_state')
@@ -421,9 +427,9 @@ function EvaluationPanel({
                 },
             })
             .eq('id', matchId);
-        setSavingPlayer(null);
-        setCompletedPlayers(prev => new Set(prev).add(playerId));
-        toast.success(`تم حفظ تقييم ${players.find(p => p.id === playerId)?.name || 'اللاعب'}`, { icon: '💾' });
+        
+        setSavingCategory(null);
+        toast.success(`تم حفظ تقييم ${CATEGORIES.find(c => c.key === categoryKey)?.label}`, { icon: '💾' });
     };
 
     const finalizeEvaluation = async () => {
@@ -432,9 +438,31 @@ function EvaluationPanel({
         setSaving(false);
     };
 
-    const allPlayersEvaluated = records.length > 0 && records.every(rec => {
-        const ev = localEvals[rec.playerId];
-        return ev && Object.keys(ev).length === CATEGORIES.length && Object.values(ev).every(v => v.status !== 'pending');
+    const toggleCategory = (categoryKey: string) => {
+        setCollapsedCategories(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(categoryKey)) {
+                newSet.delete(categoryKey);
+            } else {
+                newSet.add(categoryKey);
+            }
+            return newSet;
+        });
+    };
+
+    // Calculate progress per category
+    const getCategoryProgress = (categoryKey: string) => {
+        let evaluated = 0;
+        records.forEach(rec => {
+            const ev = localEvals[rec.playerId]?.[categoryKey];
+            if (ev && ev.status !== 'pending') evaluated++;
+        });
+        return { evaluated, total: records.length };
+    };
+
+    const allCategoriesEvaluated = CATEGORIES.every(cat => {
+        const progress = getCategoryProgress(cat.key);
+        return progress.evaluated === progress.total;
     });
 
     if (!isHost) {
@@ -464,19 +492,24 @@ function EvaluationPanel({
             );
         }
 
-        // Show ongoing evaluation progress
-        const evaluatedCount = records.filter(rec => {
-            const ev = liveEvals[rec.playerId];
-            return ev && Object.values(ev).some(v => v.status !== 'pending');
-        }).length;
+        // Calculate overall progress
+        let totalEvaluated = 0;
+        let totalAnswers = records.length * CATEGORIES.length;
+        records.forEach(rec => {
+            CATEGORIES.forEach(cat => {
+                const ev = liveEvals[rec.playerId]?.[cat.key];
+                if (ev && ev.status !== 'pending') totalEvaluated++;
+            });
+        });
+
         return (
             <div className="bg-white rounded-2xl border-2 border-gray-200 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                     <p className="text-sm font-black text-gray-700">تقدم التقييم</p>
-                    <span className="text-xs font-bold text-indigo-600">{evaluatedCount}/{records.length} لاعب</span>
+                    <span className="text-xs font-bold text-indigo-600">{totalEvaluated}/{totalAnswers} إجابة</span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div className="bg-indigo-600 h-2 rounded-full transition-all duration-500" style={{ width: `${(evaluatedCount / records.length) * 100}%` }} />
+                    <div className="bg-indigo-600 h-2 rounded-full transition-all duration-500" style={{ width: `${(totalEvaluated / totalAnswers) * 100}%` }} />
                 </div>
                 <p className="text-xs text-gray-400 text-center">المضيف يقوم بتقييم الإجابات...</p>
             </div>
@@ -484,102 +517,125 @@ function EvaluationPanel({
     }
 
     return (
-        <div className="space-y-6">
-            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-3 text-center">
-                <p className="font-black text-yellow-800">أنت الحكم! قيم إجابات كل لاعب.</p>
+        <div className="space-y-4">
+            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-3 text-center sticky top-0 z-10">
+                <p className="font-black text-yellow-800">أنت الحكم! قيم إجابات كل فئة.</p>
                 <p className="text-xs text-yellow-700 mt-1">صحيح = 10 نقاط | مكرر = 5 نقاط | خطأ = 0</p>
-                <button
-                    onClick={autoMarkDuplicates}
-                    className="mt-2 text-xs bg-yellow-200 hover:bg-yellow-300 text-yellow-800 px-3 py-1 rounded-full font-black transition-all inline-flex items-center gap-1"
-                >
-                    <Copy className="w-3 h-3" /> تقييم تلقائي للمكررات
-                </button>
             </div>
 
-            {records.map(rec => {
-                const player = players.find(p => p.id === rec.playerId);
-                const playerName = player?.name || rec.playerName;
-                const isMe = rec.playerId === myId;
-                const playerEval = localEvals[rec.playerId];
-                const evaluatedCount = playerEval ? Object.values(playerEval).filter(v => v.status !== 'pending').length : 0;
-                const isCompleted = evaluatedCount === CATEGORIES.length;
-
+            {CATEGORIES.map(cat => {
+                const progress = getCategoryProgress(cat.key);
+                const isCollapsed = collapsedCategories.has(cat.key);
+                const isCompleted = progress.evaluated === progress.total;
+                
                 return (
-                    <div key={rec.playerId} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm transition-all">
-                        <div className={`px-4 py-2 ${isMe ? 'bg-blue-50' : 'bg-gray-50'} border-b border-gray-200 flex items-center justify-between`}>
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm font-black">{playerName}</span>
-                                {isMe && <span className="text-[10px] bg-blue-200 text-blue-700 px-2 py-0.5 rounded-full">أنت</span>}
-                                {rec.stopped && <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">🏁 أنهى</span>}
+                    <div key={cat.key} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm">
+                        {/* Category Header */}
+                        <button
+                            onClick={() => toggleCategory(cat.key)}
+                            className="w-full px-4 py-3 bg-gradient-to-r from-violet-100 to-purple-100 border-b border-gray-200 flex items-center justify-between hover:bg-violet-200/50 transition-all"
+                        >
+                            <div className="flex items-center gap-3">
+                                <span className="text-2xl">{cat.emoji}</span>
+                                <span className="font-black text-gray-800">{cat.label}</span>
+                                {isCompleted && <CheckCircle className="w-5 h-5 text-green-500" />}
                             </div>
                             <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-gray-400">{evaluatedCount}/{CATEGORIES.length}</span>
-                                {isCompleted && <CheckCircle className="w-4 h-4 text-green-500" />}
+                                <span className="text-xs font-bold text-gray-500 bg-white px-2 py-1 rounded-full">
+                                    {progress.evaluated}/{progress.total}
+                                </span>
+                                {isCollapsed ? <ChevronDown className="w-5 h-5 text-gray-500" /> : <ChevronUp className="w-5 h-5 text-gray-500" />}
                             </div>
-                        </div>
+                        </button>
 
-                        {CATEGORIES.map(cat => {
-                            const answer = rec.answers[cat.key]?.trim() || '';
-                            const isValid = answer.startsWith(letter) && answer.length > 1;
-                            const current = playerEval?.[cat.key]?.status || 'pending';
-                            const points = playerEval?.[cat.key]?.points || 0;
+                        {/* Category Content */}
+                        {!isCollapsed && (
+                            <div className="divide-y divide-gray-100">
+                                {records.map(rec => {
+                                    const playerName = getPlayerName(rec.playerId);
+                                    const isMe = rec.playerId === myId;
+                                    const answer = rec.answers[cat.key]?.trim() || '';
+                                    const isValid = answer.startsWith(letter) && answer.length > 1;
+                                    const currentEval = localEvals[rec.playerId]?.[cat.key];
+                                    const currentStatus = currentEval?.status || 'pending';
+                                    const currentPoints = currentEval?.points || 0;
 
-                            return (
-                                <div key={cat.key} className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 last:border-0">
-                                    <div className="w-10 flex-shrink-0">
-                                        <span className="text-base">{cat.emoji}</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-xs text-gray-500">{cat.label}</p>
-                                        <p className={`text-sm font-bold truncate ${isValid ? 'text-gray-800' : 'text-red-400 line-through'}`}>
-                                            {answer || '—'}
-                                        </p>
-                                    </div>
-                                    <div className="flex-shrink-0 flex gap-1">
-                                        <button
-                                            onClick={() => updatePlayerCategory(rec.playerId, cat.key, 'correct')}
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
-                                                current === 'correct'
-                                                    ? 'bg-green-600 text-white'
-                                                    : 'bg-green-100 text-green-700 hover:bg-green-200'
-                                            }`}
-                                        >
-                                            10 ✓
-                                        </button>
-                                        <button
-                                            onClick={() => updatePlayerCategory(rec.playerId, cat.key, 'duplicate')}
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
-                                                current === 'duplicate'
-                                                    ? 'bg-orange-600 text-white'
-                                                    : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                                            }`}
-                                        >
-                                            5 🔁
-                                        </button>
-                                        <button
-                                            onClick={() => updatePlayerCategory(rec.playerId, cat.key, 'wrong')}
-                                            className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
-                                                current === 'wrong'
-                                                    ? 'bg-red-600 text-white'
-                                                    : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                            }`}
-                                        >
-                                            0 ✗
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                    return (
+                                        <div key={rec.playerId} className={`px-4 py-3 flex items-center gap-3 ${isMe ? 'bg-indigo-50/30' : ''}`}>
+                                            {/* Player Info */}
+                                            <div className="w-24 flex-shrink-0">
+                                                <p className={`text-sm font-bold truncate ${isMe ? 'text-indigo-700' : 'text-gray-700'}`}>
+                                                    {playerName}
+                                                    {isMe && <span className="text-[10px] mr-1 text-indigo-500">(أنت)</span>}
+                                                </p>
+                                                {rec.stopped && (
+                                                    <span className="text-[9px] text-green-600">🏁 أنهى</span>
+                                                )}
+                                            </div>
 
-                        {!isCompleted && (
-                            <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex justify-end">
+                                            {/* Answer */}
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`text-sm font-bold ${isValid ? 'text-gray-800' : answer ? 'text-red-500 line-through' : 'text-gray-400'}`}>
+                                                    {answer || '—'}
+                                                </p>
+                                            </div>
+
+                                            {/* Evaluation Buttons */}
+                                            <div className="flex-shrink-0 flex gap-1">
+                                                <button
+                                                    onClick={() => updateAnswerEvaluation(rec.playerId, cat.key, 'correct')}
+                                                    className={`px-2 py-1.5 rounded-lg text-[10px] font-black transition-all ${
+                                                        currentStatus === 'correct'
+                                                            ? 'bg-green-600 text-white'
+                                                            : 'bg-green-100 text-green-700 hover:bg-green-200'
+                                                    }`}
+                                                >
+                                                    10 ✓
+                                                </button>
+                                                <button
+                                                    onClick={() => updateAnswerEvaluation(rec.playerId, cat.key, 'duplicate')}
+                                                    className={`px-2 py-1.5 rounded-lg text-[10px] font-black transition-all ${
+                                                        currentStatus === 'duplicate'
+                                                            ? 'bg-orange-600 text-white'
+                                                            : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                                                    }`}
+                                                >
+                                                    5 🔁
+                                                </button>
+                                                <button
+                                                    onClick={() => updateAnswerEvaluation(rec.playerId, cat.key, 'wrong')}
+                                                    className={`px-2 py-1.5 rounded-lg text-[10px] font-black transition-all ${
+                                                        currentStatus === 'wrong'
+                                                            ? 'bg-red-600 text-white'
+                                                            : 'bg-red-100 text-red-700 hover:bg-red-200'
+                                                    }`}
+                                                >
+                                                    0 ✗
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Category Footer with Actions */}
+                        {!isCollapsed && (
+                            <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex justify-between items-center">
                                 <button
-                                    onClick={() => savePlayerEvaluation(rec.playerId)}
-                                    disabled={savingPlayer === rec.playerId}
-                                    className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-black hover:bg-indigo-200 transition-all flex items-center gap-1"
+                                    onClick={() => autoMarkDuplicatesForCategory(cat.key)}
+                                    className="text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-700 px-3 py-1.5 rounded-full font-black transition-all flex items-center gap-1"
                                 >
-                                    {savingPlayer === rec.playerId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                                    حفظ هذا اللاعب
+                                    <Copy className="w-3 h-3" />
+                                    تقييم المكررات تلقائياً
+                                </button>
+                                <button
+                                    onClick={() => saveCategoryEvaluation(cat.key)}
+                                    disabled={savingCategory === cat.key}
+                                    className="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1.5 rounded-full font-black transition-all flex items-center gap-1"
+                                >
+                                    {savingCategory === cat.key ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                    حفظ هذه الفئة
                                 </button>
                             </div>
                         )}
@@ -587,11 +643,11 @@ function EvaluationPanel({
                 );
             })}
 
-            {allPlayersEvaluated && (
+            {allCategoriesEvaluated && (
                 <button
                     onClick={finalizeEvaluation}
                     disabled={saving}
-                    className="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white py-3 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                    className="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white py-4 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60 sticky bottom-4"
                 >
                     {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <>إنهاء التقييم وإعلان النتائج 🏆</>}
                 </button>
@@ -600,7 +656,7 @@ function EvaluationPanel({
     );
 }
 
-// ─── Enhanced Results Panel with detailed breakdown ──────────────────────────
+// ─── Results Panel with detailed breakdown ────────────────────────────────────
 function ResultsPanel({
     evaluations,
     records,
@@ -788,7 +844,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             if (evaluations) {
                 setEvaluationPhase('results');
             } else {
-                // Show comparison cards first, then evaluation
+                // Show comparison first, then evaluation
                 setEvaluationPhase('comparison');
             }
         }
@@ -847,7 +903,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             })
             .eq('id', match.id);
 
-        if (!finalize) return; // only award when finalize is true
+        if (!finalize) return;
 
         // Calculate points per player
         const totals: Record<string, number> = {};
@@ -995,7 +1051,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
         if (evaluationPhase === 'comparison') {
             return (
                 <div className="flex flex-col gap-3 py-2 px-3 animate-in fade-in duration-400" dir="rtl">
-                    {/* Header */}
                     <div className="bg-gradient-to-br from-violet-500 to-purple-700 text-white rounded-2xl p-4 text-center">
                         <div className="text-3xl mb-1">🚌</div>
                         <h3 className="font-black text-lg">انتهت الجولة!</h3>
@@ -1007,7 +1062,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         </p>
                     </div>
 
-                    {/* Stats Summary */}
                     <div className="bg-white rounded-2xl p-3 border-2 border-gray-200 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-xs font-bold text-gray-500">عدد اللاعبين</span>
@@ -1021,7 +1075,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         </div>
                     </div>
 
-                    {/* Mobile-Friendly Comparison Cards */}
                     <div className="bg-white rounded-2xl p-3">
                         <p className="text-sm font-black text-gray-700 mb-3 flex items-center gap-2">
                             <Users className="w-4 h-4 text-violet-500" />
@@ -1030,7 +1083,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         <ComparisonCards records={records} letter={letter} myId={myId} players={players} />
                     </div>
 
-                    {/* Action Buttons */}
                     {isHost ? (
                         <button
                             onClick={startEvaluation}
@@ -1054,17 +1106,17 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             );
         }
 
-        // Step 2: Evaluation phase (host evaluates, others watch realtime)
+        // Step 2: Category-based Evaluation phase
         if (evaluationPhase === 'evaluating') {
             return (
                 <div className="flex flex-col gap-3 py-2 px-3 animate-in fade-in duration-400" dir="rtl">
-                    <div className="bg-gradient-to-br from-violet-500 to-purple-700 text-white rounded-2xl p-4 text-center">
+                    <div className="bg-gradient-to-br from-violet-500 to-purple-700 text-white rounded-2xl p-4 text-center sticky top-0 z-10">
                         <div className="text-3xl mb-1">🚌</div>
                         <h3 className="font-black text-lg">تقييم الإجابات</h3>
                         <p className="text-purple-100 text-xs mt-0.5">حرف الجولة: {letter}</p>
                     </div>
 
-                    <EvaluationPanel
+                    <CategoryEvaluationPanel
                         records={records}
                         letter={letter}
                         players={players}
