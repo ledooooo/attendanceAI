@@ -265,6 +265,10 @@ export default function AdminQueueSettings() {
                                 <input type="text" className="w-full p-3 rounded-xl border bg-gray-50 focus:border-blue-500 outline-none font-bold text-sm" value={editingItem.doctor_name} onChange={e => setEditingItem({...editingItem, doctor_name: e.target.value})} placeholder="مثال: أحمد محمد" />
                             </div>
                             <div>
+    <label className="block text-xs font-bold text-gray-600 mb-1">كود الملف الصوتي (مثال: clinic1)</label>
+    <input type="text" className="w-full p-3 rounded-xl border bg-gray-50 focus:border-blue-500 outline-none font-bold text-sm" dir="ltr" value={editingItem.audio_code || ''} onChange={e => setEditingItem({...editingItem, audio_code: e.target.value})} placeholder="clinic1" />
+</div>
+                            <div>
                                 <label className="block text-xs font-bold text-gray-600 mb-1">الرقم السري (للممرض/ة للتحكم في الأرقام)</label>
                                 <input type="text" className="w-full p-3 rounded-xl border bg-gray-50 focus:border-blue-500 outline-none font-bold text-sm tracking-widest text-center text-xl" dir="ltr" value={editingItem.password} onChange={e => setEditingItem({...editingItem, password: e.target.value})} placeholder="****" />
                             </div>
