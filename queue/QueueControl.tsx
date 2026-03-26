@@ -5,7 +5,9 @@ import {
     MonitorUp, Plus, Minus, RotateCcw, Power, PowerOff, 
     BellRing, Mic, ArrowLeftRight, Volume2, VolumeX
 } from 'lucide-react';
-import { playQueueAudio } from '../queue/queueAudio';
+
+// ✅ تم تصحيح مسار الاستدعاء ليقرأ من نفس المجلد
+import { playQueueAudio } from './queueAudio'; 
 
 export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean }) {
     const [clinics, setClinics] = useState<any[]>([]);
@@ -14,7 +16,6 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
     const [isAuthenticated, setIsAuthenticated] = useState(isAdmin);
     const [customNumber, setCustomNumber] = useState('');
     
-    // ✅ خيار كتم الصوت للموظف
     const [isMuted, setIsMuted] = useState(false);
 
     useEffect(() => {
@@ -26,7 +27,6 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
         setClinics(data || []);
     };
 
-    // ✅ الاستماع لإشعارات التحويلات والرسائل الخاصة بالعيادة الحالية
     useEffect(() => {
         if (!selectedClinic) return;
 
@@ -34,7 +34,6 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'q_alerts' }, (payload) => {
                 const alert = payload.new;
                 
-                // إذا كان النداء/التحويل لنفس عيادة الموظف
                 if (alert.clinic_id === selectedClinic.id) {
                     if (alert.type === 'transfer') {
                         toast.success(`تم تحويل المريض رقم ${alert.message} إليك!`, { duration: 8000, icon: '🔄' });
@@ -68,19 +67,18 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
             type: type
         });
 
-        // 2. تشغيله على جهاز الموظف أيضاً (إذا لم يكن مكتوماً)
+        // 2. تشغيله على جهاز الموظف (استدعاء دالة النطق ذات المسار الجديد)
         playQueueAudio(number, selectedClinic.audio_code || 'clinic1', selectedClinic.name, isMuted, type);
     };
 
     const updateNumber = async (newNumber: number) => {
         if (!selectedClinic) return;
         
-        // تحديث الرقم في العيادة
         const { error } = await supabase.from('q_clinics').update({ current_number: newNumber, last_called_at: new Date() }).eq('id', selectedClinic.id);
         
         if (!error) {
             setSelectedClinic({ ...selectedClinic, current_number: newNumber });
-            triggerAlert('call', newNumber); // إطلاق النداء
+            triggerAlert('call', newNumber);
         }
     };
 
@@ -94,7 +92,6 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
     if (!isAuthenticated) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 text-right" dir="rtl">
-                {/* كود شاشة تسجيل الدخول كما هو... */}
                 <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
                     <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6"><MonitorUp className="w-8 h-8" /></div>
                     <h2 className="text-2xl font-black text-center text-gray-800 mb-6">تسجيل دخول العيادة</h2>
