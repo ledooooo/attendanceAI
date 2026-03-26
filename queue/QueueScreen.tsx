@@ -66,6 +66,47 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'q_alerts', filter: `screen_id=eq.${screenId}` }, (payload) => {
                 const alert = payload.new;
 
+                // --- 🔴 استجابة الشاشة للإنذار ---
+                if (alert.type === 'alarm') {
+                    setCurrentAlert({ text: `🚨 تنبيه طوارئ: ${alert.message} 🚨`, type: 'alarm' });
+                    if (isStartedRef.current) {
+                        const emergencyAudio = new Audio(`/sound/emergency.mp3`);
+                        emergencyAudio.play().catch(e => console.error(e));
+                    }
+                    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+                    timeoutRef.current = setTimeout(() => setCurrentAlert(null), 15000); // الإنذار يبقى أطول
+                    return;
+                }
+
+                // --- 🎙️ تشغيل ريكورد مخصص ---
+                if (alert.type === 'record') {
+                    setCurrentAlert({ text: 'تنبيه إداري', type: 'info' });
+                    if (isStartedRef.current) {
+                        const recordAudio = new Audio(`/sound/record${alert.message}.mp3`);
+                        recordAudio.play().catch(e => console.error(e));
+                    }
+                    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+                    timeoutRef.current = setTimeout(() => setCurrentAlert(null), 10000);
+                    return;
+                }
+
+                // --- 🗣️ نطق اسم العميل آلياً (TTS) ---
+                if (alert.type === 'custom_speech') {
+                    setCurrentAlert({ text: `نداء للعميل: ${alert.message}`, type: 'call' });
+                    if (isStartedRef.current && 'speechSynthesis' in window) {
+                        window.speechSynthesis.cancel();
+                        const utterance = new SpeechSynthesisUtterance(`العميل ${alert.message}، التوجه إلى الاستقبال`);
+                        utterance.lang = 'ar-SA';
+                        window.speechSynthesis.speak(utterance);
+                    }
+                    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+                    timeoutRef.current = setTimeout(() => setCurrentAlert(null), 10000);
+                    return;
+                }
+
+
+
+
                 // 1. التحكم في الفيديو عن بعد
                 if (alert.type === 'video_cmd') {
                     const cmd = alert.message;
