@@ -19,11 +19,10 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
     const [activeModal, setActiveModal] = useState<string | null>(null);
     const [modalData, setModalData] = useState<any>({});
 
-    // 🎙️ مراجع (Refs) وحالات خاصة بالميكروفون اللاسلكي
     const [isRecording, setIsRecording] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
-    const broadcastChannelRef = useRef<any>(null); // ✅ المرجع الجديد للاتصال الدائم
+    const broadcastChannelRef = useRef<any>(null); 
 
     useEffect(() => { fetchClinics(); }, []);
 
@@ -32,14 +31,11 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
         setClinics(data || []);
     };
 
-    // ✅ إنشاء اتصال دائم بالبث المباشر للشاشة بمجرد اختيار العيادة
     useEffect(() => {
         if (!selectedClinic?.screen_id) return;
-        
         const channel = supabase.channel(`screen_broadcast_${selectedClinic.screen_id}`);
-        channel.subscribe(); // تفعيل الاتصال المسبق لضمان عدم ضياع الصوت
+        channel.subscribe(); 
         broadcastChannelRef.current = channel;
-
         return () => { supabase.removeChannel(channel); };
     }, [selectedClinic?.screen_id]);
 
@@ -95,9 +91,8 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
         setSelectedClinic({ ...selectedClinic, is_active: newStatus });
     };
 
-    // 🎙️ دوال الميكروفون والبث الحي
     const startRecording = async () => {
-        if (!selectedClinic?.screen_id) return toast.error('لا توجد شاشة مرتبطة بهذه العيادة لبث الصوت');
+        if (!selectedClinic?.screen_id) return toast.error('لا توجد شاشة مرتبطة بهذه العيادة');
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const mediaRecorder = new MediaRecorder(stream);
@@ -107,12 +102,14 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
             mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
             
             mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current);
+                // ✅ إصلاح نوع الملف (MIME TYPE) ليعمل على كل المتصفحات والشاشات
+                const mimeType = mediaRecorder.mimeType || 'audio/webm';
+                const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+                
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
                     const base64Audio = reader.result;
-                    // ✅ الإرسال عبر القناة المفتوحة مسبقاً
                     if (broadcastChannelRef.current) {
                         broadcastChannelRef.current.send({
                             type: 'broadcast',
@@ -122,13 +119,13 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
                         toast.success('تم الإرسال بنجاح');
                     }
                 };
-                stream.getTracks().forEach(track => track.stop()); // إغلاق المايك
+                stream.getTracks().forEach(track => track.stop());
             };
 
             mediaRecorder.start();
             setIsRecording(true);
         } catch (err) {
-            toast.error('لم يتم العثور على ميكروفون، أو أنك لم توافق على الصلاحية');
+            toast.error('لم يتم العثور على ميكروفون، أو تم رفض الصلاحية');
         }
     };
 
@@ -193,7 +190,6 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
                     <button onClick={() => { updateNumber(Number(customNumber)); setCustomNumber(''); }} className="bg-indigo-600 text-white px-6 rounded-2xl font-bold shadow-sm active:scale-95">نداء</button>
                 </div>
 
-                {/* 🎙️ زر اللاسلكي المباشر */}
                 <button 
                     onPointerDown={startRecording}
                     onPointerUp={stopRecording}
@@ -219,7 +215,6 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
                 </div>
             </div>
 
-            {/* Modal Overlay Code */}
             {activeModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
                     <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative">
