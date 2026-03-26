@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../../../supabaseClient'; // تأكد من صحة المسار
-import { Lock, Volume2, VolumeX, HelpCircle, Clock, Star, Loader2, AlertCircle, CheckCircle, XCircle, Sparkles } from 'lucide-react';
+import { supabase } from '../../../supabaseClient';
+import { Lock, Volume2, VolumeX, HelpCircle, Clock, Star, Loader2, AlertCircle, CheckCircle, XCircle, Sparkles, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 
 interface Props {
     onStart: () => Promise<void>;
     onComplete: (points: number, isWin: boolean) => void;
-    employee: any; // لتحديد التخصص وجلب الأسئلة المناسبة
+    employee: any;
 }
 
 // ─── جلب السؤال باستخدام AI مع Fallback ─────────────────────────────────────
@@ -21,13 +21,11 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medi
         default: level = 6;
     }
     try {
-        // محاولة جلب سؤال من AI عبر Edge Function
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
             body: { specialty, level, usedTopics: [] },
         });
         if (error || !data) throw new Error('AI request failed');
         if (data.error) throw new Error(data.error);
-        // التحقق من صحة البيانات القادمة من الدالة
         if (!data.question || !data.options || data.correct === undefined) {
             throw new Error('Invalid question format from AI');
         }
@@ -42,7 +40,6 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medi
         };
     } catch (err) {
         console.warn('AI fallback:', err);
-        // الرجوع إلى بنك الأسئلة المحلي
         const { data: localQuestions, error: localError } = await supabase
             .from('quiz_questions')
             .select('*')
@@ -74,14 +71,23 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
     const [currentGuess, setCurrentGuess] = useState('');
     const [isActive, setIsActive] = useState(false);
     const [starting, setStarting] = useState(false);
-    const [phase, setPhase] = useState<'code' | 'question' | 'complete'>('code');
+    const [phase, setPhase] = useState<'code' | 'difficulty' | 'question' | 'complete'>('code');
     const [bonusQuestion, setBonusQuestion] = useState<any>(null);
+    const [selectedDifficulty, setSelectedDifficulty] = useState<string>('medium');
     const [timeLeft, setTimeLeft] = useState(15);
     const [feedback, setFeedback] = useState<{ message: string; isCorrect: boolean } | null>(null);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [loading, setLoading] = useState(false);
+    const [showAnswerModal, setShowAnswerModal] = useState(false);
     const MAX_GUESSES = 5;
-    const BASE_POINTS = 20; // نقاط فتح الخزنة
+    const BASE_POINTS = 20;
+
+    const difficultyOptions = [
+        { key: 'easy', label: 'سهل', points: 5, time: 12 },
+        { key: 'medium', label: 'متوسط', points: 10, time: 14 },
+        { key: 'hard', label: 'صعب', points: 15, time: 17 },
+        { key: 'expert', label: 'صعب جداً', points: 20, time: 20 },
+    ];
 
     // تشغيل الصوت
     const playSound = useCallback((type: 'win' | 'lose') => {
@@ -89,7 +95,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         try {
             let audio: HTMLAudioElement;
             if (type === 'win') audio = new Audio('/applause.mp3');
-            else audio = new Audio('/fail.mp3'); // استخدام fail.mp3 للخسارة
+            else audio = new Audio('/fail.mp3');
             audio.volume = 0.6;
             audio.play().catch(() => {});
         } catch {}
@@ -132,14 +138,12 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setCurrentGuess('');
 
         if (currentGuess === secretCode) {
-            // نجاح فتح الخزنة
             playSound('win');
             confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#10b981', '#f59e0b', '#8b5cf6'] });
             toast.success('🎉 أحسنت! فتحت الخزنة!', { duration: 2000 });
-            // الانتقال لجلب السؤال الإضافي
-            loadBonusQuestion();
+            // الانتقال لاختيار المستوى
+            setPhase('difficulty');
         } else if (newGuesses.length >= MAX_GUESSES) {
-            // فشل فتح الخزنة
             playSound('lose');
             toast.error(`💔 الكود الصحيح كان: ${secretCode}`, { duration: 3000 });
             setTimeout(() => {
@@ -149,18 +153,19 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         }
     };
 
-    const loadBonusQuestion = async () => {
+    const handleDifficultySelect = async (difficulty: string) => {
+        setSelectedDifficulty(difficulty);
         setPhase('question');
         setLoading(true);
         try {
-            // اختيار صعوبة معتدلة
-            const q = await fetchQuestionWithAI(employee.specialty, 'medium');
+            const q = await fetchQuestionWithAI(employee.specialty, difficulty);
             setBonusQuestion(q);
-            setTimeLeft(15);
+            const selected = difficultyOptions.find(opt => opt.key === difficulty);
+            setTimeLeft(selected?.time || 15);
         } catch (err) {
             console.error('Failed to load bonus question:', err);
             toast.error('فشل تحميل السؤال، سيتم إنهاء اللعبة');
-            onComplete(BASE_POINTS, true); // نعطي نقاط الخزنة فقط
+            onComplete(BASE_POINTS, true);
             resetGame();
         } finally {
             setLoading(false);
@@ -183,15 +188,16 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setFeedback({ message: '⌛ انتهى الوقت!', isCorrect: false });
         setTimeout(() => {
             setFeedback(null);
-            onComplete(BASE_POINTS, true); // نعطي نقاط الخزنة فقط
-            resetGame();
+            setShowAnswerModal(true);
         }, 1500);
+        onComplete(BASE_POINTS, true);
     };
 
     const handleBonusAnswer = (answer: string) => {
         if (phase !== 'question' || !bonusQuestion) return;
         const isCorrect = answer.trim().toLowerCase() === bonusQuestion.correct_answer.trim().toLowerCase();
-        const bonusPoints = isCorrect ? 15 : 0;
+        const difficultyPoints = difficultyOptions.find(opt => opt.key === selectedDifficulty)?.points || 0;
+        const bonusPoints = isCorrect ? difficultyPoints : 0;
         const totalPoints = BASE_POINTS + bonusPoints;
 
         if (isCorrect) {
@@ -205,9 +211,14 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
 
         setTimeout(() => {
             setFeedback(null);
-            onComplete(totalPoints, isCorrect);
-            resetGame();
+            setShowAnswerModal(true);
         }, 1800);
+        onComplete(totalPoints, isCorrect);
+    };
+
+    const closeModalAndReset = () => {
+        setShowAnswerModal(false);
+        resetGame();
     };
 
     const resetGame = () => {
@@ -220,6 +231,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setTimeLeft(15);
         setFeedback(null);
         setLoading(false);
+        setSelectedDifficulty('medium');
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -337,7 +349,50 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // مرحلة السؤال الإضافي (بعد فتح الخزنة)
+    // مرحلة اختيار مستوى السؤال
+    // ─────────────────────────────────────────────────────────────────────────
+    if (phase === 'difficulty') {
+        return (
+            <div className="text-center py-12 animate-in fade-in duration-300" dir="rtl">
+                <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                    <div className="flex justify-between items-center mb-4">
+                        <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-2 rounded-full hover:bg-gray-100 transition">
+                            {soundEnabled ? <Volume2 className="w-5 h-5 text-gray-600" /> : <VolumeX className="w-5 h-5 text-gray-400" />}
+                        </button>
+                        <div className="bg-emerald-50 rounded-xl px-4 py-2 text-center">
+                            <p className="text-xs font-bold text-emerald-700">نقاط الخزنة</p>
+                            <p className="text-xl font-black text-emerald-800">+{BASE_POINTS}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-center gap-2 mb-6">
+                        <Sparkles className="w-8 h-8 text-emerald-500" />
+                        <h3 className="text-2xl font-black text-gray-800">اختر مستوى السؤال</h3>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-6">كلما زادت الصعوبة، زادت النقاط الإضافية</p>
+                    <div className="grid grid-cols-2 gap-3 mb-6">
+                        {difficultyOptions.map(opt => (
+                            <button
+                                key={opt.key}
+                                onClick={() => handleDifficultySelect(opt.key)}
+                                className={`p-4 rounded-xl border-2 transition-all ${
+                                    selectedDifficulty === opt.key
+                                        ? 'border-emerald-500 bg-emerald-50 shadow-md'
+                                        : 'border-gray-200 hover:border-emerald-300'
+                                }`}
+                            >
+                                <p className="font-black text-gray-800">{opt.label}</p>
+                                <p className="text-sm font-bold text-emerald-600">+{opt.points} نقطة</p>
+                                <p className="text-[10px] text-gray-400">{opt.time} ثانية للإجابة</p>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // مرحلة السؤال الإضافي
     // ─────────────────────────────────────────────────────────────────────────
     if (phase === 'question') {
         if (loading) {
@@ -350,59 +405,87 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         }
         if (bonusQuestion) {
             const options = Array.isArray(bonusQuestion.options) ? bonusQuestion.options : [];
+            const selectedOpt = difficultyOptions.find(opt => opt.key === selectedDifficulty);
             return (
-                <div className="text-center py-4 animate-in slide-in-from-right max-w-3xl mx-auto" dir="rtl">
-                    <div className="flex justify-between items-center mb-6 px-4">
-                        <div className="bg-gradient-to-r from-red-500 to-orange-500 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
-                            <Clock className="w-4 h-4 animate-pulse" /> {timeLeft} ثانية
-                        </div>
-                        <div className="bg-gradient-to-r from-amber-400 to-yellow-500 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
-                            <Star className="w-4 h-4" /> مكافأة: +15 نقطة
-                        </div>
-                        <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
-                            <Sparkles className="w-4 h-4" /> سؤال إضافي
-                        </div>
-                    </div>
-                    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-8 rounded-3xl mb-8 border-2 border-emerald-200 shadow-xl relative">
-                        <HelpCircle className="w-14 h-14 text-emerald-500 mx-auto mb-4 animate-bounce" />
-                        <h3 className="text-2xl font-black text-emerald-900 leading-relaxed">{bonusQuestion.question}</h3>
-                        {bonusQuestion.source === 'ai' && (
-                            <p className="text-xs text-emerald-400 mt-4 flex items-center justify-center gap-1">
-                                <Sparkles className="w-3 h-3" /> تم توليده بواسطة {bonusQuestion.provider}
-                            </p>
-                        )}
-                        {bonusQuestion.source === 'local' && (
-                            <p className="text-xs text-gray-400 mt-4 flex items-center justify-center gap-1">
-                                <AlertCircle className="w-3 h-3" /> من بنك الأسئلة المحلي
-                            </p>
-                        )}
-                        {feedback && (
-                            <div className={`absolute inset-0 flex items-center justify-center rounded-3xl backdrop-blur-sm animate-in fade-in zoom-in duration-200 ${
-                                feedback.isCorrect ? 'bg-green-100/90' : 'bg-red-100/90'
-                            }`}>
-                                <div className="text-center p-4 rounded-2xl bg-white shadow-xl">
-                                    {feedback.isCorrect ? (
-                                        <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
-                                    ) : (
-                                        <XCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
-                                    )}
-                                    <p className={`text-xl font-black ${feedback.isCorrect ? 'text-green-700' : 'text-red-700'}`}>{feedback.message}</p>
-                                </div>
+                <>
+                    <div className="text-center py-4 animate-in slide-in-from-right max-w-3xl mx-auto" dir="rtl">
+                        <div className="flex justify-between items-center mb-6 px-4">
+                            <div className="bg-gradient-to-r from-red-500 to-orange-500 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
+                                <Clock className="w-4 h-4 animate-pulse" /> {timeLeft} ثانية
                             </div>
-                        )}
+                            <div className="bg-gradient-to-r from-amber-400 to-yellow-500 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
+                                <Star className="w-4 h-4" /> مكافأة: +{selectedOpt?.points || 0} نقطة
+                            </div>
+                            <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
+                                <Sparkles className="w-4 h-4" /> {selectedOpt?.label || 'سؤال'}
+                            </div>
+                        </div>
+                        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-8 rounded-3xl mb-8 border-2 border-emerald-200 shadow-xl relative">
+                            <HelpCircle className="w-14 h-14 text-emerald-500 mx-auto mb-4 animate-bounce" />
+                            <h3 className="text-2xl font-black text-emerald-900 leading-relaxed">{bonusQuestion.question}</h3>
+                            {bonusQuestion.source === 'ai' && (
+                                <p className="text-xs text-emerald-400 mt-4 flex items-center justify-center gap-1">
+                                    <Sparkles className="w-3 h-3" /> تم توليده بواسطة {bonusQuestion.provider}
+                                </p>
+                            )}
+                            {bonusQuestion.source === 'local' && (
+                                <p className="text-xs text-gray-400 mt-4 flex items-center justify-center gap-1">
+                                    <AlertCircle className="w-3 h-3" /> من بنك الأسئلة المحلي
+                                </p>
+                            )}
+                            {feedback && (
+                                <div className={`absolute inset-0 flex items-center justify-center rounded-3xl backdrop-blur-sm animate-in fade-in zoom-in duration-200 ${
+                                    feedback.isCorrect ? 'bg-green-100/90' : 'bg-red-100/90'
+                                }`}>
+                                    <div className="text-center p-4 rounded-2xl bg-white shadow-xl">
+                                        {feedback.isCorrect ? (
+                                            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
+                                        ) : (
+                                            <XCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
+                                        )}
+                                        <p className={`text-xl font-black ${feedback.isCorrect ? 'text-green-700' : 'text-red-700'}`}>{feedback.message}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {options.map((opt: string, idx: number) => (
+                                <button
+                                    key={idx}
+                                    onClick={() => handleBonusAnswer(opt)}
+                                    className="bg-white border-2 border-gray-200 p-5 rounded-2xl font-bold text-gray-800 hover:border-emerald-500 hover:bg-emerald-50 hover:scale-105 transition-all active:scale-95 shadow-md hover:shadow-xl text-lg"
+                                >
+                                    {opt}
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {options.map((opt: string, idx: number) => (
-                            <button
-                                key={idx}
-                                onClick={() => handleBonusAnswer(opt)}
-                                className="bg-white border-2 border-gray-200 p-5 rounded-2xl font-bold text-gray-800 hover:border-emerald-500 hover:bg-emerald-50 hover:scale-105 transition-all active:scale-95 shadow-md hover:shadow-xl text-lg"
-                            >
-                                {opt}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                    {/* مودال عرض الإجابة الصحيحة */}
+                    {showAnswerModal && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" dir="rtl">
+                            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+                                <div className="flex justify-between items-start mb-4">
+                                    <h3 className="text-xl font-black text-gray-800">الإجابة الصحيحة</h3>
+                                    <button onClick={closeModalAndReset} className="p-1 hover:bg-gray-100 rounded-full transition">
+                                        <X className="w-5 h-5 text-gray-500" />
+                                    </button>
+                                </div>
+                                <div className="bg-gray-50 p-4 rounded-xl mb-4">
+                                    <p className="text-sm font-bold text-gray-500 mb-1">السؤال:</p>
+                                    <p className="text-gray-800 font-medium mb-3">{bonusQuestion?.question}</p>
+                                    <p className="text-sm font-bold text-green-600 mb-1">الإجابة الصحيحة:</p>
+                                    <p className="text-green-700 font-bold text-lg">{bonusQuestion?.correct_answer}</p>
+                                </div>
+                                <button
+                                    onClick={closeModalAndReset}
+                                    className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-3 rounded-xl font-black hover:scale-105 transition-all"
+                                >
+                                    إغلاق
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </>
             );
         }
     }
