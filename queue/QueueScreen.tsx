@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Maximize, Volume2, VolumeX, Play } from 'lucide-react';
-import { playQueueAudio } from '../utils/queueAudio'; // استدعاء المشغل الصوتي
+import { playQueueAudio } from '../queue/queueAudio'; // استدعاء المشغل الصوتي
 
 export default function QueueScreen({ screenId }: { screenId: string }) {
     const [clinics, setClinics] = useState<any[]>([]);
