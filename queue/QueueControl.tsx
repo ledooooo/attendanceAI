@@ -5,7 +5,7 @@ import {
     MonitorUp, Plus, Minus, RotateCcw, Power, PowerOff, 
     BellRing, Mic, ArrowLeftRight, Volume2, VolumeX
 } from 'lucide-react';
-import { playQueueAudio } from '../utils/queueAudio';
+import { playQueueAudio } from '../queue/queueAudio';
 
 export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean }) {
     const [clinics, setClinics] = useState<any[]>([]);
