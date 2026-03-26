@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Maximize, Volume2, VolumeX, Play } from 'lucide-react';
-import { playQueueAudio } from '../queue/queueAudio'; // استدعاء المشغل الصوتي
+// ✅ تم تصحيح المسار ليقرأ من نفس المجلد
+import { playQueueAudio } from './queueAudio'; 
 
 export default function QueueScreen({ screenId }: { screenId: string }) {
     const [clinics, setClinics] = useState<any[]>([]);
     const [screenData, setScreenData] = useState<any>(null);
     const [time, setTime] = useState(new Date());
     
-    // حالات الصوت والإشعارات
     const [isStarted, setIsStarted] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [currentAlert, setCurrentAlert] = useState<{ text: string, type: string } | null>(null);
@@ -29,13 +29,12 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
         };
         fetchData();
 
-        // الاستماع للعيادات
         const clinicsSub = supabase.channel('clinics_changes_screen')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'q_clinics', filter: `screen_id=eq.${screenId}` }, (payload) => {
                 setClinics(prev => prev.map(c => c.id === payload.new.id ? payload.new : c));
             }).subscribe();
 
-        // ✅ الاستماع للنداءات اللحظية والتحويلات
+        // ✅ الاستماع للنداءات (هنا يظهر الشريط وينطق الصوت)
         const alertsSub = supabase.channel('alerts_changes_screen')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'q_alerts', filter: `screen_id=eq.${screenId}` }, (payload) => {
                 const alert = payload.new;
@@ -46,10 +45,10 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
                     ? `العميل رقم ${alert.message}، التوجه إلى ${targetClinic.name}`
                     : `العميل رقم ${alert.message}، محول إلى ${targetClinic.name}`;
 
-                // إظهار الشريط العلوي
+                // 1. إظهار الشريط العلوي
                 setCurrentAlert({ text: alertText, type: alert.type });
                 
-                // تشغيل الصوت المتتابع
+                // 2. تشغيل الصوت المتتابع أو النطق الآلي TTS
                 if (isStarted) {
                     playQueueAudio(alert.message, targetClinic.audio_code || 'clinic1', targetClinic.name, isMuted, alert.type);
                 }
@@ -87,7 +86,7 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
     return (
         <div className="h-screen w-full bg-gray-900 flex flex-col overflow-hidden text-right relative" dir="rtl">
             
-            {/* ✅ شريط النداء الكبير المنزلق (Notification Bar) */}
+            {/* ✅ هذا هو شريط النداء الكبير المنزلق (Notification Bar) */}
             <div className={`absolute top-0 left-0 right-0 z-50 flex items-center justify-center p-6 shadow-[0_10px_40px_rgba(0,0,0,0.5)] transition-transform duration-500 transform ${currentAlert ? 'translate-y-0' : '-translate-y-full'} ${currentAlert?.type === 'transfer' ? 'bg-amber-500' : 'bg-emerald-500'}`}>
                 <h1 className="text-5xl md:text-7xl font-black text-white tracking-wide text-center leading-tight">
                     {currentAlert?.text}
