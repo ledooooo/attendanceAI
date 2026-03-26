@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer, Save, Copy, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TIMER_SECS = 120;
-const MAX_VOTE_ROUNDS = 3; // not used in new flow but kept for compatibility
 
 const ARABIC_LETTERS = [
     'أ','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز','س','ش',
@@ -32,6 +31,15 @@ type PlayerRecord = {
     answers:    Answers;
     stopped:    boolean;
 };
+
+type EvaluationStatus = 'pending' | 'correct' | 'duplicate' | 'wrong';
+
+type EvaluationItem = {
+    status: EvaluationStatus;
+    points: number;
+};
+
+type Evaluations = Record<string, Record<string, EvaluationItem>>;
 
 // ─── Question helpers (unchanged) ─────────────────────────────────────────────
 const normalizeQuestion = (rawQ: any) => {
@@ -89,7 +97,7 @@ const fetchQuestion = async (employee: Employee) => {
     return null;
 };
 
-// ─── Audio ────────────────────────────────────────────────────────────────────
+// ─── Audio (unchanged) ────────────────────────────────────────────────────────
 function useSound() {
     const ctx = useRef<AudioContext | null>(null);
     const get = () => {
@@ -256,45 +264,85 @@ function AnswersTable({ records, letter, myId }: {
     );
 }
 
-// ─── Evaluation Panel (only for host) ─────────────────────────────────────────
+// ─── Enhanced Evaluation Panel with auto‑detect duplicates ───────────────────
 function EvaluationPanel({
     records,
     letter,
     players,
     myId,
     onSaveEvaluation,
-    evaluations,
+    evaluations: initialEvaluations,
     isHost,
+    matchId,
 }: {
     records: PlayerRecord[];
     letter: string;
     players: any[];
     myId: string;
-    onSaveEvaluation: (evaluations: any) => void;
-    evaluations: any;
+    onSaveEvaluation: (evaluations: Evaluations, finalize: boolean) => Promise<void>;
+    evaluations: Evaluations | null;
     isHost: boolean;
+    matchId: string;
 }) {
-    const [localEvals, setLocalEvals] = useState<any>(evaluations || {});
-    const [saving, setSaving] = useState(false);
-
-    // Initialize evaluations if not present
-    useEffect(() => {
-        if (!localEvals || Object.keys(localEvals).length === 0) {
-            const init: any = {};
-            records.forEach(rec => {
-                init[rec.playerId] = {};
-                Object.keys(rec.answers).forEach(cat => {
-                    init[rec.playerId][cat] = {
-                        status: 'pending',
-                        points: 0,
-                    };
-                });
-            });
-            setLocalEvals(init);
+    const [localEvals, setLocalEvals] = useState<Evaluations>(() => {
+        if (initialEvaluations && Object.keys(initialEvaluations).length > 0) {
+            return initialEvaluations;
         }
-    }, [records]);
+        const init: Evaluations = {};
+        records.forEach(rec => {
+            init[rec.playerId] = {};
+            Object.keys(rec.answers).forEach(cat => {
+                init[rec.playerId][cat] = { status: 'pending', points: 0 };
+            });
+        });
+        return init;
+    });
+    const [saving, setSaving] = useState(false);
+    const [savingPlayer, setSavingPlayer] = useState<string | null>(null);
+    const [completedPlayers, setCompletedPlayers] = useState<Set<string>>(new Set());
 
-    const handleStatusChange = (playerId: string, category: string, status: 'correct' | 'duplicate' | 'wrong') => {
+    // Auto-detect duplicate answers across players
+    const findDuplicates = (): Array<{ category: string; players: string[]; answer: string }> => {
+        const duplicates: Array<{ category: string; players: string[]; answer: string }> = [];
+        for (const cat of CATEGORIES) {
+            const answersMap = new Map<string, string[]>();
+            for (const rec of records) {
+                const ans = rec.answers[cat.key]?.trim().toLowerCase();
+                if (ans && ans.length > 0 && ans.startsWith(letter.toLowerCase())) {
+                    if (!answersMap.has(ans)) answersMap.set(ans, []);
+                    answersMap.get(ans)!.push(rec.playerId);
+                }
+            }
+            for (const [answer, playerIds] of answersMap.entries()) {
+                if (playerIds.length > 1) {
+                    duplicates.push({ category: cat.key, players: playerIds, answer });
+                }
+            }
+        }
+        return duplicates;
+    };
+
+    const autoMarkDuplicates = () => {
+        const duplicates = findDuplicates();
+        if (duplicates.length === 0) {
+            toast('لا توجد إجابات مكررة', { icon: '🔍' });
+            return;
+        }
+        setLocalEvals(prev => {
+            const updated = { ...prev };
+            for (const dup of duplicates) {
+                for (const playerId of dup.players) {
+                    if (updated[playerId] && updated[playerId][dup.category]) {
+                        updated[playerId][dup.category] = { status: 'duplicate', points: 5 };
+                    }
+                }
+            }
+            return updated;
+        });
+        toast.success(`تم وضع علامة "مكرر" على ${duplicates.length} فئة`, { icon: '🔄' });
+    };
+
+    const updatePlayerCategory = (playerId: string, category: string, status: EvaluationStatus) => {
         const points = status === 'correct' ? 10 : status === 'duplicate' ? 5 : 0;
         setLocalEvals(prev => ({
             ...prev,
@@ -305,17 +353,77 @@ function EvaluationPanel({
         }));
     };
 
-    const saveEvaluation = async () => {
+    const savePlayerEvaluation = async (playerId: string) => {
+        if (savingPlayer) return;
+        setSavingPlayer(playerId);
+        // Save only this player's evaluations to DB
+        await supabase
+            .from('live_matches')
+            .update({
+                game_state: {
+                    ...(await supabase.from('live_matches').select('game_state').eq('id', matchId).single()).data?.game_state,
+                    evaluations: localEvals,
+                },
+            })
+            .eq('id', matchId);
+        setSavingPlayer(null);
+        setCompletedPlayers(prev => new Set(prev).add(playerId));
+        toast.success(`تم حفظ تقييم ${players.find(p => p.id === playerId)?.name || 'اللاعب'}`, { icon: '💾' });
+    };
+
+    const finalizeEvaluation = async () => {
         setSaving(true);
-        await onSaveEvaluation(localEvals);
+        await onSaveEvaluation(localEvals, true);
         setSaving(false);
     };
 
+    const allPlayersEvaluated = records.length > 0 && records.every(rec => {
+        const ev = localEvals[rec.playerId];
+        return ev && Object.keys(ev).length === CATEGORIES.length && Object.values(ev).every(v => v.status !== 'pending');
+    });
+
     if (!isHost) {
+        // Real-time updates for non-host players
+        const [liveEvals, setLiveEvals] = useState<Evaluations | null>(initialEvaluations);
+        useEffect(() => {
+            const channel = supabase.channel(`stopthebus-eval-${matchId}`)
+                .on('postgres_changes', {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'live_matches',
+                    filter: `id=eq.${matchId}`,
+                }, (payload) => {
+                    const newEvals = payload.new?.game_state?.evaluations;
+                    if (newEvals) setLiveEvals(newEvals);
+                })
+                .subscribe();
+            return () => { supabase.removeChannel(channel); };
+        }, [matchId]);
+
+        if (!liveEvals) {
+            return (
+                <div className="bg-gray-50 rounded-2xl p-4 text-center">
+                    <p className="text-sm font-bold text-gray-500">جاري انتظار تقييم المضيف...</p>
+                    <Loader2 className="w-6 h-6 animate-spin text-indigo-400 mx-auto mt-2" />
+                </div>
+            );
+        }
+
+        // Show ongoing evaluation progress
+        const evaluatedCount = records.filter(rec => {
+            const ev = liveEvals[rec.playerId];
+            return ev && Object.values(ev).some(v => v.status !== 'pending');
+        }).length;
         return (
-            <div className="bg-gray-50 rounded-2xl p-4 text-center">
-                <p className="text-sm font-bold text-gray-500">جاري انتظار تقييم المضيف...</p>
-                <Loader2 className="w-6 h-6 animate-spin text-indigo-400 mx-auto mt-2" />
+            <div className="bg-white rounded-2xl border-2 border-gray-200 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                    <p className="text-sm font-black text-gray-700">تقدم التقييم</p>
+                    <span className="text-xs font-bold text-indigo-600">{evaluatedCount}/{records.length} لاعب</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="bg-indigo-600 h-2 rounded-full transition-all duration-500" style={{ width: `${(evaluatedCount / records.length) * 100}%` }} />
+                </div>
+                <p className="text-xs text-gray-400 text-center">المضيف يقوم بتقييم الإجابات...</p>
             </div>
         );
     }
@@ -325,28 +433,41 @@ function EvaluationPanel({
             <div className="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-3 text-center">
                 <p className="font-black text-yellow-800">أنت الحكم! قيم إجابات كل لاعب.</p>
                 <p className="text-xs text-yellow-700 mt-1">صحيح = 10 نقاط | مكرر = 5 نقاط | خطأ = 0</p>
+                <button
+                    onClick={autoMarkDuplicates}
+                    className="mt-2 text-xs bg-yellow-200 hover:bg-yellow-300 text-yellow-800 px-3 py-1 rounded-full font-black transition-all inline-flex items-center gap-1"
+                >
+                    <Copy className="w-3 h-3" /> تقييم تلقائي للمكررات
+                </button>
             </div>
 
             {records.map(rec => {
                 const player = players.find(p => p.id === rec.playerId);
                 const playerName = player?.name || rec.playerName;
                 const isMe = rec.playerId === myId;
+                const playerEval = localEvals[rec.playerId];
+                const evaluatedCount = playerEval ? Object.values(playerEval).filter(v => v.status !== 'pending').length : 0;
+                const isCompleted = evaluatedCount === CATEGORIES.length;
 
                 return (
-                    <div key={rec.playerId} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm">
-                        <div className={`px-4 py-2 ${isMe ? 'bg-blue-50' : 'bg-gray-50'} border-b border-gray-200`}>
+                    <div key={rec.playerId} className="bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-sm transition-all">
+                        <div className={`px-4 py-2 ${isMe ? 'bg-blue-50' : 'bg-gray-50'} border-b border-gray-200 flex items-center justify-between`}>
                             <div className="flex items-center gap-2">
                                 <span className="text-sm font-black">{playerName}</span>
                                 {isMe && <span className="text-[10px] bg-blue-200 text-blue-700 px-2 py-0.5 rounded-full">أنت</span>}
                                 {rec.stopped && <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">🏁 أنهى</span>}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-gray-400">{evaluatedCount}/{CATEGORIES.length}</span>
+                                {isCompleted && <CheckCircle className="w-4 h-4 text-green-500" />}
                             </div>
                         </div>
 
                         {CATEGORIES.map(cat => {
                             const answer = rec.answers[cat.key]?.trim() || '';
                             const isValid = answer.startsWith(letter) && answer.length > 1;
-                            const current = localEvals[rec.playerId]?.[cat.key]?.status || 'pending';
-                            const points = localEvals[rec.playerId]?.[cat.key]?.points || 0;
+                            const current = playerEval?.[cat.key]?.status || 'pending';
+                            const points = playerEval?.[cat.key]?.points || 0;
 
                             return (
                                 <div key={cat.key} className="flex items-center gap-2 px-4 py-2 border-b border-gray-100 last:border-0">
@@ -361,7 +482,7 @@ function EvaluationPanel({
                                     </div>
                                     <div className="flex-shrink-0 flex gap-1">
                                         <button
-                                            onClick={() => handleStatusChange(rec.playerId, cat.key, 'correct')}
+                                            onClick={() => updatePlayerCategory(rec.playerId, cat.key, 'correct')}
                                             className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
                                                 current === 'correct'
                                                     ? 'bg-green-600 text-white'
@@ -371,7 +492,7 @@ function EvaluationPanel({
                                             10 ✓
                                         </button>
                                         <button
-                                            onClick={() => handleStatusChange(rec.playerId, cat.key, 'duplicate')}
+                                            onClick={() => updatePlayerCategory(rec.playerId, cat.key, 'duplicate')}
                                             className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
                                                 current === 'duplicate'
                                                     ? 'bg-orange-600 text-white'
@@ -381,7 +502,7 @@ function EvaluationPanel({
                                             5 🔁
                                         </button>
                                         <button
-                                            onClick={() => handleStatusChange(rec.playerId, cat.key, 'wrong')}
+                                            onClick={() => updatePlayerCategory(rec.playerId, cat.key, 'wrong')}
                                             className={`px-2 py-1 rounded-lg text-[10px] font-black transition-all ${
                                                 current === 'wrong'
                                                     ? 'bg-red-600 text-white'
@@ -394,22 +515,37 @@ function EvaluationPanel({
                                 </div>
                             );
                         })}
+
+                        {!isCompleted && (
+                            <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex justify-end">
+                                <button
+                                    onClick={() => savePlayerEvaluation(rec.playerId)}
+                                    disabled={savingPlayer === rec.playerId}
+                                    className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-black hover:bg-indigo-200 transition-all flex items-center gap-1"
+                                >
+                                    {savingPlayer === rec.playerId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                    حفظ هذا اللاعب
+                                </button>
+                            </div>
+                        )}
                     </div>
                 );
             })}
 
-            <button
-                onClick={saveEvaluation}
-                disabled={saving}
-                className="w-full bg-gradient-to-r from-indigo-600 to-violet-700 text-white py-3 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-            >
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <>حفظ النتائج وإعلان الفائز 🏆</>}
-            </button>
+            {allPlayersEvaluated && (
+                <button
+                    onClick={finalizeEvaluation}
+                    disabled={saving}
+                    className="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white py-3 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                    {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <>إنهاء التقييم وإعلان النتائج 🏆</>}
+                </button>
+            )}
         </div>
     );
 }
 
-// ─── Results Panel (after evaluation) ─────────────────────────────────────────
+// ─── Enhanced Results Panel with detailed breakdown ──────────────────────────
 function ResultsPanel({
     evaluations,
     records,
@@ -417,31 +553,46 @@ function ResultsPanel({
     myId,
     onExit,
 }: {
-    evaluations: any;
+    evaluations: Evaluations;
     records: PlayerRecord[];
     players: any[];
     myId: string;
     onExit: () => void;
 }) {
-    const totals: Record<string, { name: string; points: number; isMe: boolean }> = {};
-    records.forEach(rec => {
-        const player = players.find(p => p.id === rec.playerId);
-        const name = player?.name || rec.playerName;
-        let total = 0;
-        const playerEval = evaluations?.[rec.playerId];
-        if (playerEval) {
-            Object.values(playerEval).forEach((cat: any) => {
-                total += cat.points || 0;
-            });
-        }
-        totals[rec.playerId] = { name, points: total, isMe: rec.playerId === myId };
-    });
+    const [totals, setTotals] = useState<Array<{ id: string; name: string; points: number; isMe: boolean; details: Record<string, number> }>>([]);
+    const [winner, setWinner] = useState<{ id: string; name: string; points: number } | null>(null);
 
-    const sorted = Object.entries(totals)
-        .map(([id, data]) => ({ id, ...data }))
-        .sort((a, b) => b.points - a.points);
-    const winner = sorted[0];
-    const isWinner = winner.id === myId;
+    useEffect(() => {
+        const computed: typeof totals = [];
+        records.forEach(rec => {
+            const player = players.find(p => p.id === rec.playerId);
+            const name = player?.name || rec.playerName;
+            let total = 0;
+            const details: Record<string, number> = {};
+            const playerEval = evaluations?.[rec.playerId];
+            if (playerEval) {
+                CATEGORIES.forEach(cat => {
+                    const pts = playerEval[cat.key]?.points || 0;
+                    total += pts;
+                    details[cat.key] = pts;
+                });
+            }
+            computed.push({
+                id: rec.playerId,
+                name,
+                points: total,
+                isMe: rec.playerId === myId,
+                details,
+            });
+        });
+        computed.sort((a, b) => b.points - a.points);
+        setTotals(computed);
+        if (computed.length > 0) {
+            setWinner({ id: computed[0].id, name: computed[0].name, points: computed[0].points });
+        }
+    }, [evaluations, records, players, myId]);
+
+    const isWinner = winner?.id === myId;
 
     return (
         <div className="space-y-4 animate-in fade-in duration-400">
@@ -453,28 +604,33 @@ function ResultsPanel({
                         {winner.name} {isWinner ? '(أنت)' : ''}
                     </p>
                 )}
-                <p className="text-indigo-200 text-sm mt-1">إجمالي النقاط: {winner.points}</p>
+                <p className="text-indigo-200 text-sm mt-1">إجمالي النقاط: {winner?.points || 0}</p>
             </div>
 
-            <div className="space-y-2">
-                {sorted.map((p, idx) => (
-                    <div
-                        key={p.id}
-                        className={`bg-white rounded-xl border-2 p-3 flex items-center justify-between ${
-                            p.isMe ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-100'
-                        }`}
-                    >
-                        <div className="flex items-center gap-2">
-                            <span className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 text-xs font-black">
-                                {idx + 1}
-                            </span>
-                            <span className="font-black text-gray-800">
-                                {p.name} {p.isMe && '(أنت)'}
-                            </span>
+            <div className="space-y-3">
+                {totals.map((p, idx) => (
+                    <div key={p.id} className={`bg-white rounded-xl border-2 p-3 ${p.isMe ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-100'}`}>
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 text-xs font-black">
+                                    {idx + 1}
+                                </span>
+                                <span className="font-black text-gray-800">
+                                    {p.name} {p.isMe && '(أنت)'}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-black text-indigo-600">{p.points}</span>
+                                <span className="text-[10px] text-gray-400">نقطة</span>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm font-black text-indigo-600">{p.points}</span>
-                            <span className="text-[10px] text-gray-400">نقطة</span>
+                        <div className="grid grid-cols-4 gap-1 text-[10px] font-bold text-gray-500">
+                            {CATEGORIES.map(cat => (
+                                <div key={cat.key} className="flex items-center gap-1">
+                                    <span>{cat.emoji}</span>
+                                    <span>{p.details[cat.key] || 0}</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 ))}
@@ -510,6 +666,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     const records: PlayerRecord[] = gs.records   ?? [];
     const status:  string         = match.status  ?? 'waiting';
     const players: any[]          = match.players ?? [];
+    const evaluations: Evaluations | null = gs.evaluations ?? null;
 
     // ── Local state ───────────────────────────────────────────────────────────
     const [answers, setAnswers]       = useState<Answers>(emptyAnswers);
@@ -519,8 +676,8 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
 
     // Evaluation phase
     const [evaluationPhase, setEvaluationPhase] = useState<'waiting' | 'evaluating' | 'results'>('waiting');
-    const [evaluations, setEvaluations] = useState<any>(null);
     const [finalized, setFinalized] = useState(false);
+    const [awarded, setAwarded] = useState(false);
 
     const prevTickRef   = useRef(TIMER_SECS);
     const soundedStop   = useRef(false);
@@ -534,7 +691,6 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     // My player info from match (includes alias if set)
     const myPlayerInfo = players.find((p: any) => p.id === myId);
     const myDisplayName = myPlayerInfo?.name || myName;
-    const isAlias = myPlayerInfo?.isAlias ?? false;
 
     // Check if current user is the host (creator of the match)
     const isHost = match.created_by === employee.employee_id;
@@ -574,14 +730,13 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
     // ── Phase transition when game finishes ───────────────────────────────────
     useEffect(() => {
         if (status === 'finished') {
-            if (gs.evaluations) {
-                setEvaluations(gs.evaluations);
+            if (evaluations) {
                 setEvaluationPhase('results');
             } else {
                 setEvaluationPhase('evaluating');
             }
         }
-    }, [status, gs.evaluations]);
+    }, [status, evaluations]);
 
     // ── Save my answers ───────────────────────────────────────────────────────
     const saveMyAnswers = async (iAmStopper: boolean) => {
@@ -619,18 +774,19 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
         }).eq('id', match.id);
     };
 
-    // ── Save evaluations and award points ─────────────────────────────────────
-    const handleSaveEvaluation = async (evals: any) => {
-        // Save evaluations to game_state
+    // ── Save evaluations and award points (with double-award prevention) ──────
+    const handleSaveEvaluation = async (evals: Evaluations, finalize: boolean) => {
+        if (awarded) return;
+
+        // Save evaluations to DB
         await supabase
             .from('live_matches')
             .update({
-                game_state: { ...gs, evaluations: evals },
+                game_state: { ...gs, evaluations: evals, evaluation_completed: finalize },
             })
             .eq('id', match.id);
 
-        setEvaluations(evals);
-        setEvaluationPhase('results');
+        if (!finalize) return; // only award when finalize is true
 
         // Calculate points per player
         const totals: Record<string, number> = {};
@@ -638,14 +794,14 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
             let total = 0;
             const playerEval = evals[rec.playerId];
             if (playerEval) {
-                Object.values(playerEval).forEach((cat: any) => {
-                    total += cat.points || 0;
+                Object.values(playerEval).forEach((item: EvaluationItem) => {
+                    total += item.points;
                 });
             }
             totals[rec.playerId] = total;
         });
 
-        // Award points to each player (including current user via grantPoints)
+        // Award points (ensure no double award)
         for (const [playerId, pts] of Object.entries(totals)) {
             if (pts > 0) {
                 if (playerId === employee.employee_id) {
@@ -660,7 +816,8 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                 }
             }
         }
-        setFinalized(true);
+        setAwarded(true);
+        setEvaluationPhase('results');
         toast.success('تم منح النقاط للاعبين! 🎉');
     };
 
@@ -790,6 +947,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         onSaveEvaluation={handleSaveEvaluation}
                         evaluations={evaluations}
                         isHost={isHost}
+                        matchId={match.id}
                     />
                     {!isHost && (
                         <button onClick={onExit} className="text-xs font-bold text-gray-400 hover:text-gray-600 py-1 text-center">
@@ -809,7 +967,7 @@ export default function StopTheBusGame({ match, employee, onExit, grantPoints }:
                         <p className="text-purple-100 text-xs mt-0.5">حرف الجولة: {letter}</p>
                     </div>
                     <ResultsPanel
-                        evaluations={evaluations}
+                        evaluations={evaluations!}
                         records={records}
                         players={players}
                         myId={myId}
