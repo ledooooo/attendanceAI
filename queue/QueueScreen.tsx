@@ -29,7 +29,7 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
     const isStartedRef = useRef(isStarted);
     const isMutedRef = useRef(isMuted);
     const clinicsRef = useRef(clinics);
-    const screenDataRef = useRef(screenData);
+    const screenDataRef = useRef(screenData); 
     const timeoutRef = useRef<any>(null);
     
     // Refs for Video Control
@@ -56,6 +56,12 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
             setClinics(clincsData || []);
         };
         fetchData();
+
+        // ✅ الاستماع لتغييرات الشاشة (المقاسات والألوان) لتتعدل لايف
+        const screensSub = supabase.channel('screens_changes_screen')
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'q_screens', filter: `id=eq.${screenId}` }, (payload) => {
+                setScreenData(payload.new);
+            }).subscribe();
 
         const clinicsSub = supabase.channel('clinics_changes_screen')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'q_clinics', filter: `screen_id=eq.${screenId}` }, (payload) => {
@@ -145,7 +151,6 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
             .on('broadcast', { event: 'live_audio' }, (payload) => {
                 const { audio } = payload.payload;
                 
-                // إظهار الشريط العلوي أثناء التحدث
                 setCurrentAlert({ text: '📢 نداء صوتي مباشر...', type: 'info' });
                 
                 if (isStartedRef.current) {
@@ -158,9 +163,10 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
             }).subscribe();
 
         return () => {
+            supabase.removeChannel(screensSub); // ✅ إغلاق قناة الشاشات
             supabase.removeChannel(clinicsSub);
             supabase.removeChannel(alertsSub);
-            supabase.removeChannel(broadcastSub); // ✅ إغلاق قناة البث الحي
+            supabase.removeChannel(broadcastSub); 
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
         };
     }, [screenId]);
@@ -186,12 +192,24 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
     if (!screenData) return <div className="h-screen bg-gray-900 flex justify-center items-center text-white text-3xl">جاري الاتصال بالنظام...</div>;
 
     const settings = screenData.settings || defaultSettings;
-    const isYoutube = screenData.video_url?.includes('youtube.com') || screenData.video_url?.includes('youtu.be');
     
-    // تجهيز رابط اليوتيوب للتحكم عن بعد
+    // ✅ إصلاح وتجهيز رابط اليوتيوب ليعمل كـ Embed متوافق مع كافة المتصفحات
     let finalVideoUrl = screenData.video_url;
-    if (isYoutube && finalVideoUrl && !finalVideoUrl.includes('enablejsapi=1')) {
-        finalVideoUrl += finalVideoUrl.includes('?') ? '&enablejsapi=1' : '?enablejsapi=1';
+    let isYoutube = false;
+    
+    if (finalVideoUrl && (finalVideoUrl.includes('youtube.com') || finalVideoUrl.includes('youtu.be'))) {
+        isYoutube = true;
+        let videoId = '';
+        if (finalVideoUrl.includes('youtu.be/')) {
+            videoId = finalVideoUrl.split('youtu.be/')[1].split('?')[0];
+        } else if (finalVideoUrl.includes('v=')) {
+            videoId = finalVideoUrl.split('v=')[1].split('&')[0];
+        }
+        
+        // إعادة صياغة الرابط ليعمل وتضاف له خيارات التشغيل التلقائي والتكرار
+        if (videoId) {
+            finalVideoUrl = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&mute=1&loop=1&controls=0&playlist=${videoId}`;
+        }
     }
 
     return (
@@ -261,7 +279,7 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
                         isYoutube ? (
                             <iframe 
                                 ref={iframeRef}
-                                src={`${finalVideoUrl}&autoplay=1&mute=1&loop=1&controls=0`} 
+                                src={finalVideoUrl} 
                                 className="w-full h-full border-0 pointer-events-none"
                                 allow="autoplay; encrypted-media"
                             />
