@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { Maximize, Volume2, VolumeX, Play } from 'lucide-react';
-import { playQueueAudio } from './queueAudio';
+import { playQueueAudio } from './queueAudio'; 
 
 const defaultSettings = {
     layout_clinics_width: 30,
@@ -12,7 +12,8 @@ const defaultSettings = {
     color_bg: '#111827',
     color_card: '#1f2937',
     color_text: '#ffffff',
-    color_marquee: '#2563eb'
+    color_marquee: '#2563eb',
+    enable_speech: true
 };
 
 export default function QueueScreen({ screenId }: { screenId: string }) {
@@ -24,10 +25,11 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
     const [isMuted, setIsMuted] = useState(false);
     const [currentAlert, setCurrentAlert] = useState<{ text: string, type: string } | null>(null);
 
-    // Refs for safe access inside Realtime Subscriptions
+    // ✅ Refs for safe access inside Realtime Subscriptions
     const isStartedRef = useRef(isStarted);
     const isMutedRef = useRef(isMuted);
     const clinicsRef = useRef(clinics);
+    const screenDataRef = useRef(screenData); // ✅ تم إضافة هذا الـ Ref لحل المشكلة
     const timeoutRef = useRef<any>(null);
     
     // Refs for Video Control
@@ -37,6 +39,7 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
     useEffect(() => { isStartedRef.current = isStarted; }, [isStarted]);
     useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
     useEffect(() => { clinicsRef.current = clinics; }, [clinics]);
+    useEffect(() => { screenDataRef.current = screenData; }, [screenData]);
 
     useEffect(() => {
         const timer = setInterval(() => setTime(new Date()), 1000);
@@ -53,12 +56,7 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
             setClinics(clincsData || []);
         };
         fetchData();
-// في ملف QueueScreen.tsx (حوالي السطر 58)
-const currentSettings = screenDataRef.current?.settings || defaultSettings;
 
-if (isStartedRef.current && currentSettings.enable_speech !== false) {
-    playQueueAudio(alert.message, targetClinic.audio_code || 'clinic1', targetClinic.name, isMutedRef.current, alert.type);
-}
         const clinicsSub = supabase.channel('clinics_changes_screen')
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'q_clinics', filter: `screen_id=eq.${screenId}` }, (payload) => {
                 setClinics(prev => prev.map(c => c.id === payload.new.id ? payload.new : c));
@@ -72,11 +70,9 @@ if (isStartedRef.current && currentSettings.enable_speech !== false) {
                 if (alert.type === 'video_cmd') {
                     const cmd = alert.message;
                     if (iframeRef.current) {
-                        // YouTube Command
                         const ytCmd = cmd === 'play' ? 'playVideo' : cmd === 'pause' ? 'pauseVideo' : cmd === 'mute' ? 'mute' : 'unMute';
                         iframeRef.current.contentWindow?.postMessage(JSON.stringify({ event: 'command', func: ytCmd, args: [] }), '*');
                     } else if (videoRef.current) {
-                        // Local Video Command
                         if (cmd === 'play') videoRef.current.play();
                         if (cmd === 'pause') videoRef.current.pause();
                         if (cmd === 'mute') videoRef.current.muted = true;
@@ -95,7 +91,10 @@ if (isStartedRef.current && currentSettings.enable_speech !== false) {
 
                 setCurrentAlert({ text: alertText, type: alert.type });
                 
-                if (isStartedRef.current) {
+                const currentSettings = screenDataRef.current?.settings || defaultSettings;
+
+                // ✅ التحقق من تشغيل الشاشة + أن خيار النطق غير معطل من الإعدادات
+                if (isStartedRef.current && currentSettings.enable_speech !== false) {
                     playQueueAudio(alert.message, targetClinic.audio_code || 'clinic1', targetClinic.name, isMutedRef.current, alert.type);
                 }
 
