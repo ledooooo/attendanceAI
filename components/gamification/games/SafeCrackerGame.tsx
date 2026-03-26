@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../../../supabaseClient'; // تأكد من صحة المسار
 import { Lock, Volume2, VolumeX, HelpCircle, Clock, Star, Loader2, AlertCircle, CheckCircle, XCircle, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
@@ -9,7 +10,7 @@ interface Props {
     employee: any; // لتحديد التخصص وجلب الأسئلة المناسبة
 }
 
-// دالة جلب السؤال باستخدام generate-beast-question (نفس الدالة المستخدمة في SpinAndAnswer)
+// ─── جلب السؤال باستخدام AI مع Fallback ─────────────────────────────────────
 async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medium'): Promise<any> {
     let level = 6;
     switch (difficulty) {
@@ -20,12 +21,16 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medi
         default: level = 6;
     }
     try {
+        // محاولة جلب سؤال من AI عبر Edge Function
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
             body: { specialty, level, usedTopics: [] },
         });
         if (error || !data) throw new Error('AI request failed');
         if (data.error) throw new Error(data.error);
-        if (!data.question || !data.options || data.correct === undefined) throw new Error('Invalid format');
+        // التحقق من صحة البيانات القادمة من الدالة
+        if (!data.question || !data.options || data.correct === undefined) {
+            throw new Error('Invalid question format from AI');
+        }
         const correctAnswer = data.options[data.correct];
         return {
             source: 'ai',
@@ -37,17 +42,22 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medi
         };
     } catch (err) {
         console.warn('AI fallback:', err);
-        const { data: localQuestions } = await supabase
+        // الرجوع إلى بنك الأسئلة المحلي
+        const { data: localQuestions, error: localError } = await supabase
             .from('quiz_questions')
             .select('*')
             .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
             .limit(30);
-        if (!localQuestions?.length) throw new Error('No questions available');
+        if (localError || !localQuestions?.length) {
+            throw new Error('No questions available locally');
+        }
         const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
         let options: string[] = [];
         if (random.options) {
             if (Array.isArray(random.options)) options = random.options;
-            else try { options = JSON.parse(random.options); } catch { options = random.options.split(',').map(s => s.trim()); }
+            else {
+                try { options = JSON.parse(random.options); } catch { options = random.options.split(',').map(s => s.trim()); }
+            }
         }
         return {
             source: 'local',
@@ -79,7 +89,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         try {
             let audio: HTMLAudioElement;
             if (type === 'win') audio = new Audio('/applause.mp3');
-            else audio = new Audio('/fail.mp3'); // استخدم نفس الصوت للخسارة
+            else audio = new Audio('/fail.mp3'); // استخدام fail.mp3 للخسارة
             audio.volume = 0.6;
             audio.play().catch(() => {});
         } catch {}
@@ -143,13 +153,14 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setPhase('question');
         setLoading(true);
         try {
-            // يمكن جعل صعوبة السؤال تعتمد على عدد المحاولات المتبقية أو عشوائية
+            // اختيار صعوبة معتدلة
             const q = await fetchQuestionWithAI(employee.specialty, 'medium');
             setBonusQuestion(q);
-            setTimeLeft(15); // وقت افتراضي
+            setTimeLeft(15);
         } catch (err) {
+            console.error('Failed to load bonus question:', err);
             toast.error('فشل تحميل السؤال، سيتم إنهاء اللعبة');
-            onComplete(BASE_POINTS, true); // على الأقل نقطة الخزنة
+            onComplete(BASE_POINTS, true); // نعطي نقاط الخزنة فقط
             resetGame();
         } finally {
             setLoading(false);
@@ -211,6 +222,9 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setLoading(false);
     };
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // مرحلة بدء اللعبة (شاشة الترحيب)
+    // ─────────────────────────────────────────────────────────────────────────
     if (!isActive) {
         return (
             <div className="text-center py-12">
@@ -244,6 +258,9 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         );
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // مرحلة تخمين الكود
+    // ─────────────────────────────────────────────────────────────────────────
     if (phase === 'code') {
         return (
             <div className="max-w-xl mx-auto py-8 animate-in slide-in-from-bottom-4 text-center">
@@ -319,7 +336,9 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         );
     }
 
-    // مرحلة السؤال الإضافي
+    // ─────────────────────────────────────────────────────────────────────────
+    // مرحلة السؤال الإضافي (بعد فتح الخزنة)
+    // ─────────────────────────────────────────────────────────────────────────
     if (phase === 'question') {
         if (loading) {
             return (
