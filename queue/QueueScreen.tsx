@@ -29,7 +29,7 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
     const isStartedRef = useRef(isStarted);
     const isMutedRef = useRef(isMuted);
     const clinicsRef = useRef(clinics);
-    const screenDataRef = useRef(screenData); // ✅ تم إضافة هذا الـ Ref لحل المشكلة
+    const screenDataRef = useRef(screenData);
     const timeoutRef = useRef<any>(null);
     
     // Refs for Video Control
@@ -74,7 +74,7 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
                         emergencyAudio.play().catch(e => console.error(e));
                     }
                     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-                    timeoutRef.current = setTimeout(() => setCurrentAlert(null), 15000); // الإنذار يبقى أطول
+                    timeoutRef.current = setTimeout(() => setCurrentAlert(null), 15000);
                     return;
                 }
 
@@ -104,9 +104,6 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
                     return;
                 }
 
-
-
-
                 // 1. التحكم في الفيديو عن بعد
                 if (alert.type === 'video_cmd') {
                     const cmd = alert.message;
@@ -122,7 +119,7 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
                     return;
                 }
 
-                // 2. النداء الصوتي وشريط الإشعارات
+                // 2. النداء الصوتي المتتابع
                 const targetClinic = clinicsRef.current.find(c => c.id === alert.clinic_id);
                 if (!targetClinic) return;
 
@@ -134,7 +131,6 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
                 
                 const currentSettings = screenDataRef.current?.settings || defaultSettings;
 
-                // ✅ التحقق من تشغيل الشاشة + أن خيار النطق غير معطل من الإعدادات
                 if (isStartedRef.current && currentSettings.enable_speech !== false) {
                     playQueueAudio(alert.message, targetClinic.audio_code || 'clinic1', targetClinic.name, isMutedRef.current, alert.type);
                 }
@@ -144,9 +140,27 @@ export default function QueueScreen({ screenId }: { screenId: string }) {
 
             }).subscribe();
 
+        // 🎙️ استقبال الصوت الحي (اللاسلكي المباشر) عبر Broadcast
+        const broadcastSub = supabase.channel(`screen_broadcast_${screenId}`)
+            .on('broadcast', { event: 'live_audio' }, (payload) => {
+                const { audio } = payload.payload;
+                
+                // إظهار الشريط العلوي أثناء التحدث
+                setCurrentAlert({ text: '📢 نداء صوتي مباشر...', type: 'info' });
+                
+                if (isStartedRef.current) {
+                    const liveAudio = new Audio(audio);
+                    liveAudio.play().catch(e => console.error('Browser blocked live audio play', e));
+                }
+
+                if (timeoutRef.current) clearTimeout(timeoutRef.current);
+                timeoutRef.current = setTimeout(() => setCurrentAlert(null), 8000);
+            }).subscribe();
+
         return () => {
             supabase.removeChannel(clinicsSub);
             supabase.removeChannel(alertsSub);
+            supabase.removeChannel(broadcastSub); // ✅ إغلاق قناة البث الحي
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
         };
     }, [screenId]);
