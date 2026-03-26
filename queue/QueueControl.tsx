@@ -23,6 +23,7 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
     const [isRecording, setIsRecording] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const broadcastChannelRef = useRef<any>(null); // ✅ المرجع الجديد للاتصال الدائم
 
     useEffect(() => { fetchClinics(); }, []);
 
@@ -30,6 +31,17 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
         const { data } = await supabase.from('q_clinics').select('*, q_screens(name)').order('name');
         setClinics(data || []);
     };
+
+    // ✅ إنشاء اتصال دائم بالبث المباشر للشاشة بمجرد اختيار العيادة
+    useEffect(() => {
+        if (!selectedClinic?.screen_id) return;
+        
+        const channel = supabase.channel(`screen_broadcast_${selectedClinic.screen_id}`);
+        channel.subscribe(); // تفعيل الاتصال المسبق لضمان عدم ضياع الصوت
+        broadcastChannelRef.current = channel;
+
+        return () => { supabase.removeChannel(channel); };
+    }, [selectedClinic?.screen_id]);
 
     useEffect(() => {
         const sub = supabase.channel('clinic_alerts_control')
@@ -100,9 +112,15 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
                     const base64Audio = reader.result;
-                    // إرسال الصوت لحظياً في الهواء (Broadcast) بدون تخزينه في قاعدة البيانات
-                    await supabase.channel(`screen_broadcast_${selectedClinic.screen_id}`)
-                        .send({ type: 'broadcast', event: 'live_audio', payload: { audio: base64Audio } });
+                    // ✅ الإرسال عبر القناة المفتوحة مسبقاً
+                    if (broadcastChannelRef.current) {
+                        broadcastChannelRef.current.send({
+                            type: 'broadcast',
+                            event: 'live_audio',
+                            payload: { audio: base64Audio }
+                        });
+                        toast.success('تم الإرسال بنجاح');
+                    }
                 };
                 stream.getTracks().forEach(track => track.stop()); // إغلاق المايك
             };
@@ -201,7 +219,7 @@ export default function QueueControl({ isAdmin = false }: { isAdmin?: boolean })
                 </div>
             </div>
 
-            {/* Modal Overlay Code is exactly the same as before */}
+            {/* Modal Overlay Code */}
             {activeModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in">
                     <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative">
