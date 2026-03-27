@@ -13,7 +13,7 @@ interface Props {
     onComplete: (points: number, isWin: boolean) => void;
 }
 
-// خيارات العجلة
+// خيارات العجلة - تم زيادة زمن الصعب إلى 120 ثانية
 const WHEEL_SEGMENTS = [
     { label: 'سهل', points: 5, difficulty: 'easy', time: 12 },
     { label: 'سهل', points: 10, difficulty: 'easy', time: 12 },
@@ -21,10 +21,10 @@ const WHEEL_SEGMENTS = [
     { label: 'وسط', points: 10, difficulty: 'medium', time: 14 },
     { label: 'وسط', points: 15, difficulty: 'medium', time: 14 },
     { label: 'وسط', points: 20, difficulty: 'medium', time: 14 },
-    { label: 'صعب', points: 20, difficulty: 'hard', time: 17 },
-    { label: 'صعب', points: 25, difficulty: 'hard', time: 17 },
-    { label: 'صعب', points: 30, difficulty: 'hard', time: 17 },
-    { label: 'صعب جداً', points: 50, difficulty: 'expert', time: 17 },
+    { label: 'صعب', points: 20, difficulty: 'hard', time: 120 },   // دقيقتان
+    { label: 'صعب', points: 25, difficulty: 'hard', time: 120 },
+    { label: 'صعب', points: 30, difficulty: 'hard', time: 120 },
+    { label: 'صعب جداً', points: 50, difficulty: 'expert', time: 120 },
     { label: 'سؤال عشوائي', points: 0, difficulty: 'random', time: 14 },
 ];
 
@@ -33,8 +33,13 @@ const SEGMENT_COLORS = [
     '#a5f3fc', '#fdba74', '#bef264', '#d9f99d', '#fed7aa'
 ];
 
-// دالة جلب السؤال باستخدام generate-beast-question مع دعم اللغة
-async function fetchQuestionWithAI(specialty: string, difficulty: string, language?: string): Promise<any> {
+// دالة جلب السؤال باستخدام generate-beast-question مع دعم اللغة ومجال الرعاية الأساسية
+async function fetchQuestionWithAI(
+    employeeSpecialty: string, 
+    difficulty: string, 
+    language?: string,
+    contextSpecialty?: string   // المجال الذي نريد الأسئلة منه (مثلاً الرعاية الأساسية)
+): Promise<any> {
     let level = 3;
     switch (difficulty) {
         case 'easy': level = 3; break;
@@ -43,9 +48,11 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string, langua
         case 'expert': level = 14; break;
         default: level = 6;
     }
+    // استخدام المجال المطلوب (الرعاية الأساسية) إذا وُجد، وإلا التخصص الأصلي
+    const specialtyForAI = contextSpecialty || employeeSpecialty;
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
-            body: { specialty, level, usedTopics: [], language },
+            body: { specialty: specialtyForAI, level, usedTopics: [], language },
         });
         if (error || !data) throw new Error('AI request failed');
         if (data.error) throw new Error(data.error);
@@ -62,10 +69,11 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string, langua
         };
     } catch (err) {
         console.warn('AI fallback:', err);
+        // الاحتياطي: أسئلة محلية (قد تكون من أي تخصص)
         const { data: localQuestions } = await supabase
             .from('quiz_questions')
             .select('*')
-            .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
+            .or(`specialty.ilike.%${employeeSpecialty}%,specialty.ilike.%الكل%`)
             .limit(30);
         if (!localQuestions?.length) throw new Error('No questions available');
         const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
@@ -109,6 +117,7 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
     const needsMedicalEnglish = useCallback(() => {
         const specialty = employee.specialty?.toLowerCase() || '';
         const medicalEnglishSpecialties = [
+            'بشر', 'بشري', 'طبيب', 'طب',
             'صيدلة', 'صيدلي', 'pharmacy',
             'أسنان', 'اسنان', 'dentistry', 'dental',
             'معمل', 'مختبر', 'laboratory', 'lab',
@@ -143,7 +152,7 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         } catch {}
     }, [soundEnabled]);
 
-    // رسم العجلة
+    // رسم العجلة (نفس الكود)
     const drawWheel = useCallback((angle: number) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -246,7 +255,9 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
                 else difficulty = 'hard';
             }
             const effectiveLang = getEffectiveLanguage();
-            const q = await fetchQuestionWithAI(employee.specialty, difficulty, effectiveLang);
+            // استخدام مجال الرعاية الأساسية بدلاً من التخصص الدقيق
+            const primaryCareContext = effectiveLang === 'en' ? 'Primary Care' : 'الرعاية الأساسية';
+            const q = await fetchQuestionWithAI(employee.specialty, difficulty, effectiveLang, primaryCareContext);
             setQuestion(q);
             setPointsWon(segment.points);
             setTimeLeft(segment.time);
@@ -336,6 +347,27 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         return needsMedicalEnglish() ? '🇬🇧 English (تلقائي)' : '🇸🇦 عربي (تلقائي)';
     };
 
+    // تنسيق عرض الوقت
+    const formatTime = (seconds: number) => {
+        if (seconds >= 60) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+        return `${seconds} ث`;
+    };
+
+    // رسالة نتيجة اللفة
+    const getSpinResultMessage = () => {
+        if (!resultSegment) return '';
+        const pointsText = resultSegment.points > 0 ? `${resultSegment.points} نقطة` : 'بدون نقاط';
+        const isEn = getEffectiveLanguage() === 'en';
+        if (isEn) {
+            return `🎉 Lucky you! ${resultSegment.label} question worth ${pointsText}`;
+        }
+        return `🎉 مبروك حظك! سؤال ${resultSegment.label} بـ ${pointsText}`;
+    };
+
     // شاشة العجلة
     if (phase === 'wheel') {
         return (
@@ -379,14 +411,20 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         );
     }
 
+    // شاشة التحميل مع عرض نتيجة اللفة
     if (phase === 'loading') {
         return (
             <div className="text-center py-16 animate-in fade-in duration-300">
                 <div className="flex flex-col items-center justify-center">
                     <Loader2 className="w-16 h-16 text-violet-500 animate-spin mb-4" />
-                    <p className="text-gray-600 font-bold">جاري تحضير السؤال...</p>
+                    <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-4 shadow-lg mb-4 max-w-xs mx-auto">
+                        <p className="text-base font-black text-gray-800">
+                            {getSpinResultMessage()}
+                        </p>
+                    </div>
+                    <p className="text-gray-600 font-bold">{getEffectiveLanguage() === 'en' ? 'Preparing your question...' : 'جاري تحضير السؤال...'}</p>
                     <p className="text-xs text-gray-400 mt-2">
-                        {getEffectiveLanguage() === 'en' ? 'Generating medical question...' : 'جاري توليد سؤال طبي...'}
+                        {getEffectiveLanguage() === 'en' ? 'Using AI to generate a primary care question' : 'نستخدم الذكاء الاصطناعي لتوليد سؤال من الرعاية الأساسية'}
                     </p>
                 </div>
             </div>
@@ -399,14 +437,15 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         const isRandom = resultSegment?.difficulty === 'random';
         const displayPoints = isRandom ? 0 : finalPoints;
         const isEnglish = question.language === 'en';
+        const timeDisplay = timeLeft >= 60 ? `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}` : `${timeLeft} ث`;
 
         return (
             <>
                 <div className="text-center py-4 animate-in slide-in-from-right max-w-3xl mx-auto" dir={isEnglish ? 'ltr' : 'rtl'}>
                     {/* رأس المعلومات */}
                     <div className="flex justify-between items-center mb-6 px-4 flex-wrap gap-2">
-                        <div className="bg-gradient-to-r from-red-500 to-orange-500 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
-                            <Clock className="w-4 h-4 animate-pulse" /> {timeLeft} ثانية
+                        <div className={`bg-gradient-to-r ${timeLeft <= 20 ? 'from-red-500 to-orange-500 animate-pulse' : 'from-red-500 to-orange-500'} text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2`}>
+                            <Clock className="w-4 h-4 animate-pulse" /> {timeDisplay}
                         </div>
                         <div className="bg-gradient-to-r from-amber-400 to-yellow-500 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
                             <Star className="w-4 h-4" /> الجائزة: {displayPoints} نقطة
