@@ -13,19 +13,19 @@ interface Props {
     onComplete: (points: number, isWin: boolean) => void;
 }
 
-// خيارات العجلة - تم زيادة زمن الصعب إلى 120 ثانية
+// خيارات العجلة - تم رفع المدد الزمنية (دقيقة كحد أدنى، 3 دقائق كحد أقصى)
 const WHEEL_SEGMENTS = [
-    { label: 'سهل', points: 5, difficulty: 'easy', time: 12 },
-    { label: 'سهل', points: 10, difficulty: 'easy', time: 12 },
-    { label: 'سهل', points: 15, difficulty: 'easy', time: 12 },
-    { label: 'وسط', points: 10, difficulty: 'medium', time: 14 },
-    { label: 'وسط', points: 15, difficulty: 'medium', time: 14 },
-    { label: 'وسط', points: 20, difficulty: 'medium', time: 14 },
-    { label: 'صعب', points: 20, difficulty: 'hard', time: 120 },   // دقيقتان
+    { label: 'سهل', points: 5, difficulty: 'easy', time: 60 },      // 1 دقيقة
+    { label: 'سهل', points: 10, difficulty: 'easy', time: 60 },
+    { label: 'سهل', points: 15, difficulty: 'easy', time: 60 },
+    { label: 'وسط', points: 10, difficulty: 'medium', time: 90 },    // 1.5 دقيقة
+    { label: 'وسط', points: 15, difficulty: 'medium', time: 90 },
+    { label: 'وسط', points: 20, difficulty: 'medium', time: 90 },
+    { label: 'صعب', points: 20, difficulty: 'hard', time: 120 },      // 2 دقيقة
     { label: 'صعب', points: 25, difficulty: 'hard', time: 120 },
     { label: 'صعب', points: 30, difficulty: 'hard', time: 120 },
-    { label: 'صعب جداً', points: 50, difficulty: 'expert', time: 120 },
-    { label: 'سؤال عشوائي', points: 0, difficulty: 'random', time: 14 },
+    { label: 'صعب جداً', points: 50, difficulty: 'expert', time: 180 }, // 3 دقائق
+    { label: 'سؤال عشوائي', points: 0, difficulty: 'random', time: 90 }, // 1.5 دقيقة
 ];
 
 const SEGMENT_COLORS = [
@@ -38,7 +38,7 @@ async function fetchQuestionWithAI(
     employeeSpecialty: string, 
     difficulty: string, 
     language?: string,
-    contextSpecialty?: string   // المجال الذي نريد الأسئلة منه (مثلاً الرعاية الأساسية)
+    contextSpecialty?: string
 ): Promise<any> {
     let level = 3;
     switch (difficulty) {
@@ -48,7 +48,6 @@ async function fetchQuestionWithAI(
         case 'expert': level = 14; break;
         default: level = 6;
     }
-    // استخدام المجال المطلوب (الرعاية الأساسية) إذا وُجد، وإلا التخصص الأصلي
     const specialtyForAI = contextSpecialty || employeeSpecialty;
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
@@ -69,7 +68,6 @@ async function fetchQuestionWithAI(
         };
     } catch (err) {
         console.warn('AI fallback:', err);
-        // الاحتياطي: أسئلة محلية (قد تكون من أي تخصص)
         const { data: localQuestions } = await supabase
             .from('quiz_questions')
             .select('*')
@@ -134,7 +132,6 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
     const getEffectiveLanguage = useCallback((): 'ar' | 'en' => {
         if (language === 'ar') return 'ar';
         if (language === 'en') return 'en';
-        // auto: اكتشاف تلقائي
         return needsMedicalEnglish() ? 'en' : 'ar';
     }, [language, needsMedicalEnglish]);
 
@@ -152,7 +149,7 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         } catch {}
     }, [soundEnabled]);
 
-    // رسم العجلة (نفس الكود)
+    // رسم العجلة
     const drawWheel = useCallback((angle: number) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -255,7 +252,6 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
                 else difficulty = 'hard';
             }
             const effectiveLang = getEffectiveLanguage();
-            // استخدام مجال الرعاية الأساسية بدلاً من التخصص الدقيق
             const primaryCareContext = effectiveLang === 'en' ? 'Primary Care' : 'الرعاية الأساسية';
             const q = await fetchQuestionWithAI(employee.specialty, difficulty, effectiveLang, primaryCareContext);
             setQuestion(q);
@@ -340,14 +336,12 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         }
     }, [phase, spinning, drawWheel]);
 
-    // تنسيق عرض اللغة
     const getLanguageDisplay = () => {
         if (language === 'ar') return '🇸🇦 عربي';
         if (language === 'en') return '🇬🇧 English';
         return needsMedicalEnglish() ? '🇬🇧 English (تلقائي)' : '🇸🇦 عربي (تلقائي)';
     };
 
-    // تنسيق عرض الوقت
     const formatTime = (seconds: number) => {
         if (seconds >= 60) {
             const mins = Math.floor(seconds / 60);
@@ -357,7 +351,6 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         return `${seconds} ث`;
     };
 
-    // رسالة نتيجة اللفة
     const getSpinResultMessage = () => {
         if (!resultSegment) return '';
         const pointsText = resultSegment.points > 0 ? `${resultSegment.points} نقطة` : 'بدون نقاط';
@@ -411,7 +404,7 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         );
     }
 
-    // شاشة التحميل مع عرض نتيجة اللفة
+    // شاشة التحميل
     if (phase === 'loading') {
         return (
             <div className="text-center py-16 animate-in fade-in duration-300">
@@ -431,6 +424,7 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         );
     }
 
+    // شاشة السؤال
     if (phase === 'question' && question) {
         const options = Array.isArray(question.options) ? question.options : [];
         const finalPoints = applyMultiplier(pointsWon, diffProfile);
@@ -508,7 +502,7 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
                     </div>
                 </div>
 
-                {/* المودال الذي يعرض السؤال والإجابة الصحيحة */}
+                {/* المودال الذي يعرض السؤال والإجابة الصحيحة (بعد الخطأ أو انتهاء الوقت) */}
                 {showAnswerModal && (
                     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" dir="rtl">
                         <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
