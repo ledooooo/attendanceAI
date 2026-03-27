@@ -10,7 +10,7 @@ interface Props {
     employee: any;
 }
 
-// ─── جلب السؤال باستخدام AI مع Fallback ─────────────────────────────────────
+// ─── جلب السؤال من AI أولاً ثم الاحتياطي المحلي ─────────────────────────────
 async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medium'): Promise<any> {
     let level = 6;
     switch (difficulty) {
@@ -20,16 +20,37 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medi
         case 'expert': level = 14; break;
         default: level = 6;
     }
+    
+    // محاولة جلب سؤال من AI عبر Edge Function
     try {
+        console.log(`🔄 محاولة جلب سؤال من AI: specialty=${specialty}, level=${level}`);
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
             body: { specialty, level, usedTopics: [] },
         });
-        if (error || !data) throw new Error('AI request failed');
-        if (data.error) throw new Error(data.error);
+        
+        if (error) {
+            console.error('❌ AI request error:', error);
+            throw new Error(`AI request failed: ${error.message}`);
+        }
+        
+        if (!data) {
+            console.error('❌ AI returned no data');
+            throw new Error('AI returned no data');
+        }
+        
+        if (data.error) {
+            console.error('❌ AI error:', data.error);
+            throw new Error(data.error);
+        }
+        
         if (!data.question || !data.options || data.correct === undefined) {
+            console.error('❌ Invalid AI response format:', data);
             throw new Error('Invalid question format from AI');
         }
+        
         const correctAnswer = data.options[data.correct];
+        console.log(`✅ AI success! Provider: ${data.provider || 'unknown'}`);
+        
         return {
             source: 'ai',
             provider: data.provider || 'AI',
@@ -38,30 +59,49 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medi
             correct_answer: correctAnswer,
             explanation: data.explanation,
         };
-    } catch (err) {
-        console.warn('AI fallback:', err);
-        const { data: localQuestions, error: localError } = await supabase
-            .from('quiz_questions')
-            .select('*')
-            .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
-            .limit(30);
-        if (localError || !localQuestions?.length) {
-            throw new Error('No questions available locally');
-        }
-        const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
-        let options: string[] = [];
-        if (random.options) {
-            if (Array.isArray(random.options)) options = random.options;
-            else {
-                try { options = JSON.parse(random.options); } catch { options = random.options.split(',').map(s => s.trim()); }
+    } catch (aiError) {
+        console.warn('⚠️ AI failed, falling back to local bank:', aiError);
+        
+        // الرجوع إلى بنك الأسئلة المحلي
+        try {
+            const { data: localQuestions, error: localError } = await supabase
+                .from('quiz_questions')
+                .select('*')
+                .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
+                .limit(30);
+            
+            if (localError) {
+                console.error('❌ Local DB error:', localError);
+                throw new Error(localError.message);
             }
+            
+            if (!localQuestions || localQuestions.length === 0) {
+                console.error('❌ No local questions found');
+                throw new Error('No questions available locally');
+            }
+            
+            const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
+            let options: string[] = [];
+            if (random.options) {
+                if (Array.isArray(random.options)) options = random.options;
+                else {
+                    try { options = JSON.parse(random.options); } 
+                    catch { options = random.options.split(',').map(s => s.trim()); }
+                }
+            }
+            
+            console.log(`✅ Local fallback success! Question: ${random.question_text?.substring(0, 50)}...`);
+            
+            return {
+                source: 'local',
+                question: random.question_text,
+                options,
+                correct_answer: random.correct_answer,
+            };
+        } catch (localError) {
+            console.error('❌ Local fallback also failed:', localError);
+            throw new Error('No questions available');
         }
-        return {
-            source: 'local',
-            question: random.question_text,
-            options,
-            correct_answer: random.correct_answer,
-        };
     }
 }
 
@@ -79,6 +119,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [loading, setLoading] = useState(false);
     const [showAnswerModal, setShowAnswerModal] = useState(false);
+    const [aiAttempted, setAiAttempted] = useState(false); // لتتبع محاولة AI
     const MAX_GUESSES = 5;
     const BASE_POINTS = 20;
 
@@ -120,6 +161,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setIsActive(true);
         setPhase('code');
         setStarting(false);
+        setAiAttempted(false);
     };
 
     const submitGuess = () => {
@@ -157,13 +199,19 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setSelectedDifficulty(difficulty);
         setPhase('question');
         setLoading(true);
+        setAiAttempted(false);
+        
         try {
+            // محاولة جلب السؤال من AI أولاً
+            console.log(`🚀 Starting to fetch question for difficulty: ${difficulty}`);
             const q = await fetchQuestionWithAI(employee.specialty, difficulty);
+            console.log('✅ Question loaded successfully:', q.source);
             setBonusQuestion(q);
             const selected = difficultyOptions.find(opt => opt.key === difficulty);
             setTimeLeft(selected?.time || 15);
+            setAiAttempted(true);
         } catch (err) {
-            console.error('Failed to load bonus question:', err);
+            console.error('❌ Failed to load bonus question after all attempts:', err);
             toast.error('فشل تحميل السؤال، سيتم إنهاء اللعبة');
             onComplete(BASE_POINTS, true);
             resetGame();
@@ -232,6 +280,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setFeedback(null);
         setLoading(false);
         setSelectedDifficulty('medium');
+        setAiAttempted(false);
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -400,6 +449,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                 <div className="text-center py-16">
                     <Loader2 className="w-16 h-16 text-emerald-500 animate-spin mx-auto mb-4" />
                     <p className="text-gray-600 font-bold">جاري تحضير سؤال المكافأة...</p>
+                    <p className="text-xs text-gray-400 mt-2">جاري الاتصال بالذكاء الاصطناعي...</p>
                 </div>
             );
         }
@@ -429,8 +479,8 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                                 </p>
                             )}
                             {bonusQuestion.source === 'local' && (
-                                <p className="text-xs text-gray-400 mt-4 flex items-center justify-center gap-1">
-                                    <AlertCircle className="w-3 h-3" /> من بنك الأسئلة المحلي
+                                <p className="text-xs text-amber-600 mt-4 flex items-center justify-center gap-1 bg-amber-50 px-3 py-1 rounded-full inline-block mx-auto">
+                                    <AlertCircle className="w-3 h-3" /> من بنك الأسئلة المحلي (تعذر الاتصال بالذكاء الاصطناعي)
                                 </p>
                             )}
                             {feedback && (
