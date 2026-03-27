@@ -7,7 +7,7 @@ import { supabase } from '../../../supabaseClient';
 interface Props {
     onStart: () => Promise<void>;
     onComplete: (points: number, isWin: boolean) => void;
-    employee?: any; // لتحديد التخصص
+    employee?: any; // لتحديد التخصص واللغة
 }
 
 // ─── Layout constants — bigger digits ─────────────────────────────────────────
@@ -16,7 +16,6 @@ const SNAP_R    = 26;
 const TIME_LIMIT = 90;
 const SW         = 10;
 
-// Colours
 const STICK_BODY = '#78350f';
 const STICK_HI   = '#d97706';
 const STICK_EDGE = '#292524';
@@ -29,13 +28,13 @@ function digitSlots(ox: number, oy: number) {
     const p = 9;
     const hh = DH / 2;
     return [
-        { x1:ox+p,        y1:oy+p*0.5,      x2:ox+DW-p,      y2:oy+p*0.5      }, // 0 top
-        { x1:ox+p*0.5,    y1:oy+p,          x2:ox+p*0.5,     y2:oy+hh-p       }, // 1 top-left
-        { x1:ox+DW-p*0.5, y1:oy+p,          x2:ox+DW-p*0.5,  y2:oy+hh-p       }, // 2 top-right
-        { x1:ox+p,        y1:oy+hh,         x2:ox+DW-p,      y2:oy+hh         }, // 3 middle
-        { x1:ox+p*0.5,    y1:oy+hh+p,       x2:ox+p*0.5,     y2:oy+DH-p       }, // 4 bot-left
-        { x1:ox+DW-p*0.5, y1:oy+hh+p,       x2:ox+DW-p*0.5,  y2:oy+DH-p       }, // 5 bot-right
-        { x1:ox+p,        y1:oy+DH-p*0.5,   x2:ox+DW-p,      y2:oy+DH-p*0.5   }, // 6 bottom
+        { x1:ox+p,        y1:oy+p*0.5,      x2:ox+DW-p,      y2:oy+p*0.5      },
+        { x1:ox+p*0.5,    y1:oy+p,          x2:ox+p*0.5,     y2:oy+hh-p       },
+        { x1:ox+DW-p*0.5, y1:oy+p,          x2:ox+DW-p*0.5,  y2:oy+hh-p       },
+        { x1:ox+p,        y1:oy+hh,         x2:ox+DW-p,      y2:oy+hh         },
+        { x1:ox+p*0.5,    y1:oy+hh+p,       x2:ox+p*0.5,     y2:oy+DH-p       },
+        { x1:ox+DW-p*0.5, y1:oy+hh+p,       x2:ox+DW-p*0.5,  y2:oy+DH-p       },
+        { x1:ox+p,        y1:oy+DH-p*0.5,   x2:ox+DW-p,      y2:oy+DH-p*0.5   },
     ];
 }
 
@@ -48,8 +47,8 @@ const DIGIT_ON: Record<number, number[]> = {
 function opSlots(ox: number, oy: number) {
     const cx = ox + OP_W / 2, cy = oy + DH / 2;
     return [
-        { x1:cx-15, y1:cy,    x2:cx+15, y2:cy    }, // horizontal
-        { x1:cx,    y1:cy-15, x2:cx,    y2:cy+15 }, // vertical
+        { x1:cx-15, y1:cy,    x2:cx+15, y2:cy    },
+        { x1:cx,    y1:cy-15, x2:cx,    y2:cy+15 },
     ];
 }
 
@@ -66,9 +65,9 @@ function buildLayout(eq:(number|string)[]): { tokens:Token[]; totalW:number } {
     let x = 10;
     const tokens:Token[] = [];
     eq.forEach(tok => {
-        if (typeof tok==='number') { tokens.push({type:'digit',value:tok,ox:x,oy:OY}); x+=DW+14; }
-        else if (tok==='=')        { tokens.push({type:'eq',value:'=',ox:x,oy:OY});    x+=OP_W+14; }
-        else                       { tokens.push({type:'op',value:tok,ox:x,oy:OY});    x+=OP_W+14; }
+        if (typeof tok==='number') { tokens.push({type:'digit',value:tok,ox:x,oy:10}); x+=DW+14; }
+        else if (tok==='=')        { tokens.push({type:'eq',value:'=',ox:x,oy:10});    x+=OP_W+14; }
+        else                       { tokens.push({type:'op',value:tok,ox:x,oy:10});    x+=OP_W+14; }
     });
     return { tokens, totalW: x+8 };
 }
@@ -134,93 +133,152 @@ function isValid(eq:(number|string)[]): boolean {
     return lv!==null && rv!==null && lv===rv && rv>=0;
 }
 
-// ─── دالة جلب معادلة من AI ────────────────────────────────────────────────────
-interface Puzzle {
-    id: number;
-    eq: (number|string)[];
-    sol: string;
-    source: 'ai' | 'local';
-    provider?: string;
-}
+// ─── المعادلات المحلية ───────────────────────────────────────────────────────
+const PUZZLES = [
+    { id:1,  eq:[5,'+',4,'=',5],  sol:'9-4=5'  },
+    { id:2,  eq:[3,'+',2,'=',6],  sol:'3+3=6'  },
+    { id:3,  eq:[8,'-',3,'=',3],  sol:'0+3=3'  },
+    { id:4,  eq:[6,'+',4,'=',4],  sol:'0+4=4'  },
+    { id:5,  eq:[9,'-',5,'=',8],  sol:'3+5=8'  },
+    { id:6,  eq:[5,'+',5,'=',8],  sol:'3+5=8'  },
+    { id:7,  eq:[6,'+',4,'=',3],  sol:'5+4=9'  },
+    { id:8,  eq:[0,'+',7,'=',1],  sol:'8-7=1'  },
+    { id:9,  eq:[2,'+',6,'=',9],  sol:'3+6=9'  },
+    { id:10, eq:[0,'+',3,'=',9],  sol:'6+3=9'  },
+    { id:11, eq:[8,'-',7,'=',7],  sol:'0+7=7'  },
+    { id:12, eq:[9,'+',5,'=',0],  sol:'9-9=0'  },
+    { id:13, eq:[4,'+',3,'=',9],  sol:'4+5=9'  },
+    { id:14, eq:[9,'-',7,'=',6],  sol:'9-1=8'  },
+    { id:15, eq:[1,'-',1,'=',8],  sol:'7-1=6'  },
+];
 
-async function fetchPuzzleFromAI(specialty?: string): Promise<Puzzle> {
+// ─── جلب سؤال إضافي من AI بعد انتهاء اللعبة ──────────────────────────────────
+async function fetchBonusQuestion(specialty?: string, language?: string): Promise<{ question: string; options: string[]; correct: number; explanation?: string } | null> {
+    let level = 6;
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
-            body: { 
-                specialty: specialty || 'رياضيات',
-                level: 5,
-                usedTopics: [],
-                type: 'matchstick_equation'
-            },
+            body: { specialty: specialty || 'طب عام', level, usedTopics: [], language, type: 'bonus_question' },
         });
-        
         if (error || !data) throw new Error('AI request failed');
         if (data.error) throw new Error(data.error);
-        
-        // توقع صيغة خاصة لمعادلات عود الثقاب
-        if (!data.equation || !data.solution) throw new Error('Invalid format');
-        
-        // تحويل المعادلة النصية إلى مصفوفة
-        const parseEquation = (eqStr: string): (number|string)[] => {
-            const result: (number|string)[] = [];
-            let currentNum = '';
-            for (let i = 0; i < eqStr.length; i++) {
-                const ch = eqStr[i];
-                if (ch >= '0' && ch <= '9') {
-                    currentNum += ch;
-                } else if (ch === '+' || ch === '-' || ch === '=') {
-                    if (currentNum) {
-                        result.push(parseInt(currentNum));
-                        currentNum = '';
-                    }
-                    result.push(ch);
-                }
-            }
-            if (currentNum) result.push(parseInt(currentNum));
-            return result;
-        };
-        
+        if (!data.question || !data.options || data.correct === undefined) throw new Error('Invalid format');
         return {
-            id: Date.now(),
-            eq: parseEquation(data.equation),
-            sol: data.solution,
-            source: 'ai',
-            provider: data.provider || 'AI',
+            question: data.question,
+            options: data.options,
+            correct: data.correct,
+            explanation: data.explanation,
         };
     } catch (err) {
         console.warn('AI fallback:', err);
-        
-        // الرجوع إلى المعادلات المحلية
-        const localPuzzles = [
-            { eq:[5,'+',4,'=',5], sol:'9-4=5'  },
-            { eq:[3,'+',2,'=',6], sol:'3+3=6'  },
-            { eq:[8,'-',3,'=',3], sol:'0+3=3'  },
-            { eq:[6,'+',4,'=',4], sol:'0+4=4'  },
-            { eq:[9,'-',5,'=',8], sol:'3+5=8'  },
-            { eq:[5,'+',5,'=',8], sol:'3+5=8'  },
-            { eq:[6,'+',4,'=',3], sol:'5+4=9'  },
-            { eq:[0,'+',7,'=',1], sol:'8-7=1'  },
-            { eq:[2,'+',6,'=',9], sol:'3+6=9'  },
-            { eq:[0,'+',3,'=',9], sol:'6+3=9'  },
-            { eq:[8,'-',7,'=',7], sol:'0+7=7'  },
-            { eq:[9,'+',5,'=',0], sol:'9-9=0'  },
-            { eq:[4,'+',3,'=',9], sol:'4+5=9'  },
-            { eq:[9,'-',7,'=',6], sol:'9-1=8'  },
-            { eq:[1,'-',1,'=',8], sol:'7-1=6'  },
-        ];
-        
-        const random = localPuzzles[Math.floor(Math.random() * localPuzzles.length)];
+        // الرجوع إلى بنك الأسئلة المحلي
+        const { data: localQuestions } = await supabase
+            .from('quiz_questions')
+            .select('*')
+            .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
+            .limit(10);
+        if (!localQuestions?.length) return null;
+        const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
+        let options: string[] = [];
+        if (random.options) {
+            if (Array.isArray(random.options)) options = random.options;
+            else try { options = JSON.parse(random.options); } catch { options = random.options.split(',').map(s => s.trim()); }
+        }
+        let correct = random.correct_index;
+        if (correct === undefined) {
+            const letter = String(random.correct_answer || '').trim().toLowerCase();
+            if (letter === 'a') correct = 0;
+            else if (letter === 'b') correct = 1;
+            else if (letter === 'c') correct = 2;
+            else if (letter === 'd') correct = 3;
+            else correct = 0;
+        }
         return {
-            id: Date.now(),
-            ...random,
-            source: 'local',
+            question: random.question_text,
+            options,
+            correct,
+            explanation: random.explanation,
         };
     }
 }
 
+// ─── مكون عرض السؤال الإضافي ─────────────────────────────────────────────────
+function BonusQuestionModal({ question, onClose, isWin, points }: { 
+    question: any; 
+    onClose: (correct: boolean) => void; 
+    isWin: boolean;
+    points: number;
+}) {
+    const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+    const [showResult, setShowResult] = useState(false);
+    const [isCorrect, setIsCorrect] = useState(false);
+
+    const handleAnswer = (idx: number) => {
+        setSelectedAnswer(idx);
+        const correct = idx === question.correct;
+        setIsCorrect(correct);
+        setShowResult(true);
+        setTimeout(() => {
+            onClose(correct);
+        }, 2000);
+    };
+
+    const isEn = question.language === 'en';
+
+    return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" dir={isEn ? 'ltr' : 'rtl'}>
+            <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-black text-gray-800">
+                        {isEn ? 'Bonus Question!' : 'سؤال المكافأة! 🎁'}
+                    </h3>
+                    <div className={`px-3 py-1 rounded-lg text-xs font-black ${isWin ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {isWin ? `+${points} ${isEn ? 'pts' : 'نقطة'}` : isEn ? 'Try again!' : 'حاول مرة أخرى!'}
+                    </div>
+                </div>
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl mb-5">
+                    <p className="text-sm font-bold text-gray-800 leading-relaxed">{question.question}</p>
+                    {question.source === 'ai' && (
+                        <p className="text-[10px] text-indigo-400 mt-2 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" /> {isEn ? 'Generated by AI' : 'تم توليده بواسطة الذكاء الاصطناعي'}
+                        </p>
+                    )}
+                </div>
+                <div className="space-y-2.5">
+                    {question.options.map((opt: string, idx: number) => {
+                        let btnClass = 'bg-white border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50';
+                        if (showResult) {
+                            if (idx === question.correct) btnClass = 'bg-green-500 text-white border-green-600';
+                            else if (idx === selectedAnswer) btnClass = 'bg-red-500 text-white border-red-600';
+                            else btnClass = 'bg-gray-50 border-gray-100 opacity-60';
+                        }
+                        return (
+                            <button
+                                key={idx}
+                                onClick={() => !showResult && handleAnswer(idx)}
+                                disabled={showResult}
+                                className={`${btnClass} w-full p-3 rounded-xl font-bold text-sm transition-all flex items-center justify-between`}
+                            >
+                                <span>{opt}</span>
+                                {showResult && idx === question.correct && <CheckCircle className="w-4 h-4" />}
+                                {showResult && idx === selectedAnswer && idx !== question.correct && <XCircle className="w-4 h-4" />}
+                            </button>
+                        );
+                    })}
+                </div>
+                {showResult && (
+                    <div className={`mt-4 p-3 rounded-xl text-center text-sm font-bold ${isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                        {isCorrect ? (isEn ? '✅ Correct! Bonus points added!' : '✅ إجابة صحيحة! تمت إضافة النقاط الإضافية!') : 
+                                   (isEn ? '❌ Wrong answer! Better luck next time!' : '❌ إجابة خاطئة! حظاً أوفر في المرة القادمة!')}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function MoveTheMatch({ onStart, onComplete, employee }: Props) {
-    const [puzzle, setPuzzle]         = useState<Puzzle|null>(null);
+    const [puzzle, setPuzzle]         = useState<typeof PUZZLES[0]|null>(null);
     const [sticks, setSticks]         = useState<Stick[]>([]);
     const [origSticks, setOrigSticks] = useState<Stick[]>([]);
     const [timeLeft, setTimeLeft]     = useState(TIME_LIMIT);
@@ -228,13 +286,16 @@ export default function MoveTheMatch({ onStart, onComplete, employee }: Props) {
     const [starting, setStarting]     = useState(false);
     const [answered, setAnswered]     = useState(false);
     const [isCorrect, setIsCorrect]   = useState(false);
+    const [usedIds, setUsedIds]       = useState<number[]>([]);
     const [dragging, setDragging]     = useState<string|null>(null);
     const [dragPos, setDragPos]       = useState<{x:number;y:number}|null>(null);
     const [snapTarget, setSnapTarget] = useState<string|null>(null);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [language, setLanguage] = useState<'auto' | 'ar' | 'en'>('auto');
-    const [loading, setLoading] = useState(false);
-    
+    const [showBonusModal, setShowBonusModal] = useState(false);
+    const [bonusQuestion, setBonusQuestion] = useState<any>(null);
+    const [finalPoints, setFinalPoints] = useState(0);
+    const [gameWin, setGameWin] = useState(false);
     const svgRef = useRef<SVGSVGElement>(null);
 
     // تحديد التخصصات التي تحتاج إنجليزية طبية
@@ -266,30 +327,43 @@ export default function MoveTheMatch({ onStart, onComplete, employee }: Props) {
         } catch {}
     }, [soundEnabled]);
 
+    // جلب السؤال الإضافي بعد انتهاء اللعبة
+    const loadBonusQuestion = async () => {
+        const effectiveLang = getEffectiveLanguage();
+        const q = await fetchBonusQuestion(employee?.specialty, effectiveLang);
+        if (q) {
+            setBonusQuestion({ ...q, source: 'ai', language: effectiveLang });
+        }
+        setShowBonusModal(true);
+    };
+
+    const handleBonusClose = (correct: boolean) => {
+        setShowBonusModal(false);
+        if (correct) {
+            const bonusPoints = Math.floor(finalPoints * 0.5);
+            toast.success(getEffectiveLanguage() === 'en' 
+                ? `🎉 Bonus! +${bonusPoints} points` 
+                : `🎉 مكافأة! +${bonusPoints} نقطة`);
+            onComplete(finalPoints + bonusPoints, true);
+        } else {
+            onComplete(finalPoints, gameWin);
+        }
+    };
+
     const startGame = async () => {
         setStarting(true);
-        setLoading(true);
-        try {
-            await onStart();
-            const newPuzzle = await fetchPuzzleFromAI(employee?.specialty);
-            setPuzzle(newPuzzle);
-            const s = buildSticks(newPuzzle.eq);
-            setSticks(s); 
-            setOrigSticks(s.map(x=>({...x})));
-            setTimeLeft(TIME_LIMIT);
-            setAnswered(false); 
-            setIsCorrect(false);
-            setDragging(null); 
-            setDragPos(null); 
-            setSnapTarget(null);
-            setIsActive(true);
-        } catch (err) {
-            toast.error(getEffectiveLanguage() === 'en' ? 'Failed to load puzzle' : 'فشل تحميل اللغز');
-            onComplete(0, false);
-        } finally {
-            setLoading(false);
-            setStarting(false);
-        }
+        try { await onStart(); } catch { setStarting(false); return; }
+        const avail = PUZZLES.filter(p => !usedIds.includes(p.id));
+        const pool  = avail.length > 0 ? avail : PUZZLES;
+        const p     = pool[Math.floor(Math.random() * pool.length)];
+        setUsedIds(prev => [...prev, p.id]);
+        setPuzzle(p);
+        const s = buildSticks(p.eq);
+        setSticks(s); setOrigSticks(s.map(x=>({...x})));
+        setTimeLeft(TIME_LIMIT);
+        setAnswered(false); setIsCorrect(false);
+        setDragging(null); setDragPos(null); setSnapTarget(null);
+        setIsActive(true); setStarting(false);
     };
 
     useEffect(() => {
@@ -300,13 +374,14 @@ export default function MoveTheMatch({ onStart, onComplete, employee }: Props) {
     }, [isActive, timeLeft, answered]);
 
     const doTimeout = () => {
-        setIsActive(false); 
-        setAnswered(true); 
-        setIsCorrect(false);
+        setIsActive(false); setAnswered(true); setIsCorrect(false);
         playSound('lose');
-        setTimeout(() => { 
-            toast.error(getEffectiveLanguage() === 'en' ? '⏰ Time\'s up!' : '⏰ انتهى الوقت!'); 
-            onComplete(0, false); 
+        const pts = Math.min(30, Math.max(5, Math.floor(timeLeft * 0.35)));
+        setFinalPoints(0);
+        setGameWin(false);
+        setTimeout(() => {
+            toast.error(getEffectiveLanguage() === 'en' ? '⏰ Time\'s up!' : '⏰ انتهى الوقت!');
+            onComplete(0, false);
         }, 300);
     };
 
@@ -377,17 +452,17 @@ export default function MoveTheMatch({ onStart, onComplete, employee }: Props) {
                     setSticks(cur => {
                         const ev = readEq(cur, puzzle.eq);
                         if (ev && isValid(ev)) {
-                            setAnswered(true); 
-                            setIsCorrect(true); 
-                            setIsActive(false);
+                            setAnswered(true); setIsCorrect(true); setIsActive(false);
                             playSound('win');
                             confetti({ particleCount: 120, spread: 60, origin: { y: 0.6 }, colors: ['#f59e0b', '#d97706', '#b91c1c'] });
-                            
                             const pts = Math.min(30, Math.max(5, Math.floor(timeLeft * 0.35)));
+                            setFinalPoints(pts);
+                            setGameWin(true);
                             toast.success(getEffectiveLanguage() === 'en' 
                                 ? `🔥 Genius! +${pts} points` 
                                 : `🔥 عبقري! +${pts} نقطة`);
-                            setTimeout(() => { onComplete(pts, true); }, 2800);
+                            // جلب السؤال الإضافي من AI بعد الفوز
+                            setTimeout(() => loadBonusQuestion(), 1000);
                         }
                         return cur;
                     });
@@ -425,7 +500,7 @@ export default function MoveTheMatch({ onStart, onComplete, employee }: Props) {
     const isEn = getEffectiveLanguage() === 'en';
 
     // شاشة البداية
-    if (!isActive && !answered && !loading) {
+    if (!isActive && !answered && !showBonusModal) {
         return (
             <div className="text-center py-6 px-3">
                 <div className="w-18 h-18 bg-gradient-to-br from-amber-500 to-orange-700 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-xl" style={{width:72,height:72}}>
@@ -440,176 +515,160 @@ export default function MoveTheMatch({ onStart, onComplete, employee }: Props) {
                         : 'حرك عود ثقاب واحد فقط لكي تصبح المعادلة صحيحة'}
                 </p>
                 <div className="flex justify-center gap-2 mb-4">
-                    <button
-                        onClick={cycleLanguage}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-black"
-                    >
-                        <Globe className="w-3 h-3" />
-                        {getLanguageDisplay()}
+                    <button onClick={cycleLanguage} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-black">
+                        <Globe className="w-3 h-3" /> {getLanguageDisplay()}
                     </button>
-                    <button
-                        onClick={() => setSoundEnabled(!soundEnabled)}
-                        className="p-1.5 rounded-lg hover:bg-gray-100"
-                    >
+                    <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1.5 rounded-lg hover:bg-gray-100">
                         {soundEnabled ? <Volume2 className="w-4 h-4 text-gray-600" /> : <VolumeX className="w-4 h-4 text-gray-400" />}
                     </button>
                 </div>
-                <button onClick={startGame} disabled={starting || loading}
-                    className="bg-gradient-to-r from-amber-500 to-orange-700 text-white px-8 py-3 rounded-xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 mx-auto">
-                    {starting || loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flame className="w-4 h-4" />}
-                    {loading ? (isEn ? 'Generating...' : 'جاري التوليد...') : 
-                     starting ? (isEn ? 'Starting...' : 'جاري البدء...') : 
-                     (isEn ? '🔥 Start Challenge' : '🔥 ابدأ التحدي')}
+                <button onClick={startGame} disabled={starting}
+                    className="bg-gradient-to-r from-amber-500 to-orange-700 text-white px-8 py-3 rounded-xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50">
+                    {starting ? (isEn ? 'Starting...' : 'جاري البدء...') : (isEn ? '🔥 Start Challenge' : '🔥 ابدأ التحدي')}
                 </button>
             </div>
         );
     }
 
-    if (loading || !puzzle) {
-        return (
-            <div className="text-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-amber-500 mx-auto mb-3" />
-                <p className="text-xs text-gray-500">{isEn ? 'Generating equation...' : 'جاري توليد المعادلة...'}</p>
-            </div>
-        );
-    }
+    if (!puzzle) return null;
 
     const { tokens, totalW } = buildLayout(puzzle.eq);
     const SVG_W = Math.max(totalW, 300);
-    const SVG_H = OY + DH + 16;
+    const SVG_H = 138;
     const dragOrig = dragging ? origSticks.find(s=>s.id===dragging) : null;
 
     return (
-        <div className="max-w-lg mx-auto py-1 px-1 space-y-2 select-none" dir={isEn ? 'ltr' : 'rtl'}>
+        <>
+            <div className="max-w-lg mx-auto py-1 px-1 space-y-2 select-none" dir={isEn ? 'ltr' : 'rtl'}>
 
-            {/* Header */}
-            <div className="flex justify-between items-center px-1">
-                <div className="flex items-center gap-1.5">
-                    <button
-                        onClick={cycleLanguage}
-                        className="flex items-center gap-0.5 px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-black"
-                    >
-                        <Globe className="w-2.5 h-2.5" />
-                        {getLanguageDisplay()}
-                    </button>
-                    <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-0.5">
-                        {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-gray-600" /> : <VolumeX className="w-3.5 h-3.5 text-gray-400" />}
-                    </button>
-                    {puzzle.source === 'ai' && (
-                        <span className="text-[9px] text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                            <Sparkles className="w-2.5 h-2.5" /> AI
+                {/* Header */}
+                <div className="flex justify-between items-center px-1">
+                    <div className="flex items-center gap-1.5">
+                        <Flame className="w-4 h-4 text-orange-700"/>
+                        <span className="font-black text-xs text-gray-700">
+                            {isEn ? 'Move ONE matchstick' : 'حرك عود ثقاب واحد فقط'}
                         </span>
-                    )}
+                    </div>
+                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-lg font-black text-xs border ${timeLeft<=15 ? 'bg-red-100 text-red-800 border-red-400 animate-pulse' : 'bg-amber-100 text-amber-900 border-amber-400'}`}>
+                        <Timer className="w-3 h-3"/> {timeLeft}s
+                    </div>
                 </div>
-                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-lg font-black text-xs border ${timeLeft<=15 ? 'bg-red-100 text-red-800 border-red-400 animate-pulse' : 'bg-amber-100 text-amber-900 border-amber-400'}`}>
-                    <Timer className="w-3 h-3"/> {timeLeft}s
-                </div>
-            </div>
 
-            {/* SVG Board */}
-            <div className="rounded-xl overflow-hidden shadow-lg border-2 border-amber-500 w-full bg-amber-50"
-                style={{ touchAction:'none', backgroundColor:'#fef3c7' }}>
-                <svg ref={svgRef}
-                    viewBox={`0 0 ${SVG_W} ${SVG_H}`}
-                    style={{ width:'100%', height:'auto', display:'block', touchAction:'none' }}
-                    onPointerMove={onPMove} onPointerUp={onPUp} onPointerCancel={onPUp}>
+                {/* SVG Board */}
+                <div className="rounded-xl overflow-hidden shadow-lg border-2 border-amber-500 w-full bg-amber-50"
+                    style={{ touchAction:'none', backgroundColor:'#fef3c7' }}>
+                    <svg ref={svgRef}
+                        viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+                        style={{ width:'100%', height:'auto', display:'block', touchAction:'none' }}
+                        onPointerMove={onPMove} onPointerUp={onPUp} onPointerCancel={onPUp}>
 
-                    <rect width={SVG_W} height={SVG_H} fill="#fef3c7" rx="12"/>
+                        <rect width={SVG_W} height={SVG_H} fill="#fef3c7" rx="12"/>
 
-                    {/* Empty slot guides */}
-                    {tokens.map((tok, ti) => {
-                        if (tok.type==='eq') return null;
-                        const slots = tok.type==='digit' ? digitSlots(tok.ox,tok.oy) : opSlots(tok.ox,tok.oy);
-                        return slots.map((sl, si) => {
-                            const id    = `t${ti}_s${si}`;
-                            const filled = sticks.find(s=>s.id===id&&s.active);
-                            const isSnap = snapTarget===id;
-                            if (filled) return null;
+                        {/* Empty slot guides */}
+                        {tokens.map((tok, ti) => {
+                            if (tok.type==='eq') return null;
+                            const slots = tok.type==='digit' ? digitSlots(tok.ox,tok.oy) : opSlots(tok.ox,tok.oy);
+                            return slots.map((sl, si) => {
+                                const id    = `t${ti}_s${si}`;
+                                const filled = sticks.find(s=>s.id===id&&s.active);
+                                const isSnap = snapTarget===id;
+                                if (filled) return null;
+                                return (
+                                    <line key={id}
+                                        x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
+                                        stroke={isSnap ? '#d97706' : '#92400e'}
+                                        strokeWidth={isSnap ? SW+2 : SW-4}
+                                        strokeLinecap="round"
+                                        opacity={isSnap ? 0.85 : 0.16}
+                                        strokeDasharray={isSnap ? 'none' : '6,5'}
+                                    />
+                                );
+                            });
+                        })}
+
+                        {/* = sign */}
+                        {tokens.filter(t=>t.type==='eq').map((tok, i) =>
+                            eqSlots(tok.ox, tok.oy).map((sl, si) => (
+                                <g key={`eq${i}${si}`}>
+                                    <line x1={sl.x1+2} y1={sl.y1+2} x2={sl.x2+2} y2={sl.y2+2}
+                                        stroke="#292524" strokeWidth={SW+3} strokeLinecap="round" opacity={0.2}/>
+                                    <line x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
+                                        stroke={STICK_BODY} strokeWidth={SW+1} strokeLinecap="round"/>
+                                    <line x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
+                                        stroke={STICK_HI} strokeWidth={3} strokeLinecap="round" opacity={0.5}/>
+                                </g>
+                            ))
+                        )}
+
+                        {/* Active sticks */}
+                        {sticks.filter(s=>s.active).map(s => (
+                            <g key={s.id}
+                                onPointerDown={e=>onPDown(e, s.id)}
+                                style={{ cursor:s.draggable&&!answered&&isActive?'grab':'default' }}>
+                                <line x1={s.x1+2.5} y1={s.y1+2.5} x2={s.x2+2.5} y2={s.y2+2.5}
+                                    stroke="#292524" strokeWidth={SW+4} strokeLinecap="round" opacity={0.18}/>
+                                <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                                    stroke={answered ? (isCorrect?'#15803d':'#dc2626') : STICK_BODY}
+                                    strokeWidth={SW+2} strokeLinecap="round"/>
+                                <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                                    stroke={answered ? (isCorrect?'#4ade80':'#fca5a5') : STICK_HI}
+                                    strokeWidth={3.5} strokeLinecap="round" opacity={0.5}/>
+                                {s.draggable && !answered && (
+                                    <>
+                                        <circle cx={s.x1} cy={s.y1} r={6.5} fill={TIP_COL}/>
+                                        <circle cx={s.x1} cy={s.y1} r={3} fill={TIP_IN}/>
+                                    </>
+                                )}
+                            </g>
+                        ))}
+
+                        {/* Floating dragged stick */}
+                        {dragging && dragPos && dragOrig && (() => {
+                            const isH = Math.abs(dragOrig.x2-dragOrig.x1) > Math.abs(dragOrig.y2-dragOrig.y1);
+                            const hl  = isH ? (dragOrig.x2-dragOrig.x1)/2 : 0;
+                            const vl  = !isH ? (dragOrig.y2-dragOrig.y1)/2 : 0;
+                            const x1=dragPos.x-hl, y1=dragPos.y-vl, x2=dragPos.x+hl, y2=dragPos.y+vl;
                             return (
-                                <line key={id}
-                                    x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
-                                    stroke={isSnap ? '#d97706' : '#92400e'}
-                                    strokeWidth={isSnap ? SW+2 : SW-4}
-                                    strokeLinecap="round"
-                                    opacity={isSnap ? 0.85 : 0.16}
-                                    strokeDasharray={isSnap ? 'none' : '6,5'}
-                                />
+                                <g style={{pointerEvents:'none'}}>
+                                    <line x1={x1+2} y1={y1+2} x2={x2+2} y2={y2+2}
+                                        stroke="#292524" strokeWidth={SW+6} strokeLinecap="round" opacity={0.2}/>
+                                    <line x1={x1} y1={y1} x2={x2} y2={y2}
+                                        stroke={STICK_DRAG} strokeWidth={SW+4} strokeLinecap="round"/>
+                                    <circle cx={x1} cy={y1} r={7} fill={TIP_COL}/>
+                                    <circle cx={x1} cy={y1} r={3} fill={TIP_IN}/>
+                                </g>
                             );
-                        });
-                    })}
+                        })()}
+                    </svg>
+                </div>
 
-                    {/* = sign */}
-                    {tokens.filter(t=>t.type==='eq').map((tok, i) =>
-                        eqSlots(tok.ox, tok.oy).map((sl, si) => (
-                            <g key={`eq${i}${si}`}>
-                                <line x1={sl.x1+2} y1={sl.y1+2} x2={sl.x2+2} y2={sl.y2+2}
-                                    stroke="#292524" strokeWidth={SW+3} strokeLinecap="round" opacity={0.2}/>
-                                <line x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
-                                    stroke={STICK_BODY} strokeWidth={SW+1} strokeLinecap="round"/>
-                                <line x1={sl.x1} y1={sl.y1} x2={sl.x2} y2={sl.y2}
-                                    stroke={STICK_HI} strokeWidth={3} strokeLinecap="round" opacity={0.5}/>
-                            </g>
-                        ))
-                    )}
+                {/* Result */}
+                {answered && (
+                    <div className={`rounded-xl p-2 text-center font-black text-xs border-2 ${isCorrect ? 'bg-emerald-50 text-emerald-900 border-emerald-400' : 'bg-red-50 text-red-800 border-red-400'}`}>
+                        {isCorrect
+                            ? <><CheckCircle className="inline w-3.5 h-3.5 ml-1"/>{isEn ? 'Correct equation! 🎉' : 'معادلة صحيحة! 🎉'}</>
+                            : <><XCircle className="inline w-3.5 h-3.5 ml-1"/>{isEn ? 'Correct answer: ' : 'الإجابة الصحيحة: '}<span className="font-mono bg-white px-1.5 py-0.5 rounded border mx-1">{puzzle.sol}</span></>}
+                    </div>
+                )}
 
-                    {/* Active sticks */}
-                    {sticks.filter(s=>s.active).map(s => (
-                        <g key={s.id}
-                            onPointerDown={e=>onPDown(e, s.id)}
-                            style={{ cursor:s.draggable&&!answered&&isActive?'grab':'default' }}>
-                            <line x1={s.x1+2.5} y1={s.y1+2.5} x2={s.x2+2.5} y2={s.y2+2.5}
-                                stroke="#292524" strokeWidth={SW+4} strokeLinecap="round" opacity={0.18}/>
-                            <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-                                stroke={answered ? (isCorrect?'#15803d':'#dc2626') : STICK_BODY}
-                                strokeWidth={SW+2} strokeLinecap="round"/>
-                            <line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-                                stroke={answered ? (isCorrect?'#4ade80':'#fca5a5') : STICK_HI}
-                                strokeWidth={3.5} strokeLinecap="round" opacity={0.5}/>
-                            {s.draggable && !answered && (
-                                <>
-                                    <circle cx={s.x1} cy={s.y1} r={6.5} fill={TIP_COL}/>
-                                    <circle cx={s.x1} cy={s.y1} r={3} fill={TIP_IN}/>
-                                </>
-                            )}
-                        </g>
-                    ))}
-
-                    {/* Floating dragged stick */}
-                    {dragging && dragPos && dragOrig && (() => {
-                        const isH = Math.abs(dragOrig.x2-dragOrig.x1) > Math.abs(dragOrig.y2-dragOrig.y1);
-                        const hl  = isH ? (dragOrig.x2-dragOrig.x1)/2 : 0;
-                        const vl  = !isH ? (dragOrig.y2-dragOrig.y1)/2 : 0;
-                        const x1=dragPos.x-hl, y1=dragPos.y-vl, x2=dragPos.x+hl, y2=dragPos.y+vl;
-                        return (
-                            <g style={{pointerEvents:'none'}}>
-                                <line x1={x1+2} y1={y1+2} x2={x2+2} y2={y2+2}
-                                    stroke="#292524" strokeWidth={SW+6} strokeLinecap="round" opacity={0.2}/>
-                                <line x1={x1} y1={y1} x2={x2} y2={y2}
-                                    stroke={STICK_DRAG} strokeWidth={SW+4} strokeLinecap="round"/>
-                                <circle cx={x1} cy={y1} r={7} fill={TIP_COL}/>
-                                <circle cx={x1} cy={y1} r={3} fill={TIP_IN}/>
-                            </g>
-                        );
-                    })()}
-                </svg>
+                {/* Reset button */}
+                {!answered && (
+                    <button onClick={reset}
+                        className="w-full flex items-center justify-center gap-2 py-2 bg-white text-gray-600 rounded-xl font-bold text-xs hover:bg-gray-100 active:scale-95 transition-all border border-gray-200">
+                        <RotateCcw className="w-3.5 h-3.5"/> {isEn ? 'Reset' : 'إعادة الوضع الأصلي'}
+                    </button>
+                )}
             </div>
 
-            {/* Result */}
-            {answered && (
-                <div className={`rounded-xl p-2 text-center font-black text-xs border-2 ${isCorrect ? 'bg-emerald-50 text-emerald-900 border-emerald-400' : 'bg-red-50 text-red-800 border-red-400'}`}>
-                    {isCorrect
-                        ? <><CheckCircle className="inline w-3.5 h-3.5 ml-1"/>{isEn ? 'Correct equation! 🎉' : 'معادلة صحيحة! 🎉'}</>
-                        : <><XCircle className="inline w-3.5 h-3.5 ml-1"/>{isEn ? 'Correct answer: ' : 'الإجابة الصحيحة: '}<span className="font-mono bg-white px-1.5 py-0.5 rounded border mx-1">{puzzle.sol}</span></>}
-                </div>
+            {/* Bonus Question Modal */}
+            {showBonusModal && bonusQuestion && (
+                <BonusQuestionModal
+                    question={bonusQuestion}
+                    onClose={handleBonusClose}
+                    isWin={gameWin}
+                    points={finalPoints}
+                />
             )}
-
-            {/* Reset button */}
-            {!answered && (
-                <button onClick={reset}
-                    className="w-full flex items-center justify-center gap-2 py-2 bg-white text-gray-600 rounded-xl font-bold text-xs hover:bg-gray-100 active:scale-95 transition-all border border-gray-200">
-                    <RotateCcw className="w-3.5 h-3.5"/> {isEn ? 'Reset' : 'إعادة الوضع الأصلي'}
-                </button>
-            )}
-        </div>
+        </>
     );
 }
