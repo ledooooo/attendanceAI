@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Brain, CheckCircle, XCircle, Sparkles, Globe, Loader2, AlertCircle, Volume2, VolumeX } from 'lucide-react';
+import { Brain, CheckCircle, XCircle, Sparkles, Globe, Loader2, AlertCircle, Volume2, VolumeX, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
@@ -13,7 +13,17 @@ interface Props {
     onComplete: (points: number, isWin: boolean) => void;
 }
 
-// تعريف نوع السؤال
+type Category = 'medical' | 'technical' | 'scientific' | 'mathematical' | 'intelligence' | 'random';
+
+const CATEGORY_OPTIONS: { value: Category; label: string; labelEn: string }[] = [
+    { value: 'medical', label: 'طبى', labelEn: 'Medical' },
+    { value: 'technical', label: 'فنى', labelEn: 'Technical' },
+    { value: 'scientific', label: 'علمى', labelEn: 'Scientific' },
+    { value: 'mathematical', label: 'رياضى', labelEn: 'Mathematical' },
+    { value: 'intelligence', label: 'ذكاء', labelEn: 'Intelligence' },
+    { value: 'random', label: 'عشوائى', labelEn: 'Random' },
+];
+
 interface GeneratedQuestion {
     question: string;
     options: string[];
@@ -23,12 +33,11 @@ interface GeneratedQuestion {
     source: 'ai' | 'local';
     provider?: string;
     language?: string;
-    specialty?: string;
-    difficulty?: string;
+    category?: Category;
 }
 
 // دالة حفظ السؤال في بنك الأسئلة المحلي
-async function saveQuestionToBank(question: GeneratedQuestion, specialty: string, difficulty: string) {
+async function saveQuestionToBank(question: GeneratedQuestion, category: Category) {
     try {
         const { error } = await supabase
             .from('quiz_questions')
@@ -41,8 +50,8 @@ async function saveQuestionToBank(question: GeneratedQuestion, specialty: string
                 correct_index: question.correct,
                 correct_answer: String.fromCharCode(65 + question.correct),
                 explanation: question.explanation,
-                specialty: specialty,
-                difficulty: difficulty,
+                specialty: category, // تخزين المجال
+                difficulty: 'medium',
                 language: question.language || 'ar',
                 is_active: true,
                 source: 'ai_generated',
@@ -53,20 +62,30 @@ async function saveQuestionToBank(question: GeneratedQuestion, specialty: string
     }
 }
 
-// دالة جلب سؤال واحد من AI
-async function fetchSingleQuestion(specialty: string, difficulty: string, language?: string): Promise<GeneratedQuestion> {
-    let level = 3;
-    switch (difficulty) {
-        case 'easy': level = 3; break;
-        case 'medium': level = 6; break;
-        case 'hard': level = 10; break;
-        case 'expert': level = 14; break;
-        default: level = 6;
-    }
-    
+// دالة جلب سؤال واحد من AI (يدعم المجال)
+async function fetchSingleQuestion(category: Category, language?: string): Promise<GeneratedQuestion> {
+    // تحويل المجال إلى نص للـ AI
+    const categoryMap: Record<Category, string> = {
+        medical: 'طبية',
+        technical: 'تقنية (فنية)',
+        scientific: 'علمية',
+        mathematical: 'رياضيات',
+        intelligence: 'ذكاء عام',
+        random: '',
+    };
+    const categoryPrompt = category === 'random' ? '' : categoryMap[category];
+    const level = 6; // مستوى متوسط
+
     try {
+        // إرسال طلب إلى Edge Function مع إضافة category
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
-            body: { specialty, level, usedTopics: [], language },
+            body: {
+                specialty: categoryPrompt || 'أسئلة عامة',
+                level,
+                usedTopics: [],
+                language,
+                category, // نمرر المجال للمساعدة في تحديد النوع
+            },
         });
         
         if (error || !data) throw new Error('AI request failed');
@@ -82,20 +101,21 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
             correct: data.correct,
             explanation: data.explanation,
             topic: data.topic,
+            category,
         };
         
-        // حفظ السؤال في بنك الأسئلة (غير متزامن، لا ننتظر النتيجة)
-        saveQuestionToBank(question, specialty, difficulty).catch(console.warn);
+        // حفظ السؤال في بنك الأسئلة (اختياري)
+        saveQuestionToBank(question, category).catch(console.warn);
         
         return question;
     } catch (err) {
         console.warn('AI fallback:', err);
         
-        // الرجوع إلى بنك الأسئلة المحلي
+        // الرجوع إلى بنك الأسئلة المحلي (يمكن أن يحتوي أسئلة حسب المجال لاحقاً)
         const { data: localQuestions } = await supabase
             .from('quiz_questions')
             .select('*')
-            .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
+            .or(`specialty.ilike.%${category}%,specialty.ilike.%الكل%`)
             .eq('language', language || 'ar')
             .limit(30);
         
@@ -124,6 +144,7 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
             question: random.question_text,
             options,
             correct,
+            category,
         };
     }
 }
@@ -131,7 +152,7 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
 export default function MedicalQuizRush({ employee, diffProfile, onStart, onComplete }: Props) {
     const [currentQuestion, setCurrentQuestion] = useState(0);
     const [score, setScore] = useState(0);
-    const [timeLeft, setTimeLeft] = useState(120); // دقيقتين = 120 ثانية
+    const [timeLeft, setTimeLeft] = useState(75); // 75 ثانية = 15 ث لكل سؤال × 5
     const [isActive, setIsActive] = useState(false);
     const [starting, setStarting] = useState(false);
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
@@ -140,13 +161,17 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const [loadingQuestions, setLoadingQuestions] = useState(false);
     const [language, setLanguage] = useState<'auto' | 'ar' | 'en'>('auto');
     const [soundEnabled, setSoundEnabled] = useState(true);
+    const [selectedCategory, setSelectedCategory] = useState<Category>('medical');
+    const [categoryLocked, setCategoryLocked] = useState(false); // لمنع التغيير بعد بدء اللعبة
     
     const QUESTION_COUNT = 5;
-    const BASE_TIME = 120;
-    const PASS_SCORE = 3;
+    const BASE_TIME = 75; // 75 ثانية للأسئلة الخمسة (15 ثانية لكل سؤال في المتوسط)
+    const POINTS_PER_CORRECT = 5;
+    const BONUS_ALL_CORRECT = 15;
 
-    // تحديد التخصصات التي تحتاج إنجليزية طبية (بشري، صيدلة، أسنان)
+    // تحديد التخصصات التي تحتاج إنجليزية طبية (للتخصصات الطبية فقط)
     const needsMedicalEnglish = useCallback(() => {
+        if (selectedCategory !== 'medical') return false;
         const specialty = employee.specialty?.toLowerCase() || '';
         const medicalEnglishSpecialties = [
             'بشر', 'بشري', 'طبيب', 'طب',
@@ -157,13 +182,12 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
             'تخدير', 'anesthesia',
         ];
         return medicalEnglishSpecialties.some(s => specialty.includes(s));
-    }, [employee.specialty]);
+    }, [employee.specialty, selectedCategory]);
 
-    // الحصول على اللغة الفعلية (الافتراضية إنجليزية للتخصصات الطبية)
+    // الحصول على اللغة الفعلية
     const getEffectiveLanguage = useCallback((): 'ar' | 'en' => {
         if (language === 'ar') return 'ar';
         if (language === 'en') return 'en';
-        // Auto: التخصصات الطبية تظهر بالانجليزي، الباقي عربي
         return needsMedicalEnglish() ? 'en' : 'ar';
     }, [language, needsMedicalEnglish]);
 
@@ -177,23 +201,22 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         } catch {}
     }, [soundEnabled]);
 
-    // جلب مجموعة أسئلة حسب مستويات الصعوبة
+    // جلب مجموعة أسئلة حسب المجال
     const generateQuestionSet = async () => {
         setLoadingQuestions(true);
         const effectiveLang = getEffectiveLanguage();
-        const difficultyLevels = ['easy', 'easy', 'medium', 'medium', 'hard'];
         const generated: GeneratedQuestion[] = [];
         
         for (let i = 0; i < QUESTION_COUNT; i++) {
-            const difficulty = difficultyLevels[i % difficultyLevels.length];
             try {
-                const q = await fetchSingleQuestion(employee.specialty, difficulty, effectiveLang);
+                const q = await fetchSingleQuestion(selectedCategory, effectiveLang);
                 generated.push(q);
                 await new Promise(resolve => setTimeout(resolve, 200));
             } catch (err) {
                 console.error(`Failed to generate question ${i + 1}:`, err);
+                // محاولة جلب سؤال احتياطي (محلي)
                 try {
-                    const fallback = await fetchSingleQuestion(employee.specialty, 'easy', 'ar');
+                    const fallback = await fetchSingleQuestion('random', effectiveLang);
                     generated.push(fallback);
                 } catch {
                     throw new Error('Failed to generate questions');
@@ -212,7 +235,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
             await onStart();
             await generateQuestionSet();
         } catch (err) {
-            toast.error('فشل تحميل الأسئلة، حاول مرة أخرى');
+            toast.error(getEffectiveLanguage() === 'en' ? 'Failed to load questions. Please try again.' : 'فشل تحميل الأسئلة، حاول مرة أخرى');
             setStarting(false);
             return;
         }
@@ -223,6 +246,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         setShowFeedback(false);
         setIsActive(true);
         setStarting(false);
+        setCategoryLocked(true);
     };
 
     // المؤقت
@@ -256,37 +280,41 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 setShowFeedback(false);
             } else {
                 setIsActive(false);
-                const finalScore = score + (isCorrect ? 1 : 0);
-                const rawTotal = finalScore * 3 + Math.floor(timeLeft / 3);
-                let total = applyMultiplier(rawTotal, diffProfile);
-                total = Math.min(30, total);
+                const finalCorrect = score + (isCorrect ? 1 : 0);
+                // حساب النقاط الأساسية
+                let basePoints = finalCorrect * POINTS_PER_CORRECT;
+                if (finalCorrect === QUESTION_COUNT) {
+                    basePoints += BONUS_ALL_CORRECT;
+                }
+                // تطبيق مضاعف الصعوبة
+                let totalPoints = applyMultiplier(basePoints, diffProfile);
+                // الحد الأقصى 40 نقطة بعد المضاعف (اختياري)
+                totalPoints = Math.min(40, totalPoints);
                 
-                if (finalScore >= PASS_SCORE) {
+                if (finalCorrect >= PASS_SCORE) {
                     playSound('win');
                     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#8b5cf6', '#ec4899', '#f59e0b'] });
                     toast.success(getEffectiveLanguage() === 'en' 
-                        ? `Great! ${finalScore}/${QUESTION_COUNT} correct answers! 🎉` 
-                        : `رائع! ${finalScore}/${QUESTION_COUNT} إجابات صحيحة! 🎉`);
-                    onComplete(total, true);
+                        ? `Great! ${finalCorrect}/${QUESTION_COUNT} correct! +${totalPoints} points 🎉` 
+                        : `رائع! ${finalCorrect}/${QUESTION_COUNT} إجابات صحيحة! +${totalPoints} نقطة 🎉`);
+                    onComplete(totalPoints, true);
                 } else {
                     playSound('lose');
                     toast.error(getEffectiveLanguage() === 'en' 
-                        ? `Try again! ${finalScore}/${QUESTION_COUNT} only 💔` 
-                        : `حاول مرة أخرى! ${finalScore}/${QUESTION_COUNT} فقط 💔`);
+                        ? `Try again! ${finalCorrect}/${QUESTION_COUNT} only 💔` 
+                        : `حاول مرة أخرى! ${finalCorrect}/${QUESTION_COUNT} فقط 💔`);
                     onComplete(0, false);
                 }
             }
         }, 1500);
     };
 
-    // تنسيق الوقت
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-    // الحصول على عرض اللغة
     const getLanguageDisplay = () => {
         if (language === 'ar') return '🇸🇦 عربي';
         if (language === 'en') return '🇬🇧 English';
@@ -306,7 +334,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const currentQ = questions[currentQuestion];
     const isEnglishQuestion = currentQ?.language === 'en';
 
-    // شاشة البداية
+    // شاشة البداية (اختيار المجال)
     if (!isActive && !starting && questions.length === 0) {
         return (
             <div className="text-center py-6 px-3">
@@ -316,18 +344,43 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 <h3 className="text-xl font-black text-gray-800 mb-2">
                     {isEn ? 'Medical Quiz Rush! 🏃‍♂️' : 'سباق المعرفة الطبية! 🏃‍♂️'}
                 </h3>
-                <p className="text-xs font-bold text-gray-500 mb-3 max-w-xs mx-auto">
+                <p className="text-xs font-bold text-gray-500 mb-4 max-w-xs mx-auto">
                     {isEn 
-                        ? 'Answer 5 medical questions in 2 minutes. Save time = bonus points!'
-                        : 'أجب على 5 أسئلة طبية في دقيقتين. كل ثانية توفرها = نقاط إضافية!'}
+                        ? 'Choose your category, answer 5 short questions in 75 seconds!'
+                        : 'اختر المجال، أجب على 5 أسئلة قصيرة في 75 ثانية!'}
                 </p>
-                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-3 rounded-2xl max-w-xs mx-auto mb-4 border border-indigo-200">
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="bg-white p-2 rounded-lg"><p className="text-indigo-600 font-bold">{isEn ? 'Time' : 'الوقت'}</p><p className="text-lg font-black">2:00</p></div>
-                        <div className="bg-white p-2 rounded-lg"><p className="text-indigo-600 font-bold">{isEn ? 'Questions' : 'أسئلة'}</p><p className="text-lg font-black">5</p></div>
-                        <div className="bg-white p-2 rounded-lg col-span-2"><p className="text-indigo-600 font-bold">{isEn ? 'Pass' : 'النجاح'}</p><p className="text-base font-black">3/5 {isEn ? 'correct' : 'صحيحة'}</p></div>
+
+                {/* اختيار المجال */}
+                <div className="bg-white rounded-2xl p-4 mb-5 shadow-md border border-gray-100 max-w-xs mx-auto">
+                    <p className="text-xs font-bold text-gray-600 mb-2 flex items-center justify-center gap-1">
+                        <Layers className="w-3 h-3" /> {isEn ? 'Select Category' : 'اختر المجال'}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {CATEGORY_OPTIONS.map(cat => (
+                            <button
+                                key={cat.value}
+                                onClick={() => !categoryLocked && setSelectedCategory(cat.value)}
+                                disabled={categoryLocked}
+                                className={`px-2 py-1.5 rounded-lg text-xs font-black transition-all ${
+                                    selectedCategory === cat.value
+                                        ? 'bg-indigo-600 text-white shadow-md'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                }`}
+                            >
+                                {isEn ? cat.labelEn : cat.label}
+                            </button>
+                        ))}
                     </div>
                 </div>
+
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-3 rounded-2xl max-w-xs mx-auto mb-4 border border-indigo-200">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-white p-2 rounded-lg"><p className="text-indigo-600 font-bold">{isEn ? 'Time' : 'الوقت'}</p><p className="text-lg font-black">1:15</p></div>
+                        <div className="bg-white p-2 rounded-lg"><p className="text-indigo-600 font-bold">{isEn ? 'Questions' : 'أسئلة'}</p><p className="text-lg font-black">5</p></div>
+                        <div className="bg-white p-2 rounded-lg col-span-2"><p className="text-indigo-600 font-bold">{isEn ? 'Points' : 'النقاط'}</p><p className="text-base font-black">5 لكل صحيح + 15 مكافأة (40 نقطة)</p></div>
+                    </div>
+                </div>
+
                 <div className="flex justify-center gap-2 mb-4">
                     <button
                         onClick={cycleLanguage}
@@ -343,6 +396,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                         {soundEnabled ? <Volume2 className="w-4 h-4 text-gray-600" /> : <VolumeX className="w-4 h-4 text-gray-400" />}
                     </button>
                 </div>
+
                 <button
                     onClick={startGame}
                     disabled={starting || loadingQuestions}
@@ -359,11 +413,14 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
 
     // شاشة التحميل
     if (loadingQuestions && questions.length === 0) {
+        const catName = isEn ? CATEGORY_OPTIONS.find(c => c.value === selectedCategory)?.labelEn : CATEGORY_OPTIONS.find(c => c.value === selectedCategory)?.label;
         return (
             <div className="text-center py-16">
                 <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-3" />
-                <p className="text-sm font-bold text-gray-600">{isEn ? 'Generating questions with AI...' : 'جاري توليد الأسئلة بالذكاء الاصطناعي...'}</p>
-                <p className="text-[10px] text-gray-400 mt-1">{isEn ? 'Using medical terminology' : 'باستخدام المصطلحات الطبية'}</p>
+                <p className="text-sm font-bold text-gray-600">
+                    {isEn ? `Generating ${catName} questions with AI...` : `جاري توليد أسئلة ${catName} بالذكاء الاصطناعي...`}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-1">{isEn ? 'Short & concise questions' : 'أسئلة قصيرة ومباشرة'}</p>
             </div>
         );
     }
@@ -371,10 +428,8 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     // شاشة اللعب
     if (isActive && questions.length > 0 && currentQ) {
         const opts = currentQ.options;
-        
         return (
             <div className="min-h-screen bg-gray-50 py-3 px-3" dir={isEnglishQuestion ? 'ltr' : 'rtl'}>
-                {/* رأس المعلومات - تصميم مناسب للموبايل */}
                 <div className="flex justify-between items-center mb-4 gap-2">
                     <div className={`px-3 py-1.5 rounded-xl font-black text-sm shadow-md ${
                         timeLeft > 60 ? 'bg-indigo-500 text-white' : 
@@ -391,13 +446,11 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                     </div>
                 </div>
                 
-                {/* شريط التقدم */}
                 <div className="w-full bg-gray-200 h-1.5 rounded-full mb-5 overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 transition-all duration-300 rounded-full" 
                          style={{ width: `${((currentQuestion + 1) / QUESTION_COUNT) * 100}%` }}></div>
                 </div>
                 
-                {/* بطاقة السؤال */}
                 <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-2xl mb-5 border border-indigo-200 shadow-sm">
                     <div className="flex items-start gap-2">
                         <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow">
@@ -424,7 +477,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                     </div>
                 </div>
                 
-                {/* خيارات الإجابة - شبكة مناسبة للموبايل */}
                 <div className="grid grid-cols-1 gap-2.5">
                     {opts.map((option, idx) => {
                         let btnClass = 'bg-white border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-800';
@@ -455,7 +507,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                     })}
                 </div>
                 
-                {/* تلميح الوقت المتبقي */}
                 <div className="mt-4 text-center">
                     <p className="text-[10px] text-gray-400">
                         {isEn ? `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')} remaining` : `متبقي ${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}`}
