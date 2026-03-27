@@ -32,11 +32,11 @@ const SEGMENT_COLORS = [
     '#a5f3fc', '#fdba74', '#bef264', '#d9f99d', '#fed7aa'
 ];
 
+// ─── جلب السؤال من AI مع دعم التخصص الفعلي (Edge Function معدلة) ────────────
 async function fetchQuestionWithAI(
-    employeeSpecialty: string,
+    specialty: string,         // تخصص الموظف الفعلي (طبيب أسنان، تمريض، إلخ)
     difficulty: string,
-    language?: string,
-    contextSpecialty?: string
+    language?: string
 ): Promise<any> {
     let level = 3;
     switch (difficulty) {
@@ -46,10 +46,9 @@ async function fetchQuestionWithAI(
         case 'expert': level = 14; break;
         default:       level = 6;
     }
-    const specialtyForAI = contextSpecialty || employeeSpecialty;
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
-            body: { specialty: specialtyForAI, level, usedTopics: [], language },
+            body: { specialty, level, usedTopics: [], language },
         });
         if (error || !data) throw new Error('AI request failed');
         if (data.error) throw new Error(data.error);
@@ -69,7 +68,7 @@ async function fetchQuestionWithAI(
         const { data: localQuestions } = await supabase
             .from('quiz_questions')
             .select('*')
-            .or(`specialty.ilike.%${employeeSpecialty}%,specialty.ilike.%الكل%`)
+            .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
             .limit(30);
         if (!localQuestions?.length) throw new Error('No questions available');
         const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
@@ -209,13 +208,17 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
     const spinDuration    = 3000;
     const spinTarget      = useRef(0);
 
+    // تحديد التخصصات التي تحتاج إنجليزية طبية (نفس القائمة الموجودة في Edge Function)
     const needsMedicalEnglish = useCallback(() => {
         const specialty = employee.specialty?.toLowerCase() || '';
-        return ['بشر','بشري','طبيب','طب','صيدلة','صيدلي','pharmacy',
-                'أسنان','اسنان','dentistry','dental','معمل','مختبر',
-                'laboratory','lab','أشعة','radiology','تخدير','anesthesia',
-                'جراحة','surgery','قلب','cardiology','أعصاب','neurology',
-        ].some(s => specialty.includes(s));
+        const medicalTerms = [
+            'بشر','بشري','طبيب','طب','صيدلة','صيدلي','pharmacy',
+            'أسنان','اسنان','dentistry','dental','معمل','مختبر',
+            'laboratory','lab','أشعة','radiology','تخدير','anesthesia',
+            'جراحة','surgery','قلب','cardiology','أعصاب','neurology',
+            'علاج طبيعي','physical therapy','تمريض','nursing'
+        ];
+        return medicalTerms.some(term => specialty.includes(term));
     }, [employee.specialty]);
 
     const getEffectiveLanguage = useCallback((): 'ar' | 'en' => {
@@ -233,6 +236,7 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         } catch {}
     }, [soundEnabled]);
 
+    // رسم العجلة
     const drawWheel = useCallback((angle: number) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -310,6 +314,7 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
         animationRef.current  = requestAnimationFrame(animateSpin);
     };
 
+    // جلب السؤال باستخدام تخصص الموظف الفعلي (بدون تغييره إلى "الرعاية الأساسية")
     const loadQuestion = async (segment: typeof WHEEL_SEGMENTS[0]) => {
         setLoading(true);
         try {
@@ -320,10 +325,9 @@ export default function SpinAndAnswerGame({ employee, diffProfile, onStart, onCo
             }
             const effectiveLang = getEffectiveLanguage();
             const q = await fetchQuestionWithAI(
-                employee.specialty,
+                employee.specialty,   // التخصص الفعلي للموظف
                 difficulty,
-                effectiveLang,
-                effectiveLang === 'en' ? 'Primary Care' : 'الرعاية الأساسية'
+                effectiveLang
             );
             setQuestion(q);
             setPointsWon(segment.points);
