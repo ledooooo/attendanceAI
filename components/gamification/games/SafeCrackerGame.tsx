@@ -10,7 +10,7 @@ interface Props {
     employee: any;
 }
 
-// ─── جلب السؤال باستخدام generate-beast-question مع دعم اللغة ─────────────────
+// ─── جلب السؤال من AI مع دعم اللغة ─────────────────────────────────────────
 async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medium', language?: string): Promise<any> {
     let level = 6;
     switch (difficulty) {
@@ -89,7 +89,7 @@ async function fetchQuestionWithAI(specialty: string, difficulty: string = 'medi
                 }
             }
             
-            console.log(`✅ Local fallback success! Question: ${random.question_text?.substring(0, 50)}...`);
+            console.log(`✅ Local fallback success!`);
             
             return {
                 source: 'local',
@@ -120,6 +120,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
     const [loading, setLoading] = useState(false);
     const [showAnswerModal, setShowAnswerModal] = useState(false);
     const [language, setLanguage] = useState<'auto' | 'ar' | 'en'>('auto');
+    
     const MAX_GUESSES = 5;
     const BASE_POINTS = 20;
 
@@ -152,6 +153,11 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         if (language === 'en') return 'en';
         return needsMedicalEnglish() ? 'en' : 'ar';
     }, [language, needsMedicalEnglish]);
+
+    // الحصول على الترجمة حسب اللغة
+    const t = useCallback((ar: string, en: string) => {
+        return getEffectiveLanguage() === 'en' ? en : ar;
+    }, [getEffectiveLanguage]);
 
     // تشغيل الصوت
     const playSound = useCallback((type: 'win' | 'lose') => {
@@ -188,7 +194,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
 
     const submitGuess = () => {
         if (currentGuess.length !== 3) {
-            toast.error('يجب إدخال 3 أرقام فقط!', { icon: '⚠️' });
+            toast.error(t('يجب إدخال 3 أرقام فقط!', 'Please enter exactly 3 digits!'), { icon: '⚠️' });
             return;
         }
         const feedbackArr: string[] = [];
@@ -204,11 +210,11 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         if (currentGuess === secretCode) {
             playSound('win');
             confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#10b981', '#f59e0b', '#8b5cf6'] });
-            toast.success('🎉 أحسنت! فتحت الخزنة!', { duration: 2000 });
+            toast.success(t('🎉 أحسنت! فتحت الخزنة!', '🎉 Great! You cracked the safe!'), { duration: 2000 });
             setPhase('difficulty');
         } else if (newGuesses.length >= MAX_GUESSES) {
             playSound('lose');
-            toast.error(`💔 الكود الصحيح كان: ${secretCode}`, { duration: 3000 });
+            toast.error(t(`💔 الكود الصحيح كان: ${secretCode}`, `💔 The correct code was: ${secretCode}`), { duration: 3000 });
             setTimeout(() => {
                 onComplete(0, false);
                 resetGame();
@@ -223,15 +229,14 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         
         try {
             const effectiveLang = getEffectiveLanguage();
-            console.log(`🚀 Starting to fetch question: difficulty=${difficulty}, language=${effectiveLang}`);
+            console.log(`🚀 Fetching question: difficulty=${difficulty}, language=${effectiveLang}`);
             const q = await fetchQuestionWithAI(employee.specialty, difficulty, effectiveLang);
-            console.log('✅ Question loaded successfully:', q.source, 'Language:', q.language);
             setBonusQuestion(q);
             const selected = difficultyOptions.find(opt => opt.key === difficulty);
             setTimeLeft(selected?.time || 15);
         } catch (err) {
             console.error('❌ Failed to load bonus question:', err);
-            toast.error('فشل تحميل السؤال، سيتم إنهاء اللعبة');
+            toast.error(t('فشل تحميل السؤال، سيتم إنهاء اللعبة', 'Failed to load question, ending game'));
             onComplete(BASE_POINTS, true);
             resetGame();
         } finally {
@@ -239,6 +244,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         }
     };
 
+    // مؤقت السؤال
     useEffect(() => {
         let timer: ReturnType<typeof setInterval>;
         if (phase === 'question' && timeLeft > 0 && bonusQuestion) {
@@ -251,7 +257,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
 
     const handleAnswerTimeout = () => {
         playSound('lose');
-        setFeedback({ message: '⌛ انتهى الوقت!', isCorrect: false });
+        setFeedback({ message: t('⌛ انتهى الوقت!', '⌛ Time\'s up!'), isCorrect: false });
         setTimeout(() => {
             setFeedback(null);
             setShowAnswerModal(true);
@@ -269,10 +275,10 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         if (isCorrect) {
             playSound('win');
             confetti({ particleCount: 200, spread: 80, origin: { y: 0.6 }, colors: ['#10b981', '#f59e0b', '#8b5cf6'] });
-            setFeedback({ message: `✅ إجابة صحيحة! +${bonusPoints} نقطة إضافية`, isCorrect: true });
+            setFeedback({ message: t(`✅ إجابة صحيحة! +${bonusPoints} نقطة إضافية`, `✅ Correct answer! +${bonusPoints} bonus points`), isCorrect: true });
         } else {
             playSound('lose');
-            setFeedback({ message: '❌ إجابة خاطئة!', isCorrect: false });
+            setFeedback({ message: t('❌ إجابة خاطئة!', '❌ Wrong answer!'), isCorrect: false });
         }
 
         setTimeout(() => {
@@ -300,31 +306,46 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setSelectedDifficulty('medium');
     };
 
-    // تنسيق عرض اللغة
+    // الحصول على عرض اللغة
     const getLanguageDisplay = () => {
         if (language === 'ar') return '🇸🇦 عربي';
         if (language === 'en') return '🇬🇧 English';
-        return needsMedicalEnglish() ? '🇬🇧 English (تلقائي)' : '🇸🇦 عربي (تلقائي)';
+        return needsMedicalEnglish() ? '🇬🇧 English (Auto)' : '🇸🇦 عربي (Auto)';
+    };
+
+    // تبديل اللغة
+    const cycleLanguage = () => {
+        const options: ('auto' | 'ar' | 'en')[] = ['auto', 'ar', 'en'];
+        const currentIndex = options.indexOf(language);
+        const next = options[(currentIndex + 1) % options.length];
+        setLanguage(next);
+        const langMsg = next === 'auto' ? (needsMedicalEnglish() ? 'English (Auto)' : 'عربي (تلقائي)') : next === 'ar' ? 'عربي' : 'English Medical';
+        toast.success(t(`اللغة: ${langMsg}`, `Language: ${langMsg}`), { icon: '🌐' });
     };
 
     // ─────────────────────────────────────────────────────────────────────────
     // مرحلة بدء اللعبة (شاشة الترحيب)
     // ─────────────────────────────────────────────────────────────────────────
     if (!isActive) {
+        const isEn = getEffectiveLanguage() === 'en';
         return (
             <div className="text-center py-12">
                 <div className="w-24 h-24 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl animate-pulse">
                     <Lock className="w-14 h-14 text-white" />
                 </div>
-                <h3 className="text-3xl font-black text-gray-800 mb-3">الخزنة السرية! 🔐</h3>
+                <h3 className="text-3xl font-black text-gray-800 mb-3">
+                    {isEn ? 'Secret Safe! 🔐' : 'الخزنة السرية! 🔐'}
+                </h3>
                 <p className="text-base font-bold text-gray-600 mb-8 max-w-lg mx-auto">
-                    خمن الرقم السري (3 أرقام مختلفة من 1-9) في 5 محاولات فقط بناءً على تلميحات الألوان.
+                    {isEn 
+                        ? 'Guess the 3-digit code (digits 1-9, no repeats) in 5 attempts using color hints.'
+                        : 'خمن الرقم السري (3 أرقام مختلفة من 1-9) في 5 محاولات فقط بناءً على تلميحات الألوان.'}
                 </p>
                 <div className="flex justify-center gap-6 mb-8">
                     {[
-                        ['bg-emerald-500', 'رقم صحيح\nمكان صحيح'],
-                        ['bg-amber-500', 'رقم صحيح\nمكان خطأ'],
-                        ['bg-red-500', 'رقم غير\nموجود'],
+                        ['bg-emerald-500', isEn ? 'Correct\nPosition' : 'رقم صحيح\nمكان صحيح'],
+                        ['bg-amber-500', isEn ? 'Wrong\nPosition' : 'رقم صحيح\nمكان خطأ'],
+                        ['bg-red-500', isEn ? 'Not\nPresent' : 'رقم غير\nموجود'],
                     ].map(([color, label], i) => (
                         <div key={i} className="text-center">
                             <div className={`w-12 h-12 ${color} rounded-xl mb-2 shadow-md`}></div>
@@ -337,7 +358,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                     disabled={starting}
                     className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-10 py-4 rounded-2xl font-black shadow-2xl hover:scale-105 transition-all disabled:opacity-50 text-lg"
                 >
-                    {starting ? '⏳ جاري البدء...' : '🔓 ابدأ المحاولة'}
+                    {starting ? (isEn ? '⏳ Starting...' : '⏳ جاري البدء...') : (isEn ? '🔓 Start Game' : '🔓 ابدأ المحاولة')}
                 </button>
             </div>
         );
@@ -347,6 +368,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
     // مرحلة تخمين الكود
     // ─────────────────────────────────────────────────────────────────────────
     if (phase === 'code') {
+        const isEn = getEffectiveLanguage() === 'en';
         return (
             <div className="max-w-xl mx-auto py-8 animate-in slide-in-from-bottom-4 text-center">
                 <div className="flex justify-between items-center mb-4">
@@ -355,13 +377,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                             {soundEnabled ? <Volume2 className="w-5 h-5 text-gray-600" /> : <VolumeX className="w-5 h-5 text-gray-400" />}
                         </button>
                         <button
-                            onClick={() => {
-                                const options: ('auto' | 'ar' | 'en')[] = ['auto', 'ar', 'en'];
-                                const currentIndex = options.indexOf(language);
-                                const next = options[(currentIndex + 1) % options.length];
-                                setLanguage(next);
-                                toast.success(`اللغة: ${next === 'auto' ? 'تلقائي حسب التخصص' : next === 'ar' ? 'عربي' : 'English Medical'}`, { icon: '🌐' });
-                            }}
+                            onClick={cycleLanguage}
                             className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-100 text-indigo-700 text-xs font-black hover:bg-indigo-200 transition"
                         >
                             <Globe className="w-3 h-3" />
@@ -369,22 +385,22 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                         </button>
                     </div>
                     <div className="bg-indigo-50 rounded-xl px-4 py-2 text-center">
-                        <p className="text-xs font-bold text-indigo-700">نقاط الخزنة</p>
+                        <p className="text-xs font-bold text-indigo-700">{isEn ? 'Safe Points' : 'نقاط الخزنة'}</p>
                         <p className="text-xl font-black text-indigo-800">+{BASE_POINTS}</p>
                     </div>
                 </div>
                 <div className="flex items-center justify-center gap-3 mb-8">
                     <Lock className="w-10 h-10 text-emerald-600" />
-                    <h3 className="text-2xl font-black text-gray-800">اكسر الخزنة!</h3>
+                    <h3 className="text-2xl font-black text-gray-800">{isEn ? 'Crack the Safe!' : 'اكسر الخزنة!'}</h3>
                 </div>
                 <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-4 rounded-3xl mb-8 border-2 border-emerald-200">
                     <p className="text-sm font-bold text-gray-700 mb-3">
-                        المحاولات المتبقية: <span className="text-2xl text-emerald-600 font-black">{MAX_GUESSES - guesses.length}</span>
+                        {isEn ? 'Remaining attempts:' : 'المحاولات المتبقية:'} <span className="text-2xl text-emerald-600 font-black">{MAX_GUESSES - guesses.length}</span>
                     </p>
                     <div className="flex justify-center gap-4 text-xs font-bold">
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-emerald-500 rounded"></div> صح</div>
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-amber-500 rounded"></div> مكان خطأ</div>
-                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-red-500 rounded"></div> غير موجود</div>
+                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-emerald-500 rounded"></div> {isEn ? 'Correct' : 'صح'}</div>
+                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-amber-500 rounded"></div> {isEn ? 'Wrong Position' : 'مكان خطأ'}</div>
+                        <div className="flex items-center gap-1"><div className="w-4 h-4 bg-red-500 rounded"></div> {isEn ? 'Not Present' : 'غير موجود'}</div>
                     </div>
                 </div>
                 <div className="space-y-4 mb-10">
@@ -428,7 +444,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                             onClick={submitGuess}
                             className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-8 rounded-2xl font-black hover:scale-105 active:scale-95 shadow-xl transition-all text-lg"
                         >
-                            جرب ✨
+                            {isEn ? 'Guess ✨' : 'جرب ✨'}
                         </button>
                     </div>
                 )}
@@ -440,29 +456,34 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
     // مرحلة اختيار مستوى السؤال
     // ─────────────────────────────────────────────────────────────────────────
     if (phase === 'difficulty') {
-        const isEnglish = getEffectiveLanguage() === 'en';
+        const isEn = getEffectiveLanguage() === 'en';
         return (
-            <div className="text-center py-12 animate-in fade-in duration-300" dir={isEnglish ? 'ltr' : 'rtl'}>
+            <div className="text-center py-12 animate-in fade-in duration-300" dir="rtl">
                 <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
                     <div className="flex justify-between items-center mb-4">
-                        <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-2 rounded-full hover:bg-gray-100 transition">
-                            {soundEnabled ? <Volume2 className="w-5 h-5 text-gray-600" /> : <VolumeX className="w-5 h-5 text-gray-400" />}
-                        </button>
+                        <div className="flex gap-2">
+                            <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-2 rounded-full hover:bg-gray-100 transition">
+                                {soundEnabled ? <Volume2 className="w-5 h-5 text-gray-600" /> : <VolumeX className="w-5 h-5 text-gray-400" />}
+                            </button>
+                            <button
+                                onClick={cycleLanguage}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-100 text-indigo-700 text-xs font-black hover:bg-indigo-200 transition"
+                            >
+                                <Globe className="w-3 h-3" />
+                                {getLanguageDisplay()}
+                            </button>
+                        </div>
                         <div className="bg-emerald-50 rounded-xl px-4 py-2 text-center">
-                            <p className="text-xs font-bold text-emerald-700">
-                                {isEnglish ? 'Vault Points' : 'نقاط الخزنة'}
-                            </p>
+                            <p className="text-xs font-bold text-emerald-700">{isEn ? 'Safe Points' : 'نقاط الخزنة'}</p>
                             <p className="text-xl font-black text-emerald-800">+{BASE_POINTS}</p>
                         </div>
                     </div>
                     <div className="flex items-center justify-center gap-2 mb-6">
                         <Sparkles className="w-8 h-8 text-emerald-500" />
-                        <h3 className="text-2xl font-black text-gray-800">
-                            {isEnglish ? 'Choose Question Difficulty' : 'اختر مستوى السؤال'}
-                        </h3>
+                        <h3 className="text-2xl font-black text-gray-800">{isEn ? 'Select Question Difficulty' : 'اختر مستوى السؤال'}</h3>
                     </div>
                     <p className="text-sm text-gray-500 mb-6">
-                        {isEnglish ? 'Higher difficulty = more bonus points' : 'كلما زادت الصعوبة، زادت النقاط الإضافية'}
+                        {isEn ? 'Higher difficulty = more bonus points' : 'كلما زادت الصعوبة، زادت النقاط الإضافية'}
                     </p>
                     <div className="grid grid-cols-2 gap-3 mb-6">
                         {difficultyOptions.map(opt => (
@@ -475,9 +496,9 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                                         : 'border-gray-200 hover:border-emerald-300'
                                 }`}
                             >
-                                <p className="font-black text-gray-800">{isEnglish ? opt.labelEn : opt.label}</p>
-                                <p className="text-sm font-bold text-emerald-600">+{opt.points} {isEnglish ? 'pts' : 'نقطة'}</p>
-                                <p className="text-[10px] text-gray-400">{opt.time} {isEnglish ? 'seconds' : 'ثانية للإجابة'}</p>
+                                <p className="font-black text-gray-800">{isEn ? opt.labelEn : opt.label}</p>
+                                <p className="text-sm font-bold text-emerald-600">+{opt.points} {isEn ? 'pts' : 'نقطة'}</p>
+                                <p className="text-[10px] text-gray-400">{opt.time}s {isEn ? 'to answer' : 'للإجابة'}</p>
                             </button>
                         ))}
                     </div>
@@ -490,58 +511,54 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
     // مرحلة السؤال الإضافي
     // ─────────────────────────────────────────────────────────────────────────
     if (phase === 'question') {
+        const isEn = getEffectiveLanguage() === 'en';
         if (loading) {
-            const isEnglish = getEffectiveLanguage() === 'en';
             return (
                 <div className="text-center py-16">
                     <Loader2 className="w-16 h-16 text-emerald-500 animate-spin mx-auto mb-4" />
-                    <p className="text-gray-600 font-bold">
-                        {isEnglish ? 'Preparing bonus question...' : 'جاري تحضير سؤال المكافأة...'}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-2">
-                        {isEnglish ? 'Contacting AI...' : 'جاري الاتصال بالذكاء الاصطناعي...'}
-                    </p>
+                    <p className="text-gray-600 font-bold">{isEn ? 'Preparing bonus question...' : 'جاري تحضير سؤال المكافأة...'}</p>
+                    <p className="text-xs text-gray-400 mt-2">{isEn ? 'Contacting AI...' : 'جاري الاتصال بالذكاء الاصطناعي...'}</p>
                 </div>
             );
         }
         if (bonusQuestion) {
             const options = Array.isArray(bonusQuestion.options) ? bonusQuestion.options : [];
             const selectedOpt = difficultyOptions.find(opt => opt.key === selectedDifficulty);
-            const isEnglish = bonusQuestion.language === 'en';
+            const isEnglishQuestion = bonusQuestion.language === 'en';
             
             return (
                 <>
-                    <div className="text-center py-4 animate-in slide-in-from-right max-w-3xl mx-auto" dir={isEnglish ? 'ltr' : 'rtl'}>
+                    <div className="text-center py-4 animate-in slide-in-from-right max-w-3xl mx-auto" dir={isEnglishQuestion ? 'ltr' : 'rtl'}>
                         <div className="flex justify-between items-center mb-6 px-4 flex-wrap gap-2">
                             <div className="bg-gradient-to-r from-red-500 to-orange-500 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
-                                <Clock className="w-4 h-4 animate-pulse" /> {timeLeft} {isEnglish ? 'sec' : 'ثانية'}
+                                <Clock className="w-4 h-4 animate-pulse" /> {timeLeft} {isEn ? 'sec' : 'ثانية'}
                             </div>
                             <div className="bg-gradient-to-r from-amber-400 to-yellow-500 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
-                                <Star className="w-4 h-4" /> {isEnglish ? 'Bonus' : 'مكافأة'}: +{selectedOpt?.points || 0} {isEnglish ? 'pts' : 'نقطة'}
+                                <Star className="w-4 h-4" /> {isEn ? 'Bonus:' : 'مكافأة:'} +{selectedOpt?.points || 0} {isEn ? 'pts' : 'نقطة'}
                             </div>
                             <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-5 py-2 rounded-xl font-black shadow-lg flex items-center gap-2">
-                                <Sparkles className="w-4 h-4" /> {isEnglish ? selectedOpt?.labelEn : selectedOpt?.label}
+                                <Sparkles className="w-4 h-4" /> {isEn ? (selectedOpt?.labelEn || 'Question') : (selectedOpt?.label || 'سؤال')}
                             </div>
                         </div>
                         <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-8 rounded-3xl mb-8 border-2 border-emerald-200 shadow-xl relative">
                             <HelpCircle className="w-14 h-14 text-emerald-500 mx-auto mb-4 animate-bounce" />
-                            <h3 className={`text-2xl font-black text-emerald-900 leading-relaxed ${isEnglish ? 'text-left' : 'text-right'}`}>
+                            <h3 className={`text-2xl font-black text-emerald-900 leading-relaxed ${isEnglishQuestion ? 'text-left' : 'text-right'}`}>
                                 {bonusQuestion.question}
                             </h3>
                             <div className="flex flex-wrap justify-center gap-2 mt-4">
                                 {bonusQuestion.source === 'ai' && (
                                     <p className="text-xs text-emerald-400 flex items-center justify-center gap-1 bg-emerald-50 px-3 py-1 rounded-full">
-                                        <Sparkles className="w-3 h-3" /> {isEnglish ? 'Generated by' : 'تم توليده بواسطة'} {bonusQuestion.provider}
+                                        <Sparkles className="w-3 h-3" /> {isEn ? 'Generated by' : 'تم توليده بواسطة'} {bonusQuestion.provider}
                                     </p>
                                 )}
                                 {bonusQuestion.source === 'local' && (
                                     <p className="text-xs text-amber-600 flex items-center justify-center gap-1 bg-amber-50 px-3 py-1 rounded-full">
-                                        <AlertCircle className="w-3 h-3" /> {isEnglish ? 'From local question bank' : 'من بنك الأسئلة المحلي'}
+                                        <AlertCircle className="w-3 h-3" /> {isEn ? 'From local question bank' : 'من بنك الأسئلة المحلي'}
                                     </p>
                                 )}
                                 <p className="text-xs text-gray-400 flex items-center justify-center gap-1 bg-gray-100 px-3 py-1 rounded-full">
                                     <Globe className="w-3 h-3" />
-                                    {isEnglish ? 'Medical English' : 'العربية'}
+                                    {isEnglishQuestion ? 'Medical English' : 'العربية'}
                                 </p>
                             </div>
                             {feedback && (
@@ -573,11 +590,11 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                     </div>
                     {/* مودال عرض الإجابة الصحيحة */}
                     {showAnswerModal && (
-                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" dir={isEnglish ? 'ltr' : 'rtl'}>
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" dir="rtl">
                             <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
                                 <div className="flex justify-between items-start mb-4">
                                     <h3 className="text-xl font-black text-gray-800">
-                                        {isEnglish ? 'Correct Answer' : 'الإجابة الصحيحة'}
+                                        {isEn ? 'Correct Answer' : 'الإجابة الصحيحة'}
                                     </h3>
                                     <button onClick={closeModalAndReset} className="p-1 hover:bg-gray-100 rounded-full transition">
                                         <X className="w-5 h-5 text-gray-500" />
@@ -585,17 +602,17 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                                 </div>
                                 <div className="bg-gray-50 p-4 rounded-xl mb-4">
                                     <p className="text-sm font-bold text-gray-500 mb-1">
-                                        {isEnglish ? 'Question:' : 'السؤال:'}
+                                        {isEn ? 'Question:' : 'السؤال:'}
                                     </p>
                                     <p className="text-gray-800 font-medium mb-3">{bonusQuestion?.question}</p>
                                     <p className="text-sm font-bold text-green-600 mb-1">
-                                        {isEnglish ? 'Correct Answer:' : 'الإجابة الصحيحة:'}
+                                        {isEn ? 'Correct Answer:' : 'الإجابة الصحيحة:'}
                                     </p>
                                     <p className="text-green-700 font-bold text-lg">{bonusQuestion?.correct_answer}</p>
                                     {bonusQuestion?.explanation && (
                                         <>
                                             <p className="text-sm font-bold text-gray-500 mt-3 mb-1">
-                                                {isEnglish ? 'Explanation:' : 'التفسير:'}
+                                                {isEn ? 'Explanation:' : 'التفسير:'}
                                             </p>
                                             <p className="text-gray-600 text-sm">{bonusQuestion.explanation}</p>
                                         </>
@@ -605,7 +622,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
                                     onClick={closeModalAndReset}
                                     className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-3 rounded-xl font-black hover:scale-105 transition-all"
                                 >
-                                    {isEnglish ? 'Close' : 'إغلاق'}
+                                    {isEn ? 'Close' : 'إغلاق'}
                                 </button>
                             </div>
                         </div>
