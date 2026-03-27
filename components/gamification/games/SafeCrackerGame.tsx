@@ -7,7 +7,7 @@ import confetti from 'canvas-confetti';
 interface Props {
     onStart: () => Promise<void>;
     onComplete: (points: number, isWin: boolean) => void;
-    employee: any;
+    employee?: any; // يمكن أن يكون غير معرف
 }
 
 // ─── مكون عرض الإجابة الصحيحة ────────────────────────────────────────────────
@@ -181,8 +181,14 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         { key: 'expert', label: 'صعب جداً', points: 20, time: 20 },
     ];
 
-    // تحديد التخصصات التي تحتاج إنجليزية طبية
+    // --- حماية ضد employee غير معرف ---
+    const getEmployeeSpecialty = useCallback(() => {
+        return employee?.specialty || 'طب عام';
+    }, [employee]);
+
+    // تحديد التخصصات التي تحتاج إنجليزية طبية (مع حماية)
     const needsMedicalEnglish = useCallback(() => {
+        if (!employee) return false;
         const specialty = employee.specialty?.toLowerCase() || '';
         const medicalTerms = [
             'بشر', 'بشري', 'طبيب', 'طب', 'صيدلة', 'صيدلي', 'pharmacy',
@@ -191,7 +197,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
             'علاج طبيعي', 'physical therapy', 'تمريض', 'nursing',
         ];
         return medicalTerms.some(term => specialty.includes(term));
-    }, [employee.specialty]);
+    }, [employee]);
 
     const getEffectiveLanguage = useCallback((): 'ar' | 'en' => {
         if (language === 'ar') return 'ar';
@@ -268,7 +274,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
         setLoading(true);
         try {
             const effectiveLang = getEffectiveLanguage();
-            const q = await fetchQuestionWithAI(employee.specialty, difficulty, effectiveLang);
+            const q = await fetchQuestionWithAI(getEmployeeSpecialty(), difficulty, effectiveLang);
             setBonusQuestion(q);
             const selected = difficultyOptions.find(opt => opt.key === difficulty);
             setTimeLeft(selected?.time || 15);
