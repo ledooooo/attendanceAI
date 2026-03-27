@@ -7,18 +7,18 @@ import confetti from 'canvas-confetti';
 interface Props {
     onStart: () => Promise<void>;
     onComplete: (points: number, isWin: boolean) => void;
-    employee: any; // لتحديد التخصص وجلب الأسئلة المناسبة
+    employee?: any; // قد لا يكون موجوداً في بعض السياقات
 }
 
-// ─── مجموعة أيقونات أكبر لتناسب الأحجام المختلفة ─────────────────────────────
+// مجموعة أيقونات كافية لأكبر شبكة (5×4 = 10 أزواج)
 const BASE_ICONS = ['🚑', '💊', '💉', '🔬', '🩺', '🦷', '🧬', '🩸', '🧪', '🧫', '🫀', '🧠'];
 
-// ─── جلب السؤال من AI (نفس الدالة المستخدمة في الألعاب الأخرى) ──────────────
+// ─── جلب السؤال من AI (مع حماية ضد employee غير معرف) ──────────────────────
 async function fetchQuestionWithAI(specialty: string, language?: string): Promise<any> {
-    const level = 6; // مستوى متوسط
+    const level = 6;
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
-            body: { specialty, level, usedTopics: [], language },
+            body: { specialty: specialty || 'طب عام', level, usedTopics: [], language },
         });
         if (error || !data) throw new Error('AI request failed');
         if (data.error) throw new Error(data.error);
@@ -57,7 +57,7 @@ async function fetchQuestionWithAI(specialty: string, language?: string): Promis
     }
 }
 
-// ─── مكون عرض الإجابة الصحيحة (مشترك) ──────────────────────────────────────
+// ─── مكون عرض الإجابة الصحيحة ──────────────────────────────────────────────
 function WrongAnswerReveal({
     question,
     reason,
@@ -143,7 +143,6 @@ function WrongAnswerReveal({
 
 // ─── اللعبة الرئيسية ─────────────────────────────────────────────────────────
 export default function MemoryMatchGame({ onStart, onComplete, employee }: Props) {
-    // خيارات الشبكة (عدد الأعمدة × عدد الصفوف)
     const GRID_OPTIONS = [
         { rows: 3, cols: 4, label: '3×4', pairs: 6 },
         { rows: 4, cols: 4, label: '4×4', pairs: 8 },
@@ -161,7 +160,6 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
     const [gameWin, setGameWin] = useState(false);
     const [gamePoints, setGamePoints] = useState(0);
 
-    // حالة السؤال الإضافي
     const [phase, setPhase] = useState<'game' | 'question' | 'loading'>('game');
     const [bonusQuestion, setBonusQuestion] = useState<any>(null);
     const [timeLeftQ, setTimeLeftQ] = useState(15);
@@ -170,13 +168,16 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
     const [wrongRevealReason, setWrongRevealReason] = useState<'wrong' | 'timeout'>('wrong');
     const [loadingQuestion, setLoadingQuestion] = useState(false);
 
-    // إعدادات الصوت واللغة
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [language, setLanguage] = useState<'auto' | 'ar' | 'en'>('auto');
 
-    // تحديد التخصصات التي تحتاج إنجليزية طبية
+    // الحصول على التخصص مع حماية (قيمة افتراضية في حال عدم وجوده)
+    const getSpecialty = useCallback(() => {
+        return employee?.specialty || 'طب عام';
+    }, [employee]);
+
     const needsMedicalEnglish = useCallback(() => {
-        const specialty = employee.specialty?.toLowerCase() || '';
+        const specialty = getSpecialty().toLowerCase();
         const medicalTerms = [
             'بشر', 'بشري', 'طبيب', 'طب', 'صيدلة', 'صيدلي', 'pharmacy',
             'أسنان', 'اسنان', 'dentistry', 'dental', 'معمل', 'مختبر',
@@ -184,7 +185,7 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
             'علاج طبيعي', 'physical therapy', 'تمريض', 'nursing',
         ];
         return medicalTerms.some(term => specialty.includes(term));
-    }, [employee.specialty]);
+    }, [getSpecialty]);
 
     const getEffectiveLanguage = useCallback((): 'ar' | 'en' => {
         if (language === 'ar') return 'ar';
@@ -201,11 +202,10 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
         } catch {}
     }, [soundEnabled]);
 
-    // تهيئة البطاقات حسب الشبكة المختارة
     const initializeCards = (grid: typeof GRID_OPTIONS[0]) => {
         const pairs = grid.pairs;
         const neededIcons = BASE_ICONS.slice(0, pairs);
-        const deck = [...neededIcons, ...neededIcons];
+        let deck = [...neededIcons, ...neededIcons];
         for (let i = deck.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -233,24 +233,23 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
         setIsActive(true);
         setGameEnded(false);
         setGameWin(false);
+        setGamePoints(0);
         setPhase('game');
         setStarting(false);
     };
 
-    // مؤقت اللعبة
+    // مؤقت لعبة الذاكرة
     useEffect(() => {
         let timer: ReturnType<typeof setInterval>;
         if (isActive && timeLeft > 0) {
             timer = setInterval(() => setTimeLeft(p => p - 1), 1000);
         } else if (isActive && timeLeft === 0 && !gameEnded) {
-            // انتهاء الوقت في لعبة الذاكرة → خسارة
             setIsActive(false);
             setGameEnded(true);
             setGameWin(false);
             setGamePoints(0);
             playSound('lose');
             toast.error('⏰ انتهى الوقت!');
-            // الانتقال لجلب السؤال الإضافي
             loadBonusQuestion();
         }
         return () => clearInterval(timer);
@@ -263,10 +262,11 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
         setCards(newCards);
         const newFlipped = [...flippedIndices, index];
         setFlippedIndices(newFlipped);
+
         if (newFlipped.length === 2) {
             const [first, second] = newFlipped;
             if (newCards[first].icon === newCards[second].icon) {
-                // تطابق صحيح
+                // تطابق
                 setTimeout(() => {
                     const matchedCards = [...newCards];
                     matchedCards[first].isMatched = true;
@@ -284,7 +284,6 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
                             playSound('win');
                             confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#f59e0b', '#d97706', '#b91c1c'] });
                             toast.success('🎉 مبروك! أنهيت اللعبة!');
-                            // الانتقال لجلب السؤال الإضافي
                             loadBonusQuestion();
                         }
                         return newMatches;
@@ -307,14 +306,13 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
         setLoadingQuestion(true);
         try {
             const effectiveLang = getEffectiveLanguage();
-            const q = await fetchQuestionWithAI(employee.specialty, effectiveLang);
+            const q = await fetchQuestionWithAI(getSpecialty(), effectiveLang);
             setBonusQuestion(q);
             setTimeLeftQ(15);
             setPhase('question');
         } catch (err) {
             console.error('Failed to load bonus question:', err);
             toast.error(getEffectiveLanguage() === 'en' ? 'Failed to load bonus question' : 'فشل تحميل سؤال المكافأة');
-            // إذا فشل، ننهي اللعبة بدون سؤال
             onComplete(gamePoints, gameWin);
             resetAfterGame();
         } finally {
@@ -322,7 +320,7 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
         }
     };
 
-    // مؤقت السؤال
+    // مؤقت السؤال الإضافي
     useEffect(() => {
         let timer: ReturnType<typeof setInterval>;
         if (phase === 'question' && timeLeftQ > 0 && bonusQuestion && !showWrongReveal) {
@@ -337,7 +335,6 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
         setFeedbackQ({ message: getEffectiveLanguage() === 'en' ? '⌛ Time\'s up!' : '⌛ انتهى الوقت!', isCorrect: false });
         setShowWrongReveal(true);
         setWrongRevealReason('timeout');
-        // لا نضيف نقاط
         onComplete(gamePoints, gameWin);
     };
 
@@ -413,7 +410,6 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
                         : 'طابق جميع الأزواج قبل انتهاء الوقت!'}
                 </p>
 
-                {/* اختيار حجم الشبكة */}
                 <div className="bg-white rounded-2xl p-3 mb-5 shadow-md border border-gray-100 max-w-xs mx-auto">
                     <p className="text-xs font-bold text-gray-600 mb-2 flex items-center justify-center gap-1">
                         {isEn ? 'Select Grid Size' : 'اختر حجم الشبكة'}
@@ -468,8 +464,6 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
     if (phase === 'game' && isActive && cards.length > 0) {
         const rows = selectedGrid.rows;
         const cols = selectedGrid.cols;
-        const gridTemplate = `grid-cols-${cols}`;
-        // Tailwind لا يدعم grid-cols-* ديناميكياً، نستخدم inline style
         return (
             <div className="max-w-2xl mx-auto py-4 px-3 text-center animate-in zoom-in-95">
                 <div className="flex justify-between items-center mb-5">
@@ -502,7 +496,7 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
         );
     }
 
-    // شاشة التحميل (جلب السؤال)
+    // شاشة التحميل
     if (phase === 'loading') {
         return (
             <div className="text-center py-16">
@@ -580,7 +574,7 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
         );
     }
 
-    // عرض الشاشة التعليمية (إجابة خاطئة أو انتهاء وقت السؤال)
+    // شاشة التعليم بعد الخطأ في السؤال الإضافي
     if (showWrongReveal && bonusQuestion) {
         return (
             <WrongAnswerReveal
