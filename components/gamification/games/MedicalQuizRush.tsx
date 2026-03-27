@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Brain, CheckCircle, XCircle, Sparkles, Globe, Loader2, AlertCircle, Volume2, VolumeX, Layers, BookOpen } from 'lucide-react';
+import { Brain, CheckCircle, XCircle, Sparkles, Globe, Loader2, AlertCircle, Volume2, VolumeX, BookOpen, RotateCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
@@ -13,17 +13,6 @@ interface Props {
     onComplete: (points: number, isWin: boolean) => void;
 }
 
-type Category = 'medical' | 'technical' | 'scientific' | 'mathematical' | 'intelligence' | 'random';
-
-const CATEGORY_OPTIONS: { value: Category; label: string; labelEn: string }[] = [
-    { value: 'medical', label: 'طبى', labelEn: 'Medical' },
-    { value: 'technical', label: 'فنى', labelEn: 'Technical' },
-    { value: 'scientific', label: 'علمى', labelEn: 'Scientific' },
-    { value: 'mathematical', label: 'رياضى', labelEn: 'Mathematical' },
-    { value: 'intelligence', label: 'ذكاء', labelEn: 'Intelligence' },
-    { value: 'random', label: 'عشوائى', labelEn: 'Random' },
-];
-
 interface GeneratedQuestion {
     question: string;
     options: string[];
@@ -33,10 +22,9 @@ interface GeneratedQuestion {
     source: 'ai' | 'local';
     provider?: string;
     language?: string;
-    category?: Category;
 }
 
-// ─── مكون عرض الإجابة الصحيحة (مشترك) ──────────────────────────────────────
+// ─── مكون عرض الإجابة الصحيحة ────────────────────────────────────────────────
 function WrongAnswerReveal({
     question,
     reason,
@@ -120,37 +108,19 @@ function WrongAnswerReveal({
     );
 }
 
-// ─── جلب السؤال من AI (باستخدام تخصص الموظف الفعلي والمجال) ──────────────────
+// ─── جلب سؤال واحد من AI (طبي فقط، مع دعم تخصص الموظف) ──────────────────────
 async function fetchSingleQuestion(
-    employeeSpecialty: string,
-    category: Category,
+    specialty: string,
     language?: string
 ): Promise<GeneratedQuestion> {
-    // تحديد التخصص المرسل إلى Edge Function:
-    // - للمجال الطبي: نستخدم تخصص الموظف الفعلي (طبيب أسنان، تمريض، إلخ)
-    // - للمجالات الأخرى: نستخدم وصف المجال مع لفتة إلى الرعاية الأساسية
-    let specialtyForAI = employeeSpecialty;
-    if (category !== 'medical') {
-        const categoryMap: Record<Category, string> = {
-            technical: 'تقنية (فنية) في الرعاية الأولية',
-            scientific: 'علمية في الرعاية الأولية',
-            mathematical: 'رياضيات في الرعاية الأولية',
-            intelligence: 'ذكاء عام في الرعاية الأولية',
-            random: 'أسئلة عامة في الرعاية الأولية',
-            medical: employeeSpecialty, // لن يصل هنا لأننا شرطنا
-        };
-        specialtyForAI = categoryMap[category];
-    }
-
-    const level = 6; // مستوى متوسط (يمكن تعديله حسب الصعوبة)
+    const level = 6; // مستوى متوسط
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
             body: {
-                specialty: specialtyForAI,
+                specialty,
                 level,
                 usedTopics: [],
                 language,
-                category, // تمرير المجال لمساعدة الدالة
             },
         });
         if (error || !data) throw new Error('AI request failed');
@@ -166,7 +136,6 @@ async function fetchSingleQuestion(
             correct: data.correct,
             explanation: data.explanation,
             topic: data.topic,
-            category,
         };
     } catch (err) {
         console.warn('AI fallback:', err);
@@ -174,7 +143,7 @@ async function fetchSingleQuestion(
         const { data: localQuestions } = await supabase
             .from('quiz_questions')
             .select('*')
-            .or(`specialty.ilike.%${employeeSpecialty}%,specialty.ilike.%الكل%`)
+            .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
             .eq('language', language || 'ar')
             .limit(30);
         if (!localQuestions?.length) throw new Error('No questions available');
@@ -199,7 +168,6 @@ async function fetchSingleQuestion(
             question: random.question_text,
             options,
             correct,
-            category,
         };
     }
 }
@@ -216,11 +184,8 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const [loadingQuestions, setLoadingQuestions] = useState(false);
     const [language, setLanguage] = useState<'auto' | 'ar' | 'en'>('auto');
     const [soundEnabled, setSoundEnabled] = useState(true);
-    const [selectedCategory, setSelectedCategory] = useState<Category>('medical');
-    const [categoryLocked, setCategoryLocked] = useState(false);
     const [showWrongReveal, setShowWrongReveal] = useState(false);
     const [wrongRevealReason, setWrongRevealReason] = useState<'wrong' | 'timeout'>('wrong');
-    const [pendingNext, setPendingNext] = useState(false); // لمنع الانتقال المتكرر
 
     const QUESTION_COUNT = 5;
     const BASE_TIME = 75;
@@ -228,9 +193,8 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const BONUS_ALL_CORRECT = 15;
     const PASS_SCORE = 3;
 
-    // تحديد التخصصات التي تحتاج إنجليزية طبية (للمجال الطبي فقط)
+    // تحديد التخصصات التي تحتاج إنجليزية طبية
     const needsMedicalEnglish = useCallback(() => {
-        if (selectedCategory !== 'medical') return false;
         const specialty = employee.specialty?.toLowerCase() || '';
         const medicalTerms = [
             'بشر', 'بشري', 'طبيب', 'طب', 'صيدلة', 'صيدلي', 'pharmacy',
@@ -239,7 +203,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
             'علاج طبيعي', 'physical therapy', 'تمريض', 'nursing',
         ];
         return medicalTerms.some(term => specialty.includes(term));
-    }, [employee.specialty, selectedCategory]);
+    }, [employee.specialty]);
 
     const getEffectiveLanguage = useCallback((): 'ar' | 'en' => {
         if (language === 'ar') return 'ar';
@@ -256,19 +220,21 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         } catch {}
     }, [soundEnabled]);
 
+    // جلب مجموعة الأسئلة
     const generateQuestionSet = async () => {
         setLoadingQuestions(true);
         const effectiveLang = getEffectiveLanguage();
         const generated: GeneratedQuestion[] = [];
         for (let i = 0; i < QUESTION_COUNT; i++) {
             try {
-                const q = await fetchSingleQuestion(employee.specialty, selectedCategory, effectiveLang);
+                const q = await fetchSingleQuestion(employee.specialty, effectiveLang);
                 generated.push(q);
                 await new Promise(resolve => setTimeout(resolve, 200));
             } catch (err) {
                 console.error(`Failed to generate question ${i + 1}:`, err);
+                // محاولة جلب سؤال احتياطي (محلي) بنفس اللغة
                 try {
-                    const fallback = await fetchSingleQuestion(employee.specialty, 'random', effectiveLang);
+                    const fallback = await fetchSingleQuestion('طب عام', effectiveLang);
                     generated.push(fallback);
                 } catch {
                     throw new Error('Failed to generate questions');
@@ -295,10 +261,8 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         setSelectedAnswer(null);
         setShowFeedback(false);
         setShowWrongReveal(false);
-        setPendingNext(false);
         setIsActive(true);
         setStarting(false);
-        setCategoryLocked(true);
     };
 
     // المؤقت
@@ -307,7 +271,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         if (isActive && timeLeft > 0) {
             timer = setInterval(() => setTimeLeft(p => p - 1), 1000);
         } else if (isActive && timeLeft === 0 && !showWrongReveal) {
-            // انتهاء الوقت – نعرض الشاشة التعليمية ولا ننهي اللعبة فوراً
             setShowWrongReveal(true);
             setWrongRevealReason('timeout');
             playSound('lose');
@@ -317,7 +280,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     }, [isActive, timeLeft, showWrongReveal]);
 
     const handleAnswer = (answerIndex: number) => {
-        if (showFeedback || !questions[currentQuestion] || pendingNext) return;
+        if (showFeedback || !questions[currentQuestion]) return;
         const isCorrect = answerIndex === questions[currentQuestion].correct;
 
         if (isCorrect) {
@@ -325,7 +288,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
             setScore(prev => prev + 1);
             setSelectedAnswer(answerIndex);
             setShowFeedback(true);
-            // بعد العرض، ننتقل إلى السؤال التالي
             setTimeout(() => {
                 if (currentQuestion + 1 < questions.length) {
                     setCurrentQuestion(prev => prev + 1);
@@ -336,7 +298,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 }
             }, 1500);
         } else {
-            // إجابة خاطئة: نعرض الشاشة التعليمية مباشرة
             setSelectedAnswer(answerIndex);
             setShowFeedback(true);
             playSound('lose');
@@ -372,7 +333,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const closeWrongReveal = () => {
         setShowWrongReveal(false);
         if (currentQuestion + 1 < questions.length) {
-            // انتقل للسؤال التالي
             setCurrentQuestion(prev => prev + 1);
             setSelectedAnswer(null);
             setShowFeedback(false);
@@ -408,7 +368,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const currentQ = questions[currentQuestion];
     const isEnglishQuestion = currentQ?.language === 'en';
 
-    // شاشة البداية
+    // شاشة البداية (بدون اختيار المجال)
     if (!isActive && !starting && questions.length === 0 && !showWrongReveal) {
         return (
             <div className="text-center py-6 px-3">
@@ -420,31 +380,9 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 </h3>
                 <p className="text-xs font-bold text-gray-500 mb-4 max-w-xs mx-auto">
                     {isEn 
-                        ? 'Choose your category, answer 5 short questions in 75 seconds!'
-                        : 'اختر المجال، أجب على 5 أسئلة قصيرة في 75 ثانية!'}
+                        ? 'Answer 5 medical questions in 75 seconds!'
+                        : 'أجب على 5 أسئلة طبية في 75 ثانية!'}
                 </p>
-
-                <div className="bg-white rounded-2xl p-4 mb-5 shadow-md border border-gray-100 max-w-xs mx-auto">
-                    <p className="text-xs font-bold text-gray-600 mb-2 flex items-center justify-center gap-1">
-                        <Layers className="w-3 h-3" /> {isEn ? 'Select Category' : 'اختر المجال'}
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                        {CATEGORY_OPTIONS.map(cat => (
-                            <button
-                                key={cat.value}
-                                onClick={() => !categoryLocked && setSelectedCategory(cat.value)}
-                                disabled={categoryLocked}
-                                className={`px-2 py-1.5 rounded-lg text-xs font-black transition-all ${
-                                    selectedCategory === cat.value
-                                        ? 'bg-indigo-600 text-white shadow-md'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                            >
-                                {isEn ? cat.labelEn : cat.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
 
                 <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-3 rounded-2xl max-w-xs mx-auto mb-4 border border-indigo-200">
                     <div className="grid grid-cols-2 gap-2 text-xs">
@@ -480,14 +418,13 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
 
     // شاشة التحميل
     if (loadingQuestions && questions.length === 0) {
-        const catName = isEn ? CATEGORY_OPTIONS.find(c => c.value === selectedCategory)?.labelEn : CATEGORY_OPTIONS.find(c => c.value === selectedCategory)?.label;
         return (
             <div className="text-center py-16">
                 <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-3" />
                 <p className="text-sm font-bold text-gray-600">
-                    {isEn ? `Generating ${catName} questions with AI...` : `جاري توليد أسئلة ${catName} بالذكاء الاصطناعي...`}
+                    {isEn ? 'Generating medical questions with AI...' : 'جاري توليد أسئلة طبية بالذكاء الاصطناعي...'}
                 </p>
-                <p className="text-[10px] text-gray-400 mt-1">{isEn ? 'Short & concise questions' : 'أسئلة قصيرة ومباشرة'}</p>
+                <p className="text-[10px] text-gray-400 mt-1">{isEn ? 'Based on your specialty' : 'بناءً على تخصصك'}</p>
             </div>
         );
     }
