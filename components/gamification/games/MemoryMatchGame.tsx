@@ -7,18 +7,24 @@ import confetti from 'canvas-confetti';
 interface Props {
     onStart: () => Promise<void>;
     onComplete: (points: number, isWin: boolean) => void;
-    employee?: any; // قد لا يكون موجوداً في بعض السياقات
+    employee?: any;
 }
 
 // مجموعة أيقونات كافية لأكبر شبكة (5×4 = 10 أزواج)
 const BASE_ICONS = ['🚑', '💊', '💉', '🔬', '🩺', '🦷', '🧬', '🩸', '🧪', '🧫', '🫀', '🧠'];
 
-// ─── جلب السؤال من AI (مع حماية ضد employee غير معرف) ──────────────────────
+// ─── جلب السؤال من AI (مع دعم الأسئلة القصيرة) ─────────────────────────────
 async function fetchQuestionWithAI(specialty: string, language?: string): Promise<any> {
     const level = 6;
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
-            body: { specialty: specialty || 'طب عام', level, usedTopics: [], language },
+            body: {
+                specialty: specialty || 'طب عام',
+                level,
+                usedTopics: [],
+                language,
+                question_type: 'short', // إضافة تلميح للسؤال القصير
+            },
         });
         if (error || !data) throw new Error('AI request failed');
         if (data.error) throw new Error(data.error);
@@ -57,7 +63,7 @@ async function fetchQuestionWithAI(specialty: string, language?: string): Promis
     }
 }
 
-// ─── مكون عرض الإجابة الصحيحة ──────────────────────────────────────────────
+// ─── مكون عرض الإجابة الصحيحة (مشترك) ──────────────────────────────────────
 function WrongAnswerReveal({
     question,
     reason,
@@ -171,7 +177,6 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [language, setLanguage] = useState<'auto' | 'ar' | 'en'>('auto');
 
-    // الحصول على التخصص مع حماية (قيمة افتراضية في حال عدم وجوده)
     const getSpecialty = useCallback(() => {
         return employee?.specialty || 'طب عام';
     }, [employee]);
@@ -308,7 +313,11 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
             const effectiveLang = getEffectiveLanguage();
             const q = await fetchQuestionWithAI(getSpecialty(), effectiveLang);
             setBonusQuestion(q);
-            setTimeLeftQ(15);
+            // ضبط وقت السؤال حسب حجم الشبكة (زيادة الوقت للشبكات الأكبر)
+            let bonusTime = 15; // افتراضي لـ 3×4
+            if (selectedGrid.label === '4×4') bonusTime = 20;
+            else if (selectedGrid.label === '5×4') bonusTime = 25;
+            setTimeLeftQ(bonusTime);
             setPhase('question');
         } catch (err) {
             console.error('Failed to load bonus question:', err);
@@ -462,7 +471,6 @@ export default function MemoryMatchGame({ onStart, onComplete, employee }: Props
 
     // شاشة اللعب
     if (phase === 'game' && isActive && cards.length > 0) {
-        const rows = selectedGrid.rows;
         const cols = selectedGrid.cols;
         return (
             <div className="max-w-2xl mx-auto py-4 px-3 text-center animate-in zoom-in-95">
