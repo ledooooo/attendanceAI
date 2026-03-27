@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Brain, CheckCircle, XCircle, Sparkles, Globe, Loader2, AlertCircle } from 'lucide-react';
+import { Brain, CheckCircle, XCircle, Sparkles, Globe, Loader2, AlertCircle, Volume2, VolumeX } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
@@ -23,6 +23,34 @@ interface GeneratedQuestion {
     source: 'ai' | 'local';
     provider?: string;
     language?: string;
+    specialty?: string;
+    difficulty?: string;
+}
+
+// دالة حفظ السؤال في بنك الأسئلة المحلي
+async function saveQuestionToBank(question: GeneratedQuestion, specialty: string, difficulty: string) {
+    try {
+        const { error } = await supabase
+            .from('quiz_questions')
+            .insert({
+                question_text: question.question,
+                option_a: question.options[0],
+                option_b: question.options[1],
+                option_c: question.options[2],
+                option_d: question.options[3],
+                correct_index: question.correct,
+                correct_answer: String.fromCharCode(65 + question.correct),
+                explanation: question.explanation,
+                specialty: specialty,
+                difficulty: difficulty,
+                language: question.language || 'ar',
+                is_active: true,
+                source: 'ai_generated',
+            });
+        if (error) console.warn('Failed to save question to bank:', error);
+    } catch (err) {
+        console.warn('Error saving question:', err);
+    }
 }
 
 // دالة جلب سؤال واحد من AI
@@ -45,7 +73,7 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
         if (data.error) throw new Error(data.error);
         if (!data.question || !data.options || data.correct === undefined) throw new Error('Invalid format');
         
-        return {
+        const question: GeneratedQuestion = {
             source: 'ai',
             provider: data.provider || 'AI',
             language: data.language || language || 'ar',
@@ -55,6 +83,11 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
             explanation: data.explanation,
             topic: data.topic,
         };
+        
+        // حفظ السؤال في بنك الأسئلة (غير متزامن، لا ننتظر النتيجة)
+        saveQuestionToBank(question, specialty, difficulty).catch(console.warn);
+        
+        return question;
     } catch (err) {
         console.warn('AI fallback:', err);
         
@@ -63,6 +96,7 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
             .from('quiz_questions')
             .select('*')
             .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
+            .eq('language', language || 'ar')
             .limit(30);
         
         if (!localQuestions?.length) throw new Error('No questions available');
@@ -74,7 +108,6 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
             else try { options = JSON.parse(random.options); } catch { options = random.options.split(',').map(s => s.trim()); }
         }
         
-        // تحويل correct_index إلى فهرس صحيح
         let correct = random.correct_index;
         if (correct === undefined || correct === null) {
             const letter = String(random.correct_answer || '').trim().toLowerCase();
@@ -87,7 +120,7 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
         
         return {
             source: 'local',
-            language: 'ar',
+            language: random.language || 'ar',
             question: random.question_text,
             options,
             correct,
@@ -98,7 +131,7 @@ async function fetchSingleQuestion(specialty: string, difficulty: string, langua
 export default function MedicalQuizRush({ employee, diffProfile, onStart, onComplete }: Props) {
     const [currentQuestion, setCurrentQuestion] = useState(0);
     const [score, setScore] = useState(0);
-    const [timeLeft, setTimeLeft] = useState(60);
+    const [timeLeft, setTimeLeft] = useState(120); // دقيقتين = 120 ثانية
     const [isActive, setIsActive] = useState(false);
     const [starting, setStarting] = useState(false);
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
@@ -109,29 +142,28 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const [soundEnabled, setSoundEnabled] = useState(true);
     
     const QUESTION_COUNT = 5;
-    const BASE_TIME = 60;
+    const BASE_TIME = 120;
     const PASS_SCORE = 3;
 
-    // تحديد التخصصات التي تحتاج إنجليزية طبية
+    // تحديد التخصصات التي تحتاج إنجليزية طبية (بشري، صيدلة، أسنان)
     const needsMedicalEnglish = useCallback(() => {
         const specialty = employee.specialty?.toLowerCase() || '';
         const medicalEnglishSpecialties = [
+            'بشر', 'بشري', 'طبيب', 'طب',
             'صيدلة', 'صيدلي', 'pharmacy',
             'أسنان', 'اسنان', 'dentistry', 'dental',
-            'معمل', 'مختبر', 'laboratory', 'lab',
+            'معمل', 'مختبر', 'laboratory',
             'أشعة', 'radiology',
             'تخدير', 'anesthesia',
-            'جراحة', 'surgery',
-            'قلب', 'cardiology',
-            'أعصاب', 'neurology',
         ];
         return medicalEnglishSpecialties.some(s => specialty.includes(s));
     }, [employee.specialty]);
 
-    // الحصول على اللغة الفعلية
+    // الحصول على اللغة الفعلية (الافتراضية إنجليزية للتخصصات الطبية)
     const getEffectiveLanguage = useCallback((): 'ar' | 'en' => {
         if (language === 'ar') return 'ar';
         if (language === 'en') return 'en';
+        // Auto: التخصصات الطبية تظهر بالانجليزي، الباقي عربي
         return needsMedicalEnglish() ? 'en' : 'ar';
     }, [language, needsMedicalEnglish]);
 
@@ -140,7 +172,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         if (!soundEnabled) return;
         try {
             const audio = new Audio(type === 'win' ? '/applause.mp3' : '/fail.mp3');
-            audio.volume = 0.6;
+            audio.volume = 0.5;
             audio.play().catch(() => {});
         } catch {}
     }, [soundEnabled]);
@@ -157,11 +189,9 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
             try {
                 const q = await fetchSingleQuestion(employee.specialty, difficulty, effectiveLang);
                 generated.push(q);
-                // تأخير بسيط بين الطلبات لتجنب الضغط على API
-                await new Promise(resolve => setTimeout(resolve, 300));
+                await new Promise(resolve => setTimeout(resolve, 200));
             } catch (err) {
                 console.error(`Failed to generate question ${i + 1}:`, err);
-                // إذا فشل جلب سؤال واحد، نستخدم سؤال احتياطي من بنك الأسئلة
                 try {
                     const fallback = await fetchSingleQuestion(employee.specialty, 'easy', 'ar');
                     generated.push(fallback);
@@ -180,7 +210,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         setStarting(true);
         try {
             await onStart();
-            // جلب الأسئلة من AI
             await generateQuestionSet();
         } catch (err) {
             toast.error('فشل تحميل الأسئلة، حاول مرة أخرى');
@@ -204,7 +233,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         } else if (isActive && timeLeft === 0) {
             setIsActive(false);
             playSound('lose');
-            toast.error('انتهى الوقت!');
+            toast.error(getEffectiveLanguage() === 'en' ? "Time's up!" : 'انتهى الوقت!');
             onComplete(0, false);
         }
         return () => clearInterval(timer);
@@ -226,7 +255,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 setSelectedAnswer(null);
                 setShowFeedback(false);
             } else {
-                // نهاية اللعبة
                 setIsActive(false);
                 const finalScore = score + (isCorrect ? 1 : 0);
                 const rawTotal = finalScore * 3 + Math.floor(timeLeft / 3);
@@ -235,16 +263,27 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 
                 if (finalScore >= PASS_SCORE) {
                     playSound('win');
-                    confetti({ particleCount: 200, spread: 80, origin: { y: 0.6 }, colors: ['#8b5cf6', '#ec4899', '#f59e0b'] });
-                    toast.success(`رائع! ${finalScore}/${QUESTION_COUNT} إجابات صحيحة! 🎉`);
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#8b5cf6', '#ec4899', '#f59e0b'] });
+                    toast.success(getEffectiveLanguage() === 'en' 
+                        ? `Great! ${finalScore}/${QUESTION_COUNT} correct answers! 🎉` 
+                        : `رائع! ${finalScore}/${QUESTION_COUNT} إجابات صحيحة! 🎉`);
                     onComplete(total, true);
                 } else {
                     playSound('lose');
-                    toast.error(`حاول مرة أخرى! ${finalScore}/${QUESTION_COUNT} فقط 💔`);
+                    toast.error(getEffectiveLanguage() === 'en' 
+                        ? `Try again! ${finalScore}/${QUESTION_COUNT} only 💔` 
+                        : `حاول مرة أخرى! ${finalScore}/${QUESTION_COUNT} فقط 💔`);
                     onComplete(0, false);
                 }
             }
         }, 1500);
+    };
+
+    // تنسيق الوقت
+    const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
     // الحصول على عرض اللغة
@@ -260,58 +299,57 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         const next = options[(currentIndex + 1) % options.length];
         setLanguage(next);
         const langMsg = next === 'auto' ? (needsMedicalEnglish() ? 'English (Auto)' : 'عربي (تلقائي)') : next === 'ar' ? 'عربي' : 'English Medical';
-        toast.success(`اللغة: ${langMsg}`, { icon: '🌐' });
+        toast.success(`Language: ${langMsg}`, { icon: '🌐' });
     };
 
     const isEn = getEffectiveLanguage() === 'en';
+    const currentQ = questions[currentQuestion];
+    const isEnglishQuestion = currentQ?.language === 'en';
 
     // شاشة البداية
     if (!isActive && !starting && questions.length === 0) {
         return (
-            <div className="text-center py-12">
-                <div className="w-24 h-24 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
-                    <Brain className="w-14 h-14 text-white animate-pulse"/>
+            <div className="text-center py-6 px-3">
+                <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+                    <Brain className="w-10 h-10 text-white"/>
                 </div>
-                <h3 className="text-3xl font-black text-gray-800 mb-3">
+                <h3 className="text-xl font-black text-gray-800 mb-2">
                     {isEn ? 'Medical Quiz Rush! 🏃‍♂️' : 'سباق المعرفة الطبية! 🏃‍♂️'}
                 </h3>
-                <p className="text-base font-bold text-gray-600 mb-4 max-w-lg mx-auto">
+                <p className="text-xs font-bold text-gray-500 mb-3 max-w-xs mx-auto">
                     {isEn 
-                        ? 'Answer 5 medical questions as fast as you can. Every second saved = bonus points!'
-                        : 'أجب على 5 أسئلة طبية بأسرع وقت ممكن. كل ثانية توفرها = نقاط إضافية!'}
+                        ? 'Answer 5 medical questions in 2 minutes. Save time = bonus points!'
+                        : 'أجب على 5 أسئلة طبية في دقيقتين. كل ثانية توفرها = نقاط إضافية!'}
                 </p>
-                <p className="text-sm font-bold text-indigo-600 mb-6 flex items-center justify-center gap-1">
-                    <Sparkles className="w-4 h-4"/> {isEn ? 'Your level' : 'مستواك'} {diffProfile.emoji}: {isEn ? 'Custom questions ×' : 'أسئلة مخصصة ×'}{diffProfile.multiplier.toFixed(1)} {isEn ? 'points' : 'نقاط'}
-                </p>
-                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-3xl max-w-md mx-auto mb-8 border-2 border-indigo-200">
-                    <div className="grid grid-cols-2 gap-4 text-sm font-bold">
-                        <div className="bg-white p-3 rounded-xl shadow-sm"><p className="text-indigo-600">{isEn ? 'Time limit' : 'الوقت المحدد'}</p><p className="text-2xl text-gray-800">{BASE_TIME}s</p></div>
-                        <div className="bg-white p-3 rounded-xl shadow-sm"><p className="text-indigo-600">{isEn ? 'Questions' : 'عدد الأسئلة'}</p><p className="text-2xl text-gray-800">{QUESTION_COUNT}</p></div>
-                        <div className="bg-white p-3 rounded-xl shadow-sm col-span-2"><p className="text-indigo-600">{isEn ? 'Passing score' : 'شرط النجاح'}</p><p className="text-lg text-gray-800">{PASS_SCORE}/{QUESTION_COUNT} {isEn ? 'correct answers' : 'إجابات صحيحة'}</p></div>
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-3 rounded-2xl max-w-xs mx-auto mb-4 border border-indigo-200">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-white p-2 rounded-lg"><p className="text-indigo-600 font-bold">{isEn ? 'Time' : 'الوقت'}</p><p className="text-lg font-black">2:00</p></div>
+                        <div className="bg-white p-2 rounded-lg"><p className="text-indigo-600 font-bold">{isEn ? 'Questions' : 'أسئلة'}</p><p className="text-lg font-black">5</p></div>
+                        <div className="bg-white p-2 rounded-lg col-span-2"><p className="text-indigo-600 font-bold">{isEn ? 'Pass' : 'النجاح'}</p><p className="text-base font-black">3/5 {isEn ? 'correct' : 'صحيحة'}</p></div>
                     </div>
                 </div>
-                <div className="flex justify-center gap-3 mb-6">
+                <div className="flex justify-center gap-2 mb-4">
                     <button
                         onClick={cycleLanguage}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-100 text-indigo-700 font-black hover:bg-indigo-200 transition"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-black"
                     >
-                        <Globe className="w-4 h-4" />
+                        <Globe className="w-3 h-3" />
                         {getLanguageDisplay()}
                     </button>
                     <button
                         onClick={() => setSoundEnabled(!soundEnabled)}
-                        className="p-2 rounded-full hover:bg-gray-100 transition"
+                        className="p-1.5 rounded-lg hover:bg-gray-100"
                     >
-                        {soundEnabled ? <span className="text-gray-600">🔊</span> : <span className="text-gray-400">🔇</span>}
+                        {soundEnabled ? <Volume2 className="w-4 h-4 text-gray-600" /> : <VolumeX className="w-4 h-4 text-gray-400" />}
                     </button>
                 </div>
                 <button
                     onClick={startGame}
                     disabled={starting || loadingQuestions}
-                    className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-10 py-4 rounded-2xl font-black shadow-2xl hover:scale-105 transition-all disabled:opacity-50 text-lg flex items-center justify-center gap-2 mx-auto"
+                    className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:scale-105 transition-all disabled:opacity-50 text-sm flex items-center justify-center gap-2 mx-auto"
                 >
-                    {starting || loadingQuestions ? <Loader2 className="w-5 h-5 animate-spin" /> : <Brain className="w-5 h-5" />}
-                    {loadingQuestions ? (isEn ? 'Generating questions...' : 'جاري توليد الأسئلة...') : 
+                    {starting || loadingQuestions ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+                    {loadingQuestions ? (isEn ? 'Generating...' : 'جاري التوليد...') : 
                      starting ? (isEn ? 'Starting...' : 'جاري البدء...') : 
                      (isEn ? '🚀 Start Race' : '🚀 ابدأ السباق')}
                 </button>
@@ -323,70 +361,76 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     if (loadingQuestions && questions.length === 0) {
         return (
             <div className="text-center py-16">
-                <Loader2 className="w-16 h-16 text-indigo-500 animate-spin mx-auto mb-4" />
-                <p className="text-gray-600 font-bold">{isEn ? 'Generating medical questions with AI...' : 'جاري توليد أسئلة طبية بالذكاء الاصطناعي...'}</p>
-                <p className="text-xs text-gray-400 mt-2">{isEn ? 'This may take a moment' : 'قد يستغرق هذا لحظة'}</p>
+                <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-3" />
+                <p className="text-sm font-bold text-gray-600">{isEn ? 'Generating questions with AI...' : 'جاري توليد الأسئلة بالذكاء الاصطناعي...'}</p>
+                <p className="text-[10px] text-gray-400 mt-1">{isEn ? 'Using medical terminology' : 'باستخدام المصطلحات الطبية'}</p>
             </div>
         );
     }
 
     // شاشة اللعب
-    if (isActive && questions.length > 0 && questions[currentQuestion]) {
-        const currentQ = questions[currentQuestion];
+    if (isActive && questions.length > 0 && currentQ) {
         const opts = currentQ.options;
-        const isEnglishQuestion = currentQ.language === 'en';
-
+        
         return (
-            <div className="max-w-3xl mx-auto py-8 animate-in zoom-in-95" dir={isEnglishQuestion ? 'ltr' : 'rtl'}>
-                <div className="flex justify-between items-center mb-8 px-4 flex-wrap gap-2">
-                    <div className={`px-6 py-3 rounded-2xl font-black text-xl shadow-lg ${timeLeft > 20 ? 'bg-indigo-500 text-white' : 'bg-red-500 text-white animate-pulse'}`}>
-                        ⏱️ {timeLeft}s
+            <div className="min-h-screen bg-gray-50 py-3 px-3" dir={isEnglishQuestion ? 'ltr' : 'rtl'}>
+                {/* رأس المعلومات - تصميم مناسب للموبايل */}
+                <div className="flex justify-between items-center mb-4 gap-2">
+                    <div className={`px-3 py-1.5 rounded-xl font-black text-sm shadow-md ${
+                        timeLeft > 60 ? 'bg-indigo-500 text-white' : 
+                        timeLeft > 30 ? 'bg-orange-500 text-white' : 
+                        'bg-red-500 text-white animate-pulse'
+                    }`}>
+                        ⏱️ {formatTime(timeLeft)}
                     </div>
-                    <div className="bg-white px-6 py-3 rounded-2xl font-black shadow-lg border-2 border-indigo-200">
-                        <span className="text-indigo-600">{currentQuestion + 1}</span><span className="text-gray-400"> / {QUESTION_COUNT}</span>
+                    <div className="bg-white px-3 py-1.5 rounded-xl font-black shadow-sm border border-indigo-200 text-sm">
+                        <span className="text-indigo-600">{currentQuestion + 1}</span><span className="text-gray-400">/{QUESTION_COUNT}</span>
                     </div>
-                    <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-6 py-3 rounded-2xl font-black shadow-lg">
-                        ✅ {score} {isEn ? 'correct' : 'صحيحة'}
+                    <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-3 py-1.5 rounded-xl font-black shadow-md text-sm">
+                        ✅ {score}/{QUESTION_COUNT}
                     </div>
                 </div>
                 
-                <div className="w-full bg-gray-200 h-3 rounded-full mb-8 overflow-hidden shadow-inner">
-                    <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 transition-all duration-300 rounded-full" style={{ width: `${((currentQuestion + 1) / QUESTION_COUNT) * 100}%` }}></div>
+                {/* شريط التقدم */}
+                <div className="w-full bg-gray-200 h-1.5 rounded-full mb-5 overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 transition-all duration-300 rounded-full" 
+                         style={{ width: `${((currentQuestion + 1) / QUESTION_COUNT) * 100}%` }}></div>
                 </div>
                 
-                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-8 rounded-3xl mb-8 border-2 border-indigo-200 shadow-xl relative">
-                    <div className="flex items-start gap-4">
-                        <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-black text-xl flex-shrink-0 shadow-lg">
+                {/* بطاقة السؤال */}
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-2xl mb-5 border border-indigo-200 shadow-sm">
+                    <div className="flex items-start gap-2">
+                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow">
                             {currentQuestion + 1}
                         </div>
-                        <h3 className={`text-xl md:text-2xl font-black text-gray-900 leading-relaxed ${isEnglishQuestion ? 'text-left' : 'text-right'}`}>
+                        <h3 className={`text-sm font-bold text-gray-800 leading-relaxed flex-1 ${isEnglishQuestion ? 'text-left' : 'text-right'}`}>
                             {currentQ.question}
                         </h3>
                     </div>
-                    <div className="flex flex-wrap justify-center gap-2 mt-4">
+                    <div className="flex flex-wrap justify-center gap-1.5 mt-3">
                         {currentQ.source === 'ai' && (
-                            <p className="text-xs text-indigo-400 flex items-center justify-center gap-1 bg-indigo-50 px-3 py-1 rounded-full">
-                                <Sparkles className="w-3 h-3" /> {isEn ? 'Generated by' : 'تم توليده بواسطة'} {currentQ.provider}
-                            </p>
+                            <span className="text-[9px] text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                <Sparkles className="w-2.5 h-2.5" /> AI
+                            </span>
                         )}
                         {currentQ.source === 'local' && (
-                            <p className="text-xs text-amber-600 flex items-center justify-center gap-1 bg-amber-50 px-3 py-1 rounded-full">
-                                <AlertCircle className="w-3 h-3" /> {isEn ? 'From local bank' : 'من بنك الأسئلة المحلي'}
-                            </p>
+                            <span className="text-[9px] text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                <AlertCircle className="w-2.5 h-2.5" /> {isEn ? 'Local' : 'محلي'}
+                            </span>
                         )}
-                        <p className="text-xs text-gray-400 flex items-center justify-center gap-1 bg-gray-100 px-3 py-1 rounded-full">
-                            <Globe className="w-3 h-3" />
-                            {isEnglishQuestion ? 'Medical English' : 'العربية'}
-                        </p>
+                        <span className="text-[9px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                            {isEnglishQuestion ? (isEn ? 'Medical English' : 'إنجليزي طبي') : (isEn ? 'Arabic' : 'عربي')}
+                        </span>
                     </div>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* خيارات الإجابة - شبكة مناسبة للموبايل */}
+                <div className="grid grid-cols-1 gap-2.5">
                     {opts.map((option, idx) => {
-                        let btnClass = 'bg-white border-2 border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 text-gray-800';
+                        let btnClass = 'bg-white border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 text-gray-800';
                         if (showFeedback) {
-                            if (idx === currentQ.correct) btnClass = 'bg-gradient-to-br from-emerald-400 to-emerald-600 border-emerald-600 text-white';
-                            else if (idx === selectedAnswer) btnClass = 'bg-gradient-to-br from-red-400 to-red-600 border-red-600 text-white';
+                            if (idx === currentQ.correct) btnClass = 'bg-gradient-to-r from-emerald-400 to-emerald-500 border-emerald-500 text-white';
+                            else if (idx === selectedAnswer) btnClass = 'bg-gradient-to-r from-red-400 to-red-500 border-red-500 text-white';
                             else btnClass = 'bg-gray-100 border-gray-200 text-gray-400';
                         }
                         return (
@@ -394,17 +438,28 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                                 key={idx}
                                 onClick={() => handleAnswer(idx)}
                                 disabled={showFeedback}
-                                className={`${btnClass} p-5 rounded-2xl font-bold text-lg transition-all hover:scale-105 active:scale-95 shadow-md hover:shadow-xl disabled:cursor-not-allowed text-right flex items-center gap-3`}
+                                className={`${btnClass} p-3 rounded-xl font-bold text-sm transition-all active:scale-98 shadow-sm flex items-center gap-2 ${isEnglishQuestion ? 'flex-row' : 'flex-row-reverse'}`}
                             >
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${showFeedback && idx === currentQ.correct ? 'bg-white text-emerald-600' : showFeedback && idx === selectedAnswer ? 'bg-white text-red-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center font-black text-xs flex-shrink-0 ${
+                                    showFeedback && idx === currentQ.correct ? 'bg-white text-emerald-600' : 
+                                    showFeedback && idx === selectedAnswer ? 'bg-white text-red-600' : 
+                                    'bg-indigo-100 text-indigo-600'
+                                }`}>
                                     {String.fromCharCode(65 + idx)}
                                 </div>
-                                <span className="flex-1">{option}</span>
-                                {showFeedback && idx === currentQ.correct && <CheckCircle className="w-6 h-6 flex-shrink-0"/>}
-                                {showFeedback && idx === selectedAnswer && idx !== currentQ.correct && <XCircle className="w-6 h-6 flex-shrink-0"/>}
+                                <span className="flex-1 text-right text-sm leading-relaxed">{option}</span>
+                                {showFeedback && idx === currentQ.correct && <CheckCircle className="w-4 h-4 flex-shrink-0" />}
+                                {showFeedback && idx === selectedAnswer && idx !== currentQ.correct && <XCircle className="w-4 h-4 flex-shrink-0" />}
                             </button>
                         );
                     })}
+                </div>
+                
+                {/* تلميح الوقت المتبقي */}
+                <div className="mt-4 text-center">
+                    <p className="text-[10px] text-gray-400">
+                        {isEn ? `${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')} remaining` : `متبقي ${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}`}
+                    </p>
                 </div>
             </div>
         );
