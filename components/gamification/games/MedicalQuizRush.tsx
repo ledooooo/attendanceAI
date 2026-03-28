@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Brain, CheckCircle, XCircle, Sparkles, Globe, Loader2, AlertCircle, Volume2, VolumeX, BookOpen, RotateCw, Layers } from 'lucide-react';
+import { Brain, CheckCircle, XCircle, Sparkles, Globe, Loader2, AlertCircle, Volume2, VolumeX, BookOpen, RotateCw, Layers, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
@@ -24,7 +24,6 @@ interface GeneratedQuestion {
     language?: string;
 }
 
-// تعريف خيارات المجال
 type Category = 'medical' | 'sports' | 'scientific' | 'technical' | 'literature' | 'random';
 
 const CATEGORY_OPTIONS: { value: Category; label: string; labelEn: string }[] = [
@@ -36,7 +35,51 @@ const CATEGORY_OPTIONS: { value: Category; label: string; labelEn: string }[] = 
     { value: 'random', label: 'متنوع', labelEn: 'Varied' },
 ];
 
-// ─── مكون عرض الإجابة الصحيحة (مشترك) ────────────────────────────────────────
+// --- أسئلة احتياطية مدمجة (Hardcoded) ---
+const FALLBACK_QUESTIONS: GeneratedQuestion[] = [
+    {
+        source: 'local',
+        language: 'ar',
+        question: 'ما هو العضو المسؤول عن ضخ الدم في الجسم؟',
+        options: ['الكبد', 'القلب', 'الرئة', 'المعدة'],
+        correct: 1,
+        explanation: 'القلب هو العضو المسؤول عن ضخ الدم إلى جميع أجزاء الجسم.',
+    },
+    {
+        source: 'local',
+        language: 'ar',
+        question: 'ما هو الفيتامين الذي ينتجه الجسم عند التعرض لأشعة الشمس؟',
+        options: ['فيتامين A', 'فيتامين B', 'فيتامين C', 'فيتامين D'],
+        correct: 3,
+        explanation: 'فيتامين D ينتج في الجلد عند التعرض لأشعة الشمس.',
+    },
+    {
+        source: 'local',
+        language: 'ar',
+        question: 'ما هي أول خطوة في الإسعافات الأولية عند حدوث حرق؟',
+        options: ['وضع زبدة', 'تبريد المنطقة بالماء', 'وضع ثلج مباشر', 'لف المنطقة بضمادة'],
+        correct: 1,
+        explanation: 'تبريد الحرق بالماء الجاري لمدة 10-15 دقيقة.',
+    },
+    {
+        source: 'local',
+        language: 'ar',
+        question: 'ما هو ضغط الدم الطبيعي للبالغين؟',
+        options: ['90/60', '120/80', '140/90', '160/100'],
+        correct: 1,
+        explanation: 'ضغط الدم الطبيعي حوالي 120/80 مم زئبق.',
+    },
+    {
+        source: 'local',
+        language: 'ar',
+        question: 'أي من التالي ليس من أعراض السكري؟',
+        options: ['العطش الشديد', 'كثرة التبول', 'فقدان الوزن', 'زيادة ضربات القلب'],
+        correct: 3,
+        explanation: 'زيادة ضربات القلب ليست عرضاً مباشراً للسكري.',
+    },
+];
+
+// ─── مكون عرض الإجابة الصحيحة ────────────────────────────────────────────────
 function WrongAnswerReveal({
     question,
     reason,
@@ -120,16 +163,15 @@ function WrongAnswerReveal({
     );
 }
 
-// ─── جلب سؤال واحد من AI مع دعم المجال والطول القصير ─────────────────
-
-
-// ─── جلب سؤال واحد من AI (مع دعم المجال والطول القصير) ─────────────────────────
+// ─── جلب سؤال واحد (مع احتياطي متعدد) ───────────────────────────────────────
 async function fetchSingleQuestion(
     specialty: string,
     category: Category,
     language?: string
 ): Promise<GeneratedQuestion> {
     const level = 6;
+
+    // 1. محاولة AI
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
             body: {
@@ -158,25 +200,16 @@ async function fetchSingleQuestion(
         };
     } catch (err) {
         console.warn('AI fallback:', err);
-        
-        // 🔧 الرجوع إلى بنك الأسئلة المحلي بدون فلتر اللغة (لتجنب خطأ 400)
-        // نحاول جلب أسئلة من أي لغة، ثم نفلتر يدوياً إذا أردنا
-        try {
-            const { data: localQuestions, error: localError } = await supabase
-                .from('quiz_questions')
-                .select('*')
-                .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
-                .limit(30);
-            
-            if (localError) {
-                console.error('Local DB error:', localError);
-                throw new Error(localError.message);
-            }
-            if (!localQuestions || localQuestions.length === 0) {
-                throw new Error('No questions available locally');
-            }
-            
-            // اختيار سؤال عشوائي وتنسيقه
+    }
+
+    // 2. محاولة بنك الأسئلة المحلي (طريقة آمنة)
+    try {
+        const { data: localQuestions, error: localError } = await supabase
+            .from('quiz_questions')
+            .select('*')
+            .limit(50);
+
+        if (!localError && localQuestions && localQuestions.length > 0) {
             const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
             let options: string[] = [];
             if (random.options) {
@@ -192,23 +225,24 @@ async function fetchSingleQuestion(
                 else if (letter === 'd') correct = 3;
                 else correct = 0;
             }
-            
             return {
                 source: 'local',
-                language: random.language || 'ar', // إذا لم يكن موجوداً، نفترض العربية
+                language: random.language || 'ar',
                 question: random.question_text,
                 options,
                 correct,
+                explanation: random.explanation,
             };
-        } catch (localErr) {
-            console.error('Local fallback also failed:', localErr);
-            // إذا فشل كل شيء، نرمي خطأ لتظهر رسالة للمستخدم
-            throw new Error('لا توجد أسئلة متاحة حالياً. حاول مرة أخرى لاحقاً.');
         }
+    } catch (err) {
+        console.warn('Local bank error:', err);
     }
+
+    // 3. الاحتياطي النهائي: الأسئلة المدمجة
+    console.log('Using hardcoded fallback question');
+    const randomIndex = Math.floor(Math.random() * FALLBACK_QUESTIONS.length);
+    return { ...FALLBACK_QUESTIONS[randomIndex] };
 }
-
-
 
 export default function MedicalQuizRush({ employee, diffProfile, onStart, onComplete }: Props) {
     const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -233,7 +267,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const BONUS_ALL_CORRECT = 15;
     const PASS_SCORE = 3;
 
-    // تحديد التخصصات التي تحتاج إنجليزية طبية (للمجال الطبي فقط)
     const needsMedicalEnglish = useCallback(() => {
         if (selectedCategory !== 'medical') return false;
         const specialty = employee.specialty?.toLowerCase() || '';
@@ -261,7 +294,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         } catch {}
     }, [soundEnabled]);
 
-    // جلب مجموعة الأسئلة حسب المجال
     const generateQuestionSet = async () => {
         setLoadingQuestions(true);
         const effectiveLang = getEffectiveLanguage();
@@ -273,13 +305,9 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 await new Promise(resolve => setTimeout(resolve, 200));
             } catch (err) {
                 console.error(`Failed to generate question ${i + 1}:`, err);
-                // محاولة جلب سؤال احتياطي (محلي) بنفس اللغة والمجال العشوائي
-                try {
-                    const fallback = await fetchSingleQuestion('طب عام', 'random', effectiveLang);
-                    generated.push(fallback);
-                } catch {
-                    throw new Error('Failed to generate questions');
-                }
+                // الاحتياطي: استخدام سؤال من الأسئلة المدمجة مباشرة
+                const fallbackIdx = Math.floor(Math.random() * FALLBACK_QUESTIONS.length);
+                generated.push({ ...FALLBACK_QUESTIONS[fallbackIdx] });
             }
         }
         setQuestions(generated);
@@ -307,7 +335,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         setCategoryLocked(true);
     };
 
-    // المؤقت
     useEffect(() => {
         let timer: ReturnType<typeof setInterval>;
         if (isActive && timeLeft > 0) {
@@ -410,7 +437,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const currentQ = questions[currentQuestion];
     const isEnglishQuestion = currentQ?.language === 'en';
 
-    // شاشة البداية (اختيار المجال)
     if (!isActive && !starting && questions.length === 0 && !showWrongReveal) {
         return (
             <div className="text-center py-6 px-3">
@@ -426,7 +452,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                         : 'اختر المجال، ثم أجب على 5 أسئلة قصيرة في 75 ثانية!'}
                 </p>
 
-                {/* اختيار المجال */}
                 <div className="bg-white rounded-2xl p-3 mb-5 shadow-md border border-gray-100 max-w-xs mx-auto">
                     <p className="text-xs font-bold text-gray-600 mb-2 flex items-center justify-center gap-1">
                         <Layers className="w-3 h-3" /> {isEn ? 'Select Category' : 'اختر المجال'}
@@ -481,7 +506,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         );
     }
 
-    // شاشة التحميل
     if (loadingQuestions && questions.length === 0) {
         const catName = isEn ? CATEGORY_OPTIONS.find(c => c.value === selectedCategory)?.labelEn : CATEGORY_OPTIONS.find(c => c.value === selectedCategory)?.label;
         return (
@@ -495,7 +519,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         );
     }
 
-    // شاشة اللعب
     if (isActive && questions.length > 0 && currentQ && !showWrongReveal) {
         const opts = currentQ.options;
         return (
@@ -586,7 +609,6 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         );
     }
 
-    // عرض الشاشة التعليمية (إجابة خاطئة أو وقت منتهي)
     if (showWrongReveal && currentQ) {
         return (
             <WrongAnswerReveal
