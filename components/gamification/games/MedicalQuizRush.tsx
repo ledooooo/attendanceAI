@@ -120,13 +120,16 @@ function WrongAnswerReveal({
     );
 }
 
-// ─── جلب سؤال واحد من AI مع دعم المجال والطول القصير ─────────────────────────
+// ─── جلب سؤال واحد من AI مع دعم المجال والطول القصير ─────────────────
+
+
+// ─── جلب سؤال واحد من AI (مع دعم المجال والطول القصير) ─────────────────────────
 async function fetchSingleQuestion(
     specialty: string,
     category: Category,
     language?: string
 ): Promise<GeneratedQuestion> {
-    const level = 6; // مستوى متوسط
+    const level = 6;
     try {
         const { data, error } = await supabase.functions.invoke('generate-beast-question', {
             body: {
@@ -134,9 +137,9 @@ async function fetchSingleQuestion(
                 level,
                 usedTopics: [],
                 language,
-                category,          // تمرير المجال المختار
+                category,
                 question_type: 'mcq',
-                length: 'short',   // أسئلة قصيرة
+                length: 'short',
             },
         });
         if (error || !data) throw new Error('AI request failed');
@@ -155,38 +158,57 @@ async function fetchSingleQuestion(
         };
     } catch (err) {
         console.warn('AI fallback:', err);
-        // الرجوع إلى بنك الأسئلة المحلي (قد يحتوي أسئلة منوعة حسب المجال مستقبلاً)
-        const { data: localQuestions } = await supabase
-            .from('quiz_questions')
-            .select('*')
-            .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
-            .eq('language', language || 'ar')
-            .limit(30);
-        if (!localQuestions?.length) throw new Error('No questions available');
-        const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
-        let options: string[] = [];
-        if (random.options) {
-            if (Array.isArray(random.options)) options = random.options;
-            else try { options = JSON.parse(random.options); } catch { options = random.options.split(',').map(s => s.trim()); }
+        
+        // 🔧 الرجوع إلى بنك الأسئلة المحلي بدون فلتر اللغة (لتجنب خطأ 400)
+        // نحاول جلب أسئلة من أي لغة، ثم نفلتر يدوياً إذا أردنا
+        try {
+            const { data: localQuestions, error: localError } = await supabase
+                .from('quiz_questions')
+                .select('*')
+                .or(`specialty.ilike.%${specialty}%,specialty.ilike.%الكل%`)
+                .limit(30);
+            
+            if (localError) {
+                console.error('Local DB error:', localError);
+                throw new Error(localError.message);
+            }
+            if (!localQuestions || localQuestions.length === 0) {
+                throw new Error('No questions available locally');
+            }
+            
+            // اختيار سؤال عشوائي وتنسيقه
+            const random = localQuestions[Math.floor(Math.random() * localQuestions.length)];
+            let options: string[] = [];
+            if (random.options) {
+                if (Array.isArray(random.options)) options = random.options;
+                else try { options = JSON.parse(random.options); } catch { options = random.options.split(',').map(s => s.trim()); }
+            }
+            let correct = random.correct_index;
+            if (correct === undefined || correct === null) {
+                const letter = String(random.correct_answer || '').trim().toLowerCase();
+                if (letter === 'a') correct = 0;
+                else if (letter === 'b') correct = 1;
+                else if (letter === 'c') correct = 2;
+                else if (letter === 'd') correct = 3;
+                else correct = 0;
+            }
+            
+            return {
+                source: 'local',
+                language: random.language || 'ar', // إذا لم يكن موجوداً، نفترض العربية
+                question: random.question_text,
+                options,
+                correct,
+            };
+        } catch (localErr) {
+            console.error('Local fallback also failed:', localErr);
+            // إذا فشل كل شيء، نرمي خطأ لتظهر رسالة للمستخدم
+            throw new Error('لا توجد أسئلة متاحة حالياً. حاول مرة أخرى لاحقاً.');
         }
-        let correct = random.correct_index;
-        if (correct === undefined || correct === null) {
-            const letter = String(random.correct_answer || '').trim().toLowerCase();
-            if (letter === 'a') correct = 0;
-            else if (letter === 'b') correct = 1;
-            else if (letter === 'c') correct = 2;
-            else if (letter === 'd') correct = 3;
-            else correct = 0;
-        }
-        return {
-            source: 'local',
-            language: random.language || 'ar',
-            question: random.question_text,
-            options,
-            correct,
-        };
     }
 }
+
+
 
 export default function MedicalQuizRush({ employee, diffProfile, onStart, onComplete }: Props) {
     const [currentQuestion, setCurrentQuestion] = useState(0);
