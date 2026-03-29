@@ -1078,9 +1078,700 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             }
 
             if (match.status !== 'waiting') {
+                toast.error('الغرفة لم تعد متاحة');
+                setLoading(false);
+                return;
+            }
 
+            // Beast Level points check for joining
+            if (match.game_type === 'beastlevel' && (employee.total_points || 0) < BEASTLEVEL_MIN_POINTS) {
+                toast.error(`تحتاج ${BEASTLEVEL_MIN_POINTS.toLocaleString('ar')} نقطة للانضمام إلى لعبة من سيربح المليون!`);
+                setLoading(false);
+                return;
+            }
 
+            const gt = match.game_type;
+            const playerInfo = getMyPlayerInfo(gt);
+            const player = {
+                ...playerInfo,
+                symbol: gt === 'xo' ? 'O' : gt === 'connect4' ? 'Y' : gt === 'chess' ? '♚' : undefined,
+            };
+            const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(gt)) ? 'waiting' : 'playing';
+            const updatedPlayers = [...match.players, player];
 
+            const { data: updated, error: updateError } = await supabase.from('live_matches').update({
+                players: updatedPlayers, status: newStatus,
+            }).eq('id', joiningMatchId).select().single();
 
+            if (updateError) {
+                toast.error('فشل الانضمام');
+                setLoading(false);
+                return;
+            }
 
+            const creator = match.players?.[0];
+            if (creator) {
+                sendPushToUser(
+                    String(creator.id),
+                    '🎮 انضم لاعب جديد!',
+                    `${playerInfo.name} انضم لغرفتك في لعبة ${GAME_TYPES.find(g => g.key === gt)?.label}!`,
+                    getRoomLink(match.id),
+                );
+            }
 
+            setCurrentMatch(updated);
+            setView('playing');
+        } catch (error) {
+            console.error('Join match error:', error);
+            toast.error('حدث خطأ غير متوقع');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ── Join rematch room (after rematch accepted) ────────────────────────────
+    const handleJoinRematchRoom = async (roomId: string) => {
+        try {
+            const { data: match, error } = await supabase.from('live_matches').select('*').eq('id', roomId).single();
+            if (error || !match) {
+                toast.error('فشل الانضمام للغرفة الجديدة');
+                return;
+            }
+            setCurrentMatch(match);
+            setView('playing');
+            setRematchOfferedTo(null);
+            setRematchRequestFrom(null);
+            setIsProcessingRematch(false);
+            toast.success('جاري إعادة المباراة! 🔄', { icon: '🎮' });
+        } catch (error) {
+            console.error('Join rematch error:', error);
+            toast.error('حدث خطأ');
+            setIsProcessingRematch(false);
+        }
+    };
+
+    // ── Delete match ──────────────────────────────────────────────────────────
+    const handleDeleteMatch = async (matchId: string, isAuto = false) => {
+        if (!isAuto) setLoading(true);
+        try {
+            await supabase.from('live_matches').delete().eq('id', matchId);
+            if (isAuto) toast('تم إغلاق الغرفة لعدم انضمام أحد', { icon: '⏳' });
+            else toast.success('تم حذف الغرفة');
+        } catch (error) {
+            if (!isAuto) {
+                console.error('Delete error:', error);
+                toast.error('لم يتم الحذف من السيرفر');
+            }
+        }
+        if (currentMatch?.id === matchId) { setCurrentMatch(null); setView('lobby'); }
+        setMatches(prev => prev.filter(m => m.id !== matchId));
+        if (!isAuto) setLoading(false);
+    };
+
+    // ── Reward ────────────────────────────────────────────────────────────────
+    const handleRewardSelection = async (difficulty: 'easy' | 'medium' | 'hard', pts: number, timeLimit: number) => {
+        setLoading(true);
+        try {
+            const q = await fetchUnifiedQuestion(employee, difficulty);
+            if (!q) {
+                toast.success(`لا أسئلة — ربحت ${pts} نقطة مباشرة!`);
+                await grantPoints(pts);
+                await supabase.from('live_matches').update({ status: 'finished' }).eq('id', currentMatch.id);
+                setLoading(false); return;
+            }
+            await supabase.from('live_matches').update({ status: 'answering_reward', final_question: { ...q, rewardPoints: pts, timeLimit } }).eq('id', currentMatch.id);
+        } catch (error) {
+            console.error('Reward selection error:', error);
+            toast.error('حدث خطأ');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRewardAnswer = async (answerText: string) => {
+        setLoading(true);
+        setTimeLeft(null);
+        try {
+            const correct = currentMatch.final_question?.correctAnswer || '';
+            const sel = answerText.trim().toLowerCase();
+            const isCorrect = correct === sel || correct.includes(sel) || sel.includes(correct);
+
+            if (isCorrect) await grantPoints(currentMatch.final_question?.rewardPoints || 0);
+            else toast.error(answerText === 'TIMEOUT_WRONG_ANSWER' ? 'انتهى الوقت!' : 'إجابة خاطئة! حظ أوفر');
+
+            await supabase.from('live_matches').update({ status: 'finished' }).eq('id', currentMatch.id);
+        } catch (error) {
+            console.error('Reward answer error:', error);
+            toast.error('حدث خطأ');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ── REMATCH (with race condition prevention) ───────────────────────────────
+    const handleRequestRematch = async () => {
+        if (!currentMatch || isProcessingRematch) return;
+        const opp = currentMatch.players?.find((p: any) => p.id !== employee.employee_id);
+        if (!opp) return;
+
+        setRematchLoading(true);
+        try {
+            const { error } = await supabase.from('live_matches').update({
+                game_state: {
+                    ...currentMatch.game_state,
+                    rematch_request: { from: employee.employee_id, to: opp.id, accepted: false },
+                },
+            }).eq('id', currentMatch.id).eq('status', 'finished');
+
+            if (error) {
+                toast.error('فشل إرسال طلب إعادة المباراة');
+                setRematchLoading(false);
+                return;
+            }
+
+            setRematchOfferedTo(opp.id);
+            sendPushToUser(
+                String(opp.id),
+                '🔄 طلب إعادة المباراة!',
+                `${employee.name?.split(' ')[0]} يريد إعادة المباراة في لعبة ${GAME_TYPES.find(g => g.key === currentMatch.game_type)?.label}!`,
+                window.location.href,
+            );
+            toast('تم إرسال طلب إعادة المباراة للخصم ⏳', { icon: '🔄' });
+        } catch (error) {
+            console.error('Rematch request error:', error);
+            toast.error('حدث خطأ');
+        } finally {
+            setRematchLoading(false);
+        }
+    };
+
+    const handleAcceptRematch = async () => {
+        if (!currentMatch || !rematchRequestFrom || isProcessingRematch) return;
+        setRematchLoading(true);
+        setIsProcessingRematch(true);
+
+        try {
+            const gt = currentMatch.game_type;
+            const myInfo = getMyPlayerInfo(gt);
+            const oppInfo = currentMatch.players?.find((p: any) => p.id === rematchRequestFrom);
+
+            if (!oppInfo) {
+                toast.error('لم يتم العثور على الخصم');
+                setRematchLoading(false);
+                setIsProcessingRematch(false);
+                return;
+            }
+
+            // First, verify the match still exists and is in expected state
+            const { data: currentMatchData } = await supabase
+                .from('live_matches')
+                .select('id, status')
+                .eq('id', currentMatch.id)
+                .single();
+
+            if (!currentMatchData || currentMatchData.status !== 'finished') {
+                toast.error('المباراة لم تعد متاحة');
+                setRematchLoading(false);
+                setIsProcessingRematch(false);
+                return;
+            }
+
+            const firstPlayer = oppInfo;
+            let initialState: any = {};
+            if (gt === 'xo')           initialState = { board: Array(9).fill(null), current_turn: firstPlayer.id };
+            else if (gt === 'connect4') initialState = { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: firstPlayer.id };
+            else if (gt === 'chess') {
+                const order = ['R','N','B','Q','K','B','N','R'];
+                const b = Array.from({ length: 8 }, () => Array(8).fill(null));
+                for (let c = 0; c < 8; c++) { b[0][c] = { type: order[c], color: 'b' }; b[1][c] = { type: 'P', color: 'b' }; b[6][c] = { type: 'P', color: 'w' }; b[7][c] = { type: order[c], color: 'w' }; }
+                initialState = { board: b, turn: 'w', castling: { wK: true, wQ: true, bK: true, bQ: true }, enPassant: null, halfmove: 0, moveHistory: [], whiteTime: 300, blackTime: 300, lastMoveAt: Date.now(), currentTurn: firstPlayer.id, result: 'ongoing', drawOfferedBy: null };
+            }
+            else initialState = {};
+
+            const firstPlayerFull = { ...firstPlayer, symbol: gt === 'xo' ? 'X' : gt === 'connect4' ? 'R' : gt === 'chess' ? '♔' : undefined };
+            const secondPlayerFull = { ...myInfo, symbol: gt === 'xo' ? 'O' : gt === 'connect4' ? 'Y' : gt === 'chess' ? '♚' : undefined };
+
+            const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(gt)) ? 'waiting' : 'playing';
+
+            const { data: newMatch, error } = await supabase.from('live_matches').insert({
+                game_type: gt, status: newStatus,
+                players: [firstPlayerFull, secondPlayerFull],
+                game_state: initialState,
+                created_by: rematchRequestFrom,
+            }).select().single();
+
+            if (error || !newMatch) {
+                toast.error('خطأ في إنشاء الغرفة');
+                setRematchLoading(false);
+                setIsProcessingRematch(false);
+                return;
+            }
+
+            // Update the old match to mark rematch as accepted
+            await supabase.from('live_matches').update({
+                game_state: {
+                    ...currentMatch.game_state,
+                    rematch_request: { from: rematchRequestFrom, to: employee.employee_id, accepted: true },
+                    rematch_new_room_id: newMatch.id,
+                },
+            }).eq('id', currentMatch.id);
+
+            setRematchLoading(false);
+            setCurrentMatch(newMatch);
+            setRematchRequestFrom(null);
+            setRematchOfferedTo(null);
+            toast.success('جاري إعادة المباراة! 🎮');
+        } catch (error) {
+            console.error('Accept rematch error:', error);
+            toast.error('حدث خطأ');
+            setRematchLoading(false);
+            setIsProcessingRematch(false);
+        }
+    };
+
+    const handleDeclineRematch = () => {
+        setRematchRequestFrom(null);
+        toast('رفضت إعادة المباراة', { icon: '❌' });
+    };
+
+    const exitMatch = () => {
+        setCurrentMatch(null);
+        setView('lobby');
+        setJoiningMatchId(null);
+        setTimeLeft(null);
+        setRematchOfferedTo(null);
+        setRematchRequestFrom(null);
+        setAdminActiveRoomId(null);
+    };
+
+    const amIWinner = currentMatch?.winner_id === employee.employee_id;
+    const me       = currentMatch?.players?.find((p: any) => p.id === employee.employee_id);
+    const opponent = currentMatch?.players?.find((p: any) => p.id !== employee.employee_id);
+    const isGameFinished = ['finished'].includes(currentMatch?.status);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    return (
+        <div className={`min-h-full flex flex-col relative font-sans text-right ${isDarkMode ? 'dark' : ''}`} dir="rtl">
+            {/* Connection Status */}
+            <ConnectionStatusIndicator status={connectionStatus} />
+
+            {/* Dark Mode Toggle */}
+            <button
+                onClick={() => setIsDarkMode(p => !p)}
+                className="absolute top-3 left-12 z-50 p-2 bg-white/10 hover:bg-white/20 dark:bg-gray-800/50 rounded-full text-gray-700 dark:text-gray-200 backdrop-blur-sm"
+                aria-label="Toggle dark mode"
+            >
+                {isDarkMode ? <Sun className="w-5 h-5"/> : <Moon className="w-5 h-5"/>}
+            </button>
+
+            {onClose && (
+                <button onClick={onClose} className="absolute top-3 left-3 z-50 p-2 bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 rounded-full text-gray-700 dark:text-gray-200">
+                    <X className="w-5 h-5"/>
+                </button>
+            )}
+
+            {/* ── LOBBY ── */}
+            {view === 'lobby' && (
+                <div className="p-3 flex-1 space-y-4 bg-gray-50 dark:bg-gray-900">
+
+                    {/* Banner + Push toggle */}
+                    <div className="bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl p-4 text-white text-center shadow-lg">
+                        <div className="flex justify-end mb-2">
+                            <PushToggle userId={String(employee.employee_id)}/>
+                        </div>
+                        <h3 className="text-xl font-black mb-1">تحدى زملائك الآن! 🔥</h3>
+                        <p className="text-indigo-100 text-xs mb-4">اختر لعبة وتحدى زميلك أونلاين</p>
+
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                            {GAME_TYPES.map(g => {
+                                const isBeastLevel = g.key === 'beastlevel';
+                                const locked = isBeastLevel && (employee.total_points || 0) < BEASTLEVEL_MIN_POINTS;
+                                return (
+                                    <button key={g.key}
+                                        onClick={() => !locked && setSelectedGameType(g.key)}
+                                        className={`py-2 px-1 rounded-xl font-black text-xs transition-all border-2 relative ${
+                                            locked
+                                                ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                                                : selectedGameType === g.key
+                                                    ? 'bg-white text-indigo-700 border-white'
+                                                    : 'bg-white/20 text-white border-white/30 hover:bg-white/30'
+                                        }`}>
+                                        <span className="text-xl block mb-0.5">{g.icon}</span>
+                                        <span>{g.label}</span>
+                                        {locked && (
+                                            <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[8px] font-black px-1 py-0.5 rounded-full">
+                                                🔒
+                                            </span>
+                                        )}
+                                        {isBeastLevel && !locked && (
+                                            <span className="absolute -top-1.5 -right-1.5 bg-yellow-400 text-gray-900 text-[8px] font-black px-1 py-0.5 rounded-full">
+                                                VIP
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Beast Level locked warning */}
+                        {selectedGameType === 'beastlevel' && (employee.total_points || 0) < BEASTLEVEL_MIN_POINTS ? (
+                            <div className="bg-red-500/20 border border-red-400/30 rounded-2xl p-3 text-center mb-2">
+                                <p className="text-red-300 font-black text-sm">🔒 تحتاج {BEASTLEVEL_MIN_POINTS.toLocaleString('ar')} نقطة للدخول</p>
+                                <p className="text-red-400/70 text-xs mt-0.5">رصيدك: {(employee.total_points || 0).toLocaleString('ar')} نقطة</p>
+                            </div>
+                        ) : (
+                            <button onClick={() => { setJoiningMatchId(null); setView('identity_setup'); }}
+                                className={`px-6 py-3 rounded-xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all w-full text-sm ${
+                                    selectedGameType === 'beastlevel'
+                                        ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-gray-900'
+                                        : 'bg-yellow-400 text-indigo-900'
+                                }`}>
+                                {selectedGameType === 'beastlevel' ? '🦁 ادخل من سيربح المليون ⚔️' : `إنشاء تحدي ${GAME_TYPES.find(g => g.key === selectedGameType)?.label} ⚔️`}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Admin: Online employees panel */}
+                    {isAdmin && (
+                        <AdminOnlinePanel
+                            adminEmployee={employee}
+                            currentMatchId={adminActiveRoomId}
+                            gameLabel={GAME_TYPES.find(g => g.key === selectedGameType)?.label || 'لعبة'}
+                        />
+                    )}
+
+                    {/* Waiting rooms */}
+                    <div>
+                        <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2 text-sm">
+                                <Users className="w-4 h-4 text-indigo-500"/> غرف الانتظار ({matches.length})
+                            </h4>
+                            <button onClick={() => { setView('leaderboard'); fetchLeaderboard(); }}
+                                className="flex items-center gap-1.5 text-xs font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-3 py-1.5 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all">
+                                <Trophy className="w-3.5 h-3.5"/> لوحة النتائج
+                            </button>
+                        </div>
+                        {matches.length === 0 ? (
+                            <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                                <Clock className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-2"/>
+                                <p className="text-gray-400 dark:text-gray-500 font-bold text-sm">لا توجد غرف.. كن الأول!</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {matches.map((m: any) => {
+                                    const isMyRoom = m.created_by === employee.employee_id;
+                                    const gameInfo = GAME_TYPES.find(g => g.key === m.game_type);
+                                    const isBus = m.game_type === 'stopthebus';
+                                    const playerCount = m.players?.length ?? 1;
+                                    const hostPlayer = m.players?.[0];
+                                    return (
+                                        <div key={m.id} className={`bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm border flex justify-between items-center gap-2 ${isMyRoom ? 'border-indigo-200 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-900/10' : 'border-gray-100 dark:border-gray-700'}`}>
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${hostPlayer?.avatarBg || 'from-indigo-400 to-violet-600'} flex items-center justify-center text-xl flex-shrink-0 shadow-sm`}>
+                                                    {hostPlayer?.avatar?.startsWith('http')
+                                                        ? <img src={hostPlayer.avatar} className="w-full h-full object-cover rounded-xl" alt=""/>
+                                                        : <span>{hostPlayer?.avatar || '👤'}</span>}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <p className="font-bold text-gray-800 dark:text-gray-100 text-sm truncate">{hostPlayer?.name}</p>
+                                                        {hostPlayer?.isAlias && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-full font-bold">🥷 مجهول</span>}
+                                                        <span className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 text-[10px] font-black px-1.5 py-0.5 rounded-full">{gameInfo?.icon} {gameInfo?.label}</span>
+                                                        {isMyRoom && <span className="bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-300 text-[10px] font-black px-1.5 py-0.5 rounded-full">غرفتك</span>}
+                                                        {isBus && <span className="bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300 text-[10px] font-black px-1.5 py-0.5 rounded-full">{playerCount} لاعب</span>}
+                                                    </div>
+                                                    <p className="text-[11px] text-gray-400 dark:text-gray-500 font-bold">
+                                                        {isBus ? `في انتظار اللاعبين... (${playerCount}/${gameInfo?.maxPlayers})` : 'في انتظار منافس...'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {isMyRoom ? (
+                                                <div className="flex gap-1.5 flex-shrink-0">
+                                                    <button onClick={() => handleDeleteMatch(m.id)} className="p-2 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50"><Trash2 size={16}/></button>
+                                                    <button onClick={() => shareRoom(m.id, gameInfo?.label || '')} className="p-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50"><Share2 size={16}/></button>
+                                                    <button onClick={() => { setCurrentMatch(m); setView('playing'); }} className="px-3 py-1.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 rounded-lg font-bold text-xs">دخول</button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-1.5 flex-shrink-0">
+                                                    <button onClick={() => shareRoom(m.id, gameInfo?.label || '')} className="p-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50"><Share2 size={16}/></button>
+                                                    <button onClick={() => { setJoiningMatchId(m.id); setJoiningGameType(m.game_type); setView('identity_setup'); }}
+                                                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm shadow-md hover:bg-indigo-700">انضمام</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── IDENTITY SETUP ── */}
+            {view === 'identity_setup' && (
+                <div className="p-4 flex-1 flex flex-col items-center justify-start max-w-sm mx-auto w-full pt-6">
+                    <div className="bg-white dark:bg-gray-800 p-5 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 w-full">
+                        <div className="text-center mb-4">
+                            <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                                <Sparkles className="w-7 h-7 text-indigo-500"/>
+                            </div>
+                            <h3 className="text-xl font-black text-gray-800 dark:text-gray-100">اختر هويتك</h3>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 font-bold mt-1">
+                                {joiningMatchId
+                                    ? `الانضمام لـ: ${GAME_TYPES.find(g => g.key === joiningGameType)?.label}`
+                                    : `إنشاء: ${GAME_TYPES.find(g => g.key === selectedGameType)?.label}`}
+                            </p>
+                        </div>
+
+                        <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl mb-4">
+                            <button onClick={() => setUseAlias(false)}
+                                className={`flex-1 py-2.5 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-1.5 ${!useAlias ? 'bg-white dark:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                <span>😊</span> هويتي الحقيقية
+                            </button>
+                            <button onClick={() => setUseAlias(true)}
+                                className={`flex-1 py-2.5 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-1.5 ${useAlias ? 'bg-indigo-600 shadow-sm text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                                <span>🥷</span> مجهول
+                            </button>
+                        </div>
+
+                        {!useAlias ? (
+                            <div className="flex items-center gap-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl p-3 mb-4 border border-indigo-100 dark:border-indigo-800">
+                                <RealAvatar employee={employee} size="lg"/>
+                                <div>
+                                    <p className="font-black text-gray-800 dark:text-gray-100">{employee.name?.split(' ')[0]}</p>
+                                    <p className="text-xs text-indigo-500 dark:text-indigo-400 font-bold">{employee.specialty || 'موظف'}</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-3 gap-2 mb-4 max-h-[280px] overflow-y-auto p-0.5">
+                                {ALIASES.map(alias => (
+                                    <AliasCard key={alias.name} alias={alias} selected={selectedAlias.name === alias.name} onClick={() => setSelectedAlias(alias)}/>
+                                ))}
+                            </div>
+                        )}
+
+                        <button onClick={joiningMatchId ? handleJoinMatch : handleCreateMatch} disabled={loading}
+                            className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-3.5 rounded-2xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                            {loading ? <Loader2 className="animate-spin w-5 h-5"/> : <><Play fill="currentColor" className="w-4 h-4"/> {joiningMatchId ? 'دخول اللعبة' : 'إنشاء الغرفة'}</>}
+                        </button>
+                        <button onClick={() => setView('lobby')} className="mt-3 text-gray-400 dark:text-gray-500 font-bold text-sm hover:text-gray-600 dark:hover:text-gray-300 w-full text-center">إلغاء</button>
+                    </div>
+                </div>
+            )}
+
+            {/* ── PLAYING ── */}
+            {view === 'playing' && currentMatch && (
+                <div className="flex-1 flex flex-col">
+
+                    {/* Players header (hidden for games that have their own UI) */}
+                    {!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) && (
+                        <div className="px-3 py-3 flex justify-between items-center border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
+                            <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all ${currentMatch.game_state?.current_turn === me?.id ? 'border-green-400 dark:border-green-500 bg-green-50 dark:bg-green-900/20 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
+                                <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${me?.avatarBg || 'from-indigo-400 to-violet-600'} flex items-center justify-center overflow-hidden flex-shrink-0`}>
+                                    {me?.avatar?.startsWith('http') ? <img src={me.avatar} className="w-full h-full object-cover" alt=""/> : <span className="text-lg">{me?.avatar || '👤'}</span>}
+                                </div>
+                                <div>
+                                    <p className="text-xs font-black text-gray-800 dark:text-gray-100">أنت</p>
+                                    <p className="text-sm font-bold text-green-600 dark:text-green-400">{me?.symbol}</p>
+                                </div>
+                            </div>
+                            <div className="font-black text-gray-300 dark:text-gray-600 text-base">VS</div>
+                            <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all flex-row-reverse ${currentMatch.game_state?.current_turn === opponent?.id ? 'border-red-400 dark:border-red-500 bg-red-50 dark:bg-red-900/20 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
+                                <div className={`w-9 h-9 rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center ${opponent ? `bg-gradient-to-br ${opponent?.avatarBg || 'from-rose-400 to-pink-600'}` : 'bg-gray-100 dark:bg-gray-700'}`}>
+                                    {opponent ? (opponent.avatar?.startsWith('http') ? <img src={opponent.avatar} className="w-full h-full object-cover" alt=""/> : <span className="text-lg">{opponent.avatar || '👤'}</span>) : <Loader2 className="w-4 h-4 animate-spin text-gray-400"/>}
+                                </div>
+                                <div className="text-left">
+                                    <p className="text-xs font-black text-gray-800 dark:text-gray-100 truncate max-w-[70px]">{opponent?.name || 'انتظار...'}</p>
+                                    <p className="text-sm font-bold text-red-500 dark:text-red-400">{opponent?.symbol || '?'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Game area */}
+                    <div className={`flex-1 flex flex-col ${!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) ? 'items-center justify-center p-3' : ''}`}>
+
+                        {/* WAITING (for non-multiplayer games) */}
+                        {currentMatch.status === 'waiting' && !['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) && (
+                            <div className="text-center">
+                                <Loader2 className="w-14 h-14 text-indigo-200 dark:text-indigo-700 animate-spin mx-auto mb-4"/>
+                                <h3 className="text-lg font-black text-indigo-900 dark:text-indigo-100">في انتظار المنافس...</h3>
+                                {autoDeleteTimeLeft !== null && (
+                                    <p className="text-sm font-bold text-red-500 dark:text-red-400 mt-2">
+                                        يُغلق تلقائياً: {formatTimeLeft(autoDeleteTimeLeft)}
+                                    </p>
+                                )}
+                                {currentMatch.created_by === employee.employee_id && (
+                                    <div className="mt-6 flex items-center gap-3 justify-center flex-wrap">
+                                        <button onClick={() => shareRoom(currentMatch.id, GAME_TYPES.find(g => g.key === currentMatch.game_type)?.label || '')}
+                                            className="bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-green-100 dark:hover:bg-green-900/50 active:scale-95 transition-all text-sm shadow-sm">
+                                            <Share2 size={16}/> شارك الرابط
+                                        </button>
+                                        <button onClick={() => handleDeleteMatch(currentMatch.id)}
+                                            className="bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400 border border-red-200 dark:border-red-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-red-100 dark:hover:bg-red-900/50 active:scale-95 transition-all text-sm shadow-sm">
+                                            <Trash2 size={16}/> إلغاء الغرفة
+                                        </button>
+                                    </div>
+                                )}
+                                {isAdmin && currentMatch.status === 'waiting' && (
+                                    <div className="mt-4 w-full max-w-sm mx-auto">
+                                        <AdminOnlinePanel
+                                            adminEmployee={employee}
+                                            currentMatchId={currentMatch.id}
+                                            gameLabel={GAME_TYPES.find(g => g.key === currentMatch.game_type)?.label || 'لعبة'}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── REMATCH REQUEST BANNER (incoming) ── */}
+                        {rematchRequestFrom && isGameFinished && (
+                            <div className="mx-3 mb-3 bg-indigo-50 dark:bg-indigo-900/30 border-2 border-indigo-300 dark:border-indigo-700 rounded-2xl p-4 animate-in slide-in-from-top">
+                                <p className="text-sm font-black text-indigo-800 dark:text-indigo-200 mb-3 text-center">
+                                    🔄 {opponent?.name || 'خصمك'} يطلب إعادة المباراة!
+                                </p>
+                                <div className="flex gap-2">
+                                    <button onClick={handleAcceptRematch} disabled={rematchLoading || isProcessingRematch}
+                                        className="flex-1 bg-indigo-600 text-white py-2.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60">
+                                        {rematchLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <><RefreshCw className="w-4 h-4"/> قبول</>}
+                                    </button>
+                                    <button onClick={handleDeclineRematch}
+                                        className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-2.5 rounded-xl font-black text-sm hover:bg-gray-200 dark:hover:bg-gray-600 active:scale-95 transition-all">
+                                        رفض
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* XO */}
+                        {currentMatch.game_type === 'xo' && ['playing','reward_time','answering_reward','finished'].includes(currentMatch.status) && (
+                            <XOGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints} handleRewardSelection={handleRewardSelection} handleRewardAnswer={handleRewardAnswer} timeLeft={timeLeft} loading={loading}/>
+                        )}
+                        {/* CONNECT 4 */}
+                        {currentMatch.game_type === 'connect4' && (
+                            <Connect4Game match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+                        {/* CHESS */}
+                        {currentMatch.game_type === 'chess' && (
+                            <ChessGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints} recordResult={recordResult}/>
+                        )}
+                        {/* BOTTLE MATCH */}
+                        {currentMatch.game_type === 'bottlematch' && (
+                            <BottleMatchGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+                        {/* PUZZLE */}
+                        {currentMatch.game_type === 'puzzle' && (
+                            <PuzzleGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+                        {/* MEMORY */}
+                        {currentMatch.game_type === 'memory' && (
+                            <MemoryGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+                        {/* HANGMAN */}
+                        {currentMatch.game_type === 'hangman' && (
+                            <HangmanGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+                        {/* STOP THE BUS */}
+                        {currentMatch.game_type === 'stopthebus' && (
+                            <StopTheBusGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+                        {/* BEAST LEVEL */}
+                        {currentMatch.game_type === 'beastlevel' && (
+                            <BeastLevelGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+
+                        {/* ── REMATCH / EXIT FOOTER after game ends ── */}
+                        {isGameFinished && !rematchRequestFrom && (
+                            <div className="mx-3 mt-2 mb-3 space-y-2 animate-in fade-in duration-500">
+                                {!rematchOfferedTo ? (
+                                    <button onClick={handleRequestRematch} disabled={rematchLoading || isProcessingRematch || !opponent}
+                                        className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-3.5 rounded-2xl font-black text-base shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60">
+                                        {rematchLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <><RefreshCw className="w-5 h-5"/> العب مرة ثانية 🔄</>}
+                                    </button>
+                                ) : (
+                                    <div className="bg-indigo-50 dark:bg-indigo-900/30 border-2 border-indigo-200 dark:border-indigo-700 rounded-2xl p-3 text-center">
+                                        <Loader2 className="w-5 h-5 text-indigo-400 animate-spin mx-auto mb-1"/>
+                                        <p className="text-xs font-black text-indigo-700 dark:text-indigo-300">في انتظار موافقة الخصم...</p>
+                                    </div>
+                                )}
+                                <button onClick={exitMatch}
+                                    className="w-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-2.5 rounded-2xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                    <Users className="w-4 h-4"/> العودة للصالة
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── LEADERBOARD ── */}
+            {view === 'leaderboard' && (
+                <div className="p-3 flex-1 space-y-3 bg-gray-50 dark:bg-gray-900">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setView('lobby')} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-all">
+                            <X className="w-4 h-4 text-gray-600 dark:text-gray-300"/>
+                        </button>
+                        <div>
+                            <h3 className="text-lg font-black text-gray-800 dark:text-gray-100">لوحة النتائج 🏆</h3>
+                            <p className="text-xs text-gray-400 dark:text-gray-500 font-bold">إجمالي نتائج الألعاب الجماعية</p>
+                        </div>
+                    </div>
+
+                    {myStats && (
+                        <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white rounded-2xl p-4 shadow-lg">
+                            <p className="text-indigo-200 text-xs font-bold mb-1">إحصائياتك</p>
+                            <p className="text-xl font-black mb-3">{myStats.name}</p>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[
+                                    { label: 'انتصار', val: myStats.wins,   color: 'bg-green-400/30'  },
+                                    { label: 'خسارة',  val: myStats.losses, color: 'bg-red-400/30'    },
+                                    { label: 'تعادل',  val: myStats.draws,  color: 'bg-blue-400/30'   },
+                                    { label: 'نسبة%',  val: `${myStats.winRate}%`, color: 'bg-yellow-400/30' },
+                                ].map(s => (
+                                    <div key={s.label} className={`${s.color} rounded-xl p-2 text-center`}>
+                                        <p className="text-lg font-black">{s.val}</p>
+                                        <p className="text-[10px] font-bold text-indigo-100">{s.label}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {leaderboard.length === 0 ? (
+                        <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                            <Trophy className="w-12 h-12 text-gray-200 dark:text-gray-600 mx-auto mb-2"/>
+                            <p className="text-gray-400 dark:text-gray-500 font-bold text-sm">لا توجد نتائج بعد</p>
+                            <p className="text-gray-300 dark:text-gray-600 text-xs mt-1">العب أول مباراة لتظهر هنا!</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {leaderboard.slice(0, 20).map((player, idx) => {
+                                const isMe = player.id === employee.employee_id;
+                                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                                return (
+                                    <div key={player.id} className={`bg-white dark:bg-gray-800 rounded-xl border-2 p-3 flex items-center gap-3 transition-all ${isMe ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-gray-700'}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${idx < 3 ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
+                                            {medal ?? <span className="text-xs">#{idx+1}</span>}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-sm font-black truncate ${isMe ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-800 dark:text-gray-100'}`}>
+                                                {player.name} {isMe && '(أنت)'}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-bold">{player.games} مباراة</p>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <span className="text-xs font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded-full">{player.wins}✓</span>
+                                            <span className="text-xs font-black text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full">{player.losses}✗</span>
+                                            <span className="text-xs font-black text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">{player.winRate}%</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
