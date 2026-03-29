@@ -1,30 +1,25 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Loader2, Trophy, Users, Timer, CheckCircle, BrainCircuit, Zap, Target, RotateCcw, Moon, Sun, Settings, Star, Award, TrendingUp } from 'lucide-react';
+import { Loader2, Trophy, Users, Timer, CheckCircle, BrainCircuit } from 'lucide-react';
 import toast from 'react-hot-toast';
-import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
 
-// ─── Difficulty Levels ─────────────────────────────────────────────────────────
-const DIFFICULTIES = [
-    { key: 'easy',   label: 'سهل',      emoji: '🟢', bottles: 4, attempts: 8,  time: 180, color: 'from-green-400 to-emerald-500'   },
-    { key: 'medium', label: 'متوسط',     emoji: '🟡', bottles: 5, attempts: 10, time: 120, color: 'from-amber-400 to-orange-500'   },
-    { key: 'hard',   label: 'صعب',      emoji: '🔴', bottles: 6, attempts: 8,  time: 90,  color: 'from-red-500 to-rose-600'      },
-];
+// ─── Constants ────────────────────────────────────────────────────────────────
+const BOTTLE_COUNT  = 5;
+const ROUND_SECS    = 120;
+const MAX_ATTEMPTS  = 10;
+const REWARD_SECS   = 20;
 
-// ─── Colors (Extended) ────────────────────────────────────────────────────────
-const COLORS_PALETTE = [
+// ─── Colors ───────────────────────────────────────────────────────────────────
+const COLORS = [
+    { id: 'black',  label: 'أسود',       bg: '#1f2937', light: '#6b7280', dark: '#000000', glow: '#9ca3af' },
     { id: 'red',    label: 'أحمر',       bg: '#dc2626', light: '#fca5a5', dark: '#7f1d1d', glow: '#f87171' },
-    { id: 'blue',   label: 'أزرق',       bg: '#2563eb', light: '#93c5fd', dark: '#1e3a8a', glow: '#60a5fa' },
-    { id: 'green',  label: 'أخضر',       bg: '#16a34a', light: '#86efac', dark: '#14532d', glow: '#4ade80' },
     { id: 'yellow', label: 'أصفر',       bg: '#ca8a04', light: '#fde68a', dark: '#713f12', glow: '#fde047' },
-    { id: 'purple', label: 'بنفسجي',     bg: '#9333ea', light: '#d8b4fe', dark: '#581c87', glow: '#c084fc' },
-    { id: 'orange', label: 'برتقالي',     bg: '#ea580c', light: '#fdba74', dark: '#7c2d12', glow: '#fb923c' },
-    { id: 'pink',   label: 'وردي',       bg: '#ec4899', light: '#f9a8d4', dark: '#831843', glow: '#f472b6' },
-    { id: 'cyan',   label: 'سماوي',      bg: '#0891b2', light: '#67e8f9', dark: '#164e63', glow: '#22d3ee' },
+    { id: 'green',  label: 'أخضر',       bg: '#16a34a', light: '#86efac', dark: '#14532d', glow: '#4ade80' },
+    { id: 'lblue',  label: 'أزرق فاتح',  bg: '#0ea5e9', light: '#bae6fd', dark: '#0c4a6e', glow: '#7dd3fc' },
 ];
 
-type ColorId = string;
+type ColorId = typeof COLORS[number]['id'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function shuffle<T>(arr: T[]): T[] {
@@ -36,12 +31,12 @@ function shuffle<T>(arr: T[]): T[] {
     return a;
 }
 
-function makeSecret(count: number): ColorId[] {
-    const shuffled = shuffle([...COLORS_PALETTE]);
-    return shuffled.slice(0, count).map(c => c.id);
+function makeSecret(): ColorId[] {
+    return shuffle(COLORS.map(c => c.id)) as ColorId[];
 }
 
 function makeScrambled(secret: ColorId[]): ColorId[] {
+    // Guarantee it's different from secret
     let s = shuffle([...secret]) as ColorId[];
     while (s.every((c, i) => c === secret[i])) s = shuffle([...secret]) as ColorId[];
     return s;
@@ -51,13 +46,12 @@ function countCorrect(attempt: ColorId[], secret: ColorId[]): number {
     return attempt.filter((c, i) => c === secret[i]).length;
 }
 
-// ─── Question helpers (SIMPLIFIED - No Hints) ─────────────────────────────────
+// ─── Question helpers (same pattern as other games) ──────────────────────────
 const normalizeQuestion = (rawQ: any) => {
     let questionText = rawQ.question || rawQ.question_text || '';
     if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`;
     let opts: string[] = [];
     let correctAns = '';
-
     if (rawQ.source === 'standard_quiz') {
         try {
             let parsed = rawQ.options;
@@ -119,23 +113,16 @@ function useSound() {
         if (!ctx.current) ctx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         return ctx.current;
     };
-    return useCallback((type: 'swap' | 'correct' | 'wrong' | 'win' | 'tick' | 'perfect' | 'select' | 'deselect') => {
+    return useCallback((type: 'swap' | 'correct' | 'wrong' | 'win' | 'tick' | 'perfect') => {
         try {
             const ac = get(), now = ac.currentTime;
             if (type === 'swap') {
                 const o = ac.createOscillator(), g = ac.createGain();
                 o.connect(g); g.connect(ac.destination);
-                o.type = 'sine'; o.frequency.setValueAtTime(600, now);
-                o.frequency.exponentialRampToValueAtTime(400, now + 0.1);
-                g.gain.setValueAtTime(0.15, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-                o.start(now); o.stop(now + 0.12);
-            }
-            if (type === 'select') {
-                const o = ac.createOscillator(), g = ac.createGain();
-                o.connect(g); g.connect(ac.destination);
-                o.type = 'sine'; o.frequency.value = 800;
-                g.gain.setValueAtTime(0.1, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-                o.start(now); o.stop(now + 0.08);
+                o.type = 'sine'; o.frequency.setValueAtTime(500, now);
+                o.frequency.exponentialRampToValueAtTime(350, now + 0.08);
+                g.gain.setValueAtTime(0.12, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                o.start(now); o.stop(now + 0.1);
             }
             if (type === 'correct') {
                 [523, 659].forEach((f, i) => {
@@ -170,7 +157,7 @@ function useSound() {
             if (type === 'wrong') {
                 const o = ac.createOscillator(), g = ac.createGain();
                 o.connect(g); g.connect(ac.destination);
-                o.type = 'sawtooth'; o.frequency.value = 140;
+                o.type = 'sawtooth'; o.frequency.value = 160;
                 g.gain.setValueAtTime(0.18, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
                 o.start(now); o.stop(now + 0.18);
             }
@@ -185,44 +172,27 @@ function useSound() {
     }, []);
 }
 
-// ─── Confetti ─────────────────────────────────────────────────────────────────
-const fireConfetti = (intensity: 'normal' | 'big' = 'normal') => {
-    const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:99999;';
-    document.body.appendChild(canvas);
-    const myConfetti = confetti.create(canvas, { resize: true, useWorker: false });
-    const colors = ['#f59e0b', '#10b981', '#6366f1', '#ec4899', '#f97316', '#fbbf24', '#ffffff', '#22d3ee'];
-    const count = intensity === 'big' ? 150 : 80;
-    myConfetti({ particleCount: count, angle: 60, spread: 55, origin: { x: 0, y: 0.7 }, colors, zIndex: 99999 });
-    myConfetti({ particleCount: count, angle: 120, spread: 55, origin: { x: 1, y: 0.7 }, colors, zIndex: 99999 });
-    if (intensity === 'big') {
-        setTimeout(() => myConfetti({ particleCount: 200, angle: 90, spread: 160, origin: { x: 0.5, y: 0.2 }, colors, zIndex: 99999 }), 400);
-    }
-    setTimeout(() => canvas.remove(), 5000);
-};
-
-// ─── Bottle SVG (Improved) ────────────────────────────────────────────────────
-function Bottle({ colorId, selected, index, onClick, shake, correct }: {
+// ─── Bottle SVG ───────────────────────────────────────────────────────────────
+function Bottle({ colorId, selected, index, onClick, shake }: {
     colorId: ColorId; selected: boolean; index: number;
-    onClick: () => void; shake: boolean; correct?: boolean;
+    onClick: () => void; shake: boolean;
 }) {
-    const color = COLORS_PALETTE.find(c => c.id === colorId)!;
+    const color = COLORS.find(c => c.id === colorId)!;
     const uid = `${colorId}${index}`;
-
     return (
         <button
             onClick={onClick}
-            className={`relative flex flex-col items-center gap-1 select-none focus:outline-none transition-all duration-200 ${
-                correct ? 'scale-110' : selected ? 'scale-115 translate-y-[-12px]' : 'hover:scale-105'
-            }`}
+            className="relative flex flex-col items-center gap-1 select-none focus:outline-none"
             style={{
-                filter: selected || correct
-                    ? `drop-shadow(0 0 15px ${color.glow}) drop-shadow(0 8px 16px rgba(0,0,0,0.5))`
+                transform: selected ? 'scale(1.15) translateY(-10px)' : 'scale(1)',
+                transition: 'transform 0.2s cubic-bezier(0.34,1.56,0.64,1)',
+                filter: selected
+                    ? `drop-shadow(0 0 10px ${color.glow}) drop-shadow(0 6px 12px rgba(0,0,0,0.5))`
                     : 'drop-shadow(0 4px 8px rgba(0,0,0,0.4))',
-                animation: shake ? 'wiggle 0.4s ease-in-out' : undefined,
+                animation: shake ? 'wiggle 0.35s ease-in-out' : undefined,
             }}
         >
-            <svg viewBox="0 0 48 100" className="w-14 h-28" xmlns="http://www.w3.org/2000/svg">
+            <svg viewBox="0 0 48 100" className="w-12 h-24" xmlns="http://www.w3.org/2000/svg">
                 <defs>
                     <linearGradient id={`b${uid}`} x1="0" y1="0" x2="1" y2="0">
                         <stop offset="0%"   stopColor={color.dark}/>
@@ -246,29 +216,32 @@ function Bottle({ colorId, selected, index, onClick, shake, correct }: {
                     </filter>
                 </defs>
 
-                {/* Shadow */}
-                <ellipse cx="24" cy="96" rx="14" ry="3" fill="black" opacity="0.3"/>
+                {/* Bottle shadow */}
+                <ellipse cx="24" cy="96" rx="13" ry="2.5" fill="black" opacity="0.3"/>
 
                 {/* Neck */}
                 <path d="M17 10 L17 26 L31 26 L31 10 Q31 6 28 6 L20 6 Q17 6 17 10 Z"
                     fill={`url(#b${uid})`} stroke={color.dark} strokeWidth="0.8"/>
 
                 {/* Cap with groove */}
-                <rect x="14" y="2" width="20" height="9" rx="4.5" fill={color.dark}/>
-                <rect x="14" y="7" width="20" height="2" rx="0" fill="black" opacity="0.25"/>
-                <rect x="16" y="3" width="9" height="3" rx="1.5" fill="white" opacity="0.3"/>
+                <rect x="14" y="2" width="20" height="9" rx="4.5"
+                    fill={color.dark}/>
+                <rect x="14" y="7" width="20" height="2" rx="0"
+                    fill="black" opacity="0.25"/>
+                <rect x="16" y="3" width="9" height="3" rx="1.5"
+                    fill="white" opacity="0.3"/>
 
                 {/* Body */}
                 <path d="M9 26 Q7 30 7 36 L7 82 Q7 90 16 90 L32 90 Q41 90 41 82 L41 36 Q41 30 39 26 Z"
                     fill={`url(#l${uid})`} stroke={color.dark} strokeWidth="0.8"
                     filter={`url(#f${uid})`}/>
 
-                {/* Liquid */}
+                {/* Liquid fill */}
                 <rect x="7" y="40" width="34" height="52"
                     fill={`url(#b${uid})`} opacity="0.85"
                     clipPath={`url(#c${uid})`}/>
 
-                {/* Liquid surface wave */}
+                {/* Liquid surface */}
                 <path d="M8 40 Q18 36 28 40 Q36 43 41 40"
                     stroke={color.light} strokeWidth="1.5" fill="none" opacity="0.7"
                     clipPath={`url(#c${uid})`}/>
@@ -277,26 +250,22 @@ function Bottle({ colorId, selected, index, onClick, shake, correct }: {
                 <path d="M9 30 Q7 50 7 70" stroke="white" strokeWidth="2.5"
                     opacity="0.15" fill="none" strokeLinecap="round"/>
 
-                {/* Shine */}
+                {/* Shine streak */}
                 <ellipse cx="15" cy="52" rx="2" ry="14"
                     fill="white" opacity="0.28" clipPath={`url(#c${uid})`}/>
 
                 {/* Neck shine */}
-                <ellipse cx="21" cy="17" rx="2" ry="5" fill="white" opacity="0.35"/>
+                <ellipse cx="21" cy="17" rx="2" ry="5"
+                    fill="white" opacity="0.35"/>
 
-                {/* Selection glow */}
+                {/* Radial glow when selected */}
                 {selected && (
-                    <ellipse cx="24" cy="58" rx="20" ry="32"
+                    <ellipse cx="24" cy="58" rx="18" ry="30"
                         fill={`url(#g${uid})`} clipPath={`url(#c${uid})`}/>
-                )}
-
-                {/* Correct indicator */}
-                {correct && (
-                    <circle cx="38" cy="15" r="8" fill="#22c55e" stroke="white" strokeWidth="2"/>
                 )}
             </svg>
 
-            <span className="text-[11px] font-black"
+            <span className="text-[10px] font-black"
                 style={{ color: color.glow, textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
                 {color.label}
             </span>
@@ -304,93 +273,64 @@ function Bottle({ colorId, selected, index, onClick, shake, correct }: {
     );
 }
 
-// ─── Mini Bottle (for history) ───────────────────────────────────────────────
-function MiniBottle({ colorId }: { colorId: ColorId }) {
-    const color = COLORS_PALETTE.find(c => c.id === colorId)!;
-    return (
-        <div className="w-6 h-6 rounded-full border-2 border-white/30 shadow-md"
-            style={{ background: `radial-gradient(circle at 35% 30%, ${color.light}, ${color.bg} 60%, ${color.dark})` }}
-        />
-    );
-}
-
 // ─── Attempt History Row ──────────────────────────────────────────────────────
-function AttemptRow({ attempt, secret, num, isCorrect }: {
-    attempt: ColorId[]; secret: ColorId[]; num: number; isCorrect: boolean;
-}) {
+function AttemptRow({ attempt, secret, num }: { attempt: ColorId[]; secret: ColorId[]; num: number }) {
     const correct = countCorrect(attempt, secret);
     return (
-        <div className={`flex items-center gap-2 rounded-xl px-3 py-2 transition-all ${
-            isCorrect
-                ? 'bg-green-500/20 border border-green-400/40'
-                : 'bg-white/5 dark:bg-gray-800/50 border border-white/10 dark:border-gray-700'
-        }`}>
-            <span className={`text-[10px] font-black w-5 text-center ${
-                isCorrect ? 'text-green-400' : 'text-white/50 dark:text-gray-400'
-            }`}>
-                {isCorrect ? '✓' : num}
-            </span>
-            <div className="flex gap-1.5 flex-1 justify-center">
+        <div className="flex items-center gap-2 bg-white/10 rounded-xl px-2 py-1.5">
+            <span className="text-[10px] font-black text-white/60 w-4">{num}</span>
+            <div className="flex gap-1.5 flex-1">
                 {attempt.map((cid, i) => {
-                    const isInPlace = cid === secret[i];
+                    const color = COLORS.find(c => c.id === cid)!;
                     return (
-                        <div key={i} className={`relative`}>
-                            <MiniBottle colorId={cid}/>
-                            {isInPlace && (
-                                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-green-500 rounded-full border border-white"/>
-                            )}
-                        </div>
+                        <div key={i} className="w-5 h-5 rounded-full border border-white/20 shadow-sm"
+                            style={{ background: `radial-gradient(circle at 35% 30%, ${color.light}, ${color.bg} 60%, ${color.dark})` }}/>
                     );
                 })}
             </div>
             <div className={`text-xs font-black px-2 py-0.5 rounded-full ${
-                correct === attempt.length
-                    ? 'bg-green-500 text-white'
-                    : correct >= attempt.length * 0.6
-                        ? 'bg-yellow-500 text-gray-900'
-                        : 'bg-white/20 text-white/80'
+                correct === BOTTLE_COUNT ? 'bg-green-400 text-white' :
+                correct >= 4 ? 'bg-yellow-400 text-gray-900' :
+                'bg-white/20 text-white'
             }`}>
-                {correct}/{attempt.length}
+                {correct}/{BOTTLE_COUNT}
             </div>
         </div>
     );
 }
 
-// ─── Question Screen (Simplified) ─────────────────────────────────────────────
+// ─── Question Screen ──────────────────────────────────────────────────────────
 function QuestionScreen({ question, onAnswer, timeLeft, answered, isCorrect, loading }: {
     question: any; onAnswer: (opt: string) => void;
     timeLeft: number; answered: boolean; isCorrect: boolean | null; loading: boolean;
 }) {
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border-2 border-indigo-200 dark:border-indigo-700 p-5 space-y-4 shadow-xl animate-in zoom-in duration-300">
+        <div className="bg-white rounded-2xl border-2 border-indigo-200 p-4 space-y-3 shadow-xl animate-in zoom-in duration-300">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <BrainCircuit className="w-5 h-5 text-indigo-600 dark:text-indigo-400"/>
-                    <span className="text-xs font-black text-indigo-700 dark:text-indigo-300">سؤال المكافأة 🎯</span>
+                    <BrainCircuit className="w-5 h-5 text-indigo-600"/>
+                    <span className="text-xs font-black text-indigo-700">سؤال المكافأة 🎯</span>
                 </div>
-                <div className={`flex items-center gap-1 px-3 py-1.5 rounded-full font-black text-xs border-2 transition-all ${
-                    timeLeft <= 5
-                        ? 'bg-red-100 dark:bg-red-900/30 border-red-400 text-red-700 dark:text-red-300 animate-pulse'
-                        : 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300'
+                <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full font-black text-xs border-2 ${
+                    timeLeft <= 5 ? 'bg-red-100 border-red-400 text-red-700 animate-pulse' :
+                    'bg-indigo-50 border-indigo-300 text-indigo-700'
                 }`}>
-                    <Timer className="w-3.5 h-3.5"/> {timeLeft}ث
+                    <Timer className="w-3 h-3"/> {timeLeft}ث
                 </div>
             </div>
-            <p className="text-sm font-bold text-gray-800 dark:text-gray-100 leading-relaxed text-right">{question.questionText}</p>
+            <p className="text-sm font-bold text-gray-800 leading-relaxed">{question.questionText}</p>
             {!answered ? (
                 <div className="space-y-2">
                     {question.options.map((opt: string, i: number) => (
                         <button key={i} onClick={() => onAnswer(opt)} disabled={loading}
-                            className="w-full bg-white dark:bg-gray-700 border-2 border-gray-100 dark:border-gray-600 p-3 rounded-xl font-bold text-gray-700 dark:text-gray-200 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 active:scale-98 transition-all text-sm text-right">
+                            className="w-full bg-white border-2 border-gray-100 p-3 rounded-xl font-bold text-gray-700 hover:border-indigo-400 hover:bg-indigo-50 active:scale-95 transition-all text-sm text-right">
                             {opt}
                         </button>
                     ))}
                 </div>
             ) : (
-                <div className={`text-center py-4 rounded-xl font-black text-base ${
-                    isCorrect
-                        ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                        : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-200'
+                <div className={`text-center py-3 rounded-xl font-black text-sm ${
+                    isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
                 }`}>
                     {isCorrect ? '✅ إجابة صحيحة! +15 نقطة 🎉' : '❌ إجابة خاطئة — حظ أوفر'}
                 </div>
@@ -399,147 +339,85 @@ function QuestionScreen({ question, onAnswer, timeLeft, answered, isCorrect, loa
     );
 }
 
-// ─── Difficulty Selector ────────────────────────────────────────────────────────
-function DifficultySelector({ selected, onSelect }: { selected: string; onSelect: (key: string) => void }) {
-    return (
-        <div className="grid grid-cols-3 gap-2">
-            {DIFFICULTIES.map(diff => (
-                <button
-                    key={diff.key}
-                    onClick={() => onSelect(diff.key)}
-                    className={`flex flex-col items-center gap-1 p-3 rounded-xl border-2 font-black text-sm transition-all ${
-                        selected === diff.key
-                            ? `bg-gradient-to-br ${diff.color} text-white border-transparent shadow-lg scale-105`
-                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-                    }`}
-                >
-                    <span className="text-2xl">{diff.emoji}</span>
-                    <span>{diff.label}</span>
-                    <span className="text-[10px] opacity-70">{diff.bottles} زجاجة</span>
-                </button>
-            ))}
-        </div>
-    );
-}
-
-// ─── Progress Bar ─────────────────────────────────────────────────────────────
-function ProgressBar({ current, max, label, color }: {
-    current: number; max: number; label: string; color: string;
-}) {
-    const pct = (current / max) * 100;
-    return (
-        <div className="space-y-1">
-            <div className="flex justify-between text-[10px] font-bold">
-                <span className="text-gray-500 dark:text-gray-400">{label}</span>
-                <span className="text-gray-400">{current}/{max}</span>
-            </div>
-            <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${pct}%`, background: color }}
-                />
-            </div>
-        </div>
-    );
-}
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface Props {
-    match: any;
-    employee: Employee;
-    onExit: () => void;
+    match:       any;
+    employee:    Employee;
+    onExit:      () => void;
     grantPoints: (pts: number) => Promise<void>;
 }
 
-// ─── Player state ────────────────────────────────────────────────────────────
+// ─── Player state in game ─────────────────────────────────────────────────────
 interface PlayerGS {
     id:         string;
     name:       string;
-    order:      ColorId[];
-    attempts:   ColorId[][];
+    order:      ColorId[];     // current arrangement
+    attempts:   ColorId[][];   // history of checked attempts
     solved:     boolean;
-    eliminated: boolean;
+    eliminated: boolean;       // used all attempts without solving
     solvedAt:   number | null;
 }
 
 interface BottleGS {
-    secret:     ColorId[];
-    difficulty: string;
-    bottleCount: number;
-    maxAttempts: number;
-    timeLimit:  number;
-    players:    PlayerGS[];
-    startedAt:  number;
-    winnerId:   string | null;
+    secret:    ColorId[];
+    players:   PlayerGS[];
+    startedAt: number;
+    winnerId:  string | null;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function BottleMatchGame({ match, employee, onExit, grantPoints }: Props) {
-    const play = useSound();
-    const myId = employee.employee_id;
+    const play   = useSound();
+    const myId   = employee.employee_id;
     const isHost = match.players?.[0]?.id === myId;
 
-    const gs: BottleGS = match.game_state ?? {};
+    const gs: BottleGS      = match.game_state ?? {};
     const secret: ColorId[] = gs.secret ?? [];
     const players: PlayerGS[] = gs.players ?? [];
-    const status: string = match.status ?? 'waiting';
-    const difficulty = DIFFICULTIES.find(d => d.key === gs.difficulty) ?? DIFFICULTIES[1];
-    const bottleCount = gs.bottleCount ?? difficulty.bottles;
-    const maxAttempts = gs.maxAttempts ?? difficulty.attempts;
-    const timeLimit = gs.timeLimit ?? difficulty.time;
+    const status: string    = match.status ?? 'waiting';
 
     const myPS = players.find(p => p.id === myId);
-    const myOrder: ColorId[] = myPS?.order ?? [];
-    const myAttempts: ColorId[][] = myPS?.attempts ?? [];
-    const mySolved = myPS?.solved ?? false;
+    const myOrder: ColorId[]      = myPS?.order      ?? [];
+    const myAttempts: ColorId[][] = myPS?.attempts   ?? [];
+    const mySolved     = myPS?.solved     ?? false;
     const myEliminated = myPS?.eliminated ?? false;
-    const attemptsLeft = maxAttempts - myAttempts.length;
+    const attemptsLeft = MAX_ATTEMPTS - myAttempts.length;
 
     // ── Local UI state ────────────────────────────────────────────────────────
-    const [selected, setSelected] = useState<number | null>(null);
-    const [shakeIdx, setShakeIdx] = useState<number | null>(null);
-    const [timeLeft, setTimeLeft] = useState(timeLimit);
-    const [checking, setChecking] = useState(false);
+    const [selected, setSelected]     = useState<number | null>(null);
+    const [shakeIdx, setShakeIdx]     = useState<number | null>(null);
+    const [timeLeft, setTimeLeft]     = useState(ROUND_SECS);
+    const [checking, setChecking]     = useState(false);
     const [lastResult, setLastResult] = useState<number | null>(null);
-    const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
-    const [isDarkMode, setIsDarkMode] = useState(false);
-
-    // Question state
-    const [question, setQuestion] = useState<any>(null);
-    const [qTime, setQTime] = useState(20);
-    const [qAnswered, setQAnswered] = useState(false);
-    const [qCorrect, setQCorrect] = useState<boolean | null>(null);
-    const [qLoading, setQLoading] = useState(false);
-
-    const amIWinner = match.winner_id === myId;
-    const rewardDoneRef = useRef(false);
-    const prevTickRef = useRef(timeLimit);
-
-    // ── Dark Mode ──────────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (isDarkMode) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, [isDarkMode]);
 
     // Reset lastResult when new game starts
     useEffect(() => {
         if (status === 'playing') setLastResult(null);
     }, [gs.startedAt]);
 
+    // Reward question state
+    const [question, setQuestion]   = useState<any>(null);
+    const [qTime, setQTime]         = useState(REWARD_SECS);
+    const [qAnswered, setQAnswered] = useState(false);
+    const [qCorrect, setQCorrect]   = useState<boolean | null>(null);
+    const [qLoading, setQLoading]   = useState(false);
+    const amIWinner = match.winner_id === myId;
+    const rewardDoneRef = useRef(false);
+
+    const prevTickRef = useRef(ROUND_SECS);
+
     // ── Timer ─────────────────────────────────────────────────────────────────
     useEffect(() => {
         if (status !== 'playing' || !gs.startedAt) return;
         const tick = () => {
-            const left = Math.max(0, timeLimit - Math.floor((Date.now() - gs.startedAt) / 1000));
+            const left = Math.max(0, ROUND_SECS - Math.floor((Date.now() - gs.startedAt) / 1000));
             setTimeLeft(left);
-            if ([30, 20, 10, 5, 4, 3, 2, 1].includes(left) && left !== prevTickRef.current) {
+            if ([20, 10, 5, 4, 3, 2, 1].includes(left) && left !== prevTickRef.current) {
                 prevTickRef.current = left;
                 play('tick');
             }
             if (left === 0 && isHost && status === 'playing') {
+                // Time's up → find winner by most correct in last attempt
                 const best = [...players].sort((a, b) => {
                     const aLast = a.attempts.at(-1) ?? [];
                     const bLast = b.attempts.at(-1) ?? [];
@@ -555,30 +433,26 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         tick();
         const iv = setInterval(tick, 500);
         return () => clearInterval(iv);
-    }, [status, gs.startedAt, timeLimit]);
+    }, [status, gs.startedAt]);
 
-    // ── Fetch reward question ──────────────────────────────────────────────────
+    // ── Fetch reward question for winner ──────────────────────────────────────
     useEffect(() => {
         if (status !== 'reward_time' || !amIWinner || rewardDoneRef.current) return;
         rewardDoneRef.current = true;
         play('win');
-        fireConfetti('normal');
         setQLoading(true);
         fetchQuestion(employee).then(q => {
             setQLoading(false);
-            if (q) { setQuestion(q); setQTime(20); }
+            if (q) { setQuestion(q); setQTime(REWARD_SECS); }
             else {
-                grantPoints(15).then(() => {
-                    fireConfetti('big');
-                    toast.success('فزت! +15 نقطة 🏆');
-                });
+                grantPoints(15).then(() => toast.success('فزت! +15 نقطة 🏆'));
                 setQAnswered(true);
                 supabase.from('live_matches').update({ status: 'finished' }).eq('id', match.id);
             }
         });
     }, [status, amIWinner]);
 
-    // ── Question timer ─────────────────────────────────────────────────────────
+    // ── Question timer ────────────────────────────────────────────────────────
     useEffect(() => {
         if (!question || qAnswered) return;
         if (qTime <= 0) { handleQAnswer('__timeout__'); return; }
@@ -586,7 +460,7 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         return () => clearInterval(iv);
     }, [question, qTime, qAnswered]);
 
-    // ── Handle answer ──────────────────────────────────────────────────────────
+    // ── Handle answer ─────────────────────────────────────────────────────────
     const handleQAnswer = async (ans: string) => {
         if (qAnswered) return;
         setQAnswered(true); setQTime(0);
@@ -595,27 +469,16 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         const ok = ans !== '__timeout__' && (correct === sel || correct.includes(sel) || sel.includes(correct));
         setQCorrect(ok);
         play(ok ? 'win' : 'wrong');
-        if (ok) {
-            fireConfetti('big');
-            await grantPoints(15);
-        }
+        if (ok) await grantPoints(15);
         else toast.error('إجابة خاطئة — حظ أوفر 😅');
         await supabase.from('live_matches').update({ status: 'finished' }).eq('id', match.id);
     };
 
-    // ── Bottle click ───────────────────────────────────────────────────────────
+    // ── Swap two bottles ──────────────────────────────────────────────────────
     const handleBottleClick = (idx: number) => {
         if (mySolved || status !== 'playing') return;
-        if (selected === null) {
-            setSelected(idx);
-            play('select');
-            return;
-        }
-        if (selected === idx) {
-            setSelected(null);
-            play('deselect');
-            return;
-        }
+        if (selected === null) { setSelected(idx); return; }
+        if (selected === idx)  { setSelected(null); return; }
         const newOrder = [...myOrder];
         [newOrder[selected], newOrder[idx]] = [newOrder[idx], newOrder[selected]];
         play('swap');
@@ -632,18 +495,18 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         }).eq('id', match.id);
     };
 
-    // ── Check attempt ──────────────────────────────────────────────────────────
+    // ── Check attempt ─────────────────────────────────────────────────────────
     const handleCheck = async () => {
         if (checking || mySolved || myEliminated || status !== 'playing') return;
         setChecking(true);
         const correct = countCorrect(myOrder, secret);
         setLastResult(correct);
         const newAttempts = [...myAttempts, [...myOrder]];
-        const isLastAttempt = newAttempts.length >= maxAttempts;
+        const isLastAttempt = newAttempts.length >= MAX_ATTEMPTS;
 
-        if (correct === bottleCount) {
+        if (correct === BOTTLE_COUNT) {
+            // Solved!
             play('perfect');
-            fireConfetti('big');
             const updatedPlayers = players.map(p =>
                 p.id === myId
                     ? { ...p, attempts: newAttempts, solved: true, eliminated: false, solvedAt: Date.now() }
@@ -658,16 +521,19 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                 game_state: { ...gs, players: updatedPlayers, winnerId },
             }).eq('id', match.id);
         } else if (isLastAttempt) {
+            // Used all attempts without solving → eliminated
             play('wrong');
             const updatedPlayers = players.map(p =>
                 p.id === myId
                     ? { ...p, attempts: newAttempts, eliminated: true }
                     : p
             );
+            // Check if all done (solved or eliminated)
             const allDone = updatedPlayers.every(p => p.solved || p.eliminated);
             let winnerId = gs.winnerId;
             let newStatus = 'playing';
             if (allDone && !winnerId) {
+                // Nobody solved → winner is best score in last attempt
                 const best = [...updatedPlayers]
                     .filter(p => !p.eliminated)
                     .sort((a, b) => (a.solvedAt ?? 0) - (b.solvedAt ?? 0));
@@ -682,6 +548,7 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                 game_state: { ...gs, players: updatedPlayers, winnerId },
             }).eq('id', match.id);
         } else {
+            // Normal wrong attempt
             play(correct > 0 ? 'correct' : 'wrong');
             const updatedPlayers = players.map(p =>
                 p.id === myId ? { ...p, attempts: newAttempts } : p
@@ -693,41 +560,37 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
             myOrder.forEach((cid, i) => {
                 if (cid !== secret[i]) {
                     setTimeout(() => setShakeIdx(i), i * 60);
-                    setTimeout(() => setShakeIdx(null), i * 60 + 400);
+                    setTimeout(() => setShakeIdx(null), i * 60 + 350);
                 }
             });
         }
         setChecking(false);
     };
 
-    // ── Host starts ────────────────────────────────────────────────────────────
+    // ── Host starts ───────────────────────────────────────────────────────────
     const handleStart = async () => {
-        const diff = DIFFICULTIES.find(d => d.key === selectedDifficulty) ?? DIFFICULTIES[1];
-        const secretOrder = makeSecret(diff.bottles);
+        const secretOrder = makeSecret();
         const matchPlayers: PlayerGS[] = match.players.map((p: any) => ({
             id: p.id, name: p.name,
-            order: makeScrambled(secretOrder),
-            attempts: [],
-            solved: false,
+            order:      makeScrambled(secretOrder),
+            attempts:   [],
+            solved:     false,
             eliminated: false,
-            solvedAt: null,
+            solvedAt:   null,
         }));
         await supabase.from('live_matches').update({
             status: 'playing',
             game_state: {
-                secret: secretOrder,
-                difficulty: diff.key,
-                bottleCount: diff.bottles,
-                maxAttempts: diff.attempts,
-                timeLimit: diff.time,
-                players: matchPlayers,
+                secret:    secretOrder,
+                players:   matchPlayers,
                 startedAt: Date.now(),
-                winnerId: null,
+                winnerId:  null,
             },
         }).eq('id', match.id);
     };
 
-    const timerPct = timeLeft / timeLimit;
+    const timerPct  = timeLeft / ROUND_SECS;
+    const timerColor = timerPct < 0.25 ? '#ef4444' : timerPct < 0.5 ? '#f97316' : '#22c55e';
 
     // ── Sorted players ────────────────────────────────────────────────────────
     const sortedPlayers = useMemo(() => [...players].sort((a, b) => {
@@ -741,154 +604,120 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
         return bScore - aScore;
     }), [players, secret]);
 
-    // ── WAITING ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // WAITING
+    // ─────────────────────────────────────────────────────────────────────────
     if (status === 'waiting') return (
         <div className="text-center py-8 px-4" dir="rtl">
-            {/* Dark Mode Toggle */}
-            <button
-                onClick={() => setIsDarkMode(p => !p)}
-                className="absolute top-3 left-12 z-50 p-2 bg-white/10 hover:bg-white/20 dark:bg-gray-800/50 rounded-full text-gray-700 dark:text-gray-200 backdrop-blur-sm shadow-sm"
-            >
-                {isDarkMode ? <Sun className="w-5 h-5"/> : <Moon className="w-5 h-5"/>}
-            </button>
-
-            {/* Header */}
-            <div className="flex justify-center gap-2 mb-5">
-                {DIFFICULTIES[1].bottles > 4
-                    ? Array.from({ length: DIFFICULTIES[1].bottles }).map((_, i) => (
-                        <div key={i} className="w-6 h-12 rounded-full shadow-lg border-2 border-white/30 animate-pulse"
-                            style={{
-                                background: COLORS_PALETTE[i % COLORS_PALETTE.length].bg,
-                                animationDelay: `${i * 0.1}s`
-                            }}/>
-                    ))
-                    : COLORS_PALETTE.slice(0, 4).map((c, i) => (
-                        <div key={c.id} className="w-6 h-12 rounded-full shadow-lg border-2 border-white/30"
-                            style={{ background: c.bg, animationDelay: `${i * 0.1}s` }}/>
-                    ))
-                }
+            <div className="flex justify-center gap-1.5 mb-5">
+                {COLORS.map((c, i) => (
+                    <div key={c.id} className="w-7 h-14 rounded-full shadow-lg border-2 border-white/30"
+                        style={{ background: c.bg, animationDelay: `${i*0.1}s` }}/>
+                ))}
             </div>
-
-            <h3 className="text-xl font-black text-gray-800 dark:text-white mb-1">ترتيب الزجاجات 🍾</h3>
-            <p className="text-sm font-bold text-gray-400 dark:text-gray-500 mb-2">{match.players?.length ?? 0} لاعب في الغرفة</p>
-
-            {/* Players */}
-            <div className="flex flex-wrap gap-2 justify-center mb-4">
+            <h3 className="text-xl font-black text-gray-800 mb-1">ترتيب الزجاجات 🍾</h3>
+            <p className="text-sm font-bold text-gray-400 mb-2">{match.players?.length ?? 0} لاعب في الغرفة</p>
+            <p className="text-xs text-gray-400 mb-5">رتّب الزجاجات الملونة كما في الترتيب السري خلال {ROUND_SECS} ثانية!</p>
+            <div className="flex flex-wrap gap-2 justify-center mb-6">
                 {match.players?.map((p: any) => (
-                    <div key={p.id} className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 px-3 py-1.5 rounded-full">
-                        <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">{p.name}</span>
+                    <div key={p.id} className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-full">
+                        <span className="text-xs font-bold text-indigo-700">{p.name}</span>
                         {p.id === myId && <span className="text-[10px] text-indigo-400">(أنت)</span>}
                     </div>
                 ))}
             </div>
-
             {isHost ? (
-                <>
-                    {/* Difficulty Selection */}
-                    <div className="mb-4">
-                        <p className="text-xs font-black text-gray-600 dark:text-gray-300 mb-2 flex items-center justify-center gap-2">
-                            <Zap className="w-4 h-4 text-amber-500"/> اختر مستوى الصعوبة:
-                        </p>
-                        <DifficultySelector selected={selectedDifficulty} onSelect={setSelectedDifficulty}/>
-                    </div>
-
-                    {/* Difficulty Info */}
-                    <div className={`bg-gradient-to-r ${DIFFICULTIES.find(d => d.key === selectedDifficulty)?.color} text-white rounded-xl px-4 py-2 mb-4 inline-block`}>
-                        <p className="text-sm font-black">
-                            {DIFFICULTIES.find(d => d.key === selectedDifficulty)?.bottles} زجاجة • {DIFFICULTIES.find(d => d.key === selectedDifficulty)?.attempts} محاولة • {Math.floor((DIFFICULTIES.find(d => d.key === selectedDifficulty)?.time ?? 120) / 60)}:{String((DIFFICULTIES.find(d => d.key === selectedDifficulty)?.time ?? 120) % 60).padStart(2, '0')} دقيقة
-                        </p>
-                    </div>
-
+                <div className="flex flex-col items-center gap-2">
                     <button onClick={handleStart}
                         disabled={match.players?.length < 2}
-                        className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2 mx-auto">
-                        <Star className="w-5 h-5"/> ابدأ اللعبة
+                        className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
+                        🎮 ابدأ اللعبة
                     </button>
-
                     {match.players?.length < 2 && (
-                        <p className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-3 py-2 rounded-xl mt-3">
+                        <p className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
                             ⏳ في انتظار لاعب آخر للانضمام...
                         </p>
                     )}
-                </>
+                </div>
             ) : (
-                <div className="flex items-center gap-2 justify-center text-sm font-bold text-gray-400 dark:text-gray-500 py-6 bg-gray-50 dark:bg-gray-800 rounded-2xl">
+                <div className="flex items-center gap-2 justify-center text-sm font-bold text-gray-400">
                     <Loader2 className="w-4 h-4 animate-spin"/> في انتظار المضيف...
                 </div>
             )}
-
-            <button onClick={onExit} className="mt-4 text-sm font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 block mx-auto transition-colors">
+            <button onClick={onExit} className="mt-4 text-sm font-bold text-gray-400 hover:text-gray-600 block mx-auto">
                 ← العودة
             </button>
         </div>
     );
 
-    // ── PLAYING ──────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // PLAYING
+    // ─────────────────────────────────────────────────────────────────────────
     if (status === 'playing') return (
-        <div className="flex flex-col gap-3 py-2 px-2" dir="rtl">
+        <div className="flex flex-col gap-3 py-2 px-3" dir="rtl">
 
-            {/* Header Card */}
-            <div className="bg-gradient-to-br from-indigo-600 to-violet-700 dark:from-indigo-800 dark:to-violet-900 rounded-2xl p-4 text-white shadow-xl">
-                <div className="flex items-center justify-between mb-3">
+            {/* Header */}
+            <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-2xl p-3 text-white shadow-lg">
+                <div className="flex items-center justify-between mb-2">
                     <div className="flex-1 min-w-0">
-                        {/* Attempts Progress */}
-                        <ProgressBar
-                            current={myAttempts.length}
-                            max={maxAttempts}
-                            label="المحاولات"
-                            color="rgba(255,255,255,0.8)"
-                        />
-
-                        {/* Last Result */}
+                        {/* Attempts dots */}
+                        <div className="flex items-center gap-1.5 mb-1">
+                            {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
+                                <div key={i} className={`rounded-full transition-all ${
+                                    i < myAttempts.length
+                                        ? (myAttempts[i] && countCorrect(myAttempts[i], secret) === BOTTLE_COUNT
+                                            ? 'w-3 h-3 bg-green-400'
+                                            : 'w-2.5 h-2.5 bg-white/40')
+                                        : i === myAttempts.length
+                                            ? 'w-3 h-3 bg-yellow-300 animate-pulse'
+                                            : 'w-2.5 h-2.5 bg-white/20'
+                                }`}/>
+                            ))}
+                            <span className="text-[10px] font-black text-indigo-200 mr-1">
+                                {attemptsLeft} متبقية
+                            </span>
+                        </div>
                         {lastResult !== null && (
-                            <p className={`text-sm font-black mt-2 ${
-                                lastResult === bottleCount ? 'text-green-300' :
-                                lastResult >= bottleCount * 0.6 ? 'text-yellow-300' : 'text-red-300'
+                            <p className={`text-sm font-black ${
+                                lastResult === BOTTLE_COUNT ? 'text-green-300' :
+                                lastResult >= 4 ? 'text-yellow-300' : 'text-red-300'
                             }`}>
-                                {lastResult === bottleCount ? '🎉 مثالي!' :
-                                 lastResult > 0 ? `✅ ${lastResult} من ${bottleCount} صحيحة` :
+                                {lastResult === BOTTLE_COUNT ? '🎉 مثالي!' :
+                                 lastResult > 0 ? `✅ ${lastResult} من ${BOTTLE_COUNT} في مكانها` :
                                  '❌ لا شيء في مكانه'}
                             </p>
                         )}
                     </div>
-
-                    {/* Timer */}
-                    <div className="relative w-16 h-16 flex-shrink-0">
-                        <svg width={64} height={64} viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
-                            <circle cx={32} cy={32} r={28} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={4}/>
-                            <circle cx={32} cy={32} r={28} fill="none"
-                                stroke={timerPct < 0.2 ? '#ef4444' : timerPct < 0.4 ? '#f97316' : '#22c55e'}
-                                strokeWidth={4}
-                                strokeDasharray={2 * Math.PI * 28}
-                                strokeDashoffset={2 * Math.PI * 28 * (1 - timerPct)}
+                    {/* Timer ring */}
+                    <div className="relative w-14 h-14 flex-shrink-0">
+                        <svg width={56} height={56} viewBox="0 0 56 56" style={{ transform: 'rotate(-90deg)' }}>
+                            <circle cx={28} cy={28} r={24} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={4}/>
+                            <circle cx={28} cy={28} r={24} fill="none"
+                                stroke={timerColor} strokeWidth={4}
+                                strokeDasharray={2 * Math.PI * 24}
+                                strokeDashoffset={2 * Math.PI * 24 * (1 - timerPct)}
                                 strokeLinecap="round"
-                                style={{ transition: 'stroke-dashoffset 0.5s linear, stroke 0.4s' }}
-                            />
+                                style={{ transition: 'stroke-dashoffset 0.5s linear, stroke 0.4s' }}/>
                         </svg>
-                        <div className={`absolute inset-0 flex items-center justify-center text-sm font-black ${
-                            timerPct < 0.2 ? 'text-red-300' : timerPct < 0.4 ? 'text-orange-300' : 'text-white'
-                        }`}>
+                        <span className="absolute inset-0 flex items-center justify-center text-sm font-black text-white">
                             {timeLeft}
-                        </div>
+                        </span>
                     </div>
                 </div>
 
-                {/* Opponents */}
+                {/* Opponents progress */}
                 {players.length > 1 && (
                     <div className="flex gap-2 flex-wrap">
                         {sortedPlayers.filter(p => p.id !== myId).map(p => {
                             const lastAttempt = p.attempts.at(-1) ?? [];
                             const score = countCorrect(lastAttempt, secret);
                             return (
-                                <div key={p.id} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all ${
-                                    p.solved
-                                        ? 'bg-green-400/30 text-green-200 border border-green-400/40'
-                                        : p.eliminated
-                                            ? 'bg-red-400/30 text-red-300 border border-red-400/40'
-                                            : 'bg-white/15 text-white/90 border border-white/20'
+                                <div key={p.id} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                    p.solved     ? 'bg-green-400/30 text-green-200' :
+                                    p.eliminated ? 'bg-red-400/30 text-red-300' :
+                                    'bg-white/15 text-white/80'
                                 }`}>
-                                    {p.solved ? '✓' : p.eliminated ? '✗' : `${score}/${bottleCount}`}
-                                    <span className="mr-1">{p.name}</span>
+                                    {p.solved ? '✓' : p.eliminated ? '✗' : `${score}/${BOTTLE_COUNT}`} {p.name}
                                 </div>
                             );
                         })}
@@ -896,25 +725,20 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                 )}
             </div>
 
-            {/* My Game Area */}
+            {/* My bottles */}
             {!mySolved && !myEliminated ? (
-                <div className="rounded-2xl p-5 shadow-2xl relative overflow-hidden"
+                <div className="rounded-2xl p-4 shadow-2xl relative overflow-hidden"
                     style={{ background: 'linear-gradient(145deg, #0f0c29 0%, #1a1040 50%, #0d1117 100%)' }}>
-                    <style>{`@keyframes wiggle{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px) rotate(-5deg)}40%{transform:translateX(8px) rotate(5deg)}60%{transform:translateX(-5px) rotate(-3deg)}80%{transform:translateX(5px) rotate(3deg)}}`}</style>
-
-                    {/* Glow Effects */}
-                    <div className="absolute top-4 left-8 w-24 h-24 rounded-full opacity-10"
+                    <style>{`@keyframes wiggle{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px) rotate(-5deg)}40%{transform:translateX(7px) rotate(5deg)}60%{transform:translateX(-4px) rotate(-3deg)}80%{transform:translateX(4px) rotate(3deg)}}`}</style>
+                    {/* Subtle glow spots */}
+                    <div className="absolute top-2 left-4 w-20 h-20 rounded-full opacity-10"
                         style={{ background: 'radial-gradient(circle, #818cf8, transparent)' }}/>
-                    <div className="absolute bottom-4 right-8 w-20 h-20 rounded-full opacity-10"
+                    <div className="absolute bottom-2 right-4 w-16 h-16 rounded-full opacity-10"
                         style={{ background: 'radial-gradient(circle, #34d399, transparent)' }}/>
-
-                    {/* Instructions */}
-                    <p className="relative text-[11px] font-black text-center mb-5 text-white/40 tracking-wider">
+                    <p className="relative text-[10px] font-black text-center mb-4 text-white/40 tracking-widest">
                         {selected !== null ? '← اختر الزجاجة الثانية للتبديل' : 'اضغط زجاجتين لتبديلهما'}
                     </p>
-
-                    {/* Bottles */}
-                    <div className="relative flex justify-center gap-4 mb-4">
+                    <div className="relative flex justify-center gap-3 mb-2">
                         {myOrder.map((cid, i) => (
                             <Bottle
                                 key={i} colorId={cid} index={i}
@@ -924,125 +748,94 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                             />
                         ))}
                     </div>
-
-                    {/* Position Numbers */}
-                    <div className="flex justify-center gap-4 mb-5 px-2">
+                    {/* Position numbers */}
+                    <div className="flex justify-center gap-3 mb-4 px-2">
                         {myOrder.map((_, i) => (
-                            <div key={i} className="w-14 text-center text-[10px] font-black text-white/25">
+                            <div key={i} className="w-12 text-center text-[10px] font-black"
+                                style={{ color: 'rgba(255,255,255,0.25)' }}>
                                 {i + 1}
                             </div>
                         ))}
                     </div>
-
-                    {/* Check Button */}
                     <button onClick={handleCheck} disabled={checking || attemptsLeft <= 0}
-                        className={`w-full text-white py-4 rounded-xl font-black text-base shadow-lg hover:scale-102 active:scale-98 transition-all disabled:opacity-60 flex items-center justify-center gap-2 ${
+                        className={`w-full text-white py-3.5 rounded-xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2 ${
                             attemptsLeft === 1
-                                ? 'bg-gradient-to-r from-red-500 to-rose-600 animate-pulse'
+                                ? 'bg-gradient-to-r from-red-500 to-rose-600'
                                 : attemptsLeft <= 3
                                     ? 'bg-gradient-to-r from-orange-500 to-amber-500'
                                     : 'bg-gradient-to-r from-indigo-500 to-violet-600'
                         }`}>
-                        {checking ? (
-                            <Loader2 className="w-5 h-5 animate-spin"/>
-                        ) : (
-                            <>
-                                <CheckCircle className="w-5 h-5"/>
-                                {attemptsLeft === 1 ? '⚠️ آخر محاولة!' : `تحقق`}
-                                <span className="opacity-70">({attemptsLeft} متبقية)</span>
-                            </>
-                        )}
+                        {checking
+                            ? <Loader2 className="w-5 h-5 animate-spin"/>
+                            : <><CheckCircle className="w-5 h-5"/>
+                                {attemptsLeft === 1 ? '⚠️ آخر محاولة! تحقق' : `تحقق (${attemptsLeft} محاولة متبقية)`}
+                              </>}
                     </button>
                 </div>
             ) : mySolved ? (
-                <div className="bg-gradient-to-br from-green-500/90 to-emerald-600/90 rounded-2xl p-5 text-center border-2 border-green-400 shadow-xl">
-                    <Trophy className="w-12 h-12 text-yellow-300 mx-auto mb-2 animate-bounce drop-shadow-lg"/>
-                    <p className="font-black text-white text-xl">رتّبتها! 🎉</p>
-                    <p className="text-green-200 text-xs mt-1">في انتظار باقي اللاعبين...</p>
+                <div className="bg-green-900/80 rounded-2xl p-4 text-center border-2 border-green-400">
+                    <Trophy className="w-10 h-10 text-yellow-300 mx-auto mb-2 animate-bounce"/>
+                    <p className="font-black text-white text-lg">رتّبتها! 🎉</p>
+                    <p className="text-green-300 text-xs mt-1">في انتظار باقي اللاعبين...</p>
                 </div>
             ) : (
-                <div className="bg-gradient-to-br from-red-500/90 to-rose-600/90 rounded-2xl p-5 text-center border-2 border-red-400 shadow-xl">
-                    <p className="text-5xl mb-2">😞</p>
-                    <p className="font-black text-white text-xl">انتهت محاولاتك!</p>
-                    <p className="text-red-200 text-xs mt-1">استنفدت الـ {maxAttempts} محاولات</p>
+                <div className="bg-red-900/80 rounded-2xl p-4 text-center border-2 border-red-400">
+                    <p className="text-4xl mb-2">😞</p>
+                    <p className="font-black text-white text-lg">انتهت محاولاتك!</p>
+                    <p className="text-red-300 text-xs mt-1">استنفدت الـ {MAX_ATTEMPTS} محاولات</p>
                 </div>
             )}
 
-            {/* Attempt History */}
+            {/* Attempt history */}
             {myAttempts.length > 0 && (
-                <div className="bg-gray-800/60 dark:bg-gray-900/80 rounded-2xl p-3 space-y-1.5">
-                    <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 mb-2 flex items-center gap-1">
-                        <TrendingUp className="w-3 h-3"/> سجل المحاولات:
-                    </p>
+                <div className="bg-gray-800/60 rounded-2xl p-3 space-y-1.5">
+                    <p className="text-[10px] font-black text-gray-400 mb-2">سجل المحاولات:</p>
                     {myAttempts.map((att, i) => (
-                        <AttemptRow
-                            key={i}
-                            attempt={att}
-                            secret={secret}
-                            num={i + 1}
-                            isCorrect={countCorrect(att, secret) === bottleCount}
-                        />
+                        <AttemptRow key={i} attempt={att} secret={secret} num={i + 1}/>
                     ))}
                 </div>
             )}
 
-            <button onClick={onExit} className="text-xs font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 py-1 text-center transition-colors">
+            <button onClick={onExit} className="text-xs font-bold text-gray-400 hover:text-gray-600 py-1 text-center">
                 ← العودة
             </button>
         </div>
     );
 
-    // ── REWARD TIME ───────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // REWARD TIME (winner answers question)
+    // ─────────────────────────────────────────────────────────────────────────
     if (status === 'reward_time') return (
-        <div className="flex flex-col gap-3 py-2 px-2" dir="rtl">
-
-            {/* Dark Mode Toggle */}
-            <button
-                onClick={() => setIsDarkMode(p => !p)}
-                className="absolute top-3 left-12 z-50 p-2 bg-white/10 hover:bg-white/20 dark:bg-gray-800/50 rounded-full text-gray-700 dark:text-gray-200 backdrop-blur-sm shadow-sm"
-            >
-                {isDarkMode ? <Sun className="w-5 h-5"/> : <Moon className="w-5 h-5"/>}
-            </button>
-
+        <div className="flex flex-col gap-3 py-2 px-3" dir="rtl">
             {amIWinner ? (
                 <>
-                    {/* Winner Banner */}
-                    <div className="bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl p-5 text-center shadow-xl">
-                        <Trophy className="w-16 h-16 text-white mx-auto mb-2 animate-bounce drop-shadow-xl"/>
-                        <h3 className="text-2xl font-black text-white">أنت الفائز! 🎉</h3>
-                        <p className="text-yellow-100 text-sm mt-1">أجب على السؤال لتكسب النقاط</p>
+                    <div className="bg-gradient-to-br from-yellow-400 to-amber-500 rounded-2xl p-4 text-center shadow-xl">
+                        <Trophy className="w-12 h-12 text-white mx-auto mb-2 animate-bounce drop-shadow-xl"/>
+                        <h3 className="text-xl font-black text-white">أنت الفائز! 🎉</h3>
+                        <p className="text-yellow-100 text-xs mt-1">أجب على السؤال لتكسب النقاط</p>
                     </div>
-
-                    {/* Secret Reveal */}
-                    <div className="bg-gray-800 dark:bg-gray-900 rounded-2xl p-4">
-                        <p className="text-[10px] font-black text-gray-400 text-center mb-3 flex items-center justify-center gap-1">
-                            <Award className="w-3 h-3"/> الترتيب السري كان:
-                        </p>
-                        <div className="flex justify-center gap-3">
-                            {secret.map((cid, i) => (
-                                <div key={i} className="flex flex-col items-center gap-1">
-                                    <div className="w-10 h-20 rounded-full border-2 border-white/20 shadow-lg"
-                                        style={{ background: COLORS_PALETTE.find(c => c.id === cid)?.bg }}/>
-                                    <span className="text-[9px] text-gray-500 font-bold">{i + 1}</span>
-                                </div>
-                            ))}
+                    {/* Reveal secret */}
+                    <div className="bg-gray-800 rounded-2xl p-3">
+                        <p className="text-[10px] font-black text-gray-400 text-center mb-2">الترتيب السري كان:</p>
+                        <div className="flex justify-center gap-2">
+                            {secret.map((cid, i) => {
+                                const color = COLORS.find(c => c.id === cid)!;
+                                return <div key={i} className="w-8 h-16 rounded-full border-2 border-white/20 shadow-lg"
+                                    style={{ background: color.bg }}/>;
+                            })}
                         </div>
                     </div>
-
-                    {/* Question */}
                     {qLoading ? (
-                        <div className="text-center py-8">
-                            <Loader2 className="w-10 h-10 animate-spin text-indigo-400 mx-auto mb-2"/>
-                            <p className="text-sm font-bold text-gray-400">جاري تحضير السؤال...</p>
+                        <div className="text-center py-6">
+                            <Loader2 className="w-8 h-8 animate-spin text-indigo-400 mx-auto mb-2"/>
+                            <p className="text-xs font-bold text-gray-400">جاري تحضير السؤال...</p>
                         </div>
                     ) : question && !qAnswered ? (
                         <QuestionScreen question={question} onAnswer={handleQAnswer}
                             timeLeft={qTime} answered={qAnswered} isCorrect={qCorrect} loading={false}/>
                     ) : qAnswered && (
-                        <div className={`rounded-2xl p-5 text-center font-black text-lg ${
-                            qCorrect
-                                ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
-                                : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-200'
+                        <div className={`rounded-xl p-4 text-center font-black ${
+                            qCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
                         }`}>
                             {qCorrect ? '✅ أجبت صح! +15 نقطة 🎉' : '❌ إجابة خاطئة — حظ أوفر'}
                         </div>
@@ -1050,135 +843,77 @@ export default function BottleMatchGame({ match, employee, onExit, grantPoints }
                 </>
             ) : (
                 <div className="text-center py-10">
-                    <div className="w-20 h-20 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Loader2 className="w-10 h-10 text-indigo-400 animate-spin"/>
+                    <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin"/>
                     </div>
-                    <h3 className="text-lg font-black text-gray-800 dark:text-white">الفائز يجيب على سؤاله...</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{players.find(p => p.id === match.winner_id)?.name}</p>
-
-                    {/* Show Secret */}
+                    <h3 className="text-lg font-black text-gray-800">الفائز يجيب على سؤاله...</h3>
+                    <p className="text-sm text-gray-400 mt-1">{players.find(p => p.id === match.winner_id)?.name}</p>
+                    {/* Show secret */}
                     <div className="flex justify-center gap-2 mt-6">
-                        {secret.map((cid, i) => (
-                            <div key={i} className="w-8 h-16 rounded-full border-2 border-gray-200 dark:border-gray-700 shadow"
-                                style={{ background: COLORS_PALETTE.find(c => c.id === cid)?.bg }}/>
-                        ))}
+                        {secret.map((cid, i) => {
+                            const color = COLORS.find(c => c.id === cid)!;
+                            return <div key={i} className="w-8 h-16 rounded-full border-2 border-gray-200 shadow"
+                                style={{ background: color.bg }}/>;
+                        })}
                     </div>
                 </div>
             )}
         </div>
     );
 
-    // ── FINISHED ──────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // FINISHED
+    // ─────────────────────────────────────────────────────────────────────────
     if (status === 'finished') return (
-        <div className="flex flex-col gap-3 py-2 px-2 animate-in fade-in duration-400" dir="rtl">
-
-            {/* Dark Mode Toggle */}
-            <button
-                onClick={() => setIsDarkMode(p => !p)}
-                className="absolute top-3 left-12 z-50 p-2 bg-white/10 hover:bg-white/20 dark:bg-gray-800/50 rounded-full text-gray-700 dark:text-gray-200 backdrop-blur-sm shadow-sm"
-            >
-                {isDarkMode ? <Sun className="w-5 h-5"/> : <Moon className="w-5 h-5"/>}
-            </button>
-
-            {/* Result Banner */}
-            <div className={`rounded-2xl p-6 text-center text-white shadow-xl ${
-                amIWinner
-                    ? 'bg-gradient-to-br from-yellow-400 to-amber-500'
-                    : 'bg-gradient-to-br from-gray-600 to-gray-800'
+        <div className="flex flex-col gap-3 py-2 px-3 animate-in fade-in duration-400" dir="rtl">
+            <div className={`rounded-2xl p-5 text-center text-white shadow-xl ${
+                amIWinner ? 'bg-gradient-to-br from-yellow-400 to-amber-500' : 'bg-gradient-to-br from-gray-600 to-gray-800'
             }`}>
-                {amIWinner ? (
-                    <>
-                        <Trophy className="w-16 h-16 mx-auto mb-2 animate-bounce drop-shadow-xl"/>
-                        <h3 className="text-2xl font-black">فزت! 🏆</h3>
-                    </>
-                ) : (
-                    <>
-                        <div className="text-5xl mb-2">🍾</div>
-                        <h3 className="text-xl font-black">انتهت اللعبة</h3>
-                    </>
-                )}
+                {amIWinner
+                    ? <><Trophy className="w-14 h-14 mx-auto mb-2 animate-bounce"/><h3 className="text-2xl font-black">فزت! 🏆</h3></>
+                    : <><div className="text-5xl mb-2">🍾</div><h3 className="text-xl font-black">انتهت اللعبة</h3></>
+                }
             </div>
-
-            {/* Stats Card */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-4 shadow-lg">
-                <p className="text-[10px] font-black text-gray-400 mb-3 flex items-center justify-center gap-1">
-                    <Award className="w-3 h-3"/> الترتيب السري:
-                </p>
-                <div className="flex justify-center gap-3 mb-4">
+            {/* Secret reveal */}
+            <div className="bg-gray-800 rounded-2xl p-4">
+                <p className="text-[10px] font-black text-gray-400 text-center mb-3">الترتيب السري كان:</p>
+                <div className="flex justify-center gap-3">
                     {secret.map((cid, i) => {
-                        const color = COLORS_PALETTE.find(c => c.id === cid)!;
+                        const color = COLORS.find(c => c.id === cid)!;
                         return (
                             <div key={i} className="flex flex-col items-center gap-1">
-                                <div className="w-10 h-20 rounded-full border-2 border-white/30 shadow-lg"
-                                    style={{ background: `linear-gradient(135deg, ${color.light}, ${color.bg} 50%, ${color.dark})` }}/>
+                                <div className="w-9 h-18 rounded-full border-2 border-white/20 shadow-lg"
+                                    style={{ background: color.bg, height: 70 }}/>
                                 <span className="text-[9px] text-gray-400 font-bold">{i + 1}</span>
                             </div>
                         );
                     })}
                 </div>
-
-                {/* Game Stats */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-2">
-                        <p className="text-lg font-black text-gray-800 dark:text-white">{myAttempts.length}</p>
-                        <p className="text-[10px] text-gray-500">محاولة</p>
-                    </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-2">
-                        <p className="text-lg font-black text-gray-800 dark:text-white">
-                            {myAttempts.length > 0 ? countCorrect(myAttempts[myAttempts.length - 1], secret) : 0}/{bottleCount}
-                        </p>
-                        <p className="text-[10px] text-gray-500">آخر نتيجة</p>
-                    </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-2">
-                        <p className="text-lg font-black text-gray-800 dark:text-white">
-                            {difficulty.emoji}
-                        </p>
-                        <p className="text-[10px] text-gray-500">{difficulty.label}</p>
-                    </div>
-                </div>
             </div>
-
             {/* Rankings */}
             <div className="space-y-2">
-                <p className="text-xs font-black text-gray-500 dark:text-gray-400 px-1 flex items-center gap-1">
-                    <Trophy className="w-3 h-3 text-amber-500"/> الترتيب النهائي:
-                </p>
                 {sortedPlayers.map((p, i) => {
                     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`;
                     const lastScore = countCorrect(p.attempts.at(-1) ?? [], secret);
                     return (
-                        <div key={p.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
-                            p.id === myId
-                                ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
-                                : 'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800'
+                        <div key={p.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 ${
+                            p.id === myId ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100 bg-white'
                         }`}>
-                            <span className={`text-lg w-8 text-center ${
-                                i === 0 ? 'text-amber-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-amber-600' : 'text-gray-400'
-                            }`}>
-                                {medal}
-                            </span>
-                            <p className="flex-1 font-black text-sm text-gray-800 dark:text-gray-100">
-                                {p.name}{p.id === myId && ' (أنت)'}
-                            </p>
-                            {p.solved ? (
-                                <span className="text-xs font-black text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2.5 py-1 rounded-full flex items-center gap-1">
-                                    <CheckCircle className="w-3 h-3"/> حلّها
-                                </span>
-                            ) : p.eliminated ? (
-                                <span className="text-xs font-black text-red-500 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-2.5 py-1 rounded-full">انتهت</span>
-                            ) : (
-                                <span className="text-xs font-black text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2.5 py-1 rounded-full">
-                                    {lastScore}/{bottleCount}
-                                </span>
-                            )}
+                            <span className="text-lg w-8 text-center">{medal}</span>
+                            <p className="flex-1 font-black text-sm text-gray-800">{p.name}{p.id === myId && ' (أنت)'}</p>
+                            {p.solved
+                                ? <span className="text-xs font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full">✓ حلّها</span>
+                                : p.eliminated
+                                    ? <span className="text-xs font-black text-red-500 bg-red-100 px-2 py-0.5 rounded-full">✗ انتهت</span>
+                                    : <span className="text-xs font-black text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{lastScore}/{BOTTLE_COUNT}</span>
+                            }
                         </div>
                     );
                 })}
             </div>
-
             <button onClick={onExit}
-                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-4 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2">
-                <RotateCcw className="w-5 h-5"/> العودة للصالة
+                className="w-full bg-gradient-to-r from-indigo-600 to-violet-700 text-white py-3.5 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all">
+                العودة للصالة
             </button>
         </div>
     );
