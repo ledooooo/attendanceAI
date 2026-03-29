@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
 import { Employee } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
@@ -8,7 +8,7 @@ import {
     Swords, UserX, Trophy, Users, Clock,
     Play, X, CheckCircle2, BrainCircuit, Loader2, Trash2, Timer, Hand, Grid3x3, Bus,
     Link2, Share2, Sparkles, RefreshCw, Bell, BellOff, Smartphone,
-    Send, Wifi, WifiOff, ChevronDown, ChevronUp, Search, Moon, Sun
+    Send, Wifi, WifiOff, ChevronDown, ChevronUp
 } from 'lucide-react';
 import Connect4Game from './games/Connect4Game';
 import XOGame from './games/XOGame';
@@ -19,13 +19,6 @@ import BottleMatchGame from './games/BottleMatchGame';
 import PuzzleGame from './games/PuzzleGame';
 import MemoryGame from './games/MemoryGame';
 import BeastLevelGame from './games/BeastLevelGame';
-import SimonSaysGame from './games/SimonSaysGame';
-import LudoGame from './games/LudoGame';
-
-// ─── Type Definitions ─────────────────────────────────────────────────────────
-type MatchStatus = 'waiting' | 'playing' | 'answering_reward' | 'finished';
-type GamePhase = 'setup' | 'betting' | 'playing' | 'ended';
-type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting';
 
 // ─── Beautiful Avatars ────────────────────────────────────────────────────────
 const AVATAR_STYLES = [
@@ -36,16 +29,6 @@ const AVATAR_STYLES = [
     { bg: 'from-emerald-400 to-teal-500',  ring: 'ring-teal-300'   },
     { bg: 'from-indigo-400 to-blue-600',   ring: 'ring-blue-300'   },
 ];
-
-// ─── Random Alias Names Generator ─────────────────────────────────────────────
-const RANDOM_ADJECTIVES = ['الغامض', 'النينجا', 'الشبح', 'الساحر', 'المخفي', 'الأسطوري', 'الخبث', 'المراوغ'];
-const RANDOM_NOUNS = ['الطبيب', 'الممرض', 'الفني', 'الجراح', 'الصيدلي', 'المخبري', 'الإداري', 'المنسق'];
-
-const generateRandomName = (): string => {
-    const adj = RANDOM_ADJECTIVES[Math.floor(Math.random() * RANDOM_ADJECTIVES.length)];
-    const noun = RANDOM_NOUNS[Math.floor(Math.random() * RANDOM_NOUNS.length)];
-    return `${adj} ${noun}`;
-};
 
 const ALIASES = [
     { name: 'طبيب غامض',      emoji: '🕵️',  bg: 'from-slate-600 to-gray-800',    ring: 'ring-gray-400'   },
@@ -58,9 +41,8 @@ const ALIASES = [
     { name: 'قناص الملفات',   emoji: '🎯',  bg: 'from-emerald-600 to-green-800', ring: 'ring-green-400'  },
     { name: 'روبوت الطوارئ',  emoji: '🤖',  bg: 'from-cyan-500 to-blue-700',     ring: 'ring-cyan-400'   },
     { name: 'فارس الصحة',     emoji: '🛡️', bg: 'from-teal-500 to-emerald-700',  ring: 'ring-teal-400'   },
-    { name: 'نجم التشخيص',    emoji: '🌟',  bg: 'from-pink-500 to-rose-700',     ring: 'ring-pink-400'    },
+    { name: 'نجم التشخيص',    emoji: '🌟',  bg: 'from-pink-500 to-rose-700',     ring: 'ring-pink-400'   },
     { name: 'حكيم السرير',    emoji: '🧠',  bg: 'from-indigo-500 to-purple-700', ring: 'ring-purple-300' },
-    { name: 'اسم عشوائي',     emoji: '🎲',  bg: 'from-purple-600 to-pink-600',  ring: 'ring-pink-300'   },
 ];
 
 const GAME_TYPES = [
@@ -72,58 +54,15 @@ const GAME_TYPES = [
     { key: 'puzzle',      label: 'لعبة الأرقام',     icon: '🔢',   desc: 'رتّب 1 إلى 15',        color: 'from-amber-600 to-orange-700', minPlayers: 2, maxPlayers: 6  },
     { key: 'memory',      label: 'لعبة الذاكرة',     icon: '🧠',   desc: 'اقلب وطابق البطاقات',  color: 'from-indigo-600 to-violet-700', minPlayers: 2, maxPlayers: 2  },
     { key: 'stopthebus',  label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',    color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
-    { key: 'beastlevel',  label: 'ليفل الوحش',       icon: '🦁',   desc: 'أسئلة طبية متدرجة',   color: 'from-red-600 to-orange-600',    minPlayers: 2, maxPlayers: 8  },
-    { key: 'simonsays',   label: 'سيمون يقول',        icon: '🎮',   desc: 'تذكر التسلسل اللوني',  color: 'from-emerald-500 to-teal-600', minPlayers: 2, maxPlayers: 8  },
-    { key: 'ludo',        label: 'لودو',              icon: '🎲',   desc: 'لعبة الطاولة الكلاسيكية', color: 'from-yellow-500 to-orange-500', minPlayers: 2, maxPlayers: 4  },
+    { key: 'beastlevel',  label: 'ليفل الوحش', icon: '🦁',   desc: 'أسئلة طبية متدرجة',   color: 'from-red-600 to-orange-600',   minPlayers: 2, maxPlayers: 8  },
 ];
 
 const BASE_URL = 'https://gharb-alpha.vercel.app';
-const BEASTLEVEL_MIN_POINTS = 5000;
-const ROOM_CREATION_COOLDOWN = 30000; // 30 seconds
-const JOIN_COOLDOWN = 10000; // 10 seconds
+const BEASTLEVEL_MIN_POINTS = 5000; // ⚠️ Change to 5000 after testing
 
 function getRoomLink(matchId: string) {
     return `${BASE_URL}${window.location.pathname}#room=${matchId}`;
 }
-
-// ─── Utility Functions ────────────────────────────────────────────────────────
-const formatTimeLeft = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
-
-const formatTimeAgo = (iso: string | null): string => {
-    if (!iso) return '';
-    const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-    if (secs < 60) return 'الآن';
-    if (secs < 3600) return `منذ ${Math.floor(secs / 60)} د`;
-    return `منذ ${Math.floor(secs / 3600)} س`;
-};
-
-// ─── Clipboard API (Modern) ──────────────────────────────────────────────────
-const copyToClipboard = async (text: string): Promise<boolean> => {
-    try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(text);
-            return true;
-        }
-        // Fallback for older browsers
-        const el = document.createElement('textarea');
-        el.value = text;
-        el.style.position = 'fixed';
-        el.style.left = '-999999px';
-        el.style.top = '-999999px';
-        document.body.appendChild(el);
-        el.focus();
-        el.select();
-        const success = document.execCommand('copy');
-        document.body.removeChild(el);
-        return success;
-    } catch {
-        return false;
-    }
-};
 
 // ─── Push Notifications ───────────────────────────────────────────────────────
 const VAPID_PUBLIC_KEY = 'BIkRpd6ma443zGKy3FqGVxXMT4JyARFx36pcc-NAYVdPiB1WTEw9m6XKJq4OXO70Vnyh0zYnE_NkjK3p3VZIINw';
@@ -146,62 +85,34 @@ async function subscribeToPush(userId: string): Promise<boolean> {
 
         const reg = await navigator.serviceWorker.ready;
         let sub = await reg.pushManager.getSubscription();
-
-        // Check existing subscription
         if (sub) {
-            const { data, error } = await supabase.from('push_subscriptions')
-                .select('id')
-                .eq('endpoint', sub.endpoint)
-                .eq('user_id', userId)
-                .maybeSingle();
-
-            if (error) {
-                console.error('Error checking subscription:', error);
-            }
+            const { data } = await supabase.from('push_subscriptions')
+                .select('id').eq('endpoint', sub.endpoint).eq('user_id', userId).maybeSingle();
             if (data) return true;
-            const unsubscribed = await sub.unsubscribe();
-            if (!unsubscribed) {
-                console.warn('Failed to unsubscribe from old subscription');
-            }
+            await sub.unsubscribe();
         }
-
         sub = await reg.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         });
-
-        // Clean up old subscriptions and insert new one
         await supabase.from('push_subscriptions').delete().eq('user_id', userId);
-        const { error: insertError } = await supabase.from('push_subscriptions').insert({
+        await supabase.from('push_subscriptions').insert({
             user_id: userId,
             subscription_data: JSON.stringify(sub.toJSON()),
             endpoint: sub.endpoint,
             device_info: JSON.stringify({ userAgent: navigator.userAgent }),
             updated_at: new Date().toISOString(),
         });
-
-        if (insertError) {
-            console.error('Error inserting subscription:', insertError);
-            return false;
-        }
         return true;
-    } catch (error) {
-        console.error('Push subscription error:', error);
-        return false;
-    }
+    } catch { return false; }
 }
 
 async function sendPushToUser(userId: string, title: string, body: string, url = '/') {
     try {
-        const { error } = await supabase.functions.invoke('send-push-notification', {
+        await supabase.functions.invoke('send-push-notification', {
             body: { userId, title, body, url },
         });
-        if (error) {
-            console.warn('Failed to send push notification:', error);
-        }
-    } catch (error) {
-        console.warn('Push notification failed:', error);
-    }
+    } catch { /* silent */ }
 }
 
 // ─── Share Room ───────────────────────────────────────────────────────────────
@@ -209,47 +120,26 @@ async function shareRoom(matchId: string, gameLabel: string) {
     const link = getRoomLink(matchId);
     const text = `تحداني في لعبة ${gameLabel}! انضم الآن 🎮`;
 
-    try {
-        if (navigator.share) {
-            try {
-                await navigator.share({ title: 'تحدي الصالة', text, url: link });
-                return;
-            } catch (shareError) {
-                // User cancelled or share failed, continue to clipboard
-                console.debug('Share cancelled or failed:', shareError);
-            }
-        }
+    if (navigator.share) {
+        try {
+            await navigator.share({ title: 'تحدي الصالة', text, url: link });
+            return;
+        } catch { /* fallback */ }
+    }
 
-        const success = await copyToClipboard(`${text}\n${link}`);
-        if (success) {
-            toast.success('تم نسخ رابط الغرفة! أرسله لزميلك 🔗', { icon: '📋', duration: 3000 });
-        } else {
-            toast.error('فشل نسخ الرابط');
-        }
-    } catch (error) {
-        console.error('Share error:', error);
-        toast.error('حدث خطأ أثناء المشاركة');
+    try {
+        await navigator.clipboard.writeText(`${text}\n${link}`);
+        toast.success('تم نسخ رابط الغرفة! أرسله لزميلك 🔗', { icon: '📋', duration: 3000 });
+    } catch {
+        const el = document.createElement('textarea');
+        el.value = `${text}\n${link}`;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        toast.success('تم نسخ الرابط! 📋');
     }
 }
-
-// ─── Sound Effects ────────────────────────────────────────────────────────────
-const playSound = (url: string, volume = 0.7): void => {
-    try {
-        const audio = new Audio(url);
-        audio.volume = volume;
-        audio.play().catch(() => {
-            // Fallback: vibrate if available
-            if (navigator.vibrate) {
-                navigator.vibrate(100);
-            }
-        });
-    } catch (error) {
-        console.warn('Sound playback failed:', error);
-    }
-};
-
-const playNotificationSound = () => playSound('/notification.mp3');
-const playWinSound = () => playSound('https://raw.githubusercontent.com/ledooooo/attendanceAI/main/public/applause.mp3', 0.8);
 
 // ─── Avatar Components ────────────────────────────────────────────────────────
 const AvatarDisplay = ({ avatar, className = '', size = 'md' }: {
@@ -271,12 +161,12 @@ function AliasCard({ alias, selected, onClick }: {
     return (
         <button onClick={onClick}
             className={`relative flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 transition-all ${
-                selected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-105 shadow-lg' : 'border-gray-100 dark:border-gray-700 hover:border-indigo-200 dark:hover:border-indigo-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                selected ? 'border-indigo-500 bg-indigo-50 scale-105 shadow-lg' : 'border-gray-100 hover:border-indigo-200 hover:bg-gray-50'
             }`}>
             <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${alias.bg} flex items-center justify-center shadow-md`}>
                 <span className="text-2xl">{alias.emoji}</span>
             </div>
-            <span className="text-[11px] font-black text-gray-700 dark:text-gray-200 text-center leading-tight">{alias.name}</span>
+            <span className="text-[11px] font-black text-gray-700 text-center leading-tight">{alias.name}</span>
             {selected && (
                 <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-indigo-600 rounded-full flex items-center justify-center">
                     <span className="text-white text-[10px] font-black">✓</span>
@@ -289,7 +179,7 @@ function AliasCard({ alias, selected, onClick }: {
 function RealAvatar({ employee, size = 'md' }: { employee: Employee; size?: 'sm' | 'md' | 'lg' }) {
     const sizeMap = { sm: 'w-8 h-8 text-base', md: 'w-10 h-10 text-xl', lg: 'w-14 h-14 text-3xl' };
     const cls = sizeMap[size];
-    const initials = employee.name?.split(' ').slice(0, 2).map(n => n?.[0] ?? '').join('') || '؟';
+    const initials = employee.name?.split(' ').slice(0, 2).map(n => n[0]).join('') || '؟';
     const styleIdx = employee.employee_id.charCodeAt(0) % AVATAR_STYLES.length;
     const style = AVATAR_STYLES[styleIdx];
     if (employee.photo_url)
@@ -318,31 +208,21 @@ const normalizeQuestion = (rawQ: any) => {
     let questionText = rawQ.question || rawQ.question_text || '';
     if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`;
     let opts: string[] = [], correctAns = '';
-
     if (rawQ.source === 'standard_quiz') {
         try {
             let parsed = rawQ.options;
-            if (typeof parsed === 'string') {
-                if (parsed.startsWith('"')) parsed = JSON.parse(parsed);
-                if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-            }
+            if (typeof parsed === 'string') { if (parsed.startsWith('"')) parsed = JSON.parse(parsed); if (typeof parsed === 'string') parsed = JSON.parse(parsed); }
             opts = Array.isArray(parsed) ? parsed : [];
         } catch { opts = []; }
         correctAns = rawQ.correct_answer;
     } else {
         opts = [rawQ.option_a, rawQ.option_b, rawQ.option_c, rawQ.option_d].filter(o => o && String(o).trim() !== '' && o !== 'null');
-        if (rawQ.correct_index !== undefined && rawQ.correct_index !== null && opts[rawQ.correct_index]) {
-            correctAns = opts[rawQ.correct_index];
-        } else {
+        if (rawQ.correct_index !== undefined && rawQ.correct_index !== null) correctAns = opts[rawQ.correct_index];
+        else {
             const letter = String(rawQ.correct_option || rawQ.correct_answer || '').trim().toLowerCase();
-            if (['a','b','c','d'].includes(letter) && rawQ[`option_${letter}`]) {
-                correctAns = rawQ[`option_${letter}`];
-            } else {
-                correctAns = letter;
-            }
+            correctAns = ['a','b','c','d'].includes(letter) ? rawQ[`option_${letter}`] : letter;
         }
     }
-
     if (!correctAns || opts.length < 2) return null;
     return { id: rawQ.id, questionText, options: opts, correctAnswer: String(correctAns).trim().toLowerCase() };
 };
@@ -351,29 +231,23 @@ const fetchUnifiedQuestion = async (employee: Employee, difficulty?: string) => 
     const variations = getSpecialtyVariations(employee.specialty);
     const orFilter = variations.map(v => `specialty.ilike.%${v}%`).join(',');
     let pool: any[] = [];
-
     const [r1, r2, r3] = await Promise.all([
         supabase.from('arcade_quiz_questions').select('*').or(orFilter),
         supabase.from('arcade_dose_scenarios').select('*').or(orFilter),
         supabase.from('quiz_questions').select('*').or(orFilter),
     ]);
-
     if (r1.data) pool.push(...r1.data.map(q => ({ ...q, source: 'arcade_quiz' })));
     if (r2.data) pool.push(...r2.data.map(q => ({ ...q, source: 'arcade_dose' })));
     if (r3.data) pool.push(...r3.data.map(q => ({ ...q, source: 'standard_quiz' })));
-
     if (pool.length === 0) {
         const { data } = await supabase.from('arcade_quiz_questions').select('*').limit(30);
         if (data) pool = data.map(q => ({ ...q, source: 'arcade_quiz' }));
     }
-
     if (difficulty) {
         const dp = pool.filter(q => q.difficulty === difficulty || (q.source === 'standard_quiz' && difficulty === 'medium'));
         if (dp.length > 0) pool = dp;
     }
-
     if (pool.length === 0) return null;
-
     for (let i = 0; i < 5; i++) {
         const n = normalizeQuestion(pool[Math.floor(Math.random() * pool.length)]);
         if (n) return n;
@@ -401,13 +275,13 @@ function PushToggle({ userId }: { userId: string }) {
     };
 
     if (status === 'granted') return (
-        <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-xl text-[11px] font-black">
+        <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-xl text-[11px] font-black">
             <Bell className="w-3.5 h-3.5"/> الإشعارات مفعّلة
         </div>
     );
 
     if (status === 'denied') return (
-        <div className="flex items-center gap-1.5 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-500 dark:text-red-400 px-3 py-1.5 rounded-xl text-[11px] font-black">
+        <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-500 px-3 py-1.5 rounded-xl text-[11px] font-black">
             <BellOff className="w-3.5 h-3.5"/> مرفوض
         </div>
     );
@@ -418,31 +292,6 @@ function PushToggle({ userId }: { userId: string }) {
             {status === 'loading' ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Smartphone className="w-3.5 h-3.5"/>}
             تفعيل الإشعارات
         </button>
-    );
-}
-
-// ─── Connection Status Indicator ─────────────────────────────────────────────
-function ConnectionStatusIndicator({ status }: { status: ConnectionStatus }) {
-    if (status === 'connected') return null;
-
-    return (
-        <div className={`fixed top-0 left-0 right-0 z-[100] px-4 py-2 text-center text-sm font-bold flex items-center justify-center gap-2 ${
-            status === 'reconnecting'
-                ? 'bg-yellow-500 text-white animate-pulse'
-                : 'bg-red-500 text-white'
-        }`}>
-            {status === 'reconnecting' ? (
-                <>
-                    <Loader2 className="w-4 h-4 animate-spin"/>
-                    جاري إعادة الاتصال...
-                </>
-            ) : (
-                <>
-                    <WifiOff className="w-4 h-4"/>
-                    انقطع الاتصال بالإنترنت
-                </>
-            )}
-        </div>
     );
 }
 
@@ -465,40 +314,24 @@ function AdminOnlinePanel({ adminEmployee, currentMatchId, gameLabel }: {
     const [sent, setSent] = useState<Record<string, boolean>>({});
     const [collapsed, setCollapsed] = useState(false);
     const [sendingAll, setSendingAll] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-    const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-    const fetchOnline = useCallback(async () => {
-        try {
-            const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-            const { data, error } = await supabase
-                .from('employees')
-                .select('employee_id, name, specialty, photo_url, last_seen')
-                .gte('last_seen', cutoff)
-                .neq('employee_id', String(adminEmployee.employee_id))
-                .neq('role', 'admin')
-                .order('last_seen', { ascending: false });
-
-            if (error) {
-                console.error('Error fetching online employees:', error);
-                return;
-            }
-            if (data) setOnline(data as OnlineEmployee[]);
-        } catch (error) {
-            console.error('Fetch online error:', error);
-        }
-    }, [adminEmployee.employee_id]);
+    const fetchOnline = async () => {
+        const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const { data } = await supabase
+            .from('employees')
+            .select('employee_id, name, specialty, photo_url, last_seen')
+            .gte('last_seen', cutoff)
+            .neq('employee_id', String(adminEmployee.employee_id))
+            .neq('role', 'admin')
+            .order('last_seen', { ascending: false });
+        if (data) setOnline(data as OnlineEmployee[]);
+    };
 
     useEffect(() => {
         fetchOnline();
         const iv = setInterval(fetchOnline, 30_000);
 
-        // Cleanup previous channel
-        if (channelRef.current) {
-            supabase.removeChannel(channelRef.current);
-        }
-
-        channelRef.current = supabase.channel('online_presence_admin')
+        const channel = supabase.channel('online_presence_admin')
             .on('postgres_changes', {
                 event: 'UPDATE',
                 schema: 'public',
@@ -507,76 +340,56 @@ function AdminOnlinePanel({ adminEmployee, currentMatchId, gameLabel }: {
             }, () => { fetchOnline(); })
             .subscribe();
 
-        return () => {
-            clearInterval(iv);
-            if (channelRef.current) {
-                supabase.removeChannel(channelRef.current);
-                channelRef.current = null;
-            }
-        };
-    }, [fetchOnline]);
-
-    // Filter online employees based on search term
-    const filteredOnline = useMemo(() => {
-        if (!searchTerm.trim()) return online;
-        const term = searchTerm.toLowerCase();
-        return online.filter(emp =>
-            emp.name.toLowerCase().includes(term) ||
-            emp.specialty?.toLowerCase().includes(term)
-        );
-    }, [online, searchTerm]);
+        return () => { clearInterval(iv); supabase.removeChannel(channel); };
+    }, [adminEmployee.employee_id]);
 
     const sendInvite = async (emp: OnlineEmployee) => {
         if (!currentMatchId) return;
         const link = getRoomLink(currentMatchId);
         setSending(p => ({ ...p, [emp.employee_id]: true }));
 
-        try {
-            await Promise.all([
-                supabase.from('notifications').insert({
-                    user_id: String(emp.employee_id),
-                    title: `🎮 دعوة لعبة من ${adminEmployee.name?.split(' ')[0] || 'المدير'}`,
-                    message: `تم دعوتك للانضمام لغرفة ${gameLabel}! اضغط هنا للانضمام 👉 ${link}`,
-                    type: 'competition',
-                    is_read: false,
-                }),
-                sendPushToUser(
-                    String(emp.employee_id),
-                    `🎮 دعوة لعبة من ${adminEmployee.name?.split(' ')[0] || 'المدير'}`,
-                    `انضم لغرفة ${gameLabel} الآن!`,
-                    link,
-                )
-            ]);
+        await supabase.from('notifications').insert({
+            user_id: String(emp.employee_id),
+            title: `🎮 دعوة لعبة من ${adminEmployee.name?.split(' ')[0] || 'المدير'}`,
+            message: `تم دعوتك للانضمام لغرفة ${gameLabel}! اضغط هنا للانضمام 👉 ${link}`,
+            type: 'competition',
+            is_read: false,
+        });
 
-            setSending(p => ({ ...p, [emp.employee_id]: false }));
-            setSent(p => ({ ...p, [emp.employee_id]: true }));
-            toast.success(`تم إرسال الدعوة لـ ${emp.name?.split(' ')[0]} ✅`);
-            setTimeout(() => setSent(p => ({ ...p, [emp.employee_id]: false })), 10_000);
-        } catch (error) {
-            console.error('Send invite error:', error);
-            setSending(p => ({ ...p, [emp.employee_id]: false }));
-            toast.error('فشل إرسال الدعوة');
-        }
+        await sendPushToUser(
+            String(emp.employee_id),
+            `🎮 دعوة لعبة من ${adminEmployee.name?.split(' ')[0] || 'المدير'}`,
+            `انضم لغرفة ${gameLabel} الآن!`,
+            link,
+        );
+
+        setSending(p => ({ ...p, [emp.employee_id]: false }));
+        setSent(p => ({ ...p, [emp.employee_id]: true }));
+        toast.success(`تم إرسال الدعوة لـ ${emp.name?.split(' ')[0]} ✅`);
+        setTimeout(() => setSent(p => ({ ...p, [emp.employee_id]: false })), 10_000);
     };
 
     const sendToAll = async () => {
-        if (!currentMatchId || filteredOnline.length === 0) return;
+        if (!currentMatchId || online.length === 0) return;
         setSendingAll(true);
-        try {
-            await Promise.all(filteredOnline.map(emp => sendInvite(emp)));
-            toast.success(`تم إرسال الدعوة لـ ${filteredOnline.length} موظف أونلاين! 🎉`);
-        } catch (error) {
-            toast.error('حدث خطأ أثناء إرسال الدعوات');
-        } finally {
-            setSendingAll(false);
-        }
+        await Promise.all(online.map(emp => sendInvite(emp)));
+        setSendingAll(false);
+        toast.success(`تم إرسال الدعوة لـ ${online.length} موظف أونلاين! 🎉`);
     };
 
-    const initials = (name: string) => name?.split(' ').slice(0, 2).map(n => n?.[0] ?? '').join('') || '؟';
+    const timeAgo = (iso: string | null) => {
+        if (!iso) return '';
+        const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+        if (secs < 60) return 'الآن';
+        if (secs < 3600) return `منذ ${Math.floor(secs / 60)} د`;
+        return `منذ ${Math.floor(secs / 3600)} س`;
+    };
+
+    const initials = (name: string) => name?.split(' ').slice(0, 2).map(n => n[0]).join('') || '؟';
     const styleIdx = (id: string) => id.charCodeAt(0) % AVATAR_STYLES.length;
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl border-2 border-green-200 dark:border-green-800 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border-2 border-green-200 shadow-sm overflow-hidden">
             <button
                 onClick={() => setCollapsed(p => !p)}
                 className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white"
@@ -584,17 +397,17 @@ function AdminOnlinePanel({ adminEmployee, currentMatchId, gameLabel }: {
                 <div className="flex items-center gap-2">
                     <div className="relative">
                         <Wifi className="w-4 h-4"/>
-                        {filteredOnline.length > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-yellow-400 text-gray-900 text-[9px] font-black rounded-full flex items-center justify-center">{filteredOnline.length}</span>
+                        {online.length > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-yellow-400 text-gray-900 text-[9px] font-black rounded-full flex items-center justify-center">{online.length}</span>
                         )}
                     </div>
                     <span className="font-black text-sm">
                         الموظفون أونلاين الآن
-                        {filteredOnline.length === 0 && <span className="text-green-200 font-bold text-xs mr-1">(لا أحد)</span>}
+                        {online.length === 0 && <span className="text-green-200 font-bold text-xs mr-1">(لا أحد)</span>}
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    {currentMatchId && filteredOnline.length > 0 && !collapsed && (
+                    {currentMatchId && online.length > 0 && !collapsed && (
                         <button
                             onClick={e => { e.stopPropagation(); sendToAll(); }}
                             disabled={sendingAll}
@@ -610,36 +423,22 @@ function AdminOnlinePanel({ adminEmployee, currentMatchId, gameLabel }: {
 
             {!collapsed && (
                 <div className="p-3">
-                    {/* Search Input */}
-                    <div className="relative mb-3">
-                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
-                        <input
-                            type="text"
-                            placeholder="ابحث عن موظف..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pr-9 pl-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-                    </div>
-
-                    {filteredOnline.length === 0 ? (
+                    {online.length === 0 ? (
                         <div className="text-center py-5">
-                            <WifiOff className="w-8 h-8 text-gray-200 dark:text-gray-600 mx-auto mb-2"/>
-                            <p className="text-xs font-bold text-gray-400 dark:text-gray-500">
-                                {searchTerm ? 'لا توجد نتائج' : 'لا يوجد موظفون متصلون حالياً'}
-                            </p>
-                            <p className="text-[10px] text-gray-300 dark:text-gray-600 mt-0.5">يتحدث عن آخر 5 دقائق</p>
+                            <WifiOff className="w-8 h-8 text-gray-200 mx-auto mb-2"/>
+                            <p className="text-xs font-bold text-gray-400">لا يوجد موظفون متصلون حالياً</p>
+                            <p className="text-[10px] text-gray-300 mt-0.5">يتحدث عن آخر 5 دقائق</p>
                         </div>
                     ) : (
                         <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar">
-                            {filteredOnline.map(emp => {
+                            {online.map(emp => {
                                 const isSending = sending[emp.employee_id];
                                 const isSent = sent[emp.employee_id];
                                 const idx = styleIdx(emp.employee_id);
                                 const style = AVATAR_STYLES[idx];
                                 return (
                                     <div key={emp.employee_id}
-                                        className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                        className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-gray-50 transition-colors">
                                         <div className="relative flex-shrink-0">
                                             {emp.photo_url ? (
                                                 <img src={emp.photo_url} alt={emp.name}
@@ -653,12 +452,12 @@ function AdminOnlinePanel({ adminEmployee, currentMatchId, gameLabel }: {
                                         </div>
 
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-xs font-black text-gray-800 dark:text-gray-100 truncate">{emp.name}</p>
+                                            <p className="text-xs font-black text-gray-800 truncate">{emp.name}</p>
                                             <div className="flex items-center gap-1.5">
                                                 {emp.specialty && (
-                                                    <span className="text-[10px] text-gray-400 dark:text-gray-500 font-bold truncate max-w-[90px]">{emp.specialty}</span>
+                                                    <span className="text-[10px] text-gray-400 font-bold truncate max-w-[90px]">{emp.specialty}</span>
                                                 )}
-                                                <span className="text-[9px] text-green-500 dark:text-green-400 font-bold">{formatTimeAgo(emp.last_seen)}</span>
+                                                <span className="text-[9px] text-green-500 font-bold">{timeAgo(emp.last_seen)}</span>
                                             </div>
                                         </div>
 
@@ -667,9 +466,9 @@ function AdminOnlinePanel({ adminEmployee, currentMatchId, gameLabel }: {
                                             disabled={isSending || isSent || !currentMatchId}
                                             className={`flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-black text-[11px] transition-all active:scale-95 ${
                                                 isSent
-                                                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-700'
+                                                    ? 'bg-green-100 text-green-700 border border-green-200'
                                                     : !currentMatchId
-                                                        ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                         : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
                                             }`}
                                         >
@@ -688,7 +487,7 @@ function AdminOnlinePanel({ adminEmployee, currentMatchId, gameLabel }: {
                     )}
 
                     {!currentMatchId && (
-                        <p className="text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-2.5 py-1.5 mt-2 font-bold text-center">
+                        <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-2 font-bold text-center">
                             أنشئ غرفة أولاً لتتمكن من إرسال الدعوات
                         </p>
                     )}
@@ -725,21 +524,6 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
     const [autoDeleteTimeLeft, setAutoDeleteTimeLeft] = useState<number | null>(null);
     const autoDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // ── Dark Mode State ─────────────────────────────────────────────────────────
-    const [isDarkMode, setIsDarkMode] = useState(() => {
-        if (typeof window !== 'undefined') {
-            return window.matchMedia('(prefers-color-scheme: dark)').matches;
-        }
-        return false;
-    });
-
-    // ── Connection Status ───────────────────────────────────────────────────────
-    const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connected');
-
-    // ── Rate Limiting ──────────────────────────────────────────────────────────
-    const [lastCreatedRoom, setLastCreatedRoom] = useState<Date | null>(null);
-    const [lastJoinAttempt, setLastJoinAttempt] = useState<Date | null>(null);
-
     // ── Rematch state ──────────────────────────────────────────────────────────
     const [rematchLoading, setRematchLoading] = useState(false);
     const [rematchOfferedTo, setRematchOfferedTo] = useState<string | null>(null);
@@ -748,43 +532,6 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
     // ── Admin ──────────────────────────────────────────────────────────────────
     const isAdmin = (employee as any).role === 'admin';
     const [adminActiveRoomId, setAdminActiveRoomId] = useState<string | null>(null);
-
-    // ── Rematch lock for race condition prevention ──────────────────────────────
-    const [isProcessingRematch, setIsProcessingRematch] = useState(false);
-
-    // ── Dark Mode Effect ────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (isDarkMode) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, [isDarkMode]);
-
-    // ── Connection Status Effect ────────────────────────────────────────────────
-    useEffect(() => {
-        const handleOnline = () => {
-            setConnectionStatus('connected');
-            toast.success('تم إعادة الاتصال');
-        };
-        const handleOffline = () => {
-            setConnectionStatus('disconnected');
-            toast.error('انقطع الاتصال بالإنترنت');
-        };
-
-        window.addEventListener('online', handleOnline);
-        window.addEventListener('offline', handleOffline);
-
-        // Check initial status
-        if (!navigator.onLine) {
-            setConnectionStatus('disconnected');
-        }
-
-        return () => {
-            window.removeEventListener('online', handleOnline);
-            window.removeEventListener('offline', handleOffline);
-        };
-    }, []);
 
     // ── Auto-delete timer ──────────────────────────────────────────────────────
     useEffect(() => {
@@ -799,7 +546,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             setAutoDeleteTimeLeft(null);
         }
         return () => { if (autoDeleteTimerRef.current) clearTimeout(autoDeleteTimerRef.current); };
-    }, [currentMatch?.id, currentMatch?.status, employee.employee_id]);
+    }, [currentMatch?.id, currentMatch?.status]);
 
     useEffect(() => {
         if (!autoDeleteTimeLeft || autoDeleteTimeLeft <= 0) return;
@@ -835,11 +582,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             .on('postgres_changes', { event: '*', schema: 'public', table: 'live_matches' }, payload => {
                 if (payload.eventType === 'DELETE') {
                     setMatches(prev => prev.filter(m => m.id !== payload.old.id));
-                    if (currentMatch?.id === payload.old.id) {
-                        setCurrentMatch(null);
-                        setView('lobby');
-                        toast('تم إغلاق الغرفة', { icon: '🚪' });
-                    }
+                    if (currentMatch?.id === payload.old.id) { setCurrentMatch(null); setView('lobby'); toast('تم إغلاق الغرفة', { icon: '🚪' }); }
                     return;
                 }
                 const updated = payload.new;
@@ -852,7 +595,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                     // Someone joined my waiting room
                     if (prev.status === 'waiting' && updated.status === 'playing' && updated.created_by === employee.employee_id) {
                         toast.success('انضم منافس! اللعبة بدأت 🎮', { icon: '🔥', duration: 4000 });
-                        playNotificationSound();
+                        new Audio('/notification.mp3').play().catch(() => {});
                     }
 
                     if (updated.status === 'answering_reward' && prev.status !== 'answering_reward' && updated.winner_id === employee.employee_id) {
@@ -863,10 +606,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                     const remReq = updated.game_state?.rematch_request;
                     if (remReq && remReq.to === employee.employee_id && !remReq.accepted) {
                         setRematchRequestFrom(remReq.from);
-                        playNotificationSound();
-                        toast('🔄 طلب إعادة المباراة!', { icon: '🔄', duration: 5000 });
                     }
-
                     // Rematch accepted — auto-create new room
                     if (updated.game_state?.rematch_request?.accepted && updated.game_state?.rematch_new_room_id) {
                         const newRoomId = updated.game_state.rematch_new_room_id;
@@ -875,27 +615,29 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
                     return updated;
                 });
-            })
-            .subscribe();
-
+            }).subscribe();
         return () => { supabase.removeChannel(channel); };
     }, [employee.employee_id, currentMatch?.id]);
 
     const fetchWaitingMatches = async () => {
-        try {
-            const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-            await supabase.from('live_matches').delete().eq('status', 'waiting').lt('created_at', cutoff);
-            const { data } = await supabase.from('live_matches').select('*').eq('status', 'waiting').order('created_at', { ascending: false });
-            if (data) setMatches(data);
-        } catch (error) {
-            console.error('Error fetching matches:', error);
-        }
+        const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        await supabase.from('live_matches').delete().eq('status', 'waiting').lt('created_at', cutoff);
+        const { data } = await supabase.from('live_matches').select('*').eq('status', 'waiting').order('created_at', { ascending: false });
+        if (data) setMatches(data);
     };
 
     const checkCooldown = async () => {
         const { data } = await supabase.from('points_ledger').select('id').eq('employee_id', employee.employee_id)
             .like('reason', '%الألعاب الجماعية%').gte('created_at', new Date(Date.now() - 3600000).toISOString()).limit(1);
         return data && data.length > 0;
+    };
+
+    const playWinSound = () => {
+        try {
+            const audio = new Audio('https://raw.githubusercontent.com/ledooooo/attendanceAI/main/public/applause.mp3');
+            audio.volume = 0.8;
+            audio.play().catch(() => {});
+        } catch (_) {}
     };
 
     const fireConfetti = () => {
@@ -920,55 +662,41 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         if (pts <= 0) return;
         const onCooldown = await checkCooldown();
         if (onCooldown) { toast.success('فوز رائع! (النقاط تضاف مرة كل ساعة)', { icon: '🎮' }); return; }
-        try {
-            await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: pts });
-            await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: pts, reason: `فوز في الألعاب الجماعية 🏆` });
-            playWinSound();
-            fireConfetti();
-            toast.success(`🏆 مبروك! تمت إضافة ${pts} نقطة!`, { style: { background: '#22c55e', color: '#fff', fontWeight: 'bold' }, duration: 4000 });
-        } catch (error) {
-            console.error('Error granting points:', error);
-            toast.error('حدث خطأ أثناء إضافة النقاط');
-        }
+        await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: pts });
+        await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: pts, reason: `فوز في الألعاب الجماعية 🏆` });
+        playWinSound();
+        fireConfetti();
+        toast.success(`🏆 مبروك! تمت إضافة ${pts} نقطة!`, { style: { background: '#22c55e', color: '#fff', fontWeight: 'bold' }, duration: 4000 });
     };
 
     const recordResult = async (result: 'win' | 'loss' | 'draw', game: string, opponentName: string) => {
-        try {
-            await supabase.from('live_game_results').insert({
-                employee_id: employee.employee_id,
-                employee_name: employee.name,
-                game_type: game,
-                result,
-                opponent_name: opponentName,
-                played_at: new Date().toISOString(),
-            });
-        } catch (error) {
-            console.error('Error recording result:', error);
-        }
+        await supabase.from('live_game_results').insert({
+            employee_id: employee.employee_id,
+            employee_name: employee.name,
+            game_type: game,
+            result,
+            opponent_name: opponentName,
+            played_at: new Date().toISOString(),
+        });
     };
 
     const fetchLeaderboard = async () => {
-        try {
-            const { data } = await supabase.from('live_game_results').select('employee_id, employee_name, result, game_type')
-                .order('played_at', { ascending: false }).limit(500);
-            if (!data) return;
-
-            const stats: Record<string, { name: string; wins: number; losses: number; draws: number; games: number }> = {};
-            for (const r of data) {
-                if (!stats[r.employee_id]) stats[r.employee_id] = { name: r.employee_name, wins: 0, losses: 0, draws: 0, games: 0 };
-                stats[r.employee_id].games++;
-                if (r.result === 'win')  stats[r.employee_id].wins++;
-                if (r.result === 'loss') stats[r.employee_id].losses++;
-                if (r.result === 'draw') stats[r.employee_id].draws++;
-            }
-            const sorted = Object.entries(stats)
-                .map(([id, s]) => ({ id, ...s, winRate: s.games > 0 ? Math.round(s.wins / s.games * 100) : 0 }))
-                .sort((a, b) => b.wins - a.wins || b.winRate - a.winRate);
-            setLeaderboard(sorted);
-            setMyStats(sorted.find(s => s.id === employee.employee_id) ?? null);
-        } catch (error) {
-            console.error('Error fetching leaderboard:', error);
+        const { data } = await supabase.from('live_game_results').select('employee_id, employee_name, result, game_type')
+            .order('played_at', { ascending: false }).limit(500);
+        if (!data) return;
+        const stats: Record<string, { name: string; wins: number; losses: number; draws: number; games: number }> = {};
+        for (const r of data) {
+            if (!stats[r.employee_id]) stats[r.employee_id] = { name: r.employee_name, wins: 0, losses: 0, draws: 0, games: 0 };
+            stats[r.employee_id].games++;
+            if (r.result === 'win')  stats[r.employee_id].wins++;
+            if (r.result === 'loss') stats[r.employee_id].losses++;
+            if (r.result === 'draw') stats[r.employee_id].draws++;
         }
+        const sorted = Object.entries(stats)
+            .map(([id, s]) => ({ id, ...s, winRate: s.games > 0 ? Math.round(s.wins / s.games * 100) : 0 }))
+            .sort((a, b) => b.wins - a.wins || b.winRate - a.winRate);
+        setLeaderboard(sorted);
+        setMyStats(sorted.find(s => s.id === employee.employee_id) ?? null);
     };
 
     // ── Player info ──────────────────────────────────────────────────────────
@@ -977,7 +705,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         if (useAlias) {
             return {
                 id: employee.employee_id,
-                name: selectedAlias.name === 'اسم عشوائي' ? generateRandomName() : selectedAlias.name,
+                name: selectedAlias.name,
                 avatar: selectedAlias.emoji,
                 avatarBg: selectedAlias.bg,
                 isAlias: true,
@@ -997,13 +725,6 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
     // ── Create match ──────────────────────────────────────────────────────────
     const handleCreateMatch = async () => {
-        // Rate limiting check
-        if (lastCreatedRoom && Date.now() - lastCreatedRoom.getTime() < ROOM_CREATION_COOLDOWN) {
-            const remaining = Math.ceil((ROOM_CREATION_COOLDOWN - (Date.now() - lastCreatedRoom.getTime())) / 1000);
-            toast.error(`انتظر ${remaining} ثانية قبل إنشاء غرفة جديدة`);
-            return;
-        }
-
         // Beast Level points check
         if (selectedGameType === 'beastlevel' && (employee.total_points || 0) < BEASTLEVEL_MIN_POINTS) {
             toast.error(`تحتاج ${BEASTLEVEL_MIN_POINTS.toLocaleString('ar')} نقطة للدخول إلى لعبة من سيربح المليون!`);
@@ -1011,149 +732,94 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
         }
 
         setLoading(true);
-        try {
-            const player = getMyPlayerInfo();
-            let initialState: any = {};
-            if (selectedGameType === 'xo')           initialState = { board: Array(9).fill(null), current_turn: player.id };
-            else if (selectedGameType === 'connect4') initialState = { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: player.id };
-            else if (selectedGameType === 'chess') {
-                const order = ['R','N','B','Q','K','B','N','R'];
-                const b = Array.from({ length: 8 }, () => Array(8).fill(null));
-                for (let c = 0; c < 8; c++) {
-                    b[0][c] = { type: order[c], color: 'b' };
-                    b[1][c] = { type: 'P',      color: 'b' };
-                    b[6][c] = { type: 'P',      color: 'w' };
-                    b[7][c] = { type: order[c], color: 'w' };
-                }
-                initialState = { board: b, turn: 'w', castling: { wK: true, wQ: true, bK: true, bQ: true }, enPassant: null, halfmove: 0, moveHistory: [], whiteTime: 300, blackTime: 300, lastMoveAt: Date.now(), currentTurn: player.id, result: 'ongoing', drawOfferedBy: null };
+        const player = getMyPlayerInfo();
+        let initialState: any = {};
+        if (selectedGameType === 'xo')           initialState = { board: Array(9).fill(null), current_turn: player.id };
+        else if (selectedGameType === 'connect4') initialState = { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: player.id };
+        else if (selectedGameType === 'chess') {
+            const order = ['R','N','B','Q','K','B','N','R'];
+            const b = Array.from({ length: 8 }, () => Array(8).fill(null));
+            for (let c = 0; c < 8; c++) {
+                b[0][c] = { type: order[c], color: 'b' };
+                b[1][c] = { type: 'P',      color: 'b' };
+                b[6][c] = { type: 'P',      color: 'w' };
+                b[7][c] = { type: order[c], color: 'w' };
             }
-            else if (selectedGameType === 'hangman')     initialState = {};
-            else if (selectedGameType === 'bottlematch') initialState = {};
-            else if (selectedGameType === 'puzzle')      initialState = {};
-            else if (selectedGameType === 'memory')      initialState = {};
-            else if (selectedGameType === 'stopthebus')  initialState = { letter: '', startedAt: 0, allAnswers: [], voteRound: 1 };
-            else if (selectedGameType === 'beastlevel')  initialState = { players: [], currentStep: 0, question: null, questionReady: false, revealedAt: null, stepStartedAt: null, usedTopics: [], phase: 'betting', winnerId: null };
-            else if (selectedGameType === 'simonsays')   initialState = { players: [], difficulty: 'medium', colorSet: 'classic', sequence: [], gamePhase: 'waiting', currentRound: 0, winnerId: null };
-            else if (selectedGameType === 'ludo')        initialState = { currentPlayerIndex: 0, players: [], diceValue: null, diceRolled: false, winner: null, difficulty: 'medium', settings: { darkMode: false, soundEnabled: true }, lastMove: null };
-
-            const { data, error } = await supabase.from('live_matches').insert({
-                game_type: selectedGameType, status: 'waiting', players: [player],
-                game_state: initialState, created_by: employee.employee_id,
-            }).select().single();
-
-            if (error) {
-                toast.error('خطأ في الإنشاء');
-                setLoading(false);
-                return;
-            }
-
-            subscribeToPush(String(employee.employee_id));
-            setLastCreatedRoom(new Date());
-            setCurrentMatch(data);
-            setView('playing');
-            if (isAdmin) setAdminActiveRoomId(data.id);
-        } catch (error) {
-            console.error('Create match error:', error);
-            toast.error('حدث خطأ غير متوقع');
-        } finally {
-            setLoading(false);
+            initialState = { board: b, turn: 'w', castling: { wK: true, wQ: true, bK: true, bQ: true }, enPassant: null, halfmove: 0, moveHistory: [], whiteTime: 300, blackTime: 300, lastMoveAt: Date.now(), currentTurn: player.id, result: 'ongoing', drawOfferedBy: null };
         }
+        else if (selectedGameType === 'hangman')     initialState = {};
+        else if (selectedGameType === 'bottlematch') initialState = {};
+        else if (selectedGameType === 'puzzle')      initialState = {};
+        else if (selectedGameType === 'memory')      initialState = {};
+        else if (selectedGameType === 'stopthebus')  initialState = { letter: '', startedAt: 0, allAnswers: [], voteRound: 1 };
+        else if (selectedGameType === 'beastlevel')  initialState = { players: [], currentStep: 0, question: null, questionReady: false, revealedAt: null, stepStartedAt: null, usedTopics: [], phase: 'betting', winnerId: null };
+
+        const { data, error } = await supabase.from('live_matches').insert({
+            game_type: selectedGameType, status: 'waiting', players: [player],
+            game_state: initialState, created_by: employee.employee_id,
+        }).select().single();
+        setLoading(false);
+        if (error) return toast.error('خطأ في الإنشاء');
+
+        subscribeToPush(String(employee.employee_id));
+
+        setCurrentMatch(data); setView('playing');
+        if (isAdmin) setAdminActiveRoomId(data.id);
     };
 
     // ── Join match ─────────────────────────────────────────────────────────────
     const handleJoinMatch = async () => {
         if (!joiningMatchId) return;
+        setLoading(true);
+        const { data: match } = await supabase.from('live_matches').select('*').eq('id', joiningMatchId).single();
+        if (!match || match.status !== 'waiting') { setLoading(false); return toast.error('الغرفة غير متاحة'); }
 
-        // Rate limiting check
-        if (lastJoinAttempt && Date.now() - lastJoinAttempt.getTime() < JOIN_COOLDOWN) {
-            const remaining = Math.ceil((JOIN_COOLDOWN - (Date.now() - lastJoinAttempt.getTime())) / 1000);
-            toast.error(`انتظر ${remaining} ثانية قبل الانضمام لغرفة أخرى`);
+        // Beast Level points check for joining
+        if (match.game_type === 'beastlevel' && (employee.total_points || 0) < BEASTLEVEL_MIN_POINTS) {
+            setLoading(false);
+            toast.error(`تحتاج ${BEASTLEVEL_MIN_POINTS.toLocaleString('ar')} نقطة للانضمام إلى لعبة من سيربح المليون!`);
             return;
         }
 
-        setLoading(true);
-        setLastJoinAttempt(new Date());
+        const gt = match.game_type;
+        const playerInfo = getMyPlayerInfo(gt);
+        const player = {
+            ...playerInfo,
+            symbol: gt === 'xo' ? 'O' : gt === 'connect4' ? 'Y' : gt === 'chess' ? '♚' : undefined,
+        };
+        const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(gt)) ? 'waiting' : 'playing';
+        const updatedPlayers = [...match.players, player];
 
-        try {
-            const { data: match, error: fetchError } = await supabase.from('live_matches').select('*').eq('id', joiningMatchId).single();
+        const { data: updated, error } = await supabase.from('live_matches').update({
+            players: updatedPlayers, status: newStatus,
+        }).eq('id', joiningMatchId).select().single();
+        setLoading(false);
+        if (error) return toast.error('فشل الانضمام');
 
-            if (fetchError || !match) {
-                toast.error('الغرفة غير متاحة');
-                setLoading(false);
-                return;
-            }
-
-            if (match.status !== 'waiting') {
-                toast.error('الغرفة لم تعد متاحة');
-                setLoading(false);
-                return;
-            }
-
-            // Beast Level points check for joining
-            if (match.game_type === 'beastlevel' && (employee.total_points || 0) < BEASTLEVEL_MIN_POINTS) {
-                toast.error(`تحتاج ${BEASTLEVEL_MIN_POINTS.toLocaleString('ar')} نقطة للانضمام إلى لعبة من سيربح المليون!`);
-                setLoading(false);
-                return;
-            }
-
-            const gt = match.game_type;
-            const playerInfo = getMyPlayerInfo(gt);
-            const player = {
-                ...playerInfo,
-                symbol: gt === 'xo' ? 'O' : gt === 'connect4' ? 'Y' : gt === 'chess' ? '♚' : undefined,
-            };
-            const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(gt)) ? 'waiting' : 'playing';
-            const updatedPlayers = [...match.players, player];
-
-            const { data: updated, error: updateError } = await supabase.from('live_matches').update({
-                players: updatedPlayers, status: newStatus,
-            }).eq('id', joiningMatchId).select().single();
-
-            if (updateError) {
-                toast.error('فشل الانضمام');
-                setLoading(false);
-                return;
-            }
-
-            const creator = match.players?.[0];
-            if (creator) {
-                sendPushToUser(
-                    String(creator.id),
-                    '🎮 انضم لاعب جديد!',
-                    `${playerInfo.name} انضم لغرفتك في لعبة ${GAME_TYPES.find(g => g.key === gt)?.label}!`,
-                    getRoomLink(match.id),
-                );
-            }
-
-            setCurrentMatch(updated);
-            setView('playing');
-        } catch (error) {
-            console.error('Join match error:', error);
-            toast.error('حدث خطأ غير متوقع');
-        } finally {
-            setLoading(false);
+        const creator = match.players?.[0];
+        if (creator) {
+            sendPushToUser(
+                String(creator.id),
+                '🎮 انضم لاعب جديد!',
+                `${playerInfo.name} انضم لغرفتك في لعبة ${GAME_TYPES.find(g => g.key === gt)?.label}!`,
+                getRoomLink(match.id),
+            );
         }
+
+        setCurrentMatch(updated); setView('playing');
     };
 
     // ── Join rematch room (after rematch accepted) ────────────────────────────
     const handleJoinRematchRoom = async (roomId: string) => {
         try {
-            const { data: match, error } = await supabase.from('live_matches').select('*').eq('id', roomId).single();
-            if (error || !match) {
-                toast.error('فشل الانضمام للغرفة الجديدة');
-                return;
-            }
+            const { data: match } = await supabase.from('live_matches').select('*').eq('id', roomId).single();
+            if (!match) return;
             setCurrentMatch(match);
             setView('playing');
             setRematchOfferedTo(null);
             setRematchRequestFrom(null);
-            setIsProcessingRematch(false);
             toast.success('جاري إعادة المباراة! 🔄', { icon: '🎮' });
-        } catch (error) {
-            console.error('Join rematch error:', error);
-            toast.error('حدث خطأ');
-            setIsProcessingRematch(false);
-        }
+        } catch { /* silent */ }
     };
 
     // ── Delete match ──────────────────────────────────────────────────────────
@@ -1163,12 +829,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             await supabase.from('live_matches').delete().eq('id', matchId);
             if (isAuto) toast('تم إغلاق الغرفة لعدم انضمام أحد', { icon: '⏳' });
             else toast.success('تم حذف الغرفة');
-        } catch (error) {
-            if (!isAuto) {
-                console.error('Delete error:', error);
-                toast.error('لم يتم الحذف من السيرفر');
-            }
-        }
+        } catch { if (!isAuto) toast.error('لم يتم الحذف من السيرفر'); }
         if (currentMatch?.id === matchId) { setCurrentMatch(null); setView('lobby'); }
         setMatches(prev => prev.filter(m => m.id !== matchId));
         if (!isAuto) setLoading(false);
@@ -1177,162 +838,103 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
     // ── Reward ────────────────────────────────────────────────────────────────
     const handleRewardSelection = async (difficulty: 'easy' | 'medium' | 'hard', pts: number, timeLimit: number) => {
         setLoading(true);
-        try {
-            const q = await fetchUnifiedQuestion(employee, difficulty);
-            if (!q) {
-                toast.success(`لا أسئلة — ربحت ${pts} نقطة مباشرة!`);
-                await grantPoints(pts);
-                await supabase.from('live_matches').update({ status: 'finished' }).eq('id', currentMatch.id);
-                setLoading(false); return;
-            }
-            await supabase.from('live_matches').update({ status: 'answering_reward', final_question: { ...q, rewardPoints: pts, timeLimit } }).eq('id', currentMatch.id);
-        } catch (error) {
-            console.error('Reward selection error:', error);
-            toast.error('حدث خطأ');
-        } finally {
-            setLoading(false);
+        const q = await fetchUnifiedQuestion(employee, difficulty);
+        if (!q) {
+            toast.success(`لا أسئلة — ربحت ${pts} نقطة مباشرة!`);
+            await grantPoints(pts);
+            await supabase.from('live_matches').update({ status: 'finished' }).eq('id', currentMatch.id);
+            setLoading(false); return;
         }
+        await supabase.from('live_matches').update({ status: 'answering_reward', final_question: { ...q, rewardPoints: pts, timeLimit } }).eq('id', currentMatch.id);
+        setLoading(false);
     };
 
     const handleRewardAnswer = async (answerText: string) => {
-        setLoading(true);
-        setTimeLeft(null);
-        try {
-            const correct = currentMatch.final_question?.correctAnswer || '';
-            const sel = answerText.trim().toLowerCase();
-            const isCorrect = correct === sel || correct.includes(sel) || sel.includes(correct);
-
-            if (isCorrect) await grantPoints(currentMatch.final_question?.rewardPoints || 0);
-            else toast.error(answerText === 'TIMEOUT_WRONG_ANSWER' ? 'انتهى الوقت!' : 'إجابة خاطئة! حظ أوفر');
-
-            await supabase.from('live_matches').update({ status: 'finished' }).eq('id', currentMatch.id);
-        } catch (error) {
-            console.error('Reward answer error:', error);
-            toast.error('حدث خطأ');
-        } finally {
-            setLoading(false);
-        }
+        setLoading(true); setTimeLeft(null);
+        const correct = currentMatch.final_question?.correctAnswer || '';
+        const sel = answerText.trim().toLowerCase();
+        const isCorrect = correct === sel || correct.includes(sel) || sel.includes(correct);
+        if (isCorrect) await grantPoints(currentMatch.final_question?.rewardPoints || 0);
+        else toast.error(answerText === 'TIMEOUT_WRONG_ANSWER' ? 'انتهى الوقت!' : 'إجابة خاطئة! حظ أوفر');
+        await supabase.from('live_matches').update({ status: 'finished' }).eq('id', currentMatch.id);
+        setLoading(false);
     };
 
-    // ── REMATCH (with race condition prevention) ───────────────────────────────
+    // ── REMATCH ───────────────────────────────────────────────────────────────
     const handleRequestRematch = async () => {
-        if (!currentMatch || isProcessingRematch) return;
+        if (!currentMatch) return;
         const opp = currentMatch.players?.find((p: any) => p.id !== employee.employee_id);
         if (!opp) return;
 
         setRematchLoading(true);
-        try {
-            const { error } = await supabase.from('live_matches').update({
-                game_state: {
-                    ...currentMatch.game_state,
-                    rematch_request: { from: employee.employee_id, to: opp.id, accepted: false },
-                },
-            }).eq('id', currentMatch.id).eq('status', 'finished');
+        await supabase.from('live_matches').update({
+            game_state: {
+                ...currentMatch.game_state,
+                rematch_request: { from: employee.employee_id, to: opp.id, accepted: false },
+            },
+        }).eq('id', currentMatch.id);
 
-            if (error) {
-                toast.error('فشل إرسال طلب إعادة المباراة');
-                setRematchLoading(false);
-                return;
-            }
+        setRematchOfferedTo(opp.id);
+        setRematchLoading(false);
 
-            setRematchOfferedTo(opp.id);
-            sendPushToUser(
-                String(opp.id),
-                '🔄 طلب إعادة المباراة!',
-                `${employee.name?.split(' ')[0]} يريد إعادة المباراة في لعبة ${GAME_TYPES.find(g => g.key === currentMatch.game_type)?.label}!`,
-                window.location.href,
-            );
-            toast('تم إرسال طلب إعادة المباراة للخصم ⏳', { icon: '🔄' });
-        } catch (error) {
-            console.error('Rematch request error:', error);
-            toast.error('حدث خطأ');
-        } finally {
-            setRematchLoading(false);
-        }
+        sendPushToUser(
+            String(opp.id),
+            '🔄 طلب إعادة المباراة!',
+            `${employee.name?.split(' ')[0]} يريد إعادة المباراة في لعبة ${GAME_TYPES.find(g => g.key === currentMatch.game_type)?.label}!`,
+            window.location.href,
+        );
+
+        toast('تم إرسال طلب إعادة المباراة للخصم ⏳', { icon: '🔄' });
     };
 
     const handleAcceptRematch = async () => {
-        if (!currentMatch || !rematchRequestFrom || isProcessingRematch) return;
+        if (!currentMatch || !rematchRequestFrom) return;
         setRematchLoading(true);
-        setIsProcessingRematch(true);
 
-        try {
-            const gt = currentMatch.game_type;
-            const myInfo = getMyPlayerInfo(gt);
-            const oppInfo = currentMatch.players?.find((p: any) => p.id === rematchRequestFrom);
+        const gt = currentMatch.game_type;
+        const myInfo = getMyPlayerInfo(gt);
+        const oppInfo = currentMatch.players?.find((p: any) => p.id === rematchRequestFrom);
+        if (!oppInfo) { setRematchLoading(false); return; }
 
-            if (!oppInfo) {
-                toast.error('لم يتم العثور على الخصم');
-                setRematchLoading(false);
-                setIsProcessingRematch(false);
-                return;
-            }
-
-            // First, verify the match still exists and is in expected state
-            const { data: currentMatchData } = await supabase
-                .from('live_matches')
-                .select('id, status')
-                .eq('id', currentMatch.id)
-                .single();
-
-            if (!currentMatchData || currentMatchData.status !== 'finished') {
-                toast.error('المباراة لم تعد متاحة');
-                setRematchLoading(false);
-                setIsProcessingRematch(false);
-                return;
-            }
-
-            const firstPlayer = oppInfo;
-            let initialState: any = {};
-            if (gt === 'xo')           initialState = { board: Array(9).fill(null), current_turn: firstPlayer.id };
-            else if (gt === 'connect4') initialState = { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: firstPlayer.id };
-            else if (gt === 'chess') {
-                const order = ['R','N','B','Q','K','B','N','R'];
-                const b = Array.from({ length: 8 }, () => Array(8).fill(null));
-                for (let c = 0; c < 8; c++) { b[0][c] = { type: order[c], color: 'b' }; b[1][c] = { type: 'P', color: 'b' }; b[6][c] = { type: 'P', color: 'w' }; b[7][c] = { type: order[c], color: 'w' }; }
-                initialState = { board: b, turn: 'w', castling: { wK: true, wQ: true, bK: true, bQ: true }, enPassant: null, halfmove: 0, moveHistory: [], whiteTime: 300, blackTime: 300, lastMoveAt: Date.now(), currentTurn: firstPlayer.id, result: 'ongoing', drawOfferedBy: null };
-            }
-            else initialState = {};
-
-            const firstPlayerFull = { ...firstPlayer, symbol: gt === 'xo' ? 'X' : gt === 'connect4' ? 'R' : gt === 'chess' ? '♔' : undefined };
-            const secondPlayerFull = { ...myInfo, symbol: gt === 'xo' ? 'O' : gt === 'connect4' ? 'Y' : gt === 'chess' ? '♚' : undefined };
-
-            const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(gt)) ? 'waiting' : 'playing';
-
-            const { data: newMatch, error } = await supabase.from('live_matches').insert({
-                game_type: gt, status: newStatus,
-                players: [firstPlayerFull, secondPlayerFull],
-                game_state: initialState,
-                created_by: rematchRequestFrom,
-            }).select().single();
-
-            if (error || !newMatch) {
-                toast.error('خطأ في إنشاء الغرفة');
-                setRematchLoading(false);
-                setIsProcessingRematch(false);
-                return;
-            }
-
-            // Update the old match to mark rematch as accepted
-            await supabase.from('live_matches').update({
-                game_state: {
-                    ...currentMatch.game_state,
-                    rematch_request: { from: rematchRequestFrom, to: employee.employee_id, accepted: true },
-                    rematch_new_room_id: newMatch.id,
-                },
-            }).eq('id', currentMatch.id);
-
-            setRematchLoading(false);
-            setCurrentMatch(newMatch);
-            setRematchRequestFrom(null);
-            setRematchOfferedTo(null);
-            toast.success('جاري إعادة المباراة! 🎮');
-        } catch (error) {
-            console.error('Accept rematch error:', error);
-            toast.error('حدث خطأ');
-            setRematchLoading(false);
-            setIsProcessingRematch(false);
+        const firstPlayer = oppInfo;
+        let initialState: any = {};
+        if (gt === 'xo')           initialState = { board: Array(9).fill(null), current_turn: firstPlayer.id };
+        else if (gt === 'connect4') initialState = { board: Array.from({ length: 6 }, () => Array(7).fill(null)), current_turn: firstPlayer.id };
+        else if (gt === 'chess') {
+            const order = ['R','N','B','Q','K','B','N','R'];
+            const b = Array.from({ length: 8 }, () => Array(8).fill(null));
+            for (let c = 0; c < 8; c++) { b[0][c] = { type: order[c], color: 'b' }; b[1][c] = { type: 'P', color: 'b' }; b[6][c] = { type: 'P', color: 'w' }; b[7][c] = { type: order[c], color: 'w' }; }
+            initialState = { board: b, turn: 'w', castling: { wK: true, wQ: true, bK: true, bQ: true }, enPassant: null, halfmove: 0, moveHistory: [], whiteTime: 300, blackTime: 300, lastMoveAt: Date.now(), currentTurn: firstPlayer.id, result: 'ongoing', drawOfferedBy: null };
         }
+        else initialState = {};
+
+        const firstPlayerFull = { ...firstPlayer, symbol: gt === 'xo' ? 'X' : gt === 'connect4' ? 'R' : gt === 'chess' ? '♔' : undefined };
+        const secondPlayerFull = { ...myInfo, symbol: gt === 'xo' ? 'O' : gt === 'connect4' ? 'Y' : gt === 'chess' ? '♚' : undefined };
+
+        const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(gt)) ? 'waiting' : 'playing';
+
+        const { data: newMatch, error } = await supabase.from('live_matches').insert({
+            game_type: gt, status: newStatus,
+            players: [firstPlayerFull, secondPlayerFull],
+            game_state: initialState,
+            created_by: rematchRequestFrom,
+        }).select().single();
+
+        if (error || !newMatch) { setRematchLoading(false); return toast.error('خطأ في إنشاء الغرفة'); }
+
+        await supabase.from('live_matches').update({
+            game_state: {
+                ...currentMatch.game_state,
+                rematch_request: { from: rematchRequestFrom, to: employee.employee_id, accepted: true },
+                rematch_new_room_id: newMatch.id,
+            },
+        }).eq('id', currentMatch.id);
+
+        setRematchLoading(false);
+        setCurrentMatch(newMatch);
+        setRematchRequestFrom(null);
+        setRematchOfferedTo(null);
+        toast.success('جاري إعادة المباراة! 🎮');
     };
 
     const handleDeclineRematch = () => {
@@ -1357,28 +959,17 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
     // ─────────────────────────────────────────────────────────────────────────
     return (
-        <div className={`min-h-full flex flex-col relative font-sans text-right ${isDarkMode ? 'dark' : ''}`} dir="rtl">
-            {/* Connection Status */}
-            <ConnectionStatusIndicator status={connectionStatus} />
-
-            {/* Dark Mode Toggle */}
-            <button
-                onClick={() => setIsDarkMode(p => !p)}
-                className="absolute top-3 left-12 z-50 p-2 bg-white/10 hover:bg-white/20 dark:bg-gray-800/50 rounded-full text-gray-700 dark:text-gray-200 backdrop-blur-sm"
-                aria-label="Toggle dark mode"
-            >
-                {isDarkMode ? <Sun className="w-5 h-5"/> : <Moon className="w-5 h-5"/>}
-            </button>
+        <div className="bg-gray-50 min-h-full flex flex-col relative font-sans text-right" dir="rtl">
 
             {onClose && (
-                <button onClick={onClose} className="absolute top-3 left-3 z-50 p-2 bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 rounded-full text-gray-700 dark:text-gray-200">
+                <button onClick={onClose} className="absolute top-3 left-3 z-50 p-2 bg-black/10 hover:bg-black/20 rounded-full text-gray-700">
                     <X className="w-5 h-5"/>
                 </button>
             )}
 
             {/* ── LOBBY ── */}
             {view === 'lobby' && (
-                <div className="p-3 flex-1 space-y-4 bg-gray-50 dark:bg-gray-900">
+                <div className="p-3 flex-1 space-y-4">
 
                     {/* Banner + Push toggle */}
                     <div className="bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl p-4 text-white text-center shadow-lg">
@@ -1449,18 +1040,18 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                     {/* Waiting rooms */}
                     <div>
                         <div className="flex items-center justify-between mb-3">
-                            <h4 className="font-bold text-gray-700 dark:text-gray-200 flex items-center gap-2 text-sm">
+                            <h4 className="font-bold text-gray-700 flex items-center gap-2 text-sm">
                                 <Users className="w-4 h-4 text-indigo-500"/> غرف الانتظار ({matches.length})
                             </h4>
                             <button onClick={() => { setView('leaderboard'); fetchLeaderboard(); }}
-                                className="flex items-center gap-1.5 text-xs font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-3 py-1.5 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all">
+                                className="flex items-center gap-1.5 text-xs font-black text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl hover:bg-amber-100 transition-all">
                                 <Trophy className="w-3.5 h-3.5"/> لوحة النتائج
                             </button>
                         </div>
                         {matches.length === 0 ? (
-                            <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
-                                <Clock className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-2"/>
-                                <p className="text-gray-400 dark:text-gray-500 font-bold text-sm">لا توجد غرف.. كن الأول!</p>
+                            <div className="text-center py-8 bg-white rounded-2xl border-2 border-dashed border-gray-200">
+                                <Clock className="w-10 h-10 text-gray-300 mx-auto mb-2"/>
+                                <p className="text-gray-400 font-bold text-sm">لا توجد غرف.. كن الأول!</p>
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -1471,7 +1062,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                                     const playerCount = m.players?.length ?? 1;
                                     const hostPlayer = m.players?.[0];
                                     return (
-                                        <div key={m.id} className={`bg-white dark:bg-gray-800 p-3 rounded-xl shadow-sm border flex justify-between items-center gap-2 ${isMyRoom ? 'border-indigo-200 dark:border-indigo-700 bg-indigo-50/50 dark:bg-indigo-900/10' : 'border-gray-100 dark:border-gray-700'}`}>
+                                        <div key={m.id} className={`bg-white p-3 rounded-xl shadow-sm border flex justify-between items-center gap-2 ${isMyRoom ? 'border-indigo-200 bg-indigo-50/50' : 'border-gray-100'}`}>
                                             <div className="flex items-center gap-2.5 min-w-0">
                                                 <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${hostPlayer?.avatarBg || 'from-indigo-400 to-violet-600'} flex items-center justify-center text-xl flex-shrink-0 shadow-sm`}>
                                                     {hostPlayer?.avatar?.startsWith('http')
@@ -1480,26 +1071,26 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                                        <p className="font-bold text-gray-800 dark:text-gray-100 text-sm truncate">{hostPlayer?.name}</p>
-                                                        {hostPlayer?.isAlias && <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-full font-bold">🥷 مجهول</span>}
-                                                        <span className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 text-[10px] font-black px-1.5 py-0.5 rounded-full">{gameInfo?.icon} {gameInfo?.label}</span>
-                                                        {isMyRoom && <span className="bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-300 text-[10px] font-black px-1.5 py-0.5 rounded-full">غرفتك</span>}
-                                                        {isBus && <span className="bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300 text-[10px] font-black px-1.5 py-0.5 rounded-full">{playerCount} لاعب</span>}
+                                                        <p className="font-bold text-gray-800 text-sm truncate">{hostPlayer?.name}</p>
+                                                        {hostPlayer?.isAlias && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-bold">🥷 مجهول</span>}
+                                                        <span className="bg-indigo-100 text-indigo-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">{gameInfo?.icon} {gameInfo?.label}</span>
+                                                        {isMyRoom && <span className="bg-green-100 text-green-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">غرفتك</span>}
+                                                        {isBus && <span className="bg-purple-100 text-purple-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">{playerCount} لاعب</span>}
                                                     </div>
-                                                    <p className="text-[11px] text-gray-400 dark:text-gray-500 font-bold">
+                                                    <p className="text-[11px] text-gray-400 font-bold">
                                                         {isBus ? `في انتظار اللاعبين... (${playerCount}/${gameInfo?.maxPlayers})` : 'في انتظار منافس...'}
                                                     </p>
                                                 </div>
                                             </div>
                                             {isMyRoom ? (
                                                 <div className="flex gap-1.5 flex-shrink-0">
-                                                    <button onClick={() => handleDeleteMatch(m.id)} className="p-2 bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/50"><Trash2 size={16}/></button>
-                                                    <button onClick={() => shareRoom(m.id, gameInfo?.label || '')} className="p-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50"><Share2 size={16}/></button>
-                                                    <button onClick={() => { setCurrentMatch(m); setView('playing'); }} className="px-3 py-1.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 rounded-lg font-bold text-xs">دخول</button>
+                                                    <button onClick={() => handleDeleteMatch(m.id)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
+                                                    <button onClick={() => shareRoom(m.id, gameInfo?.label || '')} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100"><Share2 size={16}/></button>
+                                                    <button onClick={() => { setCurrentMatch(m); setView('playing'); }} className="px-3 py-1.5 bg-indigo-100 text-indigo-600 rounded-lg font-bold text-xs">دخول</button>
                                                 </div>
                                             ) : (
                                                 <div className="flex gap-1.5 flex-shrink-0">
-                                                    <button onClick={() => shareRoom(m.id, gameInfo?.label || '')} className="p-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/50"><Share2 size={16}/></button>
+                                                    <button onClick={() => shareRoom(m.id, gameInfo?.label || '')} className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100"><Share2 size={16}/></button>
                                                     <button onClick={() => { setJoiningMatchId(m.id); setJoiningGameType(m.game_type); setView('identity_setup'); }}
                                                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm shadow-md hover:bg-indigo-700">انضمام</button>
                                                 </div>
@@ -1516,36 +1107,36 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             {/* ── IDENTITY SETUP ── */}
             {view === 'identity_setup' && (
                 <div className="p-4 flex-1 flex flex-col items-center justify-start max-w-sm mx-auto w-full pt-6">
-                    <div className="bg-white dark:bg-gray-800 p-5 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700 w-full">
+                    <div className="bg-white p-5 rounded-3xl shadow-xl border border-gray-100 w-full">
                         <div className="text-center mb-4">
-                            <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                            <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
                                 <Sparkles className="w-7 h-7 text-indigo-500"/>
                             </div>
-                            <h3 className="text-xl font-black text-gray-800 dark:text-gray-100">اختر هويتك</h3>
-                            <p className="text-xs text-gray-400 dark:text-gray-500 font-bold mt-1">
+                            <h3 className="text-xl font-black text-gray-800">اختر هويتك</h3>
+                            <p className="text-xs text-gray-400 font-bold mt-1">
                                 {joiningMatchId
                                     ? `الانضمام لـ: ${GAME_TYPES.find(g => g.key === joiningGameType)?.label}`
                                     : `إنشاء: ${GAME_TYPES.find(g => g.key === selectedGameType)?.label}`}
                             </p>
                         </div>
 
-                        <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl mb-4">
+                        <div className="flex bg-gray-100 p-1 rounded-xl mb-4">
                             <button onClick={() => setUseAlias(false)}
-                                className={`flex-1 py-2.5 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-1.5 ${!useAlias ? 'bg-white dark:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                className={`flex-1 py-2.5 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-1.5 ${!useAlias ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>
                                 <span>😊</span> هويتي الحقيقية
                             </button>
                             <button onClick={() => setUseAlias(true)}
-                                className={`flex-1 py-2.5 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-1.5 ${useAlias ? 'bg-indigo-600 shadow-sm text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                                className={`flex-1 py-2.5 rounded-lg font-black text-sm transition-all flex items-center justify-center gap-1.5 ${useAlias ? 'bg-indigo-600 shadow-sm text-white' : 'text-gray-500'}`}>
                                 <span>🥷</span> مجهول
                             </button>
                         </div>
 
                         {!useAlias ? (
-                            <div className="flex items-center gap-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl p-3 mb-4 border border-indigo-100 dark:border-indigo-800">
+                            <div className="flex items-center gap-3 bg-indigo-50 rounded-2xl p-3 mb-4 border border-indigo-100">
                                 <RealAvatar employee={employee} size="lg"/>
                                 <div>
-                                    <p className="font-black text-gray-800 dark:text-gray-100">{employee.name?.split(' ')[0]}</p>
-                                    <p className="text-xs text-indigo-500 dark:text-indigo-400 font-bold">{employee.specialty || 'موظف'}</p>
+                                    <p className="font-black text-gray-800">{employee.name?.split(' ')[0]}</p>
+                                    <p className="text-xs text-indigo-500 font-bold">{employee.specialty || 'موظف'}</p>
                                 </div>
                             </div>
                         ) : (
@@ -1557,10 +1148,10 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                         )}
 
                         <button onClick={joiningMatchId ? handleJoinMatch : handleCreateMatch} disabled={loading}
-                            className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-3.5 rounded-2xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all flex justify-center items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                            className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-3.5 rounded-2xl font-black text-base shadow-lg hover:scale-105 active:scale-95 transition-all flex justify-center items-center gap-2">
                             {loading ? <Loader2 className="animate-spin w-5 h-5"/> : <><Play fill="currentColor" className="w-4 h-4"/> {joiningMatchId ? 'دخول اللعبة' : 'إنشاء الغرفة'}</>}
                         </button>
-                        <button onClick={() => setView('lobby')} className="mt-3 text-gray-400 dark:text-gray-500 font-bold text-sm hover:text-gray-600 dark:hover:text-gray-300 w-full text-center">إلغاء</button>
+                        <button onClick={() => setView('lobby')} className="mt-3 text-gray-400 font-bold text-sm hover:text-gray-600 w-full text-center">إلغاء</button>
                     </div>
                 </div>
             )}
@@ -1570,51 +1161,51 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                 <div className="flex-1 flex flex-col">
 
                     {/* Players header (hidden for games that have their own UI) */}
-                    {!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(currentMatch.game_type) && (
-                        <div className="px-3 py-3 flex justify-between items-center border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
-                            <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all ${currentMatch.game_state?.current_turn === me?.id ? 'border-green-400 dark:border-green-500 bg-green-50 dark:bg-green-900/20 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
+                    {!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) && (
+                        <div className="px-3 py-3 flex justify-between items-center border-b border-gray-100 bg-white">
+                            <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all ${currentMatch.game_state?.current_turn === me?.id ? 'border-green-400 bg-green-50 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
                                 <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${me?.avatarBg || 'from-indigo-400 to-violet-600'} flex items-center justify-center overflow-hidden flex-shrink-0`}>
                                     {me?.avatar?.startsWith('http') ? <img src={me.avatar} className="w-full h-full object-cover" alt=""/> : <span className="text-lg">{me?.avatar || '👤'}</span>}
                                 </div>
                                 <div>
-                                    <p className="text-xs font-black text-gray-800 dark:text-gray-100">أنت</p>
-                                    <p className="text-sm font-bold text-green-600 dark:text-green-400">{me?.symbol}</p>
+                                    <p className="text-xs font-black text-gray-800">أنت</p>
+                                    <p className="text-sm font-bold text-green-600">{me?.symbol}</p>
                                 </div>
                             </div>
-                            <div className="font-black text-gray-300 dark:text-gray-600 text-base">VS</div>
-                            <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all flex-row-reverse ${currentMatch.game_state?.current_turn === opponent?.id ? 'border-red-400 dark:border-red-500 bg-red-50 dark:bg-red-900/20 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
-                                <div className={`w-9 h-9 rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center ${opponent ? `bg-gradient-to-br ${opponent?.avatarBg || 'from-rose-400 to-pink-600'}` : 'bg-gray-100 dark:bg-gray-700'}`}>
+                            <div className="font-black text-gray-300 text-base">VS</div>
+                            <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all flex-row-reverse ${currentMatch.game_state?.current_turn === opponent?.id ? 'border-red-400 bg-red-50 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
+                                <div className={`w-9 h-9 rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center ${opponent ? `bg-gradient-to-br ${opponent?.avatarBg || 'from-rose-400 to-pink-600'}` : 'bg-gray-100'}`}>
                                     {opponent ? (opponent.avatar?.startsWith('http') ? <img src={opponent.avatar} className="w-full h-full object-cover" alt=""/> : <span className="text-lg">{opponent.avatar || '👤'}</span>) : <Loader2 className="w-4 h-4 animate-spin text-gray-400"/>}
                                 </div>
                                 <div className="text-left">
-                                    <p className="text-xs font-black text-gray-800 dark:text-gray-100 truncate max-w-[70px]">{opponent?.name || 'انتظار...'}</p>
-                                    <p className="text-sm font-bold text-red-500 dark:text-red-400">{opponent?.symbol || '?'}</p>
+                                    <p className="text-xs font-black text-gray-800 truncate max-w-[70px]">{opponent?.name || 'انتظار...'}</p>
+                                    <p className="text-sm font-bold text-red-500">{opponent?.symbol || '?'}</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {/* Game area */}
-                    <div className={`flex-1 flex flex-col ${!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(currentMatch.game_type) ? 'items-center justify-center p-3' : ''}`}>
+                    <div className={`flex-1 flex flex-col ${!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) ? 'items-center justify-center p-3' : ''}`}>
 
                         {/* WAITING (for non-multiplayer games) */}
-                        {currentMatch.status === 'waiting' && !['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(currentMatch.game_type) && (
+                        {currentMatch.status === 'waiting' && !['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) && (
                             <div className="text-center">
-                                <Loader2 className="w-14 h-14 text-indigo-200 dark:text-indigo-700 animate-spin mx-auto mb-4"/>
-                                <h3 className="text-lg font-black text-indigo-900 dark:text-indigo-100">في انتظار المنافس...</h3>
+                                <Loader2 className="w-14 h-14 text-indigo-200 animate-spin mx-auto mb-4"/>
+                                <h3 className="text-lg font-black text-indigo-900">في انتظار المنافس...</h3>
                                 {autoDeleteTimeLeft !== null && (
-                                    <p className="text-sm font-bold text-red-500 dark:text-red-400 mt-2">
-                                        يُغلق تلقائياً: {formatTimeLeft(autoDeleteTimeLeft)}
+                                    <p className="text-sm font-bold text-red-500 mt-2">
+                                        يُغلق تلقائياً: {Math.floor(autoDeleteTimeLeft/60)}:{String(autoDeleteTimeLeft%60).padStart(2,'0')}
                                     </p>
                                 )}
                                 {currentMatch.created_by === employee.employee_id && (
                                     <div className="mt-6 flex items-center gap-3 justify-center flex-wrap">
                                         <button onClick={() => shareRoom(currentMatch.id, GAME_TYPES.find(g => g.key === currentMatch.game_type)?.label || '')}
-                                            className="bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-green-100 dark:hover:bg-green-900/50 active:scale-95 transition-all text-sm shadow-sm">
+                                            className="bg-green-50 text-green-600 border border-green-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-green-100 active:scale-95 transition-all text-sm shadow-sm">
                                             <Share2 size={16}/> شارك الرابط
                                         </button>
                                         <button onClick={() => handleDeleteMatch(currentMatch.id)}
-                                            className="bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400 border border-red-200 dark:border-red-700 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-red-100 dark:hover:bg-red-900/50 active:scale-95 transition-all text-sm shadow-sm">
+                                            className="bg-red-50 text-red-500 border border-red-200 px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:bg-red-100 active:scale-95 transition-all text-sm shadow-sm">
                                             <Trash2 size={16}/> إلغاء الغرفة
                                         </button>
                                     </div>
@@ -1633,17 +1224,17 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
                         {/* ── REMATCH REQUEST BANNER (incoming) ── */}
                         {rematchRequestFrom && isGameFinished && (
-                            <div className="mx-3 mb-3 bg-indigo-50 dark:bg-indigo-900/30 border-2 border-indigo-300 dark:border-indigo-700 rounded-2xl p-4 animate-in slide-in-from-top">
-                                <p className="text-sm font-black text-indigo-800 dark:text-indigo-200 mb-3 text-center">
+                            <div className="mx-3 mb-3 bg-indigo-50 border-2 border-indigo-300 rounded-2xl p-4 animate-in slide-in-from-top">
+                                <p className="text-sm font-black text-indigo-800 mb-3 text-center">
                                     🔄 {opponent?.name || 'خصمك'} يطلب إعادة المباراة!
                                 </p>
                                 <div className="flex gap-2">
-                                    <button onClick={handleAcceptRematch} disabled={rematchLoading || isProcessingRematch}
-                                        className="flex-1 bg-indigo-600 text-white py-2.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60">
+                                    <button onClick={handleAcceptRematch} disabled={rematchLoading}
+                                        className="flex-1 bg-indigo-600 text-white py-2.5 rounded-xl font-black text-sm flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 transition-all">
                                         {rematchLoading ? <Loader2 className="w-4 h-4 animate-spin"/> : <><RefreshCw className="w-4 h-4"/> قبول</>}
                                     </button>
                                     <button onClick={handleDeclineRematch}
-                                        className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-2.5 rounded-xl font-black text-sm hover:bg-gray-200 dark:hover:bg-gray-600 active:scale-95 transition-all">
+                                        className="flex-1 bg-gray-100 text-gray-600 py-2.5 rounded-xl font-black text-sm hover:bg-gray-200 active:scale-95 transition-all">
                                         رفض
                                     </button>
                                 </div>
@@ -1686,31 +1277,23 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                         {currentMatch.game_type === 'beastlevel' && (
                             <BeastLevelGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
-                        {/* SIMON SAYS */}
-                        {currentMatch.game_type === 'simonsays' && (
-                            <SimonSaysGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
-                        )}
-                        {/* LUDO */}
-                        {currentMatch.game_type === 'ludo' && (
-                            <LudoGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
-                        )}
 
                         {/* ── REMATCH / EXIT FOOTER after game ends ── */}
                         {isGameFinished && !rematchRequestFrom && (
                             <div className="mx-3 mt-2 mb-3 space-y-2 animate-in fade-in duration-500">
                                 {!rematchOfferedTo ? (
-                                    <button onClick={handleRequestRematch} disabled={rematchLoading || isProcessingRematch || !opponent}
+                                    <button onClick={handleRequestRematch} disabled={rematchLoading || !opponent}
                                         className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white py-3.5 rounded-2xl font-black text-base shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60">
                                         {rematchLoading ? <Loader2 className="w-5 h-5 animate-spin"/> : <><RefreshCw className="w-5 h-5"/> العب مرة ثانية 🔄</>}
                                     </button>
                                 ) : (
-                                    <div className="bg-indigo-50 dark:bg-indigo-900/30 border-2 border-indigo-200 dark:border-indigo-700 rounded-2xl p-3 text-center">
+                                    <div className="bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-3 text-center">
                                         <Loader2 className="w-5 h-5 text-indigo-400 animate-spin mx-auto mb-1"/>
-                                        <p className="text-xs font-black text-indigo-700 dark:text-indigo-300">في انتظار موافقة الخصم...</p>
+                                        <p className="text-xs font-black text-indigo-700">في انتظار موافقة الخصم...</p>
                                     </div>
                                 )}
                                 <button onClick={exitMatch}
-                                    className="w-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-2.5 rounded-2xl font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-600 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                    className="w-full bg-gray-100 text-gray-600 py-2.5 rounded-2xl font-bold text-sm hover:bg-gray-200 active:scale-95 transition-all flex items-center justify-center gap-2">
                                     <Users className="w-4 h-4"/> العودة للصالة
                                 </button>
                             </div>
@@ -1721,14 +1304,14 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
 
             {/* ── LEADERBOARD ── */}
             {view === 'leaderboard' && (
-                <div className="p-3 flex-1 space-y-3 bg-gray-50 dark:bg-gray-900">
+                <div className="p-3 flex-1 space-y-3">
                     <div className="flex items-center gap-2">
-                        <button onClick={() => setView('lobby')} className="p-2 bg-gray-100 dark:bg-gray-700 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-all">
-                            <X className="w-4 h-4 text-gray-600 dark:text-gray-300"/>
+                        <button onClick={() => setView('lobby')} className="p-2 bg-gray-100 rounded-xl hover:bg-gray-200 transition-all">
+                            <X className="w-4 h-4 text-gray-600"/>
                         </button>
                         <div>
-                            <h3 className="text-lg font-black text-gray-800 dark:text-gray-100">لوحة النتائج 🏆</h3>
-                            <p className="text-xs text-gray-400 dark:text-gray-500 font-bold">إجمالي نتائج الألعاب الجماعية</p>
+                            <h3 className="text-lg font-black text-gray-800">لوحة النتائج 🏆</h3>
+                            <p className="text-xs text-gray-400 font-bold">إجمالي نتائج الألعاب الجماعية</p>
                         </div>
                     </div>
 
@@ -1753,10 +1336,10 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                     )}
 
                     {leaderboard.length === 0 ? (
-                        <div className="text-center py-10 bg-white dark:bg-gray-800 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
-                            <Trophy className="w-12 h-12 text-gray-200 dark:text-gray-600 mx-auto mb-2"/>
-                            <p className="text-gray-400 dark:text-gray-500 font-bold text-sm">لا توجد نتائج بعد</p>
-                            <p className="text-gray-300 dark:text-gray-600 text-xs mt-1">العب أول مباراة لتظهر هنا!</p>
+                        <div className="text-center py-10 bg-white rounded-2xl border-2 border-dashed border-gray-200">
+                            <Trophy className="w-12 h-12 text-gray-200 mx-auto mb-2"/>
+                            <p className="text-gray-400 font-bold text-sm">لا توجد نتائج بعد</p>
+                            <p className="text-gray-300 text-xs mt-1">العب أول مباراة لتظهر هنا!</p>
                         </div>
                     ) : (
                         <div className="space-y-2">
@@ -1764,20 +1347,20 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                                 const isMe = player.id === employee.employee_id;
                                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
                                 return (
-                                    <div key={player.id} className={`bg-white dark:bg-gray-800 rounded-xl border-2 p-3 flex items-center gap-3 transition-all ${isMe ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-gray-100 dark:border-gray-700'}`}>
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${idx < 3 ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
+                                    <div key={player.id} className={`bg-white rounded-xl border-2 p-3 flex items-center gap-3 transition-all ${isMe ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-100'}`}>
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${idx < 3 ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-500'}`}>
                                             {medal ?? <span className="text-xs">#{idx+1}</span>}
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className={`text-sm font-black truncate ${isMe ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-800 dark:text-gray-100'}`}>
+                                            <p className={`text-sm font-black truncate ${isMe ? 'text-indigo-700' : 'text-gray-800'}`}>
                                                 {player.name} {isMe && '(أنت)'}
                                             </p>
-                                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-bold">{player.games} مباراة</p>
+                                            <p className="text-[10px] text-gray-400 font-bold">{player.games} مباراة</p>
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
-                                            <span className="text-xs font-black text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded-full">{player.wins}✓</span>
-                                            <span className="text-xs font-black text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full">{player.losses}✗</span>
-                                            <span className="text-xs font-black text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">{player.winRate}%</span>
+                                            <span className="text-xs font-black text-green-600 bg-green-50 px-2 py-0.5 rounded-full">{player.wins}✓</span>
+                                            <span className="text-xs font-black text-red-500 bg-red-50 px-2 py-0.5 rounded-full">{player.losses}✗</span>
+                                            <span className="text-xs font-black text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{player.winRate}%</span>
                                         </div>
                                     </div>
                                 );
