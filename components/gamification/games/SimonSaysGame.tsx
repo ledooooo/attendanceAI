@@ -1046,7 +1046,7 @@ export default function SimonSaysGame({ match, employee, onExit, grantPoints }: 
                             isActive={activeButton === index}
                             isDisabled={!isMyTurn || amIOut || gs.gamePhase !== 'input'}
                             onClick={() => handleButtonClick(index)}
-                            size={Math.min(150, Math.floor(320 / Math.ceil(Math.sqrt(difficulty.colors)))))}
+                            size={Math.min(150, Math.floor(320 / Math.ceil(Math.sqrt(difficulty.colors))))}
                             difficulty={difficulty}
                             isDarkMode={isDarkMode}
                         />
