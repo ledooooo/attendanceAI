@@ -19,6 +19,8 @@ import BottleMatchGame from './games/BottleMatchGame';
 import PuzzleGame from './games/PuzzleGame';
 import MemoryGame from './games/MemoryGame';
 import BeastLevelGame from './games/BeastLevelGame';
+import SimonSaysGame from './games/SimonSaysGame';
+import LudoGame from './games/LudoGame';
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
 type MatchStatus = 'waiting' | 'playing' | 'answering_reward' | 'finished';
@@ -70,7 +72,9 @@ const GAME_TYPES = [
     { key: 'puzzle',      label: 'لعبة الأرقام',     icon: '🔢',   desc: 'رتّب 1 إلى 15',        color: 'from-amber-600 to-orange-700', minPlayers: 2, maxPlayers: 6  },
     { key: 'memory',      label: 'لعبة الذاكرة',     icon: '🧠',   desc: 'اقلب وطابق البطاقات',  color: 'from-indigo-600 to-violet-700', minPlayers: 2, maxPlayers: 2  },
     { key: 'stopthebus',  label: 'أتوبيس كومبليت',   icon: '🚌',   desc: 'كلمات بنفس الحرف',    color: 'from-violet-500 to-purple-700', minPlayers: 2, maxPlayers: 10 },
-    { key: 'beastlevel',  label: 'ليفل الوحش', icon: '🦁',   desc: 'أسئلة طبية متدرجة',   color: 'from-red-600 to-orange-600',   minPlayers: 2, maxPlayers: 8  },
+    { key: 'beastlevel',  label: 'ليفل الوحش',       icon: '🦁',   desc: 'أسئلة طبية متدرجة',   color: 'from-red-600 to-orange-600',    minPlayers: 2, maxPlayers: 8  },
+    { key: 'simonsays',   label: 'سيمون يقول',        icon: '🎮',   desc: 'تذكر التسلسل اللوني',  color: 'from-emerald-500 to-teal-600', minPlayers: 2, maxPlayers: 8  },
+    { key: 'ludo',        label: 'لودو',              icon: '🎲',   desc: 'لعبة الطاولة الكلاسيكية', color: 'from-yellow-500 to-orange-500', minPlayers: 2, maxPlayers: 4  },
 ];
 
 const BASE_URL = 'https://gharb-alpha.vercel.app';
@@ -1029,6 +1033,8 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             else if (selectedGameType === 'memory')      initialState = {};
             else if (selectedGameType === 'stopthebus')  initialState = { letter: '', startedAt: 0, allAnswers: [], voteRound: 1 };
             else if (selectedGameType === 'beastlevel')  initialState = { players: [], currentStep: 0, question: null, questionReady: false, revealedAt: null, stepStartedAt: null, usedTopics: [], phase: 'betting', winnerId: null };
+            else if (selectedGameType === 'simonsays')   initialState = { players: [], difficulty: 'medium', colorSet: 'classic', sequence: [], gamePhase: 'waiting', currentRound: 0, winnerId: null };
+            else if (selectedGameType === 'ludo')        initialState = { currentPlayerIndex: 0, players: [], diceValue: null, diceRolled: false, winner: null, difficulty: 'medium', settings: { darkMode: false, soundEnabled: true }, lastMove: null };
 
             const { data, error } = await supabase.from('live_matches').insert({
                 game_type: selectedGameType, status: 'waiting', players: [player],
@@ -1096,7 +1102,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                 ...playerInfo,
                 symbol: gt === 'xo' ? 'O' : gt === 'connect4' ? 'Y' : gt === 'chess' ? '♚' : undefined,
             };
-            const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(gt)) ? 'waiting' : 'playing';
+            const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(gt)) ? 'waiting' : 'playing';
             const updatedPlayers = [...match.players, player];
 
             const { data: updated, error: updateError } = await supabase.from('live_matches').update({
@@ -1291,7 +1297,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
             const firstPlayerFull = { ...firstPlayer, symbol: gt === 'xo' ? 'X' : gt === 'connect4' ? 'R' : gt === 'chess' ? '♔' : undefined };
             const secondPlayerFull = { ...myInfo, symbol: gt === 'xo' ? 'O' : gt === 'connect4' ? 'Y' : gt === 'chess' ? '♚' : undefined };
 
-            const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(gt)) ? 'waiting' : 'playing';
+            const newStatus = (['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(gt)) ? 'waiting' : 'playing';
 
             const { data: newMatch, error } = await supabase.from('live_matches').insert({
                 game_type: gt, status: newStatus,
@@ -1564,7 +1570,7 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                 <div className="flex-1 flex flex-col">
 
                     {/* Players header (hidden for games that have their own UI) */}
-                    {!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) && (
+                    {!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(currentMatch.game_type) && (
                         <div className="px-3 py-3 flex justify-between items-center border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800">
                             <div className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border-2 transition-all ${currentMatch.game_state?.current_turn === me?.id ? 'border-green-400 dark:border-green-500 bg-green-50 dark:bg-green-900/20 shadow-sm scale-105' : 'border-transparent opacity-60'}`}>
                                 <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${me?.avatarBg || 'from-indigo-400 to-violet-600'} flex items-center justify-center overflow-hidden flex-shrink-0`}>
@@ -1589,10 +1595,10 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                     )}
 
                     {/* Game area */}
-                    <div className={`flex-1 flex flex-col ${!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) ? 'items-center justify-center p-3' : ''}`}>
+                    <div className={`flex-1 flex flex-col ${!['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(currentMatch.game_type) ? 'items-center justify-center p-3' : ''}`}>
 
                         {/* WAITING (for non-multiplayer games) */}
-                        {currentMatch.status === 'waiting' && !['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel'].includes(currentMatch.game_type) && (
+                        {currentMatch.status === 'waiting' && !['stopthebus','hangman','bottlematch','puzzle','memory','beastlevel','simonsays','ludo'].includes(currentMatch.game_type) && (
                             <div className="text-center">
                                 <Loader2 className="w-14 h-14 text-indigo-200 dark:text-indigo-700 animate-spin mx-auto mb-4"/>
                                 <h3 className="text-lg font-black text-indigo-900 dark:text-indigo-100">في انتظار المنافس...</h3>
@@ -1679,6 +1685,14 @@ export default function LiveGamesArena({ employee, onClose, initialRoomId }: Liv
                         {/* BEAST LEVEL */}
                         {currentMatch.game_type === 'beastlevel' && (
                             <BeastLevelGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+                        {/* SIMON SAYS */}
+                        {currentMatch.game_type === 'simonsays' && (
+                            <SimonSaysGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
+                        )}
+                        {/* LUDO */}
+                        {currentMatch.game_type === 'ludo' && (
+                            <LudoGame match={currentMatch} employee={employee} onExit={exitMatch} grantPoints={grantPoints}/>
                         )}
 
                         {/* ── REMATCH / EXIT FOOTER after game ends ── */}
