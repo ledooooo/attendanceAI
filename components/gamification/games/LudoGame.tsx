@@ -1,7 +1,10 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { supabase } from '../../../supabaseClient';
-
+import { Employee } from '../../../types';
+import { Loader2, Users, Trophy, Volume2, VolumeX, Moon, Sun } from 'lucide-react';
+import toast from 'react-hot-toast';
 interface Player {
   id: string;
   name: string;
