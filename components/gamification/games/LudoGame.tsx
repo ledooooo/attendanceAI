@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { supabase } from './lib/supabase';
+import { supabase } from '../../../supabaseClient';
 
 interface Player {
   id: string;
