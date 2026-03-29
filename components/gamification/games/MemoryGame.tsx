@@ -1016,7 +1016,7 @@ export default function MemoryGame({ match, employee, onExit, grantPoints }: Pro
     // REWARD TIME
     // ─────────────────────────────────────────────────────────────────────────
     if (status === 'reward_time') return (
-        <div className={`flex flex-col gap-3 py-2 px-3 ${isDarkMode ? 'bg-slate-900' : 'bg-gradient-to-b from-slate-100 to-slate-200')} min-h-screen`} dir="rtl">
+        <div className={`flex flex-col gap-3 py-2 px-3 ${isDarkMode ? 'bg-slate-900' : 'bg-gradient-to-b from-slate-100 to-slate-200'} min-h-screen`} dir="rtl">
             {amIWinner ? (
                 <>
                     <div className={`rounded-2xl p-6 text-center text-white shadow-xl ${
