@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { supabase } from '../../../supabaseClient'; // تأكد من مسار الـ supabase
+import { supabase } from '../../supabaseClient'; // تأكد من مسار الـ supabase
 import { Search, FileText, ExternalLink, BookOpen, Layers, FileCode, FileSpreadsheet, LogIn, Home, ChevronLeft } from 'lucide-react';
 
 export default function PublicLibrary() {
