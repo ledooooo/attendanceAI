@@ -40,7 +40,7 @@ import RewardsStore from './components/RewardsStore';
 import StaffTrainingCenter from './components/StaffTrainingCenter';
 import ThemeOverlay from './components/ThemeOverlay';
 import StaffArcade from './components/StaffArcade';
-
+import ArcadeHub from './components/ArcadeHub';
 // ✅ استيراد لوحة تحكم النداء للموظفين
 import QueueControl from '../../queue/QueueControl';
 
@@ -398,6 +398,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'templates', label: 'نماذج رسمية', icon: Printer },
     { id: 'links', label: 'روابط هامة', icon: LinkIcon },
     { id: 'evaluations', label: 'التقييمات', icon: Award },
+    { id: 'arcade-hub', label: 'نادي الترفيه 🎮', icon: Sparkles, isNew: true }, // 👈 هذا هو الزر الجديد
   ], [staffBadges, hasAdminAccess, employee.role, ovrCount, isDoctor]);
 
   const unreadNotifsCount = useMemo(() => 
@@ -668,6 +669,7 @@ export default function StaffDashboard({ employee }: Props) {
                     {activeTab === 'requests-history' && <StaffRequestsHistory requests={leaveRequests} employee={employee} />}
                     {activeTab === 'evaluations' && <StaffEvaluations evals={evaluations} employee={employee} />}
                     {activeTab === 'messages' && <StaffMessages messages={[]} employee={employee} currentUserId={employee.employee_id} />}
+                    {activeTab === 'arcade-hub' && <ArcadeHub employeeProfile={employee} />} // 👈 هذا هو السطر الجديد
                 </div>
             </div>
         </main>
