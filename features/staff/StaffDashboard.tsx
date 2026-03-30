@@ -40,7 +40,7 @@ import RewardsStore from './components/RewardsStore';
 import StaffTrainingCenter from './components/StaffTrainingCenter';
 import ThemeOverlay from './components/ThemeOverlay';
 import StaffArcade from './components/StaffArcade';
-import ArcadeHub from './components/ArcadeHub';
+import ArcadeHub from '../games/ArcadeHub';
 // ✅ استيراد لوحة تحكم النداء للموظفين
 import QueueControl from '../../queue/QueueControl';
 
