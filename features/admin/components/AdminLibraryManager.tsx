@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { 
     Plus, Trash2, FileText, Download, Upload, 
-    FileSpreadsheet, X, Save, ExternalLink, AlertCircle 
+    FileSpreadsheet, X, Save, ExternalLink, AlertCircle, Edit 
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -10,6 +10,10 @@ export default function AdminLibraryManager() {
     const [docs, setDocs] = useState<any[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    
+    // ✅ 1. حالة جديدة لتتبع معرف الملف الجاري تعديله (إن وجد)
+    const [editingId, setEditingId] = useState<string | null>(null);
+    
     const [formData, setFormData] = useState({ 
         title: '', 
         file_type: 'PDF', 
@@ -41,7 +45,7 @@ export default function AdminLibraryManager() {
     };
 
     // --- وظيفة استيراد البيانات من ملف اكسيل المحدثة والمحمية ---
-const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -96,55 +100,94 @@ const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
         };
         reader.readAsBinaryString(file);
     };
-const handleSave = async () => {
+
+    // ✅ 2. دالة لفتح المودال وتعبئته ببيانات الملف المراد تعديله
+    const handleEditClick = (doc: any) => {
+        setEditingId(doc.id);
+        setFormData({
+            title: doc.title || '',
+            file_type: doc.file_type || 'PDF',
+            department: doc.department || '',
+            file_url: doc.file_url || '',
+            description: doc.description || '',
+            category: doc.category || 'general'
+        });
+        setIsModalOpen(true);
+    };
+
+    // ✅ 3. دالة لإغلاق المودال وتفريغ الحقول بأمان
+    const closeModal = () => {
+        setIsModalOpen(false);
+        setEditingId(null);
+        setFormData({ title: '', file_type: 'PDF', department: '', file_url: '', description: '', category: 'general' });
+    };
+
+    // ✅ 4. تعديل دالة الحفظ لتدعم الإضافة (Insert) والتعديل (Update)
+    const handleSave = async () => {
         if (!formData.title || !formData.file_url) return alert('يرجى ملء اسم الملف والرابط');
         setLoading(true);
-        const { error } = await supabase.from('company_documents').insert([formData]);
         
-        if (!error) {
-            // ✅ إرسال إشعار لجميع الموظفين بأن هناك مستند جديد تمت إضافته
-            try {
-                const { data: activeEmps } = await supabase.from('employees').select('employee_id').eq('status', 'نشط');
-                if (activeEmps && activeEmps.length > 0) {
-                    const notifTitle = "📚 مستند جديد في المكتبة";
-                    const notifMsg = `تمت إضافة مستند جديد بعنوان: ${formData.title}`;
+        let saveError = null;
 
-                    // 1. الحفظ في قاعدة البيانات
-                    const notificationsPayload = activeEmps.map(emp => ({
-                        user_id: String(emp.employee_id),
-                        title: notifTitle,
-                        message: notifMsg,
-                        type: 'general',
-                        is_read: false
-                    }));
-                    await supabase.from('notifications').insert(notificationsPayload);
+        if (editingId) {
+            // حالة التعديل (Update)
+            const { error } = await supabase.from('company_documents').update(formData).eq('id', editingId);
+            saveError = error;
+            if (!error) alert('تم تعديل بيانات الملف بنجاح');
+        } else {
+            // حالة الإضافة الجديدة (Insert)
+            const { error } = await supabase.from('company_documents').insert([formData]);
+            saveError = error;
+            
+            if (!error) {
+                // إرسال إشعار لجميع الموظفين بأن هناك مستند جديد تمت إضافته (للجديد فقط)
+                try {
+                    const { data: activeEmps } = await supabase.from('employees').select('employee_id').eq('status', 'نشط');
+                    if (activeEmps && activeEmps.length > 0) {
+                        const notifTitle = "📚 مستند جديد في المكتبة";
+                        const notifMsg = `تمت إضافة مستند جديد بعنوان: ${formData.title}`;
 
-                    // 2. إرسال الإشعارات اللحظية بشكل متوازي
-                    Promise.all(
-                        activeEmps.map(emp => 
-                            supabase.functions.invoke('send-push-notification', {
-                                body: { 
-                                    userId: String(emp.employee_id), 
-                                    title: notifTitle, 
-                                    body: notifMsg.substring(0, 50), 
-                                    url: '/staff?tab=library' // توجيه الموظف لتبويب المكتبة
-                                }
-                            })
-                        )
-                    ).catch(err => console.error("Push Error in Library:", err));
+                        // الحفظ في قاعدة البيانات
+                        const notificationsPayload = activeEmps.map(emp => ({
+                            user_id: String(emp.employee_id),
+                            title: notifTitle,
+                            message: notifMsg,
+                            type: 'general',
+                            is_read: false
+                        }));
+                        await supabase.from('notifications').insert(notificationsPayload);
+
+                        // إرسال الإشعارات اللحظية بشكل متوازي
+                        Promise.all(
+                            activeEmps.map(emp => 
+                                supabase.functions.invoke('send-push-notification', {
+                                    body: { 
+                                        userId: String(emp.employee_id), 
+                                        title: notifTitle, 
+                                        body: notifMsg.substring(0, 50), 
+                                        url: '/staff?tab=library' // توجيه الموظف لتبويب المكتبة
+                                    }
+                                })
+                            )
+                        ).catch(err => console.error("Push Error in Library:", err));
+                    }
+                } catch (err) {
+                    console.error("Notification Error:", err);
                 }
-            } catch (err) {
-                console.error("Notification Error:", err);
             }
-
-            setIsModalOpen(false);
-            setFormData({ title: '', file_type: 'PDF', department: '', file_url: '', description: '', category: 'general' });
+        }
+        
+        if (!saveError) {
+            closeModal();
             fetchDocs();
         } else {
-            alert('خطأ في الحفظ يدوياً');
+            alert('حدث خطأ أثناء الحفظ');
+            console.error(saveError);
         }
+        
         setLoading(false);
     };
+
     const handleDelete = async (id: string) => {
         if (confirm('هل أنت متأكد من حذف هذا الملف نهائياً؟')) {
             await supabase.from('company_documents').delete().eq('id', id);
@@ -177,7 +220,7 @@ const handleSave = async () => {
                     </button>
 
                     <button 
-                        onClick={() => setIsModalOpen(true)}
+                        onClick={() => { setEditingId(null); setIsModalOpen(true); }}
                         className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl flex items-center gap-2 font-black shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all text-sm"
                     >
                         <Plus size={18} /> إضافة مستند
@@ -226,10 +269,14 @@ const handleSave = async () => {
                                 </td>
                                 <td className="p-5">
                                     <div className="flex justify-center gap-2">
-                                        <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-colors">
+                                        <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-colors" title="عرض">
                                             <ExternalLink size={18} />
                                         </a>
-                                        <button onClick={() => handleDelete(doc.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors">
+                                        {/* ✅ 5. إضافة زر التعديل هنا */}
+                                        <button onClick={() => handleEditClick(doc)} className="p-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-colors" title="تعديل">
+                                            <Edit size={18} />
+                                        </button>
+                                        <button onClick={() => handleDelete(doc.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors" title="حذف">
                                             <Trash2 size={18} />
                                         </button>
                                     </div>
@@ -240,29 +287,33 @@ const handleSave = async () => {
                 </table>
             </div>
 
-            {/* مودال الإضافة اليدوية */}
+            {/* مودال الإضافة والتعديل اليدوي */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
                     <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-8 shadow-2xl animate-in zoom-in-95">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-black text-gray-800">إضافة مستند جديد</h3>
-                            <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
+                            {/* تغيير العنوان حسب الحالة */}
+                            <h3 className="text-xl font-black text-gray-800">
+                                {editingId ? 'تعديل بيانات المستند' : 'إضافة مستند جديد'}
+                            </h3>
+                            <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-full"><X /></button>
                         </div>
                         
                         <div className="space-y-4">
+                            {/* ✅ 6. تمت إضافة `value={formData.xxx}` لجميع الحقول لعرض البيانات عند التعديل */}
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">اسم المستند</label>
-                                <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="مثلاً: سياسة مكافحة العدوى" onChange={e => setFormData({...formData, title: e.target.value})} />
+                                <input type="text" value={formData.title} className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="مثلاً: سياسة مكافحة العدوى" onChange={e => setFormData({...formData, title: e.target.value})} />
                             </div>
                             
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">القسم</label>
-                                    <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="HR / الجودة" onChange={e => setFormData({...formData, department: e.target.value})} />
+                                    <input type="text" value={formData.department} className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="HR / الجودة" onChange={e => setFormData({...formData, department: e.target.value})} />
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">النوع</label>
-                                    <select className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" onChange={e => setFormData({...formData, file_type: e.target.value})}>
+                                    <select value={formData.file_type} className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" onChange={e => setFormData({...formData, file_type: e.target.value})}>
                                         <option value="PDF">PDF</option>
                                         <option value="Word">Word</option>
                                         <option value="Excel">Excel</option>
@@ -273,20 +324,20 @@ const handleSave = async () => {
 
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">رابط الملف (جوجل درايف)</label>
-                                <input type="text" className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="https://..." onChange={e => setFormData({...formData, file_url: e.target.value})} />
+                                <input type="text" value={formData.file_url} className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold" placeholder="https://..." onChange={e => setFormData({...formData, file_url: e.target.value})} />
                             </div>
 
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 mb-2 mr-2">شرح مختصر</label>
-                                <textarea className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold h-20" placeholder="عن ماذا يتحدث هذا الملف..." onChange={e => setFormData({...formData, description: e.target.value})} />
+                                <textarea value={formData.description} className="w-full p-3.5 bg-gray-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold h-20" placeholder="عن ماذا يتحدث هذا الملف..." onChange={e => setFormData({...formData, description: e.target.value})} />
                             </div>
                         </div>
 
                         <div className="flex gap-3 mt-8">
                             <button onClick={handleSave} className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
-                                <Save size={20} /> حفظ في القاعدة
+                                <Save size={20} /> {editingId ? 'حفظ التعديلات' : 'حفظ في القاعدة'}
                             </button>
-                            <button onClick={() => setIsModalOpen(false)} className="px-8 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black hover:bg-gray-200 transition-colors">إلغاء</button>
+                            <button onClick={closeModal} className="px-8 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black hover:bg-gray-200 transition-colors">إلغاء</button>
                         </div>
                     </div>
                 </div>
