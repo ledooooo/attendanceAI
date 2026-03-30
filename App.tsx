@@ -19,6 +19,7 @@ import PricingPage from './pages/public/PricingPage';
 import ContactPage from './pages/public/ContactPage';
 import StaffDirectoryPage from './pages/public/StaffDirectoryPage';
 import SurveyPage from './pages/public/SurveyPage';
+import PublicLibrary from './pages/public/PublicLibrary'; // 📚 تم إضافة استيراد المكتبة العامة
 
 // 🖥️ 5. استيراد شاشات النداء الآلي (Queue System)
 import QueueScreen from './queue/QueueScreen';
@@ -64,6 +65,7 @@ const AppContent = () => {
   if (currentPath === '/contact') return <ContactPage />;
   if (currentPath === '/directory') return <StaffDirectoryPage />;
   if (currentPath === '/survey') return <SurveyPage />;
+  if (currentPath === '/library') return <PublicLibrary />; // 📚 تم إضافة مسار المكتبة العامة
   
   // ✅ مسار الزائر العام ليفتح لوحة المريض كزائر
   if (currentPath === '/guest') return <PatientDashboard isGuest={true} />; 
