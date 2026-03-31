@@ -413,7 +413,7 @@ export default function SafeCrackerGame({ onStart, onComplete, employee }: Props
 
     const isEnglish = useMemo(() => {
         return questionConfig.language === 'en' ||
-               (questionConfig.language === 'both' && ['صيدلة', 'طب', 'أسنان'].some(t => getEmployeeSpecialty().includes(t))));
+               (questionConfig.language === 'both' && ['صيدلة', 'طب', 'أسنان'].some(t => getEmployeeSpecialty().includes(t)));
     }, [questionConfig.language, getEmployeeSpecialty];
 
     // Play sound effect
