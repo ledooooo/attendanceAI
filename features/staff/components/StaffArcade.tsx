@@ -6,7 +6,7 @@ import confetti from 'canvas-confetti';
 import {
     Loader2, Zap, Gamepad2, Tv2,
     ArrowRight, Trophy,
-    Dices, Lock, Brain, Calculator, Flame, FlaskConical, Skull, Grip, Target, Droplet // 👈 أضفنا أيقونة Droplet للعبة فرز السوائل
+    Dices, Lock, Brain, Calculator, Flame, FlaskConical, Skull, Grip, Target, Droplet
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -26,7 +26,7 @@ import BottleSortGame           from '../../../components/gamification/games/Bot
 import HangmanGameSingle        from '../../../components/gamification/games/HangmanGameSingle';
 import SlidingPuzzleGame        from '../../../components/gamification/games/SlidingPuzzleGame';
 import SimonGame                from '../../../components/gamification/games/SimonGame';
-import WaterSortGame            from '../../../components/gamification/games/WaterSortGame'; // 👈 استيراد اللعبة الجديدة
+import WaterSortGame            from '../../../components/gamification/games/WaterSortGame';
 import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
 
 interface Props { employee: Employee; deepLinkRoomId?: string | null; }
@@ -43,8 +43,8 @@ const GAME_CATALOG = [
     { key: 'hangman',  title: 'لعبة المشنقة',     icon: Skull,      gradient: 'from-slate-600 to-slate-800',   bg: 'from-slate-50 to-slate-100',  border: 'border-slate-200 hover:border-slate-400',     tag: 'تخمين وثقافة', pts: '15-60', tagColor: 'text-slate-700',   ptsColor: 'text-slate-600'   },
     { key: 'sliding',  title: 'ترتيب الأرقام',    icon: Grip,       gradient: 'from-blue-500 to-cyan-600',     bg: 'from-blue-50 to-cyan-50',     border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '20-70',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
     { key: 'simon',    title: 'سيمون يقول',       icon: Target,     gradient: 'from-gray-800 to-black',        bg: 'from-gray-100 to-gray-200',   border: 'border-gray-300 hover:border-gray-500',       tag: 'ذاكرة بصرية', pts: '20-70',  tagColor: 'text-gray-800',    ptsColor: 'text-gray-700'    },
-    // 👈 أضفنا لعبة فرز السوائل هنا
-    { key: 'water',    title: 'فرز السوائل',      icon: Droplet,    gradient: 'from-cyan-400 to-blue-600',     bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'تخطيط عميق', pts: '20-80',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
+    // 👈 اللعبة رقم 11 التي كانت مفقودة في القائمة
+    { key: 'water',    title: 'فرز السوائل',      icon: Droplet,    gradient: 'from-cyan-400 to-blue-600',     bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'تخطيط عميق', pts: '20-80',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    }
 ];
 
 // ─── Game Grid ────────────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             case 'hangman':  return <HangmanGameSingle {...simple}/>;
             case 'sliding':  return <SlidingPuzzleGame {...simple}/>;
             case 'simon':    return <SimonGame {...simple}/>;
-            case 'water':    return <WaterSortGame {...simple}/>; // 👈 استدعاء لعبة فرز السوائل هنا
+            case 'water':    return <WaterSortGame {...simple}/>; // 👈 استدعاء لعبة فرز السوائل
             default:         return null;
         }
     };
