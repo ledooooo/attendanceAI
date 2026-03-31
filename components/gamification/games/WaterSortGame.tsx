@@ -1,462 +1,305 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Droplet, CheckCircle, XCircle, Globe, Volume2, VolumeX, Loader2, ArrowRight, Star, Clock, RotateCcw, Beaker } from 'lucide-react';
-import toast from 'react-hot-toast';
-import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import confetti from 'canvas-confetti';
+import {
+    Loader2, Zap, Gamepad2, Tv2,
+    ArrowRight, Trophy,
+    Dices, Lock, Brain, Calculator, Flame, FlaskConical, Skull, Grip, Target, Droplet
+} from 'lucide-react';
+import toast from 'react-hot-toast';
 
-interface Props {
-    onStart: () => Promise<void>;
-    onComplete: (points: number, isWin: boolean) => void;
-    employee?: Employee;
+import { getDiffProfile, COOLDOWN_HOURS, DiffProfile } from './arcade/types';
+import ArcadeHeader, { LevelBadge } from './arcade/ArcadeHeader';
+import ArcadeCooldown from './arcade/ArcadeCooldown';
+import ArcadeLeaderboard from './arcade/ArcadeLeaderboard';
+import BonusQuestion from './arcade/BonusQuestion';
+
+import SpinAndAnswerGame        from '../../../components/gamification/games/SpinAndAnswerGame';
+import SafeCrackerGame          from '../../../components/gamification/games/SafeCrackerGame';
+import MemoryMatchGame          from '../../../components/gamification/games/MemoryMatchGame';
+import MedicalQuizRush          from '../../../components/gamification/games/MedicalQuizRush';
+import DoseCalculatorChallenge  from '../../../components/gamification/games/DoseCalculatorChallenge';
+import MoveTheMatch             from '../../../components/gamification/games/MoveTheMatch';
+import BottleSortGame           from '../../../components/gamification/games/BottleSortGame';
+import HangmanGameSingle        from '../../../components/gamification/games/HangmanGameSingle';
+import SlidingPuzzleGame        from '../../../components/gamification/games/SlidingPuzzleGame';
+import SimonGame                from '../../../components/gamification/games/SimonGame';
+import WaterSortGame            from '../../../components/gamification/games/WaterSortGame';
+import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
+
+interface Props { employee: Employee; deepLinkRoomId?: string | null; }
+
+// ─── 11 Solo Games ─────────────────────────────────────────────────────────────
+const GAME_CATALOG = [
+    { key: 'spin',     title: 'عجلة الحظ',       icon: Dices,      gradient: 'from-fuchsia-500 to-pink-600',  bg: 'from-fuchsia-50 to-pink-50',  border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
+    { key: 'safe',     title: 'الخزنة السرية',    icon: Lock,       gradient: 'from-emerald-500 to-teal-600',  bg: 'from-emerald-50 to-teal-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق', pts: '20-50',  tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
+    { key: 'memory',   title: 'تطابق الذاكرة',    icon: Gamepad2,   gradient: 'from-orange-500 to-amber-600',  bg: 'from-orange-50 to-amber-50',  border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',  pts: '10-40',  tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
+    { key: 'quiz',     title: 'سباق المعرفة',     icon: Brain,      gradient: 'from-indigo-500 to-purple-600', bg: 'from-indigo-50 to-purple-50', border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة', pts: '15-25',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
+    { key: 'dose',     title: 'حساب الجرعات',     icon: Calculator, gradient: 'from-rose-500 to-red-600',      bg: 'from-rose-50 to-red-50',      border: 'border-rose-100 hover:border-rose-300',       tag: 'دقة حسابية', pts: '10-30',  tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
+    { key: 'match',    title: 'عود الثقاب',       icon: Flame,      gradient: 'from-amber-500 to-orange-600',  bg: 'from-amber-50 to-orange-50',  border: 'border-amber-100 hover:border-amber-300',     tag: 'تفاعلي 🔥',  pts: '20-50',  tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
+    { key: 'bottle',   title: 'ترتيب الزجاجات',   icon: FlaskConical, gradient: 'from-cyan-500 to-blue-600',   bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'منطق وتركيز', pts: '20-50',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
+    { key: 'hangman',  title: 'لعبة المشنقة',     icon: Skull,      gradient: 'from-slate-600 to-slate-800',   bg: 'from-slate-50 to-slate-100',  border: 'border-slate-200 hover:border-slate-400',     tag: 'تخمين وثقافة', pts: '15-60', tagColor: 'text-slate-700',   ptsColor: 'text-slate-600'   },
+    { key: 'sliding',  title: 'ترتيب الأرقام',    icon: Grip,       gradient: 'from-blue-500 to-cyan-600',     bg: 'from-blue-50 to-cyan-50',     border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '20-70',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
+    { key: 'simon',    title: 'سيمون يقول',       icon: Target,     gradient: 'from-gray-800 to-black',        bg: 'from-gray-100 to-gray-200',   border: 'border-gray-300 hover:border-gray-500',       tag: 'ذاكرة بصرية', pts: '20-70',  tagColor: 'text-gray-800',    ptsColor: 'text-gray-700'    },
+    // 👈 اللعبة رقم 11 التي كانت مفقودة في القائمة
+    { key: 'water',    title: 'فرز السوائل',      icon: Droplet,    gradient: 'from-cyan-400 to-blue-600',     bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'تخطيط عميق', pts: '20-80',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    }
+];
+
+// ─── Game Grid ────────────────────────────────────────────────────────────────
+function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelect: (key: string) => void }) {
+    return (
+        <div className="space-y-3">
+            {/* Level banner */}
+            <div className={`p-3 rounded-xl border-2 flex items-center gap-2 ${diffProfile.color}`}>
+                <span className="text-2xl">{diffProfile.emoji}</span>
+                <div className="flex-1 min-w-0">
+                    <p className="font-black text-xs">مستواك: {diffProfile.label}</p>
+                    <p className="text-[11px] font-bold opacity-80 truncate">{diffProfile.desc}</p>
+                </div>
+                <div className="text-left shrink-0">
+                    <p className="font-black text-base">×{diffProfile.multiplier.toFixed(1)}</p>
+                    <p className="text-[10px] font-bold opacity-70">مضاعف</p>
+                </div>
+            </div>
+
+            {/* Games grid */}
+            <div className="grid grid-cols-2 gap-2">
+                {GAME_CATALOG.map(g => {
+                    const Icon = g.icon;
+                    return (
+                        <button key={g.key} onClick={() => onSelect(g.key)}
+                            className={`group bg-gradient-to-br ${g.bg} border-2 ${g.border} p-3 rounded-2xl shadow-sm hover:shadow-lg transition-all text-right flex flex-col relative overflow-hidden hover:scale-105 active:scale-95`}>
+                            <div className="relative z-10 flex flex-col h-full">
+                                <div className={`w-9 h-9 bg-gradient-to-br ${g.gradient} text-white rounded-xl flex items-center justify-center mb-2 group-hover:scale-110 group-hover:rotate-6 transition-transform shadow-md`}>
+                                    <Icon className="w-5 h-5"/>
+                                </div>
+                                <h3 className="font-black text-gray-900 text-xs mb-0.5 leading-tight">{g.title}</h3>
+                                <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/50">
+                                    <span className={`text-[10px] bg-white ${g.tagColor} px-1.5 py-0.5 rounded-md font-black shadow-sm`}>{g.tag}</span>
+                                    <span className={`text-[10px] ${g.ptsColor} font-black flex items-center gap-0.5`}><Trophy className="w-2.5 h-2.5"/> {g.pts}</span>
+                                </div>
+                            </div>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
 }
 
-// ─── الألوان المتاحة للسوائل ──────────────────────────────────────────────────
-const COLORS = [
-    'from-red-400 to-red-600',      // أحمر
-    'from-blue-400 to-blue-600',    // أزرق
-    'from-emerald-400 to-teal-600', // أخضر
-    'from-amber-300 to-yellow-500', // أصفر
-    'from-purple-400 to-purple-600',// بنفسجي
-    'from-cyan-300 to-cyan-500'     // سماوي
-];
+// ─── Win effects ──────────────────────────────────────────────────────────────
+function playWinSound() {
+    try {
+        const audio = new Audio('https://raw.githubusercontent.com/ledooooo/attendanceAI/main/public/applause.mp3');
+        audio.volume = 0.8;
+        audio.play().catch(() => {});
+    } catch (_) {}
+}
 
-// ─── المستويات ──────────────────────────────────────────────────────────────
-const LEVELS = [
-    { id: 'easy', label: 'سهل', colors: 3, empty: 2, time: 120, points: 20 },
-    { id: 'medium', label: 'متوسط', colors: 4, empty: 2, time: 180, points: 30 },
-    { id: 'hard', label: 'صعب', colors: 5, empty: 2, time: 240, points: 40 },
-    { id: 'expert', label: 'خبير', colors: 6, empty: 2, time: 300, points: 50 }
-];
+function fireConfetti() {
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:99999;';
+    document.body.appendChild(canvas);
+    const myConfetti = confetti.create(canvas, { resize: true, useWorker: false });
+    const colors = ['#f59e0b','#10b981','#6366f1','#ec4899','#f97316','#fbbf24','#ffffff'];
+    myConfetti({ particleCount: 120, angle: 60,  spread: 70,  origin: { x: 0,   y: 0.7 }, colors, zIndex: 99999 });
+    myConfetti({ particleCount: 120, angle: 120, spread: 70,  origin: { x: 1,   y: 0.7 }, colors, zIndex: 99999 });
+    setTimeout(() => {
+        myConfetti({ particleCount: 200, angle: 90, spread: 160, origin: { x: 0.5, y: 0.2 }, colors, zIndex: 99999 });
+    }, 400);
+    setTimeout(() => canvas.remove(), 5000);
+}
 
-const BONUS_LEVELS = [
-    { id: 'سهل', points: 10, time: 20 },
-    { id: 'متوسط', points: 20, time: 20 },
-    { id: 'صعب', points: 30, time: 30 }
-];
+// ─── Main ─────────────────────────────────────────────────────────────────────
+export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
+    const queryClient = useQueryClient();
+    const [activeGame, setActiveGame]   = useState<string | null>(null);
+    const [sessionId, setSessionId]     = useState<string | null>(null);
+    const [showLeaderboard, setShowLeaderboard] = useState(false);
+    const [activeTab, setActiveTab]     = useState<'games' | 'live'>(deepLinkRoomId ? 'live' : 'games');
+    const [bonusState, setBonusState]   = useState<{ show: boolean; pts: number; gameName: string } | null>(null);
 
-export default function WaterSortGame({ onStart, onComplete, employee }: Props) {
-    const [phase, setPhase] = useState<'setup' | 'playing' | 'puzzle_solved' | 'loading_quiz' | 'quiz' | 'summary'>('setup');
-    const [starting, setStarting] = useState(false);
-    
-    // Water Sort Logic
-    const [level, setLevel] = useState<typeof LEVELS[0]>(LEVELS[0]);
-    const [tubes, setTubes] = useState<string[][]>([]);
-    const [initialTubes, setInitialTubes] = useState<string[][]>([]); // للريست
-    const [selectedTube, setSelectedTube] = useState<number | null>(null);
-    const [moves, setMoves] = useState(0);
-    const [timeLeft, setTimeLeft] = useState(0);
-    
-    // Quiz & Settings
-    const [soundEnabled, setSoundEnabled] = useState(true);
-    const [language, setLanguage] = useState<'auto' | 'ar' | 'en'>('auto');
-    const [totalScore, setTotalScore] = useState(0);
-    const [quizQuestion, setQuizQuestion] = useState<any>(null);
-    const [selectedBonus, setSelectedBonus] = useState<typeof BONUS_LEVELS[0] | null>(null);
-    const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+    const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
 
-    const handleQuizAnswerRef = useRef<(idx: number) => void>();
+    const { data: lastPlay, isLoading: loadingPlay } = useQuery({
+        queryKey: ['last_arcade_play', employee.employee_id],
+        queryFn: async () => {
+            const { data } = await supabase.from('arcade_scores').select('played_at')
+                .eq('employee_id', employee.employee_id).order('played_at', { ascending: false }).limit(1).maybeSingle();
+            return data;
+        }
+    });
 
-    // ─── إعدادات اللغة ─────────────────────────────────────────────────────────
-    const isMedicalEnglishSpecialty = ['بشر', 'أسنان', 'صيدل', 'اسره', 'معمل', 'تمريض'].some(s => 
-        (employee?.job_title || '').includes(s) || (employee?.specialty || '').includes(s)
-    );
+    const timeRemaining = useMemo(() => {
+        if (!lastPlay?.played_at) return null;
+        const diff = (Date.now() - new Date(lastPlay.played_at).getTime()) / (1000 * 60 * 60);
+        if (diff >= COOLDOWN_HOURS) return null;
+        const rem = COOLDOWN_HOURS * 3600000 - (Date.now() - new Date(lastPlay.played_at).getTime());
+        return { hrs: Math.floor(rem / 3600000), mins: Math.floor((rem % 3600000) / 60000) };
+    }, [lastPlay]);
 
-    const getEffectiveLanguage = useCallback((): 'ar' | 'en' => {
-        if (language === 'ar') return 'ar';
-        if (language === 'en') return 'en';
-        return isMedicalEnglishSpecialty ? 'en' : 'ar';
-    }, [language, isMedicalEnglishSpecialty]);
+    const consumeAttempt = async (gameName: string) => {
+        const { data, error } = await supabase.from('arcade_scores').insert({
+            employee_id: employee.employee_id, game_name: gameName, points_earned: 0, is_win: false
+        }).select('id').single();
+        if (error) throw error;
+        setSessionId(data.id);
+        queryClient.invalidateQueries({ queryKey: ['last_arcade_play'] });
+    };
 
-    const isEn = getEffectiveLanguage() === 'en';
-
-    const playSound = useCallback((type: 'win' | 'lose' | 'pour') => {
-        if (!soundEnabled) return;
-        try {
-            if (type === 'pour') {
-                const audio = new Audio('/click.mp3'); // يفضل رفع صوت ماء (water-pour.mp3)
-                audio.volume = 0.2;
-                audio.play().catch(() => {});
+    const finishAttemptMutation = useMutation({
+        mutationFn: async ({ points, isWin, gameName }: { points: number; isWin: boolean; gameName: string }) => {
+            if (!sessionId) return;
+            await supabase.from('arcade_scores').update({ points_earned: points, is_win: isWin }).eq('id', sessionId);
+            if (isWin && points > 0) {
+                await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: points });
+                await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points, reason: `فوز في لعبة: ${gameName} 🎮` });
+            }
+            return { isWin, points, gameName };
+        },
+        onSuccess: (result) => {
+            if (!result) return;
+            const { isWin, points, gameName } = result;
+            if (isWin && points > 0) {
+                toast.success(`بطل! كسبت ${points} نقطة 🎉`, { duration: 4000, icon: '🏆', style: { background: '#10b981', color: 'white', fontWeight: 'bold' } });
+                setActiveGame(null);
+                setSessionId(null);
             } else {
-                const audio = new Audio(type === 'win' ? '/applause.mp3' : '/fail.mp3');
-                audio.volume = 0.6;
-                audio.play().catch(() => {});
+                toast.error('حظ أوفر! تعال جرب تاني بعد 5 ساعات 💔', { duration: 4000 });
+                setActiveGame(null);
+                setSessionId(null);
             }
-        } catch {}
-    }, [soundEnabled]);
+            queryClient.invalidateQueries({ queryKey: ['arcade_leaderboard'] });
+            queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
+        }
+    });
 
-    // ─── توليد اللغز العشوائي ──────────────────────────────────────────────────
-    const generatePuzzle = (numColors: number, numEmpty: number) => {
-        let allLiquid: string[] = [];
-        for (let i = 0; i < numColors; i++) {
-            for (let j = 0; j < 4; j++) allLiquid.push(COLORS[i]);
+    const handleBonusFinish = async (earned: number) => {
+        if (earned > 0) {
+            playWinSound();
+            fireConfetti();
+            await supabase.rpc('increment_points', { emp_id: employee.employee_id, amount: earned });
+            await supabase.from('points_ledger').insert({ employee_id: employee.employee_id, points: earned, reason: `سؤال مكافأة 🎁` });
+            queryClient.invalidateQueries({ queryKey: ['admin_employees'] });
         }
-        
-        // خلط السوائل
-        allLiquid.sort(() => Math.random() - 0.5);
-        
-        let newTubes: string[][] = [];
-        for (let i = 0; i < numColors; i++) {
-            newTubes.push(allLiquid.slice(i * 4, (i + 1) * 4));
-        }
-        for (let i = 0; i < numEmpty; i++) {
-            newTubes.push([]);
-        }
-        return newTubes;
+        setBonusState(null);
+        setActiveGame(null);
+        setSessionId(null);
     };
 
-    const startGame = async () => {
-        setStarting(true);
-        try { await onStart(); } catch { setStarting(false); return; }
+    const gameNode = (key: string): React.ReactNode => {
+        const gameName = GAME_CATALOG.find(g => g.key === key)?.title || key;
+        const props = {
+            employee, diffProfile,
+            onStart:    () => consumeAttempt(gameName),
+            onComplete: (p: number, w: boolean) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName }),
+        };
+        const simple = { onStart: props.onStart, onComplete: props.onComplete, employee };
         
-        const initial = generatePuzzle(level.colors, level.empty);
-        setTubes(initial);
-        setInitialTubes(initial); // حفظ النسخة الأصلية للإعادة
-        setMoves(0);
-        setTotalScore(0);
-        setTimeLeft(level.time);
-        setSelectedTube(null);
-        setPhase('playing');
-        setStarting(false);
-    };
-
-    const restartLevel = () => {
-        setTubes(initialTubes.map(tube => [...tube]));
-        setSelectedTube(null);
-        setMoves(0);
-    };
-
-    // ─── منطق سكب السوائل ───────────────────────────────────────────────────
-    const handleTubeClick = (index: number) => {
-        if (selectedTube === null) {
-            // اختيار أنبوب (فقط إذا لم يكن فارغاً ولم يكن مكتملاً)
-            if (tubes[index].length > 0) {
-                const isComplete = tubes[index].length === 4 && new Set(tubes[index]).size === 1;
-                if (!isComplete) setSelectedTube(index);
-            }
-        } else {
-            if (selectedTube === index) {
-                setSelectedTube(null); // إلغاء التحديد
-            } else {
-                pourLiquid(selectedTube, index);
-            }
+        switch (key) {
+            case 'spin':     return <SpinAndAnswerGame {...props}/>;
+            case 'safe':     return <SafeCrackerGame {...simple}/>;
+            case 'memory':   return <MemoryMatchGame {...simple}/>;
+            case 'quiz':     return <MedicalQuizRush {...props}/>;
+            case 'dose':     return <DoseCalculatorChallenge {...props}/>;
+            case 'match':    return <MoveTheMatch {...simple}/>;
+            case 'bottle':   return <BottleSortGame {...simple}/>;
+            case 'hangman':  return <HangmanGameSingle {...simple}/>;
+            case 'sliding':  return <SlidingPuzzleGame {...simple}/>;
+            case 'simon':    return <SimonGame {...simple}/>;
+            case 'water':    return <WaterSortGame {...simple}/>; // 👈 استدعاء لعبة فرز السوائل
+            default:         return null;
         }
     };
 
-    const pourLiquid = (from: number, to: number) => {
-        const source = [...tubes[from]];
-        const dest = [...tubes[to]];
-        
-        if (dest.length === 4) {
-            setSelectedTube(null); // الأنبوب ممتلئ
-            return; 
-        }
-        
-        const colorToMove = source[source.length - 1];
-        if (dest.length > 0 && dest[dest.length - 1] !== colorToMove) {
-            setSelectedTube(null); // الألوان لا تتطابق
-            return;
-        }
+    return (
+        <div className="space-y-3 animate-in fade-in pb-6">
 
-        // حساب كمية السائل المتطابق في الأنبوب المصدر
-        let count = 0;
-        for (let i = source.length - 1; i >= 0; i--) {
-            if (source[i] === colorToMove) count++;
-            else break;
-        }
+            <ArcadeHeader employee={employee} onShowLeaderboard={() => setShowLeaderboard(true)}/>
 
-        const spaceLeft = 4 - dest.length;
-        const amountToMove = Math.min(count, spaceLeft);
-
-        for (let i = 0; i < amountToMove; i++) {
-            dest.push(source.pop()!);
-        }
-
-        const newTubes = [...tubes];
-        newTubes[from] = source;
-        newTubes[to] = dest;
-        setTubes(newTubes);
-        setSelectedTube(null);
-        setMoves(m => m + 1);
-        playSound('pour');
-
-        // التحقق من الفوز
-        const isWin = newTubes.every(tube => tube.length === 0 || (tube.length === 4 && new Set(tube).size === 1));
-        if (isWin) {
-            playSound('win');
-            confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-            setTotalScore(level.points);
-            toast.success(isEn ? 'Brilliant!' : 'عمل رائع!');
-            setTimeout(() => setPhase('puzzle_solved'), 1500);
-        }
-    };
-
-    // مؤقت اللغز
-    useEffect(() => {
-        let timer: ReturnType<typeof setInterval>;
-        if (phase === 'playing' && timeLeft > 0) {
-            timer = setInterval(() => setTimeLeft(p => p - 1), 1000);
-        } else if (phase === 'playing' && timeLeft === 0) {
-            playSound('lose');
-            toast.error(isEn ? 'Time is up!' : 'انتهى الوقت للأسف!');
-            setTimeout(() => onComplete(0, false), 2500);
-        }
-        return () => clearInterval(timer);
-    }, [phase, timeLeft]);
-
-    // ─── جلب سؤال الذكاء الاصطناعي الإضافي ──────────────────────────────────
-    const fetchAIQuestion = async (bonus: typeof BONUS_LEVELS[0]) => {
-        setSelectedBonus(bonus);
-        setPhase('loading_quiz');
-
-        try {
-            const { data, error } = await supabase.functions.invoke('generate-smart-quiz', {
-                body: {
-                    specialty: employee?.job_title || employee?.specialty || 'طبيب بشرى',
-                    domain: 'طبي وعلمي',
-                    difficulty: bonus.id,
-                    length: 'قصير',
-                    language: isEn ? 'English (Professional Medical Terminology)' : 'ar',
-                    include_hint: false,
-                    game_type: 'mcq',
-                    question_count: 5 
-                }
-            });
-
-            if (error || !data) throw new Error('Fetch failed');
-
-            let qArray = Array.isArray(data) ? data : data.questions || [data];
-            if (qArray.length === 0) throw new Error('No questions returned');
-
-            const q = qArray[0]; 
-            const charToIndex: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
-            const safeOptions = Array.isArray(q.options) && q.options.length >= 4 ? q.options : [q.option_a, q.option_b, q.option_c, q.option_d];
-
-            setQuizQuestion({
-                question_text: q.question_text || q.question,
-                options: safeOptions,
-                correct_index: charToIndex[q.correct_option || q.correct_answer] ?? 0,
-                explanation: q.explanation
-            });
-            
-            setTimeLeft(bonus.time);
-            setPhase('quiz');
-        } catch (err) {
-            toast.error('تم الاحتفاظ بالنقاط الأساسية!');
-            onComplete(totalScore, true);
-        }
-    };
-
-    const handleQuizAnswer = useCallback((idx: number) => {
-        if (selectedAnswer !== null) return;
-        setSelectedAnswer(idx);
-        
-        if (idx === quizQuestion?.correct_index) {
-            playSound('win');
-            confetti({ particleCount: 100, spread: 60, origin: { y: 0.6 } });
-            setTotalScore(prev => prev + selectedBonus!.points);
-        } else {
-            playSound('lose');
-        }
-        setPhase('summary');
-    }, [selectedAnswer, quizQuestion, selectedBonus, playSound]);
-
-    useEffect(() => { handleQuizAnswerRef.current = handleQuizAnswer; }, [handleQuizAnswer]);
-
-    useEffect(() => {
-        if (phase !== 'quiz' || selectedAnswer !== null) return;
-        const timer = setInterval(() => {
-            setTimeLeft(prev => {
-                if (prev <= 1) { clearInterval(timer); handleQuizAnswerRef.current?.(-1); return 0; }
-                return prev - 1;
-            });
-        }, 1000);
-        return () => clearInterval(timer);
-    }, [phase, selectedAnswer]);
-
-    // =======================================================================
-    // واجهات اللعبة 
-    // =======================================================================
-
-    if (phase === 'setup') {
-        return (
-            <div className="text-center py-4 px-2 animate-in zoom-in-95 flex flex-col h-[85vh] overflow-y-auto pb-10">
-                <div className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl shrink-0">
-                    <Droplet className="w-10 h-10 text-white animate-bounce" />
-                </div>
-                <h3 className="text-2xl font-black text-gray-800 mb-2">{isEn ? 'Water Sort' : 'فرز السوائل'}</h3>
-                <p className="text-xs font-bold text-gray-500 mb-6 max-w-sm mx-auto leading-relaxed">
-                    {isEn ? 'Pour liquids between tubes until each tube contains only one color!' : 'قم بسكب السوائل بين الأنابيب حتى يصبح كل أنبوب بلون واحد فقط!'}
-                </p>
-
-                <h4 className="text-sm font-black text-cyan-800 mb-2 text-right">اختر المستوى:</h4>
-                <div className="grid grid-cols-2 gap-2 mb-6">
-                    {LEVELS.map(lvl => (
-                        <button key={lvl.id} onClick={() => setLevel(lvl)}
-                            className={`p-3 rounded-2xl border-2 transition-all flex flex-col items-center ${level.id === lvl.id ? 'bg-cyan-50 border-cyan-500 shadow-md scale-105' : 'bg-white border-gray-100 hover:border-gray-300'}`}>
-                            <span className="font-black text-gray-800 text-sm mb-1">{lvl.label}</span>
-                            <span className="text-[10px] text-gray-500 font-bold bg-gray-100 px-2 py-0.5 rounded-md">{lvl.colors} ألوان | {lvl.points} نقطة</span>
-                        </button>
-                    ))}
-                </div>
-
-                <div className="flex justify-center gap-2 mb-6">
-                    <button onClick={() => setLanguage(l => l==='ar'?'en':(l==='en'?'auto':'ar'))} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-black border border-gray-200">
-                        <Globe className="w-4 h-4" /> {isEn ? 'English' : 'عربي'}
-                    </button>
-                    <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1.5 rounded-xl hover:bg-gray-100 bg-gray-50 border border-gray-200">
-                        {soundEnabled ? <Volume2 className="w-4 h-4 text-gray-600" /> : <VolumeX className="w-4 h-4 text-gray-400" />}
-                    </button>
-                </div>
-
-                <button onClick={startGame} disabled={starting} className="w-full max-w-sm mx-auto mt-auto bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-4 rounded-2xl font-black text-base shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex justify-center items-center gap-2 shrink-0">
-                    {starting ? <Loader2 className="w-6 h-6 animate-spin"/> : '🎮 العب الآن'}
+            {/* Tabs */}
+            <div className="flex bg-white rounded-xl p-1 shadow-sm border border-gray-100 gap-1">
+                <button onClick={() => setActiveTab('games')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg font-black text-xs transition-all ${activeTab === 'games' ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <Gamepad2 className="w-3.5 h-3.5"/> الألعاب الفردية
+                </button>
+                <button onClick={() => setActiveTab('live')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg font-black text-xs transition-all ${activeTab === 'live' ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    <Tv2 className="w-3.5 h-3.5"/> ألعاب جماعية
+                    <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse"/>
                 </button>
             </div>
-        );
-    }
 
-    if (phase === 'playing') {
-        const m = Math.floor(timeLeft / 60);
-        const s = timeLeft % 60;
-        
-        return (
-            <div className="max-w-md mx-auto flex flex-col h-[85vh] animate-in slide-in-from-bottom" dir="rtl">
-                {/* Header */}
-                <div className="flex justify-between items-center mb-4 px-2 shrink-0">
-                    <button onClick={restartLevel} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl font-black text-xs border border-gray-200 flex items-center gap-1 transition-colors">
-                        <RotateCcw className="w-3.5 h-3.5" /> {isEn ? 'Restart' : 'إعادة'}
-                    </button>
-                    <div className="bg-cyan-50 text-cyan-800 px-3 py-2 rounded-xl font-black text-xs border border-cyan-200">
-                        التحركات: {moves}
-                    </div>
-                    <div className={`px-3 py-2 rounded-xl font-black flex items-center gap-1 text-sm border shadow-sm ${timeLeft <= 20 ? 'bg-red-500 text-white border-red-600 animate-pulse' : 'bg-white text-gray-700 border-gray-200'}`}>
-                        <Clock className="w-4 h-4" /> {m}:{s < 10 ? '0'+s : s}
-                    </div>
-                </div>
-
-                {/* Tubes Area */}
-                <div className="flex-1 flex flex-wrap items-center justify-center gap-3 md:gap-5 p-4 bg-slate-50 rounded-3xl border border-gray-200 shadow-inner overflow-hidden">
-                    {tubes.map((tube, index) => {
-                        const isSelected = selectedTube === index;
-                        const isComplete = tube.length === 4 && new Set(tube).size === 1;
-
-                        return (
-                            <div 
-                                key={index} 
-                                onClick={() => handleTubeClick(index)}
-                                className={`relative w-12 md:w-14 h-36 md:h-44 flex flex-col-reverse rounded-b-[2rem] border-x-4 border-b-4 border-white/80 bg-black/10 shadow-lg cursor-pointer transition-transform duration-300 ease-out overflow-hidden
-                                    ${isSelected ? '-translate-y-6 scale-105 ring-4 ring-cyan-400 ring-offset-2 ring-offset-slate-50' : 'hover:-translate-y-1'}
-                                `}
-                            >
-                                {/* السائل (يبدأ من الأسفل للأعلى بفضل flex-col-reverse) */}
-                                {tube.map((colorClass, i) => (
-                                    <div 
-                                        key={i} 
-                                        className={`w-full h-1/4 bg-gradient-to-b ${colorClass} opacity-90 transition-all duration-300 border-t border-white/20`}
-                                    />
-                                ))}
-
-                                {/* غطاء عند الاكتمال */}
-                                {isComplete && (
-                                    <div className="absolute top-0 left-0 w-full h-2 bg-emerald-400 rounded-t-sm shadow-sm"></div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        );
-    }
-
-    if (phase === 'puzzle_solved') {
-        return (
-            <div className="text-center py-8 px-4 animate-in slide-in-from-bottom" dir="rtl">
-                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="w-10 h-10 text-emerald-600" />
-                </div>
-                <h3 className="text-2xl font-black text-gray-800 mb-2">فرز عبقري! 🎉</h3>
-                <p className="text-sm font-bold text-gray-600 mb-6">
-                    رتبتها في {moves} خطوة.<br/><br/>
-                    ضمنت {level.points} نقطة. ضاعفها الآن بسؤال ذكاء اصطناعي!
-                </p>
-                <div className="grid grid-cols-1 gap-2 max-w-sm mx-auto">
-                    {BONUS_LEVELS.map(bonus => (
-                        <button key={bonus.id} onClick={() => fetchAIQuestion(bonus)}
-                            className="bg-white border-2 border-emerald-200 p-4 rounded-xl hover:bg-emerald-50 transition-all active:scale-95 flex justify-between items-center">
-                            <span className="font-black text-sm text-gray-800">مستوى {bonus.id}</span>
-                            <span className="text-emerald-600 font-bold bg-emerald-100 px-3 py-1 rounded-lg text-xs">+{bonus.points} نقطة</span>
-                        </button>
-                    ))}
-                </div>
-            </div>
-        );
-    }
-
-    if (phase === 'loading_quiz') {
-        return (
-            <div className="flex flex-col items-center justify-center py-20 text-cyan-600 animate-pulse text-center">
-                <Loader2 className="w-12 h-12 mb-4 animate-spin mx-auto" />
-                <p className="font-black text-lg">جاري سحب سؤال التحدي...</p>
-            </div>
-        );
-    }
-
-    if (phase === 'quiz' || phase === 'summary') {
-        if (!quizQuestion) return null;
-        const isEnglishQ = /^[A-Za-z]/.test(quizQuestion?.question_text || '');
-        
-        return (
-            <div className="max-w-xl mx-auto w-full animate-in zoom-in-95 duration-300 py-4 px-2" dir="rtl">
-                {phase === 'summary' && (
-                    <div className="text-center mb-4 bg-gray-50 p-4 rounded-2xl border border-gray-200">
-                        <h2 className="text-lg font-black text-gray-800 mb-1">النقاط النهائية المكتسبة</h2>
-                        <span className="text-4xl font-black text-emerald-500">{totalScore}</span>
-                        <button onClick={() => onComplete(totalScore, true)} className="block w-full mt-4 bg-gray-800 text-white py-3 rounded-xl font-bold active:scale-95 transition-all text-sm">
-                            إنهاء وجمع النقاط <ArrowRight className="inline w-4 h-4 ml-1" />
-                        </button>
-                    </div>
-                )}
-
-                <div className="bg-white rounded-3xl p-5 shadow-lg border-t-4 border-cyan-500">
-                    <div className="flex justify-between items-center mb-4">
-                        <span className="bg-cyan-50 text-cyan-700 px-3 py-1.5 rounded-lg font-black text-xs">مكافأة: +{selectedBonus?.points}</span>
-                        {phase === 'quiz' && <span className="bg-gray-100 px-3 py-1.5 rounded-lg font-black text-xs text-red-500 animate-pulse flex items-center gap-1"><Clock className="w-3 h-3"/> {timeLeft}ث</span>}
-                    </div>
-
-                    <h3 className={`text-base font-black text-gray-800 leading-relaxed mb-5 ${isEnglishQ ? 'text-left' : 'text-right'}`} dir={isEnglishQ ? 'ltr' : 'rtl'}>
-                        {quizQuestion?.question_text}
-                    </h3>
-
-                    <div className="grid grid-cols-1 gap-2" dir={isEnglishQ ? 'ltr' : 'rtl'}>
-                        {quizQuestion?.options.map((option: string, idx: number) => {
-                            let btnClass = 'bg-white border-2 border-gray-100 text-gray-700 hover:border-cyan-300 hover:bg-cyan-50';
-                            if (phase === 'summary') {
-                                if (idx === quizQuestion.correct_index) btnClass = 'bg-emerald-500 border-emerald-600 text-white shadow-md';
-                                else if (idx === selectedAnswer) btnClass = 'bg-red-500 border-red-600 text-white shadow-md';
-                                else btnClass = 'bg-gray-50 border-gray-100 opacity-50';
-                            }
-                            return (
-                                <button key={idx} onClick={() => handleQuizAnswerRef.current?.(idx)} disabled={phase === 'summary'}
-                                    className={`${btnClass} p-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-between ${isEnglishQ ? 'text-left' : 'text-right'}`}>
-                                    <span className="flex-1 leading-snug">{option}</span>
-                                    {phase === 'summary' && idx === quizQuestion.correct_index && <CheckCircle className="w-4 h-4 flex-shrink-0 ml-2"/>}
-                                    {phase === 'summary' && idx === selectedAnswer && idx !== quizQuestion.correct_index && <XCircle className="w-4 h-4 flex-shrink-0 ml-2"/>}
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {phase === 'summary' && quizQuestion?.explanation && (
-                        <div className="mt-4 p-3 rounded-xl text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200" dir={isEnglishQ ? 'ltr' : 'rtl'}>
-                            <span className="block mb-1 opacity-70">📚 التفسير:</span>
-                            {quizQuestion.explanation}
+            {/* ── LIVE TAB ── */}
+            {activeTab === 'live' && (
+                <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden animate-in fade-in">
+                    <div className="bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 px-4 py-3 flex items-center gap-2">
+                        <Tv2 className="w-5 h-5 text-white"/>
+                        <div>
+                            <h2 className="text-white font-black text-sm">ساحة الألعاب الجماعية</h2>
+                            <p className="text-sky-100 text-[11px] font-bold">تحدى زملائك أونلاين!</p>
                         </div>
-                    )}
+                        <span className="mr-auto flex items-center gap-1 bg-white/20 px-2 py-0.5 rounded-full text-[10px] font-black text-white">
+                            <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse"/> LIVE
+                        </span>
+                    </div>
+                    <div className="p-3">
+                        <LiveGamesArena employee={employee} initialRoomId={deepLinkRoomId}/>
+                    </div>
                 </div>
-            </div>
-        );
-    }
+            )}
 
-    return null;
+            {/* ── GAMES TAB ── */}
+            {activeTab === 'games' && (
+                <>
+                    {loadingPlay ? (
+                        <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
+                            <Loader2 className="w-10 h-10 animate-spin mx-auto text-fuchsia-600 mb-3"/>
+                            <p className="text-gray-500 font-bold text-sm">جاري التحميل...</p>
+                        </div>
+
+                    ) : bonusState?.show ? (
+                        <div className="bg-white rounded-2xl shadow-xl border-2 border-amber-200 p-4">
+                            <BonusQuestion employee={employee} bonusPoints={bonusState.pts} onFinish={handleBonusFinish}/>
+                        </div>
+
+                    ) : activeGame !== null ? (
+                        <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-100">
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                                <button onClick={() => { setActiveGame(null); setSessionId(null); }}
+                                    className="flex items-center gap-1.5 text-gray-500 hover:text-gray-800 font-bold text-sm transition-colors">
+                                    <ArrowRight className="w-4 h-4"/> رجوع للقائمة
+                                </button>
+                                <div className="flex items-center gap-2">
+                                    <LevelBadge employee={employee}/>
+                                    <div className="flex items-center gap-1 bg-violet-50 px-2.5 py-1.5 rounded-lg">
+                                        <Zap className="w-3.5 h-3.5 text-violet-600"/>
+                                        <span className="text-[11px] font-bold text-violet-700">جاري اللعب</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="p-3 md:p-6">
+                                {finishAttemptMutation.isPending ? (
+                                    <div className="text-center py-20">
+                                        <Loader2 className="w-14 h-14 animate-spin mx-auto text-violet-600 mb-4"/>
+                                        <p className="text-lg font-black text-gray-700">جاري تسجيل نتيجتك...</p>
+                                    </div>
+                                ) : gameNode(activeGame)}
+                            </div>
+                        </div>
+
+                    ) : timeRemaining ? (
+                        <ArcadeCooldown hrs={timeRemaining.hrs} mins={timeRemaining.mins}/>
+
+                    ) : (
+                        <GameGrid diffProfile={diffProfile} onSelect={setActiveGame}/>
+                    )}
+                </>
+            )}
+
+            {showLeaderboard && <ArcadeLeaderboard onClose={() => setShowLeaderboard(false)}/>}
+        </div>
+    );
 }
