@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Skull, CheckCircle, XCircle, Globe, Volume2, VolumeX, Sparkles, Loader2, ArrowRight, Star, Heart } from 'lucide-react';
+import { Skull, CheckCircle, XCircle, Loader2, ArrowRight, Star, Heart } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
@@ -41,7 +41,9 @@ const CATEGORIES = {
     countries: { label: 'اسماء بلاد', words: ["مصر", "السعودية", "الإمارات", "الكويت", "البحرين", "عمان", "قطر", "اليمن", "العراق", "سوريا", "الجزائر", "تونس", "المغرب", "ليبيا", "السودان", "فلسطين", "الأردن", "لبنان", "جيبوتي", "موريتانيا", "الصومال", "تركيا", "اليابان", "الصين", "كوريا", "الهند", "باكستان", "إندونيسيا", "ماليزيا", "إيران", "بريطانيا", "فرنسا", "ألمانيا", "إيطاليا", "إسبانيا", "البرتغال", "اليونان", "السويد", "سويسرا", "هولندا", "بلجيكا", "روسيا", "أوكرانيا", "أمريكا", "كندا", "البرازيل", "الأرجنتين", "أستراليا", "المكسيك", "النرويج", "فنلندا"] },
     movies: { label: 'أفلام مصرية', words: ["الإرهابي", "العفاريت", "عمارة يعقوبيان", "الجزيرة", "الممر", "الفيل الأزرق", "الكيف", "صعيدي في الجامعة", "همام في أمستردام", "الناظر", "عبود على الحدود", "مافيا", "تيتو", "ملاكي إسكندرية", "ولاد العم", "إبراهيم الأبيض", "المصلحة", "الخلية", "كازابلانكا", "هروب اضطراري", "نادي الرجال السري", "ولاد رزق", "الفلوس", "الكنز", "حرب كرموز", "تراب الماس", "كيرة والجن", "العارف", "موسى", "الإنس والنمس", "بحبك", "عمهم", "واحد تاني", "وقفة رجالة", "البعض لا يذهب للمأذون", "مش أنا", "ديدو", "زنزانة سبعة", "الغسالة", "الصندوق الأسود", "صاحب المقام", "توأم روحي", "الحارث", "لص بغداد", "خيال مآتة", "سبع البرمبة", "الناظر", "اللمبي", "بوحة", "عوكل"] },
     series: { label: 'مسلسلات مصرية', words: ["رأفت الهجان", "ليالي الحلمية", "لن أعيش في جلباب أبي", "الاختيار", "الجماعة", "زيزينيا", "المال والبنون", "ذئاب الجبل", "يتربى في عزو", "الضوء الشارد", "البخيل وأنا", "يوميات ونيس", "أوبرا عايدة", "أرابيسك", "الشهد والدموع", "غوايش", "بوابة الحلواني", "رحلة السيد أبو العلا", "العائلة", "نصف ربيع الآخر", "الوتد", "خالتي صفية والدير", "امرأة من زمن الحب", "أم كلثوم", "أوان الورد", "أين قلبي", "أوراق مصرية", "عائلة الحاج متولي", "يوميات مدير عام", "العيان", "حديث الصباح والمساء", "أميرة في عابدين", "الليل وآخره", "أسمهان", "الملك فاروق", "أهل كايرو", "عايزة أتجوز", "نيران صديقة", "دوران شبرا", "المواطن إكس", "رقم مجهول", "طرف ثالث", "بدون ذكر أسماء", "السبع وصايا", "سجن النسا", "طريقي", "جراند أوتيل", "أفراح القبة", "الأسطورة", "كلبش"] },
-    landmarks: { label: 'معالم شهيرة', words: ["الأهرامات", "أبو الهول", "برج القاهرة", "قلعة صلاح الدين", "معبد الكرنك", "خان الخليلي", "الكعبة", "برج إيفل", "ساعة بيج بن", "سور الصين العظيم", "تمثال الحرية", "تاج محل", "الكولوسيوم", "ماتشو بيتشو", "البتراء", "برج خليفة", "برج العرب", "مسجد الشيخ زايد", "المسجد الأقصى", "قبة الصخرة", "المسجد النبوي", "الجامع الأموي", "قلعة حلب", "مدرج بصرى", "قلعة الحصن", "مدينة طروادة", "قصر الحمراء", "مسجد قرطبة", "متحف اللوفر", "الكرملين", "الساحة الحمراء", "جبل إفرست", "شلالات نياجرا", "جبل كليمنجارو", "جزيرة بالي", "جزر المالديف", "شلالات فيكتوريا", "جبال الألب", "غابات الأمازون", "نهر النيل", "نهر الأمازون", "نهر الدانوب", "نهر الراين", "نهر التايمز", "نهر السين", "جزر الكناري", "جزر هاواي", "برج بيزا المائل", "ساعة مكة", "متحف الشمع"] }
+    landmarks: { label: 'معالم شهيرة', words: ["الأهرامات", "أبو الهول", "برج القاهرة", "قلعة صلاح الدين", "معبد الكرنك", "خان الخليلي", "الكعبة", "برج إيفل", "ساعة بيج بن", "سور الصين العظيم", "تمثال الحرية", "تاج محل", "الكولوسيوم", "ماتشو بيتشو", "البتراء", "برج خليفة", "برج العرب", "مسجد الشيخ زايد", "المسجد الأقصى", "قبة الصخرة", "المسجد النبوي", "الجامع الأموي", "قلعة حلب", "مدرج بصرى", "قلعة الحصن", "مدينة طروادة", "قصر الحمراء", "مسجد قرطبة", "متحف اللوفر", "الكرملين", "الساحة الحمراء", "جبل إفرست", "شلالات نياجرا", "جبل كليمنجارو", "جزيرة بالي", "جزر المالديف", "شلالات فيكتوريا", "جبال الألب", "غابات الأمازون", "نهر النيل", "نهر الأمازون", "نهر الدانوب", "نهر الراين", "نهر التايمز", "نهر السين", "جزر الكناري", "جزر هاواي", "برج بيزا المائل", "ساعة مكة", "متحف الشمع"] },
+    egyptian_novels: { label: 'روايات مصرية', words: ["ثلاثية القاهرة", "أولاد حارتنا", "الحرافيش", "بين القصرين", "قصر الشوق", "السكرية", "زقاق المدق", "اللص والكلاب", "خان الخليلي", "ميرامار", "الكرنك", "حديث الصباح والمساء", "أفراح القبة", "يوميات نائب في الأرياف", "دعاء الكروان", "البوسطجي", "رد قلبي", "لا أنام", "في بيتنا رجل", "شيء في صدري", "لا تطفئ الشمس", "نحن لا نزرع الشوك", "الباب المفتوح", "الأرض", "الحرام", "النداهة", "عزازيل", "يوتوبيا", "الفيل الأزرق", "تراب الماس", "لوكاندة بير الوطاويط", "شيكاغو", "عمارة يعقوبيان", "نداء المجهول", "الرجل الذي فقد ظله", "أرض النفاق", "أنا حرة", "أنف وثلاث عيون", "الخيط الرفيع", "إمبراطورية ميم", "ذات", "رادوبيس", "واحة الغروب", "نادي السيارات", "طوق الحمامة", "ربع جرام", "في ممر الفئران", "صانع الظلام", "هيبتا"] },
+    global_novels: { label: 'روايات عالمية', words: ["البؤساء", "الجريمة والعقاب", "الإخوة كارامازوف", "الحرب والسلام", "مائة عام من العزلة", "الخيميائي", "الحب في زمن الكوليرا", "دون كيشوت", "شيفرة دا فينشي", "ملائكة وشياطين", "الجحيم", "الكوميديا الإلهية", "العجوز والبحر", "ذهب مع الريح", "وداعا للسلاح", "لمن تقرع الأجراس", "مزرعة الحيوان", "غاتسبي العظيم", "كبرياء وتحامل", "جين أير", "مرتفعات وذرينغ", "صورة دوريان غراي", "آمال عظيمة", "أوليفر تويست", "ديفيد كوبرفيلد", "قصة مدينتين", "مدام بوفاري", "البحث عن الزمن المفقود", "الغريب", "المسخ", "الطاعون", "محاكمة كافكا", "العمى", "الخطيئة الأولى", "آنا كارنينا", "الآمال الكبرى", "هاملت", "ماكبث", "عطيل", "روميو وجولييت", "كينغ لير", "فاوست", "الإلياذة", "الأوديسة", "موبي ديك", "جزيرة الكنز", "فرانكشتاين", "دراكولا", "أليس في بلاد العجائب"] }
 };
 
 export default function HangmanGame({ onStart, onComplete, employee }: Props) {
@@ -112,7 +114,7 @@ export default function HangmanGame({ onStart, onComplete, employee }: Props) {
                 setTimeout(() => onComplete(0, false), 3500);
             }
         } else {
-            // تحقق من الفوز (هل كل حروف الكلمة تم اكتشافها باستثناء المسافات؟)
+            // تحقق من الفوز
             const isWin = secretWord.split('').every(char => char === ' ' || newGuessed.includes(char));
             if (isWin) {
                 playSound('win');
@@ -198,7 +200,6 @@ export default function HangmanGame({ onStart, onComplete, employee }: Props) {
 
     // ─── 4. رسم المشنقة التكيفي (SVG) ──────────────────────────────────────────
     const renderHangmanSVG = () => {
-        // نحسب نسبة الأخطاء إلى إجمالي المحاولات لرسم الأجزاء بالتدريج
         const partsToShow = Math.floor((mistakes / maxMistakes) * 6);
         return (
             <svg viewBox="0 0 200 200" className="w-full h-full stroke-gray-800 fill-transparent stroke-[4px] stroke-linecap-round stroke-linejoin-round">
@@ -233,12 +234,12 @@ export default function HangmanGame({ onStart, onComplete, employee }: Props) {
                     اختر المجال والمستوى لتخمين الكلمة السرية قبل أن تكتمل المشنقة!
                 </p>
 
-                {/* اختيار المجال */}
+                {/* اختيار المجال مع دعم الأقسام الجديدة والتجاوب */}
                 <h4 className="text-sm font-black text-indigo-800 mb-2 text-right">1. اختر المجال:</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-6">
+                <div className="flex flex-wrap justify-center gap-2 mb-6">
                     {Object.entries(CATEGORIES).map(([key, data]) => (
                         <button key={key} onClick={() => setSelectedCategory(key as keyof typeof CATEGORIES)}
-                            className={`py-2 px-1 rounded-xl text-xs font-bold border-2 transition-all ${selectedCategory === key ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-md' : 'bg-white border-gray-100 text-gray-600 hover:border-indigo-200'}`}>
+                            className={`py-2 px-3 rounded-xl text-xs font-bold border-2 transition-all flex-grow min-w-[30%] ${selectedCategory === key ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-md scale-105' : 'bg-white border-gray-100 text-gray-600 hover:border-indigo-200'}`}>
                             {data.label}
                         </button>
                     ))}
@@ -256,7 +257,7 @@ export default function HangmanGame({ onStart, onComplete, employee }: Props) {
                     ))}
                 </div>
 
-                <button onClick={startGame} disabled={starting} className="w-full max-w-sm mx-auto mt-auto bg-gradient-to-r from-indigo-600 to-purple-800 text-white py-4 rounded-2xl font-black text-base shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex justify-center items-center gap-2">
+                <button onClick={startGame} disabled={starting} className="w-full max-w-sm mx-auto mt-auto bg-gradient-to-r from-indigo-600 to-purple-800 text-white py-4 rounded-2xl font-black text-base shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 flex justify-center items-center gap-2 shrink-0">
                     {starting ? <Loader2 className="w-6 h-6 animate-spin"/> : '🎮 ابدأ التحدي الآن'}
                 </button>
             </div>
@@ -264,18 +265,6 @@ export default function HangmanGame({ onStart, onComplete, employee }: Props) {
     }
 
     if (phase === 'playing') {
-        // تفكيك الكلمة لعرضها 
-        const wordDisplay = secretWord.split('').map((char, index) => {
-            if (char === ' ') return <span key={index} className="w-4"></span>; // مسافة الكلمات
-            const isRevealed = guessedLetters.includes(char) || mistakes >= maxMistakes;
-            const isMissing = mistakes >= maxMistakes && !guessedLetters.includes(char);
-            return (
-                <span key={index} className={`w-8 h-10 flex items-center justify-center font-black text-xl border-b-4 ${isRevealed ? (isMissing ? 'text-red-500 border-red-200' : 'text-gray-800 border-indigo-500') : 'text-transparent border-gray-300'}`}>
-                    {isRevealed ? char : '_'}
-                </span>
-            );
-        });
-
         return (
             <div className="max-w-md mx-auto flex flex-col h-[85vh] animate-in slide-in-from-bottom" dir="rtl">
                 
@@ -292,18 +281,30 @@ export default function HangmanGame({ onStart, onComplete, employee }: Props) {
                 </div>
 
                 {/* Hangman SVG Area */}
-                <div className="w-full h-32 md:h-40 bg-gradient-to-b from-slate-50 to-gray-100 rounded-3xl border border-gray-200 shadow-inner flex items-center justify-center shrink-0 mb-4 p-2 relative">
-                    <span className="absolute top-2 right-3 text-[10px] font-black text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full">{CATEGORIES[selectedCategory as keyof typeof CATEGORIES].label}</span>
+                <div className="w-full h-28 md:h-36 bg-gradient-to-b from-slate-50 to-gray-100 rounded-3xl border border-gray-200 shadow-inner flex items-center justify-center shrink-0 mb-4 p-2 relative">
+                    <span className="absolute top-2 right-3 text-[10px] font-black text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">{CATEGORIES[selectedCategory as keyof typeof CATEGORIES].label}</span>
                     {renderHangmanSVG()}
                 </div>
 
-                {/* Word Display Area */}
-                <div className="flex justify-center flex-wrap gap-1.5 mb-6 bg-white p-4 rounded-3xl shadow-sm border border-gray-100 min-h-[80px] items-center shrink-0" dir="rtl">
-                    {wordDisplay}
+                {/* 💡 Word Display Area (Smart Word Wrapping) */}
+                <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 mb-6 bg-white p-4 rounded-3xl shadow-sm border border-gray-100 min-h-[80px] content-center shrink-0" dir="rtl">
+                    {secretWord.split(' ').filter(Boolean).map((word, wordIdx) => (
+                        <div key={wordIdx} className="flex gap-1.5" dir="rtl">
+                            {word.split('').map((char, charIdx) => {
+                                const isRevealed = guessedLetters.includes(char) || mistakes >= maxMistakes;
+                                const isMissing = mistakes >= maxMistakes && !guessedLetters.includes(char);
+                                return (
+                                    <span key={charIdx} className={`w-6 md:w-8 h-10 flex items-center justify-center font-black text-lg md:text-xl border-b-4 rounded-t-md transition-all ${isRevealed ? (isMissing ? 'text-red-500 border-red-300 bg-red-50' : 'text-gray-800 border-indigo-500 bg-indigo-50/30') : 'text-transparent border-gray-300'}`}>
+                                        {isRevealed ? char : '_'}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    ))}
                 </div>
 
                 {/* Arabic Keyboard 6x6 */}
-                <div className="mt-auto grid grid-cols-6 gap-1.5 bg-gray-50 p-2 rounded-3xl border border-gray-200 shadow-inner overflow-hidden">
+                <div className="mt-auto grid grid-cols-6 gap-1.5 bg-gray-50 p-2 rounded-3xl border border-gray-200 shadow-inner overflow-hidden shrink-0">
                     {ARABIC_KEYBOARD.map((letter) => {
                         const isGuessed = guessedLetters.includes(letter);
                         const isCorrect = isGuessed && secretWord.includes(letter);
