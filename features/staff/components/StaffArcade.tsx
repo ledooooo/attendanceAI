@@ -6,7 +6,7 @@ import confetti from 'canvas-confetti';
 import {
     Loader2, Zap, Gamepad2, Tv2,
     ArrowRight, Trophy,
-    Dices, Lock, Brain, Calculator, Flame,
+    Dices, Lock, Brain, Calculator, Flame, FlaskConical // 👈 أضفنا أيقونة الزجاجة
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -22,18 +22,21 @@ import MemoryMatchGame          from '../../../components/gamification/games/Mem
 import MedicalQuizRush          from '../../../components/gamification/games/MedicalQuizRush';
 import DoseCalculatorChallenge  from '../../../components/gamification/games/DoseCalculatorChallenge';
 import MoveTheMatch             from '../../../components/gamification/games/MoveTheMatch';
+import BottleSortGame           from '../../../components/gamification/games/BottleSortGame'; // 👈 استيراد اللعبة الجديدة
 import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
 
 interface Props { employee: Employee; deepLinkRoomId?: string | null; }
 
-// ─── 7 Solo Games ─────────────────────────────────────────────────────────────
+// ─── 8 Solo Games ─────────────────────────────────────────────────────────────
 const GAME_CATALOG = [
     { key: 'spin',     title: 'عجلة الحظ',      icon: Dices,      gradient: 'from-fuchsia-500 to-pink-600',  bg: 'from-fuchsia-50 to-pink-50',  border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
-    { key: 'safe',     title: 'الخزنة السرية',   icon: Lock,       gradient: 'from-emerald-500 to-teal-600',  bg: 'from-emerald-50 to-teal-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق', pts: '20',    tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
-    { key: 'memory',   title: 'تطابق الذاكرة',   icon: Gamepad2,   gradient: 'from-orange-500 to-amber-600',  bg: 'from-orange-50 to-amber-50',  border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',  pts: '20',    tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
-    { key: 'quiz',     title: 'سباق المعرفة',    icon: Brain,      gradient: 'from-indigo-500 to-purple-600', bg: 'from-indigo-50 to-purple-50', border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة', pts: '5-25',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
+    { key: 'safe',     title: 'الخزنة السرية',   icon: Lock,       gradient: 'from-emerald-500 to-teal-600',  bg: 'from-emerald-50 to-teal-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق', pts: '20-50',    tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
+    { key: 'memory',   title: 'تطابق الذاكرة',   icon: Gamepad2,   gradient: 'from-orange-500 to-amber-600',  bg: 'from-orange-50 to-amber-50',  border: 'border-orange-100 hover:border-orange-300',   tag: 'قوة ذاكرة',  pts: '10-40',    tagColor: 'text-orange-700',  ptsColor: 'text-orange-600'  },
+    { key: 'quiz',     title: 'سباق المعرفة',    icon: Brain,      gradient: 'from-indigo-500 to-purple-600', bg: 'from-indigo-50 to-purple-50', border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة', pts: '15-25',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
     { key: 'dose',     title: 'حساب الجرعات',    icon: Calculator, gradient: 'from-rose-500 to-red-600',      bg: 'from-rose-50 to-red-50',      border: 'border-rose-100 hover:border-rose-300',       tag: 'دقة حسابية', pts: '10-30', tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
-    { key: 'match',    title: 'عود الثقاب',      icon: Flame,      gradient: 'from-amber-500 to-orange-600',  bg: 'from-amber-50 to-orange-50',  border: 'border-amber-100 hover:border-amber-300',     tag: 'تفاعلي 🔥',  pts: '15-48', tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
+    { key: 'match',    title: 'عود الثقاب',      icon: Flame,      gradient: 'from-amber-500 to-orange-600',  bg: 'from-amber-50 to-orange-50',  border: 'border-amber-100 hover:border-amber-300',     tag: 'تفاعلي 🔥',  pts: '20-50', tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
+    // 👈 أضفنا لعبة ترتيب الزجاجات هنا
+    { key: 'bottle',   title: 'ترتيب الزجاجات',  icon: FlaskConical, gradient: 'from-cyan-500 to-blue-600',   bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'منطق وتركيز', pts: '20-50', tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
 ];
 
 // ─── Game Grid ────────────────────────────────────────────────────────────────
@@ -53,7 +56,7 @@ function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelec
                 </div>
             </div>
 
-            {/* 7-game grid */}
+            {/* Games grid */}
             <div className="grid grid-cols-2 gap-2">
                 {GAME_CATALOG.map(g => {
                     const Icon = g.icon;
@@ -152,11 +155,16 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             if (!result) return;
             const { isWin, points, gameName } = result;
             if (isWin && points > 0) {
-                playWinSound();
-                fireConfetti();
+                // playWinSound(); 
+                // fireConfetti(); 
+                // (تم إيقاف تشغيلهم هنا لأن اللعبة نفسها أصبحت تطلقهم عند الفوز لتجنب تكرار الصوت)
+                
                 toast.success(`بطل! كسبت ${points} نقطة 🎉`, { duration: 4000, icon: '🏆', style: { background: '#10b981', color: 'white', fontWeight: 'bold' } });
-                const bonusPts = Math.max(5, Math.round(points * 0.5));
-                setBonusState({ show: true, pts: bonusPts, gameName });
+                
+                // لقد قمنا بدمج سؤال الذكاء الاصطناعي الإضافي (الـ Bonus) داخل الألعاب نفسها بالفعل
+                // لذلك لا نحتاج لفتح هذه النافذة المنبثقة القديمة إلا للألعاب التي لم يتم تحديثها بعد (إن وجدت)
+                setActiveGame(null);
+                setSessionId(null);
             } else {
                 toast.error('حظ أوفر! تعال جرب تاني بعد 5 ساعات 💔', { duration: 4000 });
                 setActiveGame(null);
@@ -187,7 +195,8 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             onStart:    () => consumeAttempt(gameName),
             onComplete: (p: number, w: boolean) => finishAttemptMutation.mutate({ points: p, isWin: w, gameName }),
         };
-        const simple = { onStart: props.onStart, onComplete: props.onComplete };
+        const simple = { onStart: props.onStart, onComplete: props.onComplete, employee };
+        
         switch (key) {
             case 'spin':     return <SpinAndAnswerGame {...props}/>;
             case 'safe':     return <SafeCrackerGame {...simple}/>;
@@ -195,6 +204,7 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             case 'quiz':     return <MedicalQuizRush {...props}/>;
             case 'dose':     return <DoseCalculatorChallenge {...props}/>;
             case 'match':    return <MoveTheMatch {...simple}/>;
+            case 'bottle':   return <BottleSortGame {...simple}/>; // 👈 استدعاء لعبة الزجاجات هنا
             default:         return null;
         }
     };
