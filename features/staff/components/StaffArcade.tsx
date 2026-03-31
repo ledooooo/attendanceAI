@@ -6,7 +6,7 @@ import confetti from 'canvas-confetti';
 import {
     Loader2, Zap, Gamepad2, Tv2,
     ArrowRight, Trophy,
-    Dices, Lock, Brain, Calculator, Flame, FlaskConical // 👈 أضفنا أيقونة الزجاجة
+    Dices, Lock, Brain, Calculator, Flame, FlaskConical, Skull // 👈 أضفنا أيقونة الجمجمة للمشنقة
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -22,7 +22,8 @@ import MemoryMatchGame          from '../../../components/gamification/games/Mem
 import MedicalQuizRush          from '../../../components/gamification/games/MedicalQuizRush';
 import DoseCalculatorChallenge  from '../../../components/gamification/games/DoseCalculatorChallenge';
 import MoveTheMatch             from '../../../components/gamification/games/MoveTheMatch';
-import BottleSortGame           from '../../../components/gamification/games/BottleSortGame'; // 👈 استيراد اللعبة الجديدة
+import BottleSortGame           from '../../../components/gamification/games/BottleSortGame';
+import HangmanGameSingle        from '../../../components/gamification/games/HangmanGameSingle'; // 👈 استيراد اللعبة الجديدة
 import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
 
 interface Props { employee: Employee; deepLinkRoomId?: string | null; }
@@ -35,8 +36,9 @@ const GAME_CATALOG = [
     { key: 'quiz',     title: 'سباق المعرفة',    icon: Brain,      gradient: 'from-indigo-500 to-purple-600', bg: 'from-indigo-50 to-purple-50', border: 'border-indigo-100 hover:border-indigo-300',   tag: 'معرفة+سرعة', pts: '15-25',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
     { key: 'dose',     title: 'حساب الجرعات',    icon: Calculator, gradient: 'from-rose-500 to-red-600',      bg: 'from-rose-50 to-red-50',      border: 'border-rose-100 hover:border-rose-300',       tag: 'دقة حسابية', pts: '10-30', tagColor: 'text-rose-700',    ptsColor: 'text-rose-600'    },
     { key: 'match',    title: 'عود الثقاب',      icon: Flame,      gradient: 'from-amber-500 to-orange-600',  bg: 'from-amber-50 to-orange-50',  border: 'border-amber-100 hover:border-amber-300',     tag: 'تفاعلي 🔥',  pts: '20-50', tagColor: 'text-amber-700',   ptsColor: 'text-amber-600'   },
-    // 👈 أضفنا لعبة ترتيب الزجاجات هنا
     { key: 'bottle',   title: 'ترتيب الزجاجات',  icon: FlaskConical, gradient: 'from-cyan-500 to-blue-600',   bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'منطق وتركيز', pts: '20-50', tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
+    // 👈 أضفنا لعبة المشنقة هنا
+    { key: 'hangman',  title: 'لعبة المشنقة',    icon: Skull,      gradient: 'from-slate-600 to-slate-800',   bg: 'from-slate-50 to-slate-100',  border: 'border-slate-200 hover:border-slate-400',     tag: 'تخمين وثقافة', pts: '15-60', tagColor: 'text-slate-700',   ptsColor: 'text-slate-600'   },
 ];
 
 // ─── Game Grid ────────────────────────────────────────────────────────────────
@@ -204,7 +206,8 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             case 'quiz':     return <MedicalQuizRush {...props}/>;
             case 'dose':     return <DoseCalculatorChallenge {...props}/>;
             case 'match':    return <MoveTheMatch {...simple}/>;
-            case 'bottle':   return <BottleSortGame {...simple}/>; // 👈 استدعاء لعبة الزجاجات هنا
+            case 'bottle':   return <BottleSortGame {...simple}/>;
+            case 'hangman':  return <HangmanGameSingle {...simple}/>; // 👈 استدعاء اللعبة الجديدة
             default:         return null;
         }
     };
