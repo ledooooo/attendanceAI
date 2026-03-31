@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Droplet, CheckCircle, XCircle, Globe, Volume2, VolumeX, Loader2, ArrowRight, Star, Clock, RotateCcw, Beaker } from 'lucide-react';
+import { Droplet, CheckCircle, XCircle, Globe, Volume2, VolumeX, Loader2, ArrowRight, Star, Clock, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
@@ -11,28 +11,29 @@ interface Props {
     employee?: Employee;
 }
 
-// ─── الألوان المتاحة للسوائل ──────────────────────────────────────────────────
+// ─── الألوان المتاحة للسوائل مع تدرجات واقعية ────────────────────────────────
 const COLORS = [
-    'from-red-400 to-red-600',      // أحمر
-    'from-blue-400 to-blue-600',    // أزرق
-    'from-emerald-400 to-teal-600', // أخضر
-    'from-amber-300 to-yellow-500', // أصفر
-    'from-purple-400 to-purple-600',// بنفسجي
-    'from-cyan-300 to-cyan-500'     // سماوي
+    'from-red-500 to-red-700',      // أحمر
+    'from-blue-500 to-blue-700',    // أزرق
+    'from-emerald-400 to-emerald-600', // أخضر
+    'from-amber-400 to-orange-500', // برتقالي/أصفر
+    'from-purple-500 to-purple-700',// بنفسجي
+    'from-cyan-400 to-cyan-600'     // سماوي
 ];
 
-// ─── المستويات ──────────────────────────────────────────────────────────────
+// ─── المستويات (تم تقليل التايمر وتخفيض النقاط) ──────────────────────────────
 const LEVELS = [
-    { id: 'easy', label: 'سهل', colors: 3, empty: 2, time: 120, points: 20 },
-    { id: 'medium', label: 'متوسط', colors: 4, empty: 2, time: 180, points: 30 },
-    { id: 'hard', label: 'صعب', colors: 5, empty: 2, time: 240, points: 40 },
-    { id: 'expert', label: 'خبير', colors: 6, empty: 2, time: 300, points: 50 }
+    { id: 'easy', label: 'سهل', colors: 3, empty: 2, time: 60, points: 10 },
+    { id: 'medium', label: 'متوسط', colors: 4, empty: 2, time: 90, points: 15 },
+    { id: 'hard', label: 'صعب', colors: 5, empty: 2, time: 120, points: 20 },
+    { id: 'expert', label: 'خبير', colors: 6, empty: 2, time: 150, points: 25 }
 ];
 
+// أقصى بونص = 15. أقصى مجموع (خبير + بونص صعب) = 25 + 15 = 40 نقطة
 const BONUS_LEVELS = [
-    { id: 'سهل', points: 10, time: 20 },
-    { id: 'متوسط', points: 20, time: 20 },
-    { id: 'صعب', points: 30, time: 30 }
+    { id: 'سهل', points: 5, time: 15 },
+    { id: 'متوسط', points: 10, time: 20 },
+    { id: 'صعب', points: 15, time: 30 }
 ];
 
 export default function WaterSortGame({ onStart, onComplete, employee }: Props) {
@@ -56,6 +57,29 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
 
     const handleQuizAnswerRef = useRef<(idx: number) => void>();
+    
+    // ─── مرجع للصوتيات السريعة لتجنب التهنيج ──────────────────────────────────
+    const pourAudioRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        pourAudioRef.current = new Audio('/click.mp3'); // يفضل رفع صوت ماء (water-pour.mp3)
+    }, []);
+
+    const playPourSound = () => {
+        if (!soundEnabled || !pourAudioRef.current) return;
+        pourAudioRef.current.currentTime = 0;
+        pourAudioRef.current.volume = 0.3;
+        pourAudioRef.current.play().catch(() => {});
+    };
+
+    const playSystemSound = useCallback((type: 'win' | 'lose') => {
+        if (!soundEnabled) return;
+        try {
+            const audio = new Audio(type === 'win' ? '/applause.mp3' : '/fail.mp3');
+            audio.volume = 0.6;
+            audio.play().catch(() => {});
+        } catch {}
+    }, [soundEnabled]);
 
     // ─── إعدادات اللغة ─────────────────────────────────────────────────────────
     const isMedicalEnglishSpecialty = ['بشر', 'أسنان', 'صيدل', 'اسره', 'معمل', 'تمريض'].some(s => 
@@ -70,21 +94,6 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
 
     const isEn = getEffectiveLanguage() === 'en';
 
-    const playSound = useCallback((type: 'win' | 'lose' | 'pour') => {
-        if (!soundEnabled) return;
-        try {
-            if (type === 'pour') {
-                const audio = new Audio('/click.mp3'); // يفضل رفع صوت ماء (water-pour.mp3)
-                audio.volume = 0.2;
-                audio.play().catch(() => {});
-            } else {
-                const audio = new Audio(type === 'win' ? '/applause.mp3' : '/fail.mp3');
-                audio.volume = 0.6;
-                audio.play().catch(() => {});
-            }
-        } catch {}
-    }, [soundEnabled]);
-
     // ─── توليد اللغز العشوائي ──────────────────────────────────────────────────
     const generatePuzzle = (numColors: number, numEmpty: number) => {
         let allLiquid: string[] = [];
@@ -92,16 +101,14 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
             for (let j = 0; j < 4; j++) allLiquid.push(COLORS[i]);
         }
         
-        // خلط السوائل
-        allLiquid.sort(() => Math.random() - 0.5);
+        allLiquid.sort(() => Math.random() - 0.5); // خلط السوائل
         
         let newTubes: string[][] = [];
         for (let i = 0; i < numColors; i++) {
             newTubes.push(allLiquid.slice(i * 4, (i + 1) * 4));
         }
-        for (let i = 0; i < numEmpty; i++) {
-            newTubes.push([]);
-        }
+        for (let i = 0; i < numEmpty; i++) newTubes.push([]);
+        
         return newTubes;
     };
 
@@ -111,7 +118,7 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
         
         const initial = generatePuzzle(level.colors, level.empty);
         setTubes(initial);
-        setInitialTubes(initial); // حفظ النسخة الأصلية للإعادة
+        setInitialTubes(initial); 
         setMoves(0);
         setTotalScore(0);
         setTimeLeft(level.time);
@@ -129,14 +136,13 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
     // ─── منطق سكب السوائل ───────────────────────────────────────────────────
     const handleTubeClick = (index: number) => {
         if (selectedTube === null) {
-            // اختيار أنبوب (فقط إذا لم يكن فارغاً ولم يكن مكتملاً)
             if (tubes[index].length > 0) {
                 const isComplete = tubes[index].length === 4 && new Set(tubes[index]).size === 1;
                 if (!isComplete) setSelectedTube(index);
             }
         } else {
             if (selectedTube === index) {
-                setSelectedTube(null); // إلغاء التحديد
+                setSelectedTube(null); 
             } else {
                 pourLiquid(selectedTube, index);
             }
@@ -148,17 +154,16 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
         const dest = [...tubes[to]];
         
         if (dest.length === 4) {
-            setSelectedTube(null); // الأنبوب ممتلئ
+            setSelectedTube(null); 
             return; 
         }
         
         const colorToMove = source[source.length - 1];
         if (dest.length > 0 && dest[dest.length - 1] !== colorToMove) {
-            setSelectedTube(null); // الألوان لا تتطابق
+            setSelectedTube(null); 
             return;
         }
 
-        // حساب كمية السائل المتطابق في الأنبوب المصدر
         let count = 0;
         for (let i = source.length - 1; i >= 0; i--) {
             if (source[i] === colorToMove) count++;
@@ -178,12 +183,11 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
         setTubes(newTubes);
         setSelectedTube(null);
         setMoves(m => m + 1);
-        playSound('pour');
+        playPourSound(); // تشغيل صوت النقلة السريع
 
-        // التحقق من الفوز
         const isWin = newTubes.every(tube => tube.length === 0 || (tube.length === 4 && new Set(tube).size === 1));
         if (isWin) {
-            playSound('win');
+            playSystemSound('win');
             confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
             setTotalScore(level.points);
             toast.success(isEn ? 'Brilliant!' : 'عمل رائع!');
@@ -191,18 +195,17 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
         }
     };
 
-    // مؤقت اللغز
     useEffect(() => {
         let timer: ReturnType<typeof setInterval>;
         if (phase === 'playing' && timeLeft > 0) {
             timer = setInterval(() => setTimeLeft(p => p - 1), 1000);
         } else if (phase === 'playing' && timeLeft === 0) {
-            playSound('lose');
+            playSystemSound('lose');
             toast.error(isEn ? 'Time is up!' : 'انتهى الوقت للأسف!');
             setTimeout(() => onComplete(0, false), 2500);
         }
         return () => clearInterval(timer);
-    }, [phase, timeLeft]);
+    }, [phase, timeLeft, playSystemSound]);
 
     // ─── جلب سؤال الذكاء الاصطناعي الإضافي ──────────────────────────────────
     const fetchAIQuestion = async (bonus: typeof BONUS_LEVELS[0]) => {
@@ -252,14 +255,14 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
         setSelectedAnswer(idx);
         
         if (idx === quizQuestion?.correct_index) {
-            playSound('win');
+            playSystemSound('win');
             confetti({ particleCount: 100, spread: 60, origin: { y: 0.6 } });
             setTotalScore(prev => prev + selectedBonus!.points);
         } else {
-            playSound('lose');
+            playSystemSound('lose');
         }
         setPhase('summary');
-    }, [selectedAnswer, quizQuestion, selectedBonus, playSound]);
+    }, [selectedAnswer, quizQuestion, selectedBonus, playSystemSound]);
 
     useEffect(() => { handleQuizAnswerRef.current = handleQuizAnswer; }, [handleQuizAnswer]);
 
@@ -281,11 +284,11 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
     if (phase === 'setup') {
         return (
             <div className="text-center py-4 px-2 animate-in zoom-in-95 flex flex-col h-[85vh] overflow-y-auto pb-10">
-                <div className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl shrink-0">
+                <div className="w-20 h-20 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xl shrink-0">
                     <Droplet className="w-10 h-10 text-white animate-bounce" />
                 </div>
                 <h3 className="text-2xl font-black text-gray-800 mb-2">{isEn ? 'Water Sort' : 'فرز السوائل'}</h3>
-                <p className="text-xs font-bold text-gray-500 mb-6 max-w-sm mx-auto leading-relaxed">
+                <p className="text-xs font-bold text-gray-500 mb-6 max-w-xs mx-auto leading-relaxed">
                     {isEn ? 'Pour liquids between tubes until each tube contains only one color!' : 'قم بسكب السوائل بين الأنابيب حتى يصبح كل أنبوب بلون واحد فقط!'}
                 </p>
 
@@ -324,10 +327,10 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
             <div className="max-w-md mx-auto flex flex-col h-[85vh] animate-in slide-in-from-bottom" dir="rtl">
                 {/* Header */}
                 <div className="flex justify-between items-center mb-4 px-2 shrink-0">
-                    <button onClick={restartLevel} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-xl font-black text-xs border border-gray-200 flex items-center gap-1 transition-colors">
+                    <button onClick={restartLevel} className="bg-gray-50 hover:bg-gray-100 text-gray-700 px-3 py-2 rounded-xl font-black text-xs border border-gray-200 flex items-center gap-1 shadow-sm transition-all active:scale-95">
                         <RotateCcw className="w-3.5 h-3.5" /> {isEn ? 'Restart' : 'إعادة'}
                     </button>
-                    <div className="bg-cyan-50 text-cyan-800 px-3 py-2 rounded-xl font-black text-xs border border-cyan-200">
+                    <div className="bg-cyan-50 text-cyan-800 px-3 py-2 rounded-xl font-black text-xs border border-cyan-200 shadow-sm">
                         التحركات: {moves}
                     </div>
                     <div className={`px-3 py-2 rounded-xl font-black flex items-center gap-1 text-sm border shadow-sm ${timeLeft <= 20 ? 'bg-red-500 text-white border-red-600 animate-pulse' : 'bg-white text-gray-700 border-gray-200'}`}>
@@ -335,8 +338,12 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
                     </div>
                 </div>
 
-                {/* Tubes Area */}
-                <div className="flex-1 flex flex-wrap items-center justify-center gap-3 md:gap-5 p-4 bg-slate-50 rounded-3xl border border-gray-200 shadow-inner overflow-hidden">
+                {/* Tubes Area (Modern Glass Design) */}
+                <div className="flex-1 flex flex-wrap items-center justify-center gap-3 md:gap-5 p-4 bg-gradient-to-br from-gray-800 to-gray-900 rounded-[2.5rem] border-[6px] border-gray-700 shadow-inner overflow-hidden relative">
+                    
+                    {/* إضاءة خلفية للزجاج */}
+                    <div className="absolute top-10 left-1/2 -translate-x-1/2 w-3/4 h-3/4 bg-cyan-500/10 blur-3xl pointer-events-none"></div>
+
                     {tubes.map((tube, index) => {
                         const isSelected = selectedTube === index;
                         const isComplete = tube.length === 4 && new Set(tube).size === 1;
@@ -345,21 +352,27 @@ export default function WaterSortGame({ onStart, onComplete, employee }: Props) 
                             <div 
                                 key={index} 
                                 onClick={() => handleTubeClick(index)}
-                                className={`relative w-12 md:w-14 h-36 md:h-44 flex flex-col-reverse rounded-b-[2rem] border-x-4 border-b-4 border-white/80 bg-black/10 shadow-lg cursor-pointer transition-transform duration-300 ease-out overflow-hidden
-                                    ${isSelected ? '-translate-y-6 scale-105 ring-4 ring-cyan-400 ring-offset-2 ring-offset-slate-50' : 'hover:-translate-y-1'}
+                                className={`
+                                    relative w-12 md:w-14 h-40 md:h-48 flex flex-col-reverse rounded-b-full border-x-4 border-b-4 
+                                    border-white/60 bg-white/10 backdrop-blur-sm shadow-xl cursor-pointer 
+                                    transition-all duration-300 ease-out overflow-hidden z-10
+                                    ${isSelected ? '-translate-y-6 scale-105 ring-4 ring-cyan-300 ring-offset-2 ring-offset-gray-800 shadow-[0_20px_30px_-10px_rgba(34,211,238,0.4)]' : 'hover:-translate-y-2'}
                                 `}
                             >
-                                {/* السائل (يبدأ من الأسفل للأعلى بفضل flex-col-reverse) */}
+                                {/* اللمعة الزجاجية الواقعية على اليسار */}
+                                <div className="absolute top-2 left-1.5 w-2 h-[85%] bg-gradient-to-b from-white/70 to-transparent rounded-full pointer-events-none z-20"></div>
+
+                                {/* السائل الداخلي */}
                                 {tube.map((colorClass, i) => (
                                     <div 
                                         key={i} 
-                                        className={`w-full h-1/4 bg-gradient-to-b ${colorClass} opacity-90 transition-all duration-300 border-t border-white/20`}
+                                        className={`w-full h-1/4 bg-gradient-to-b ${colorClass} opacity-95 transition-all duration-300 border-t border-white/20`}
                                     />
                                 ))}
 
-                                {/* غطاء عند الاكتمال */}
+                                {/* غطاء الأنبوب عند الاكتمال */}
                                 {isComplete && (
-                                    <div className="absolute top-0 left-0 w-full h-2 bg-emerald-400 rounded-t-sm shadow-sm"></div>
+                                    <div className="absolute top-0 left-0 w-full h-3 bg-white/80 rounded-t-sm shadow-sm z-30"></div>
                                 )}
                             </div>
                         );
