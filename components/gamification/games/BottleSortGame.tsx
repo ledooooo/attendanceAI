@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { FlaskConical, CheckCircle, XCircle, Globe, Volume2, VolumeX, Sparkles, Loader2, ArrowRight, Star, Target } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -11,7 +11,7 @@ interface Props {
     employee?: Employee;
 }
 
-// 🧪 إعدادات الزجاجات والهدف
+// 🧪 إعدادات الزجاجات
 const BOTTLE_COLORS = [
     { id: 'yellow', colorClass: 'bg-yellow-400', label: 'أصفر' },
     { id: 'red', colorClass: 'bg-red-500', label: 'أحمر' },
@@ -21,8 +21,7 @@ const BOTTLE_COLORS = [
 ];
 
 const TARGET_ORDER = ['yellow', 'red', 'blue', 'green', 'black'];
-
-const MAX_ATTEMPTS = 15; // 👈 تم زيادة المحاولات إلى 15
+const MAX_ATTEMPTS = 15;
 const BASE_POINTS = 20;
 
 const BONUS_LEVELS = [
@@ -38,8 +37,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
     // Bottle Logic
     const [bottles, setBottles] = useState<string[]>([]);
     const [selectedBottle, setSelectedBottle] = useState<number | null>(null);
-    
-    // 👈 تحديث History ليحفظ ترتيب الألوان في كل محاولة
     const [history, setHistory] = useState<{ attempt: number, correctCount: number, arrangement: string[] }[]>([]);
     
     // Quiz & Settings
@@ -50,6 +47,9 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
     const [selectedBonus, setSelectedBonus] = useState<typeof BONUS_LEVELS[0] | null>(null);
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
     const [timeLeft, setTimeLeft] = useState(0);
+
+    // مرجع للوظيفة لتجنب مشاكل اللوب في الـ Timer
+    const handleQuizAnswerRef = useRef<(idx: number) => void>();
 
     const isMedicalEnglishSpecialty = ['بشر', 'أسنان', 'صيدل', 'اسره', 'معمل', 'تمريض'].some(s => 
         (employee?.job_title || '').includes(s) || (employee?.specialty || '').includes(s)
@@ -72,7 +72,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         } catch {}
     }, [soundEnabled]);
 
-    // ─── 1. بدء اللعبة ──────────────────────────────────────────────────────────
+    // ─── 1. بدء اللعبة ───────────────────────────────────
     const startGame = async () => {
         setStarting(true);
         try { await onStart(); } catch { setStarting(false); return; }
@@ -90,7 +90,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         setStarting(false);
     };
 
-    // ─── 2. تحريك الزجاجات والفحص ────────────────────────────────────────────────
+    // ─── 2. تحريك الزجاجات ────────────────────────────────
     const handleBottleClick = (idx: number) => {
         if (selectedBottle === null) {
             setSelectedBottle(idx);
@@ -110,12 +110,9 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         if (selectedBottle !== null) setSelectedBottle(null);
 
         let correctCount = 0;
-        bottles.forEach((b, i) => {
-            if (b === TARGET_ORDER[i]) correctCount++;
-        });
+        bottles.forEach((b, i) => { if (b === TARGET_ORDER[i]) correctCount++; });
 
         const currentAttempt = history.length + 1;
-        // حفظ ترتيب الألوان في السجل
         const newHistory = [{ attempt: currentAttempt, correctCount, arrangement: [...bottles] }, ...history];
         setHistory(newHistory);
 
@@ -132,7 +129,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         }
     };
 
-    // ─── 3. جلب الأسئلة من الذكاء الاصطناعي (معالج آمن للأخطاء) ───────────────────────
+    // ─── 3. الجلب الآمن للذكاء الاصطناعي ────────────────────
     const fetchAIQuestion = async (bonus: typeof BONUS_LEVELS[0]) => {
         setSelectedBonus(bonus);
         setPhase('loading_quiz');
@@ -147,13 +144,12 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                     language: isEn ? 'English (Professional Medical Terminology)' : 'ar',
                     include_hint: false,
                     game_type: 'mcq',
-                    question_count: 5 // توليد 5 لإثراء القاعدة
+                    question_count: 5
                 }
             });
 
             if (error || !data) throw new Error('Fetch failed');
 
-            // استخراج السؤال الأول بشكل آمن جداً مهما كان شكل الرد (مصفوفة أو كائن)
             let qArray = [];
             if (Array.isArray(data)) qArray = data;
             else if (data.questions && Array.isArray(data.questions)) qArray = data.questions;
@@ -164,11 +160,16 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
             const q = qArray[0]; 
             const charToIndex: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
             
+            // استخراج آمن 100% للخيارات لمنع الكراش
+            const safeOptions = Array.isArray(q.options) && q.options.length >= 4 
+                ? q.options 
+                : [q.option_a || 'خيار 1', q.option_b || 'خيار 2', q.option_c || 'خيار 3', q.option_d || 'خيار 4'];
+
             setQuizQuestion({
-                question_text: q.question_text || q.question,
-                options: [q.option_a, q.option_b, q.option_c, q.option_d],
+                question_text: q.question_text || q.question || 'السؤال غير متاح',
+                options: safeOptions,
                 correct_index: charToIndex[q.correct_option || q.correct_answer] ?? 0,
-                explanation: q.explanation
+                explanation: q.explanation || 'تم تسجيل الإجابة.'
             });
             
             setTimeLeft(bonus.time);
@@ -180,22 +181,12 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         }
     };
 
-    // ─── 4. مؤقت السؤال وحله ──────────────────────────────────────────────────
-    useEffect(() => {
-        let timer: ReturnType<typeof setInterval>;
-        if (phase === 'quiz' && timeLeft > 0 && selectedAnswer === null) {
-            timer = setInterval(() => setTimeLeft(p => p - 1), 1000);
-        } else if (phase === 'quiz' && timeLeft === 0 && selectedAnswer === null) {
-            handleQuizAnswer(-1);
-        }
-        return () => clearInterval(timer);
-    }, [phase, timeLeft, selectedAnswer]);
-
-    const handleQuizAnswer = (idx: number) => {
+    // ─── 4. مؤقت آمن لا يهنج الصفحة ────────────────────────
+    const handleQuizAnswer = useCallback((idx: number) => {
         if (selectedAnswer !== null) return;
         setSelectedAnswer(idx);
         
-        const isCorrect = idx === quizQuestion.correct_index;
+        const isCorrect = idx === quizQuestion?.correct_index;
         
         if (isCorrect) {
             playSound('win');
@@ -206,12 +197,31 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
             playSound('lose');
             toast.error('إجابة خاطئة!');
         }
-
         setPhase('summary');
-    };
+    }, [selectedAnswer, quizQuestion, selectedBonus, playSound]);
+
+    // حفظ الدالة في ريفرنس لكي يستخدمها المؤقت بدون إعادة الريندر
+    useEffect(() => { handleQuizAnswerRef.current = handleQuizAnswer; }, [handleQuizAnswer]);
+
+    useEffect(() => {
+        if (phase !== 'quiz' || selectedAnswer !== null) return;
+        
+        const timer = setInterval(() => {
+            setTimeLeft(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    if (handleQuizAnswerRef.current) handleQuizAnswerRef.current(-1); // الوقت انتهى
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        
+        return () => clearInterval(timer);
+    }, [phase, selectedAnswer]);
 
     // =======================================================================
-    // واجهات المستخدم (محسنة للموبايل - تقليل الـ Scroll)
+    // الواجهات (UI)
     // =======================================================================
 
     if (phase === 'setup') {
@@ -244,8 +254,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         
         return (
             <div className="max-w-md mx-auto py-2 px-2 animate-in slide-in-from-bottom text-center flex flex-col h-[85vh]">
-                {/* Header Compact */}
-                <div className="flex justify-between items-center mb-4 px-2">
+                <div className="flex justify-between items-center mb-4 px-2 shrink-0">
                     <div className="bg-indigo-50 text-indigo-800 px-3 py-1.5 rounded-xl font-black text-[10px] md:text-xs border border-indigo-200">
                         {isEn ? 'Base:' : 'نقاط:'} +{BASE_POINTS}
                     </div>
@@ -254,7 +263,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                     </div>
                 </div>
 
-                {/* منصة الزجاجات (تصميم مدمج للموبايل) */}
                 <div className="bg-gradient-to-br from-slate-100 to-gray-200 p-4 rounded-3xl shadow-inner border-4 border-gray-300 mb-4 shrink-0">
                     <div className="flex justify-center gap-2 items-end h-24">
                         {bottles.map((bottleColor, idx) => {
@@ -282,14 +290,12 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                     <Target className="w-5 h-5" /> {isEn ? 'Check Order' : 'فحص الترتيب'}
                 </button>
 
-                {/* سجل المحاولات مع عرض الألوان (Scrollable Box) */}
                 <div className="flex-1 bg-white rounded-2xl p-3 shadow-sm border border-gray-100 overflow-y-auto">
                     <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2 sticky top-0 bg-white pb-1">{isEn ? 'History' : 'سجل المحاولات'}</h4>
                     <div className="space-y-1.5">
                         {history.map((h, i) => (
                             <div key={i} className="flex justify-between items-center text-[10px] font-bold p-2 bg-gray-50 rounded-xl border border-gray-100">
                                 <span className="text-gray-400 w-12 text-right">{h.attempt}#</span>
-                                {/* عرض الألوان المصغرة */}
                                 <div className="flex gap-1">
                                     {h.arrangement.map((c, cIdx) => {
                                         const cClass = BOTTLE_COLORS.find(bc => bc.id === c)?.colorClass;
@@ -341,7 +347,9 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
     }
 
     if (phase === 'quiz' || phase === 'summary') {
-        const isEnglishQ = /^[A-Za-z]/.test(quizQuestion?.question_text || '');
+        if (!quizQuestion) return null; // حماية إضافية للريندر
+
+        const isEnglishQ = /^[A-Za-z]/.test(quizQuestion.question_text || '');
         return (
             <div className="max-w-xl mx-auto w-full animate-in zoom-in-95 duration-300 py-4 px-2">
                 {phase === 'summary' && (
@@ -354,7 +362,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                     </div>
                 )}
 
-                <div className="flex justify-between items-center mb-4 px-2">
+                <div className="flex justify-between items-center mb-4 px-2 shrink-0">
                     <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-black text-xs flex items-center gap-1 border border-emerald-200">
                         <Star className="w-3 h-3"/> +{selectedBonus?.points}
                     </div>
@@ -367,11 +375,11 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
 
                 <div className="bg-white rounded-3xl p-5 shadow-lg border-t-4 border-emerald-500">
                     <h3 className={`text-base md:text-lg font-black text-gray-800 leading-relaxed mb-5 ${isEnglishQ ? 'text-left' : 'text-right'}`} dir={isEnglishQ ? 'ltr' : 'rtl'}>
-                        {quizQuestion?.question_text}
+                        {quizQuestion.question_text}
                     </h3>
 
                     <div className="grid grid-cols-1 gap-2" dir={isEnglishQ ? 'ltr' : 'rtl'}>
-                        {quizQuestion?.options.map((option: string, idx: number) => {
+                        {quizQuestion.options.map((option: string, idx: number) => {
                             let btnClass = 'bg-white border-2 border-gray-100 text-gray-700 hover:border-emerald-300';
                             if (phase === 'summary') {
                                 if (idx === quizQuestion.correct_index) btnClass = 'bg-emerald-500 border-emerald-600 text-white shadow-md';
@@ -379,7 +387,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                                 else btnClass = 'bg-gray-50 border-gray-100 text-gray-400 opacity-50';
                             }
                             return (
-                                <button key={idx} onClick={() => handleQuizAnswer(idx)} disabled={phase === 'summary'}
+                                <button key={idx} onClick={() => handleQuizAnswerRef.current?.(idx)} disabled={phase === 'summary'}
                                     className={`${btnClass} p-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-between ${isEnglishQ ? 'text-left' : 'text-right'}`}>
                                     <span className="flex-1 leading-snug">{option}</span>
                                     {phase === 'summary' && idx === quizQuestion.correct_index && <CheckCircle className="w-4 h-4 flex-shrink-0 ml-2"/>}
@@ -389,7 +397,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                         })}
                     </div>
 
-                    {phase === 'summary' && quizQuestion?.explanation && (
+                    {phase === 'summary' && quizQuestion.explanation && (
                         <div className="mt-4 p-3 rounded-xl text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200" dir={isEnglishQ ? 'ltr' : 'rtl'}>
                             <span className="block mb-1 opacity-70">📚 {isEnglishQ ? 'Explanation:' : 'الشرح:'}</span>
                             {quizQuestion.explanation}
