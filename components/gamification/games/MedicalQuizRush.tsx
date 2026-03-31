@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { useQuery } from '@tanstack/react-query';
-import { Brain, CheckCircle, XCircle, Sparkles, Loader2, BookOpen, ArrowRight } from 'lucide-react';
+import { Brain, CheckCircle, XCircle, Sparkles, Loader2, BookOpen, ArrowRight, Trophy } from 'lucide-react';
 import toast from 'react-hot-toast';
+import confetti from 'canvas-confetti'; // 👈 استيراد مكتبة الاحتفال
 import { Employee } from '../../../types';
-import { DiffProfile, QuizQuestion } from '../../../features/staff/components/arcade/types';
+import { DiffProfile } from '../../../features/staff/components/arcade/types';
 
 interface Props {
     employee: Employee;
@@ -15,7 +16,8 @@ interface Props {
 
 export default function MedicalQuizRush({ employee, diffProfile, onStart, onComplete }: Props) {
     const [currentQuestion, setCurrentQuestion] = useState(0);
-    const [score, setScore] = useState(0);
+    const [correctCount, setCorrectCount] = useState(0); // 👈 عداد الإجابات الصحيحة
+    const [finalScore, setFinalScore] = useState(0); // 👈 النقاط النهائية
     const [timeLeft, setTimeLeft] = useState(60);
     const [isActive, setIsActive] = useState(false);
     const [starting, setStarting] = useState(false);
@@ -23,15 +25,14 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const [showFeedback, setShowFeedback] = useState(false);
     const [questions, setQuestions] = useState<any[]>([]);
     
-    // حالات جديدة لتقرير ما بعد اللعبة
+    // حالات شاشة التقرير النهائي
     const [isSummary, setIsSummary] = useState(false);
     const [history, setHistory] = useState<any[]>([]);
 
-    // 💡 تحديد لغة السؤال بناءً على التخصص
     const isMedicalEnglishSpecialty = ['بشر', 'أسنان', 'صيدل', 'اسره'].some(s => 
         (employee.job_title || '').includes(s) || (employee.specialty || '').includes(s)
     );
-    const quizLanguage = isMedicalEnglishSpecialty ? 'English (Medical terminology)' : 'ar';
+    const quizLanguage = isMedicalEnglishSpecialty ? 'English (Professional Medical Terminology)' : 'ar';
 
     const { data: aiQuestions = [], isLoading: loadingQuestions } = useQuery({
         queryKey: ['smart_quiz_rush', employee.specialty, diffProfile.label],
@@ -42,10 +43,10 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                     domain: 'طبي وعلمي',
                     difficulty: diffProfile.label === 'صعب' ? 'صعب' : 'متوسط',
                     length: 'قصير',
-                    language: quizLanguage, // إرسال اللغة المخصصة
+                    language: quizLanguage,
                     include_hint: false,
                     game_type: 'mcq',
-                    question_count: 8
+                    question_count: 5 // 👈 نطلب 5 أسئلة فقط
                 }
             });
 
@@ -70,7 +71,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 }
             });
 
-            return Array.from(uniqueQuestions.values());
+            return Array.from(uniqueQuestions.values()).slice(0, 5); // نضمن أنها 5 أسئلة فقط
         },
         staleTime: 0,
         refetchOnWindowFocus: false
@@ -89,9 +90,10 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
             return;
         }
         
-        setQuestions(aiQuestions.sort(() => 0.5 - Math.random()));
+        setQuestions(aiQuestions); // بدون خلط لأننا نحتاج الـ 5 المولدين فقط
         setCurrentQuestion(0);
-        setScore(0);
+        setCorrectCount(0);
+        setFinalScore(0);
         setTimeLeft(60);
         setHistory([]);
         setIsSummary(false);
@@ -99,17 +101,37 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         setStarting(false);
     };
 
-    // إنهاء اللعبة والانتقال للتقرير
-    const endGame = () => {
+    // 🏆 إنهاء اللعبة واحتساب النقاط والاحتفال
+    const endGame = (currentCorrect: number) => {
         setIsActive(false);
+        
+        let earnedPoints = 0;
+        if (currentCorrect === 3) earnedPoints = 15;
+        else if (currentCorrect === 4) earnedPoints = 20;
+        else if (currentCorrect >= 5) earnedPoints = 25;
+
+        setFinalScore(earnedPoints);
         setIsSummary(true);
+
+        // 🎇 إطلاق الاحتفال إذا فاز
+        if (earnedPoints > 0) {
+            try {
+                const audio = new Audio('/applause.mp3'); // 👈 تشغيل ملف الصوت
+                audio.play();
+            } catch (e) { console.error("Audio play failed"); }
+            
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 },
+                colors: ['#10B981', '#3B82F6', '#F59E0B', '#EF4444']
+            });
+        }
     };
 
-    // زر الانتهاء وجمع النقاط (يضغط عليه بعد قراءة التقرير)
     const handleFinalComplete = () => {
-        const winThreshold = diffProfile.points_to_win;
-        const isWin = score >= winThreshold;
-        onComplete(score, isWin);
+        const isWin = finalScore > 0;
+        onComplete(finalScore, isWin); // إرسال النقاط الحقيقية وحالة الفوز
     };
 
     useEffect(() => {
@@ -117,10 +139,10 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         if (isActive && timeLeft > 0) {
             timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
         } else if (isActive && timeLeft === 0) {
-            endGame();
+            endGame(correctCount); // انتهاء الوقت
         }
         return () => clearInterval(timer);
-    }, [isActive, timeLeft]);
+    }, [isActive, timeLeft, correctCount]);
 
     const handleAnswer = (idx: number) => {
         if (showFeedback || !isActive) return;
@@ -131,7 +153,15 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         const currentQ = questions[currentQuestion];
         const isCorrect = idx === currentQ.correct_index;
         
-        // تسجيل السؤال في التقرير التعليمي
+        let newCorrectCount = correctCount;
+        if (isCorrect) {
+            newCorrectCount += 1;
+            setCorrectCount(newCorrectCount);
+            toast.success('إجابة صحيحة!', { id: 'rush_correct', duration: 1000 });
+        } else {
+            toast.error('إجابة خاطئة!', { id: 'rush_wrong', duration: 1000 });
+        }
+
         setHistory(prev => [...prev, { 
             ...currentQ, 
             user_answer: idx, 
@@ -139,21 +169,14 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
             options: [currentQ.option_a, currentQ.option_b, currentQ.option_c, currentQ.option_d]
         }]);
 
-        if (isCorrect) {
-            setScore(s => s + diffProfile.points_per_q);
-            toast.success('إجابة صحيحة!', { id: 'rush_correct', duration: 1000 });
-        } else {
-            toast.error('إجابة خاطئة!', { id: 'rush_wrong', duration: 1000 });
-        }
-
         setTimeout(() => {
-            if (!isActive) return; // إذا انتهى الوقت أثناء هذه الثانية
+            if (!isActive) return;
             if (currentQuestion < questions.length - 1) {
                 setCurrentQuestion(curr => curr + 1);
                 setSelectedAnswer(null);
                 setShowFeedback(false);
             } else {
-                endGame();
+                endGame(newCorrectCount); // الإجابة على آخر سؤال
             }
         }, 1000);
     };
@@ -162,21 +185,17 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     if (!isActive && !isSummary) {
         return (
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 max-w-lg mx-auto text-center animate-in zoom-in-95">
-                <div className="w-24 h-24 bg-gradient-to-br from-red-100 to-orange-100 rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-12">
-                    <Brain className="w-12 h-12 text-red-500 -rotate-12" />
+                <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 to-blue-100 rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-12">
+                    <Trophy className="w-12 h-12 text-indigo-500 -rotate-12" />
                 </div>
-                <h3 className="text-2xl font-black text-gray-800 mb-2">سباق المعرفة الطبي</h3>
-                <p className="text-gray-500 font-bold text-sm mb-6">أجب على أكبر عدد من الأسئلة في 60 ثانية!</p>
+                <h3 className="text-2xl font-black text-gray-800 mb-2">تحدي الـ 5 أسئلة</h3>
+                <p className="text-gray-500 font-bold text-sm mb-6">أجب على 5 أسئلة في 60 ثانية لحصد الجوائز!</p>
                 
-                <div className="bg-gray-50 p-4 rounded-2xl mb-8 flex justify-around">
-                    <div>
-                        <span className="block text-xs font-bold text-gray-400 mb-1">النقاط للنجاح</span>
-                        <span className="text-xl font-black text-gray-800">{diffProfile.points_to_win} نقطة</span>
-                    </div>
-                    <div>
-                        <span className="block text-xs font-bold text-gray-400 mb-1">الوقت</span>
-                        <span className="text-xl font-black text-red-500">60 ثانية</span>
-                    </div>
+                {/* شرح نظام النقاط الجديد */}
+                <div className="bg-gray-50 p-5 rounded-2xl mb-8 text-sm font-black text-gray-700 space-y-2 border border-gray-200">
+                    <div className="flex justify-between"><span>3 إجابات صحيحة</span> <span className="text-emerald-600">15 نقطة</span></div>
+                    <div className="flex justify-between border-t border-b border-gray-200 py-2"><span>4 إجابات صحيحة</span> <span className="text-emerald-600">20 نقطة</span></div>
+                    <div className="flex justify-between"><span>5 إجابات صحيحة</span> <span className="text-emerald-600">25 نقطة 🏆</span></div>
                 </div>
 
                 {isMedicalEnglishSpecialty && (
@@ -188,10 +207,10 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
                 <button
                     onClick={startGame}
                     disabled={starting || loadingQuestions}
-                    className="w-full bg-gradient-to-r from-red-500 to-orange-500 text-white py-4 rounded-2xl font-black text-lg hover:from-red-600 hover:to-orange-600 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-red-200 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2"
+                    className="w-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white py-4 rounded-2xl font-black text-lg hover:from-indigo-600 hover:to-blue-600 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2"
                 >
                     {starting || loadingQuestions ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
-                    {loadingQuestions ? 'جاري إعداد الأسئلة بـ AI...' : starting ? 'جاري التحضير...' : 'ابدأ السباق الآن!'}
+                    {loadingQuestions ? 'جاري إعداد التحدي بـ AI...' : starting ? 'جاري التحضير...' : 'ابدأ التحدي الآن!'}
                 </button>
             </div>
         );
@@ -199,17 +218,27 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
 
     // 2. شاشة التقرير التعليمي (بعد اللعبة)
     if (isSummary) {
+        const isWin = finalScore > 0;
         return (
             <div className="max-w-2xl mx-auto w-full animate-in slide-in-from-bottom-8 duration-500 pb-20">
-                <div className="bg-white rounded-[2rem] p-6 shadow-xl border-t-8 border-indigo-500 mb-6 text-center">
-                    <h2 className="text-2xl font-black text-gray-800 mb-2">انتهى الوقت! ⏱️</h2>
-                    <p className="text-gray-500 font-bold text-sm mb-6">لقد جمعت <span className="text-indigo-600 text-lg">{score}</span> نقطة</p>
+                <div className={`bg-white rounded-[2rem] p-6 md:p-8 shadow-xl border-t-8 mb-6 text-center ${isWin ? 'border-emerald-500' : 'border-red-500'}`}>
+                    <h2 className="text-3xl font-black text-gray-800 mb-2">
+                        {isWin ? 'تهانينا! 🎊' : 'انتهى الوقت! ⏱️'}
+                    </h2>
+                    <p className="text-gray-500 font-bold text-sm mb-6">
+                        لقد أجبت بشكل صحيح على <span className={`text-lg font-black ${isWin ? 'text-emerald-600' : 'text-red-500'}`}>{correctCount} من 5</span>
+                    </p>
+                    
+                    <div className="bg-gray-50 p-4 rounded-2xl inline-block mb-6 border border-gray-100 min-w-[200px]">
+                        <span className="block text-xs font-bold text-gray-400 mb-1">النقاط المكتسبة</span>
+                        <span className={`text-3xl font-black ${isWin ? 'text-emerald-500' : 'text-gray-500'}`}>{finalScore}</span>
+                    </div>
                     
                     <button 
                         onClick={handleFinalComplete}
-                        className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2 mx-auto"
+                        className={`w-full text-white px-8 py-4 rounded-xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 ${isWin ? 'bg-emerald-600 shadow-emerald-200 hover:bg-emerald-700' : 'bg-gray-800 shadow-gray-200 hover:bg-gray-900'}`}
                     >
-                        جمع النقاط والعودة <ArrowRight className="w-5 h-5" />
+                        {isWin ? 'جمع النقاط والعودة' : 'العودة للقائمة'} <ArrowRight className="w-5 h-5" />
                     </button>
                 </div>
 
@@ -270,16 +299,16 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
         <div className="max-w-2xl mx-auto w-full animate-in zoom-in-95 duration-300">
             <div className="flex justify-between items-center mb-6">
                 <div className="bg-white px-5 py-3 rounded-2xl shadow-sm border border-gray-100 font-black text-gray-800">
-                    النقاط: <span className="text-emerald-500 ml-1">{score}</span>
+                    الإجابات الصحيحة: <span className="text-emerald-500 ml-1">{correctCount} / 5</span>
                 </div>
-                <div className={`px-5 py-3 rounded-2xl font-black shadow-sm flex items-center gap-2 ${timeLeft <= 10 ? 'bg-red-500 text-white animate-pulse' : 'bg-white text-red-500 border border-red-100'}`}>
+                <div className={`px-5 py-3 rounded-2xl font-black shadow-sm flex items-center gap-2 ${timeLeft <= 10 ? 'bg-red-500 text-white animate-pulse' : 'bg-white text-indigo-600 border border-indigo-100'}`}>
                     الوقت: {timeLeft} ث
                 </div>
             </div>
 
-            <div className="bg-white rounded-[2rem] p-6 md:p-8 shadow-xl border-b-4 border-red-500 mb-6">
+            <div className="bg-white rounded-[2rem] p-6 md:p-8 shadow-xl border-b-4 border-indigo-500 mb-6">
                 <div className="flex items-start gap-4 mb-6 md:mb-8" dir={isMedicalEnglishSpecialty ? 'ltr' : 'rtl'}>
-                    <div className="w-10 h-10 md:w-12 md:h-12 bg-red-50 text-red-500 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-base md:text-lg">
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-base md:text-lg">
                         {currentQuestion + 1}
                     </div>
                     <h3 className={`text-lg md:text-2xl font-black text-gray-800 leading-relaxed mt-1 ${isMedicalEnglishSpecialty ? 'text-left' : 'text-right'}`}>
@@ -289,7 +318,7 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
 
                 <div className="grid grid-cols-1 gap-3" dir={isMedicalEnglishSpecialty ? 'ltr' : 'rtl'}>
                     {options.map((option: string, idx: number) => {
-                        let btnClass = 'bg-white border-2 border-gray-100 text-gray-700 hover:border-red-300 hover:bg-red-50';
+                        let btnClass = 'bg-white border-2 border-gray-100 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50';
                         if (showFeedback) {
                             if (idx === currentQ.correct_index) btnClass = 'bg-emerald-500 border-emerald-600 text-white shadow-lg';
                             else if (idx === selectedAnswer) btnClass = 'bg-red-500 border-red-600 text-white shadow-lg';
