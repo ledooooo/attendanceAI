@@ -23,48 +23,48 @@ export default function MedicalQuizRush({ employee, diffProfile, onStart, onComp
     const [showFeedback, setShowFeedback] = useState(false);
     const [questions, setQuestions] = useState<any[]>([]);
 
-    // جلب 8 أسئلة من الذكاء الاصطناعي بضربة واحدة باستخدام Edge Function الجديدة
+    // 🚀 جلب 8 أسئلة بطلب واحد فقط للذكاء الاصطناعي بدلاً من 8 طلبات منفصلة
     const { data: aiQuestions = [], isLoading: loadingQuestions } = useQuery({
         queryKey: ['smart_quiz_rush', employee.specialty, diffProfile.label],
         queryFn: async () => {
-            const fetchPromises = Array.from({ length: 8 }).map(() => 
-                supabase.functions.invoke('generate-smart-quiz', {
-                    body: {
-                        specialty: employee.job_title || 'طبيب بشرى',
-                        domain: 'طبي وعلمي',
-                        difficulty: diffProfile.label === 'صعب' ? 'صعب' : 'متوسط',
-                        length: 'قصير',
-                        language: 'ar',
-                        include_hint: false,
-                        game_type: 'mcq'
-                    }
-                })
-            );
+            const { data, error } = await supabase.functions.invoke('generate-smart-quiz', {
+                body: {
+                    specialty: employee.job_title || 'طبيب بشرى',
+                    domain: 'طبي وعلمي',
+                    difficulty: diffProfile.label === 'صعب' ? 'صعب' : 'متوسط',
+                    length: 'قصير',
+                    language: 'ar',
+                    include_hint: false,
+                    game_type: 'mcq',
+                    question_count: 8 // 👈 طلب واحد لـ 8 أسئلة دفعة واحدة
+                }
+            });
 
-            const results = await Promise.all(fetchPromises);
+            if (error || !data) {
+                console.error('AI Fetch Error:', error);
+                return [];
+            }
             
-            // استخدام Map لفلترة أي أسئلة مكررة (لو حدثت صدفة من الـ AI)
+            // استخدام Map لفلترة أي أسئلة مكررة 
             const uniqueQuestions = new Map();
             
-            results.forEach(res => {
-                if (!res.error && res.data) {
-                    const q = res.data;
-                    if (!uniqueQuestions.has(q.question_text)) {
-                        // تحويل إجابة AI الحرفية إلى Index رقمي ليطابق واجهتك القديمة
-                        const charToIndex: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
-                        const correct_index = charToIndex[q.correct_option?.toUpperCase()] ?? 0;
-                        
-                        uniqueQuestions.set(q.question_text, {
-                            id: q.id || Math.random().toString(),
-                            question: q.question_text,
-                            option_a: q.option_a,
-                            option_b: q.option_b,
-                            option_c: q.option_c,
-                            option_d: q.option_d,
-                            correct_index: correct_index,
-                            explanation: q.explanation
-                        });
-                    }
+            // data أصبحت الآن عبارة عن Array جاهزة من الـ AI
+            data.forEach((q: any) => {
+                if (!uniqueQuestions.has(q.question_text)) {
+                    // تحويل إجابة AI الحرفية إلى Index رقمي ليطابق واجهتك القديمة
+                    const charToIndex: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+                    const correct_index = charToIndex[q.correct_option?.toUpperCase()] ?? 0;
+                    
+                    uniqueQuestions.set(q.question_text, {
+                        id: q.id || Math.random().toString(),
+                        question: q.question_text,
+                        option_a: q.option_a,
+                        option_b: q.option_b,
+                        option_c: q.option_c,
+                        option_d: q.option_d,
+                        correct_index: correct_index,
+                        explanation: q.explanation
+                    });
                 }
             });
 
