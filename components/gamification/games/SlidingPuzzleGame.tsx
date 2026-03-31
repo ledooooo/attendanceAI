@@ -11,11 +11,11 @@ interface Props {
     employee?: Employee;
 }
 
-// ─── إعدادات المستويات ──────────────────────────────────────────────────────────
+// ─── إعدادات المستويات مع التوقيت المريح والمنطقي ───────────────────────────────────
 const LEVELS = [
-    { id: 'easy', label: 'سهل (3×4)', rows: 4, cols: 3, time: 90, points: 20, color: 'from-emerald-500 to-teal-500' },
-    { id: 'medium', label: 'وسط (4×4)', rows: 4, cols: 4, time: 150, points: 30, color: 'from-blue-500 to-indigo-500' },
-    { id: 'hard', label: 'صعب (4×5)', rows: 5, cols: 4, time: 240, points: 40, color: 'from-orange-500 to-red-500' }
+    { id: 'easy', label: 'سهل (3×4)', rows: 4, cols: 3, time: 120, points: 20, color: 'from-emerald-500 to-teal-500' }, // دقيقتين
+    { id: 'medium', label: 'وسط (4×4)', rows: 4, cols: 4, time: 240, points: 30, color: 'from-blue-500 to-indigo-500' }, // 4 دقائق
+    { id: 'hard', label: 'صعب (4×5)', rows: 5, cols: 4, time: 360, points: 40, color: 'from-orange-500 to-red-500' } // 6 دقائق
 ];
 
 const BONUS_LEVELS = [
@@ -43,6 +43,13 @@ export default function SlidingPuzzleGame({ onStart, onComplete, employee }: Pro
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
 
     const handleQuizAnswerRef = useRef<(idx: number) => void>();
+    
+    // مرجع للصوت السريع لتجنب التهنيج أثناء النقر المتتالي
+    const slideAudioRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        slideAudioRef.current = new Audio('/click.mp3'); // صوت حركة المربع
+    }, []);
 
     // ─── إعدادات اللغة ─────────────────────────────────────────────────────────
     const isMedicalEnglishSpecialty = ['بشر', 'أسنان', 'صيدل', 'اسره', 'معمل', 'تمريض'].some(s => 
@@ -60,12 +67,15 @@ export default function SlidingPuzzleGame({ onStart, onComplete, employee }: Pro
     const playSound = useCallback((type: 'win' | 'lose' | 'slide') => {
         if (!soundEnabled) return;
         try {
-            let audio;
-            if (type === 'slide') audio = new Audio('https://raw.githubusercontent.com/ledooooo/attendanceAI/main/public/click.mp3'); // افتراضي لو مفيش صوت، يمكن حذفه
-            else audio = new Audio(type === 'win' ? '/applause.mp3' : '/fail.mp3');
-            
-            if (audio) {
-                audio.volume = type === 'slide' ? 0.2 : 0.6;
+            if (type === 'slide') {
+                if (slideAudioRef.current) {
+                    slideAudioRef.current.currentTime = 0;
+                    slideAudioRef.current.volume = 0.3;
+                    slideAudioRef.current.play().catch(() => {});
+                }
+            } else {
+                const audio = new Audio(type === 'win' ? '/applause.mp3' : '/fail.mp3');
+                audio.volume = 0.6;
                 audio.play().catch(() => {});
             }
         } catch {}
@@ -90,8 +100,8 @@ export default function SlidingPuzzleGame({ onStart, onComplete, employee }: Pro
         let emptyIdx = r * c - 1;
         let prevMove = -1;
         
-        // خلط اللوحة بإجراء تحركات عشوائية صالحة (لضمان قابلية الحل رياضياً)
-        for (let i = 0; i < 200; i++) {
+        // خلط اللوحة بـ 250 حركة عشوائية لضمان قابليتها للحل رياضياً
+        for (let i = 0; i < 250; i++) {
             const possibleMoves = getValidMoves(emptyIdx, r, c).filter(m => m !== prevMove);
             const move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
             b[emptyIdx] = b[move];
@@ -156,7 +166,6 @@ export default function SlidingPuzzleGame({ onStart, onComplete, employee }: Pro
         return () => clearInterval(timer);
     }, [phase, timeLeft]);
 
-
     // ─── جلب سؤال الذكاء الاصطناعي الإضافي ──────────────────────────────────
     const fetchAIQuestion = async (bonus: typeof BONUS_LEVELS[0]) => {
         setSelectedBonus(bonus);
@@ -182,7 +191,7 @@ export default function SlidingPuzzleGame({ onStart, onComplete, employee }: Pro
             if (qArray.length === 0) throw new Error('No questions returned');
 
             const q = qArray[0]; 
-            const charToIndex: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3 };
+            const charToIndex: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
             const safeOptions = Array.isArray(q.options) && q.options.length >= 4 
                 ? q.options 
                 : [q.option_a, q.option_b, q.option_c, q.option_d];
@@ -251,7 +260,7 @@ export default function SlidingPuzzleGame({ onStart, onComplete, employee }: Pro
                             className={`p-4 rounded-2xl border-2 transition-all flex justify-between items-center ${level.id === lvl.id ? 'bg-indigo-50 border-indigo-500 shadow-md' : 'bg-white border-gray-100 hover:border-gray-300'}`}>
                             <div className="text-right">
                                 <span className={`text-transparent bg-clip-text bg-gradient-to-r ${lvl.color} font-black text-lg block`}>{lvl.label}</span>
-                                <span className="text-[10px] text-gray-500 font-bold">{lvl.time} ثانية | {lvl.points} نقطة</span>
+                                <span className="text-[10px] text-gray-500 font-bold">{Math.floor(lvl.time/60)} دقائق | {lvl.points} نقطة</span>
                             </div>
                             <Grip className={`w-6 h-6 ${level.id === lvl.id ? 'text-indigo-600' : 'text-gray-300'}`} />
                         </button>
@@ -275,25 +284,27 @@ export default function SlidingPuzzleGame({ onStart, onComplete, employee }: Pro
     }
 
     if (phase === 'playing') {
+        // حساب الدقائق والثواني للمؤقت
+        const m = Math.floor(timeLeft / 60);
+        const s = timeLeft % 60;
+        
         return (
             <div className="max-w-md mx-auto flex flex-col h-[85vh] animate-in slide-in-from-bottom" dir="rtl">
-                {/* Header Stats */}
                 <div className="flex justify-between items-center mb-4 px-2 shrink-0">
                     <div className="bg-indigo-50 text-indigo-800 px-3 py-2 rounded-xl font-black text-xs border border-indigo-200">
                         التحركات: {moves}
                     </div>
-                    <div className={`px-4 py-2 rounded-xl font-black flex items-center gap-1 text-sm border shadow-sm ${timeLeft <= 15 ? 'bg-red-500 text-white border-red-600 animate-pulse' : 'bg-white text-gray-700 border-gray-200'}`}>
-                        <Clock className="w-4 h-4" /> {timeLeft} ث
+                    <div className={`px-4 py-2 rounded-xl font-black flex items-center gap-1 text-sm border shadow-sm ${timeLeft <= 20 ? 'bg-red-500 text-white border-red-600 animate-pulse' : 'bg-white text-gray-700 border-gray-200'}`}>
+                        <Clock className="w-4 h-4" /> {m}:{s < 10 ? '0'+s : s}
                     </div>
                 </div>
 
-                {/* Game Grid */}
                 <div className="flex-1 flex flex-col items-center justify-center p-2">
                     <div className="bg-gray-100 p-3 rounded-[2rem] shadow-inner border-4 border-gray-200 w-full max-w-sm">
                         <div 
                             className="w-full grid gap-1.5 md:gap-2"
                             style={{ gridTemplateColumns: `repeat(${level.cols}, minmax(0, 1fr))` }}
-                            dir="ltr" // نثبت اتجاه الشبكة لليسار لليمين دائماً لترتيب الأرقام
+                            dir="ltr"
                         >
                             {board.map((tile, index) => {
                                 const isEmpty = tile === 0;
