@@ -6,7 +6,7 @@ import confetti from 'canvas-confetti';
 import {
     Loader2, Zap, Gamepad2, Tv2,
     ArrowRight, Trophy,
-    Dices, Lock, Brain, Calculator, Flame, FlaskConical, Skull, Grip, Target // 👈 أضفنا أيقونة Target لسيمون
+    Dices, Lock, Brain, Calculator, Flame, FlaskConical, Skull, Grip, Target, Droplet // 👈 أضفنا أيقونة Droplet للعبة فرز السوائل
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,12 +25,13 @@ import MoveTheMatch             from '../../../components/gamification/games/Mov
 import BottleSortGame           from '../../../components/gamification/games/BottleSortGame';
 import HangmanGameSingle        from '../../../components/gamification/games/HangmanGameSingle';
 import SlidingPuzzleGame        from '../../../components/gamification/games/SlidingPuzzleGame';
-import SimonGame                from '../../../components/gamification/games/SimonGame'; // 👈 استيراد اللعبة الجديدة
+import SimonGame                from '../../../components/gamification/games/SimonGame';
+import WaterSortGame            from '../../../components/gamification/games/WaterSortGame'; // 👈 استيراد اللعبة الجديدة
 import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
 
 interface Props { employee: Employee; deepLinkRoomId?: string | null; }
 
-// ─── 10 Solo Games ─────────────────────────────────────────────────────────────
+// ─── 11 Solo Games ─────────────────────────────────────────────────────────────
 const GAME_CATALOG = [
     { key: 'spin',     title: 'عجلة الحظ',       icon: Dices,      gradient: 'from-fuchsia-500 to-pink-600',  bg: 'from-fuchsia-50 to-pink-50',  border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
     { key: 'safe',     title: 'الخزنة السرية',    icon: Lock,       gradient: 'from-emerald-500 to-teal-600',  bg: 'from-emerald-50 to-teal-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق', pts: '20-50',  tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
@@ -41,8 +42,9 @@ const GAME_CATALOG = [
     { key: 'bottle',   title: 'ترتيب الزجاجات',   icon: FlaskConical, gradient: 'from-cyan-500 to-blue-600',   bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'منطق وتركيز', pts: '20-50',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
     { key: 'hangman',  title: 'لعبة المشنقة',     icon: Skull,      gradient: 'from-slate-600 to-slate-800',   bg: 'from-slate-50 to-slate-100',  border: 'border-slate-200 hover:border-slate-400',     tag: 'تخمين وثقافة', pts: '15-60', tagColor: 'text-slate-700',   ptsColor: 'text-slate-600'   },
     { key: 'sliding',  title: 'ترتيب الأرقام',    icon: Grip,       gradient: 'from-blue-500 to-cyan-600',     bg: 'from-blue-50 to-cyan-50',     border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '20-70',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
-    // 👈 أضفنا لعبة سيمون هنا
     { key: 'simon',    title: 'سيمون يقول',       icon: Target,     gradient: 'from-gray-800 to-black',        bg: 'from-gray-100 to-gray-200',   border: 'border-gray-300 hover:border-gray-500',       tag: 'ذاكرة بصرية', pts: '20-70',  tagColor: 'text-gray-800',    ptsColor: 'text-gray-700'    },
+    // 👈 أضفنا لعبة فرز السوائل هنا
+    { key: 'water',    title: 'فرز السوائل',      icon: Droplet,    gradient: 'from-cyan-400 to-blue-600',     bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'تخطيط عميق', pts: '20-80',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
 ];
 
 // ─── Game Grid ────────────────────────────────────────────────────────────────
@@ -206,7 +208,8 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             case 'bottle':   return <BottleSortGame {...simple}/>;
             case 'hangman':  return <HangmanGameSingle {...simple}/>;
             case 'sliding':  return <SlidingPuzzleGame {...simple}/>;
-            case 'simon':    return <SimonGame {...simple}/>; // 👈 استدعاء لعبة سيمون هنا
+            case 'simon':    return <SimonGame {...simple}/>;
+            case 'water':    return <WaterSortGame {...simple}/>; // 👈 استدعاء لعبة فرز السوائل هنا
             default:         return null;
         }
     };
