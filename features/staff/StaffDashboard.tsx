@@ -387,7 +387,7 @@ export default function StaffDashboard({ employee }: Props) {
     { id: 'library', label: 'المكتبة والسياسات', icon: BookOpen },
     ...(employee.role === 'quality_manager' ? [{ id: 'quality-manager-tab', label: 'مسؤول الجودة', icon: ShieldCheck, badge: ovrCount }] : []),
     { id: 'attendance', label: 'سجل الحضور', icon: Clock },
-    { id: 'arcade', label: 'صالة الألعاب', icon: Gamepad2, isNew: true },
+    { id: 'arcade', label: 'ركن الترفيه', icon: Gamepad2, isNew: true },
     { id: 'calculators', label: 'حاسبات هامة', icon: Calculator, isNew: true },
     { id: 'evening-schedule', label: 'النوبتجيات المسائية', icon: Moon },
     { id: 'store', label: 'متجر الجوائز', icon: ShoppingBag },
@@ -823,7 +823,7 @@ export default function StaffDashboard({ employee }: Props) {
                               <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><CheckSquare size={12} className="text-emerald-500"/> تنفيذ التكليفات</span>
                               <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><LayoutDashboard size={12} className="text-orange-500"/> الزيارة اليومية</span>
                               <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Award size={12} className="text-emerald-500"/> التحديات اليومية</span>
-                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Gamepad2 size={12} className="text-purple-500"/> صالة الألعاب</span>
+                              <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><Gamepad2 size={12} className="text-purple-500"/> ركن الترفيه</span>
                               <span className="bg-white px-2.5 py-1.5 rounded-lg border border-emerald-100 shadow-sm flex items-center gap-1"><AlertTriangle size={12} className="text-red-500"/> إرسال OVR</span>
                           </div>
                       </div>
