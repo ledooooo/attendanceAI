@@ -7,7 +7,6 @@ import {
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
-import useSound from 'use-sound';
 
 interface Props {
   onStart: () => Promise<void>;
@@ -51,41 +50,35 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
 
   const requestRef = useRef<number>();
   const handleQuizAnswerRef = useRef<(idx: number) => void>();
+  const audioCache = useRef<{ [key: string]: HTMLAudioElement }>({});
 
-  // ─── Load Sounds with useSound ─────────────────────────────────────────────
-  const [playShoot] = useSound('/sounds/shoot.mp3', { volume, soundEnabled });
-  const [playHit] = useSound('/sounds/hit.mp3', { volume, soundEnabled });
-  const [playWin] = useSound('/sounds/win.mp3', { volume, soundEnabled });
-  const [playLose] = useSound('/sounds/lose.mp3', { volume, soundEnabled });
-  const [playTick] = useSound('/sounds/tick.mp3', { volume: volume * 0.3, soundEnabled });
-  const [playSelect] = useSound('/sounds/select.mp3', { volume, soundEnabled });
-
-  // Fallback: if sounds are missing, use the original ones (optional)
-  // We'll keep the original method as a backup if the new sounds fail.
-  const legacyPlaySound = (type: 'win' | 'lose' | 'hit') => {
+  // ─── Audio Helper with Volume ─────────────────────────────────────────────
+  const playSound = useCallback((type: 'win' | 'lose' | 'hit' | 'tick' | 'select') => {
     if (!soundEnabled) return;
+    let url = '';
+    switch (type) {
+      case 'win': url = '/applause.mp3'; break;
+      case 'lose': url = '/fail.mp3'; break;
+      case 'hit': url = '/click.mp3'; break;
+      case 'tick': url = '/sounds/tick.mp3'; break; // optional, fallback to click if missing
+      case 'select': url = '/sounds/select.mp3'; break;
+      default: return;
+    }
     try {
-      if (type === 'hit') {
-        const audio = new Audio('/click.mp3');
-        audio.volume = volume;
-        audio.play().catch(() => {});
-      } else {
-        const audio = new Audio(type === 'win' ? '/applause.mp3' : '/fail.mp3');
-        audio.volume = volume;
-        audio.play().catch(() => {});
+      let audio = audioCache.current[url];
+      if (!audio) {
+        audio = new Audio(url);
+        audioCache.current[url] = audio;
       }
-    } catch {}
-  };
-
-  // Use a combined playSound that tries new sounds first, falls back to legacy if they don't exist
-  const playSound = (type: 'win' | 'lose' | 'hit') => {
-    if (!soundEnabled) return;
-    if (type === 'win') playWin();
-    else if (type === 'lose') playLose();
-    else if (type === 'hit') playHit();
-    // If the new sound fails (error in console), you can add a fallback:
-    // but we'll rely on useSound's error handling.
-  };
+      audio.volume = volume;
+      audio.currentTime = 0;
+      audio.play().catch(() => {
+        // Silent fail if sound can't play (e.g., missing file)
+      });
+    } catch (e) {
+      // ignore
+    }
+  }, [soundEnabled, volume]);
 
   const isMedical = ['بشر', 'أسنان', 'صيدل', 'اسره'].some(s =>
     (employee?.job_title || '').includes(s) || (employee?.specialty || '').includes(s)
@@ -122,8 +115,6 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     setTotalScore(0);
     setPhase('playing');
     setStarting(false);
-    // Play a start sound if you have one (optional)
-    // playShoot(); // or a dedicated start sound
   };
 
   const shootPin = (e: React.PointerEvent | React.MouseEvent) => {
@@ -210,7 +201,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
   const handleQuizAnswer = useCallback((idx: number) => {
     if (selectedAnswer !== null) return;
     setSelectedAnswer(idx);
-    playSelect(); // play selection sound
+    playSound('select');
     if (idx === quizQuestion?.correct_index) {
       playSound('win');
       setTotalScore(prev => prev + selectedBonus!.points);
@@ -218,7 +209,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
       playSound('lose');
     }
     setPhase('summary');
-  }, [selectedAnswer, quizQuestion, selectedBonus, playSelect, playSound]);
+  }, [selectedAnswer, quizQuestion, selectedBonus, playSound]);
 
   useEffect(() => { handleQuizAnswerRef.current = handleQuizAnswer; }, [handleQuizAnswer]);
 
@@ -228,16 +219,16 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          playTick(); // final tick
+          playSound('tick'); // final tick
           handleQuizAnswerRef.current?.(-1);
           return 0;
         }
-        playTick(); // tick each second
+        playSound('tick'); // tick each second
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [phase, selectedAnswer, playTick]);
+  }, [phase, selectedAnswer, playSound]);
 
   // =======================================================================
   // UI Components
