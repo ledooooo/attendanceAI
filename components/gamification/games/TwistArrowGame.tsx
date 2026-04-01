@@ -33,10 +33,22 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
   // Game Logic
   const [level, setLevel] = useState<typeof LEVELS[0]>(LEVELS[0]);
   const [rotation, setRotation] = useState(0);
-  const [attachedPins, setAttachedPins] = useState<number[]>([]); // store relative angles
+  const [attachedPins, setAttachedPins] = useState<number[]>([]); // relative angles
   const [remainingPins, setRemainingPins] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isVibrating, setIsVibrating] = useState(false);
+
+  // Bow & Arrow
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [dragCurrent, setDragCurrent] = useState({ x: 0, y: 0 });
+  const [aimAngle, setAimAngle] = useState(0);
+  const [power, setPower] = useState(0);
+  const [isFlying, setIsFlying] = useState(false);
+  const [flyProgress, setFlyProgress] = useState(0); // 0 to 1
+  const [flyAngle, setFlyAngle] = useState(0);
+  const bowRef = useRef<HTMLDivElement>(null);
+  const animationRef = useRef<number>();
 
   // Audio & Bonus
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -52,7 +64,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
   const handleQuizAnswerRef = useRef<(idx: number) => void>();
   const audioCache = useRef<{ [key: string]: HTMLAudioElement }>({});
 
-  // ─── Audio Helper with Volume ─────────────────────────────────────────────
+  // ─── Audio Helper ─────────────────────────────────────────────────────────
   const playSound = useCallback((type: 'win' | 'lose' | 'hit' | 'tick' | 'select') => {
     if (!soundEnabled) return;
     let url = '';
@@ -82,7 +94,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
   const isEn = language === 'auto' ? isMedical : language === 'en';
 
   // ─── Game Engine ──────────────────────────────────────────────────────────
-  const animate = useCallback(() => {
+  const animateRotation = useCallback(() => {
     if (phase === 'playing' && !isGameOver) {
       setRotation(prev => {
         let speed = level.speed;
@@ -92,14 +104,14 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
         }
         return (prev + speed) % 360;
       });
-      requestRef.current = requestAnimationFrame(animate);
+      requestRef.current = requestAnimationFrame(animateRotation);
     }
   }, [phase, isGameOver, level]);
 
   useEffect(() => {
-    if (phase === 'playing') requestRef.current = requestAnimationFrame(animate);
+    if (phase === 'playing') requestRef.current = requestAnimationFrame(animateRotation);
     return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
-  }, [phase, animate]);
+  }, [phase, animateRotation]);
 
   const startGame = async () => {
     setStarting(true);
@@ -113,38 +125,114 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     setStarting(false);
   };
 
-  const shootPin = (e: React.PointerEvent | React.MouseEvent) => {
-    if (isGameOver || remainingPins <= 0 || phase !== 'playing') return;
+  // ─── Bow & Arrow Logic ─────────────────────────────────────────────────────
+  const handleDragStart = (e: React.PointerEvent) => {
+    if (isGameOver || remainingPins <= 0 || phase !== 'playing' || isFlying) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const startX = e.clientX - rect.left;
+    const startY = e.clientY - rect.top;
+    setIsDragging(true);
+    setDragStart({ x: startX, y: startY });
+    setDragCurrent({ x: startX, y: startY });
+    setPower(0);
+    setAimAngle(0);
+  };
 
-    // Absolute angle where the needle is injected (relative to screen)
-    const absoluteHitAngle = (90 - rotation + 360) % 360;
+  const handleDragMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const currentX = e.clientX - rect.left;
+    const currentY = e.clientY - rect.top;
+    setDragCurrent({ x: currentX, y: currentY });
 
-    // Convert to angle relative to current cell orientation
-    const relativeHitAngle = (absoluteHitAngle - rotation + 360) % 360;
+    // Calculate drag vector from start point
+    const dx = currentX - dragStart.x;
+    const dy = currentY - dragStart.y;
+    // Power is distance limited to max 100px
+    const distance = Math.min(Math.sqrt(dx*dx + dy*dy), 100);
+    setPower(distance / 100); // 0 to 1
 
-    // Check collision with existing needles (needles are stored as relative angles)
-    const collision = attachedPins.some(relAngle => {
-      const diff = Math.abs(relAngle - relativeHitAngle);
-      return diff < 14 || diff > 346; // close enough to be a collision
-    });
+    // Aim angle: direction from drag start to current (relative to screen)
+    // We want the angle from the bow center (0,0) toward the drag point, but we'll use the drag direction
+    // Actually the angle of the string pull: it's the angle from the bow (origin) to the current drag point
+    // The bow is at (0,0) in its local coordinates. The drag start is also (0,0) because we start at bow center? Wait, the drag start is where the finger first touches, which should be at the bow center (the string anchor). But the player may drag anywhere. We'll treat the vector from bow center (0,0) to current drag point as the pull direction.
+    // So aimAngle = atan2(dy, dx) in radians, converted to degrees, relative to vertical down (90°)
+    let angleRad = Math.atan2(dy, dx);
+    let angleDeg = angleRad * 180 / Math.PI;
+    // Convert to angle relative to positive X axis (0° right, 90° up) but we want injection angle measured from bottom center (90° down). 
+    // The injection will be at 90° (down) minus this angle? Actually easier: The arrow will be shot at angle = (aimAngle from X-axis) relative to the screen, then we compute hit angle as the line from bow to cell center.
+    setAimAngle(angleDeg);
+  };
 
-    if (collision) {
-      handleLose();
-    } else {
-      playSound('hit');
-      if (navigator.vibrate) navigator.vibrate(50);
-      confetti({
-        particleCount: 30,
-        spread: 45,
-        origin: { x: 0.5, y: 0.8 },
-        startVelocity: 15,
-        colors: ['#4f46e5', '#06b6d4', '#ffffff'],
-        decay: 0.9,
-      });
-      setAttachedPins(prev => [...prev, relativeHitAngle]);
-      setRemainingPins(prev => prev - 1);
-      if (remainingPins === 1) handleWin();
+  const handleDragEnd = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    if (power > 0.1) {
+      // Launch arrow
+      shootWithBow(aimAngle, power);
     }
+    // Reset visual
+    setPower(0);
+    setAimAngle(0);
+  };
+
+  const shootWithBow = (angleDeg: number, powerVal: number) => {
+    if (remainingPins <= 0 || isGameOver || isFlying) return;
+    // Calculate the absolute injection angle: the direction from bow to cell center
+    // Bow is at bottom center, cell center is at top center (relative). The line from bow to cell is vertical (90° down from cell perspective).
+    // Actually the bow is at the bottom of the screen, the cell is above. The direction to inject is straight up? But the arrow flies to the cell at a specific angle determined by power and aim.
+    // Simpler: The player's drag angle directly determines the hit angle on the cell (like the old tap system). So we'll use the angleDeg (relative to horizontal) and compute the hit angle on the cell as: 
+    // The cell is at center, and the arrow comes from below. The arrow's direction is determined by the drag angle. The angle at which it strikes the cell is the same as the direction from the bow to the hit point on the cell. We'll assume the arrow travels in a straight line from bow to cell at the given angle, and hits the cell at that angle. So we can compute the absolute hit angle as: hitAngle = (90 - (angleDeg + 90))? Let's simplify: we'll treat angleDeg as the angle of the arrow relative to the positive X axis (0° right, 90° up). The cell is at (0,0) of the world, bow at (0, -bigY). The hit point on the cell is along the line from bow to cell at angleDeg. The angle at which the arrow strikes the cell is the direction from cell center to hit point, which is opposite. For simplicity, we'll use the old system: we know the player wants to inject at a certain angle, and that angle should be the relative angle on the cell (the same as the angle from the cell's center to the arrow's impact point). But it's messy. Instead, I'll use a simpler mapping: The drag angle (relative to horizontal) determines the angle around the cell (0° = right, 90° = up, 180° = left, 270° = down). Since the bow is at bottom, the usable range is roughly between 45° and 135° (pointing upward). We'll map angleDeg from -45° to 45° to 45° to 135° around the cell. Or we can just use the angleDeg as the absolute hit angle directly. This is easier: we'll treat angleDeg as the absolute angle (in degrees) of the injection point on the cell, measured from the positive X axis (0° right, 90° up). Then we check collision with existing needles.
+    // But the player's drag direction is relative to the bow position. We'll compute the direction from bow to cell: (0, -distance) vector. The angle of that is 270° (or -90°). The player pulls back, which should create an angle offset. The arrow will be shot at that angle. So we'll compute the hit angle as: 
+    // Let deltaX = dragCurrent.x - dragStart.x, deltaY = dragCurrent.y - dragStart.y. The angle of the arrow relative to the vertical (down) is atan2(deltaX, -deltaY). That gives the angle offset from the vertical. The injection angle on the cell (measured from the positive X axis) is: 90° (pointing up) + angleOffset. So injectionAngle = 90 + angleOffset (in degrees). We'll use that.
+    let angleOffsetRad = Math.atan2(dragCurrent.x - dragStart.x, dragStart.y - dragCurrent.y); // note: y reversed because screen Y increases downward
+    let angleOffsetDeg = angleOffsetRad * 180 / Math.PI;
+    let absoluteHitAngle = (90 + angleOffsetDeg + 360) % 360;
+
+    // Add a bit of randomness based on power? maybe not.
+    // Also, the needle's flight animation can be shown.
+    setIsFlying(true);
+    setFlyAngle(absoluteHitAngle);
+    setFlyProgress(0);
+    // Animate flight
+    const startTime = performance.now();
+    const duration = 200; // ms, maybe adjust based on power (higher power = faster)
+    const animateFlight = (now: number) => {
+      const elapsed = now - startTime;
+      let progress = Math.min(elapsed / duration, 1);
+      setFlyProgress(progress);
+      if (progress < 1) {
+        animationRef.current = requestAnimationFrame(animateFlight);
+      } else {
+        // Flight finished, now determine hit/miss
+        setIsFlying(false);
+        // Calculate relative angle on cell
+        const relativeHitAngle = (absoluteHitAngle - rotation + 360) % 360;
+        const collision = attachedPins.some(relAngle => {
+          const diff = Math.abs(relAngle - relativeHitAngle);
+          return diff < 14 || diff > 346;
+        });
+        if (collision) {
+          handleLose();
+        } else {
+          playSound('hit');
+          if (navigator.vibrate) navigator.vibrate(50);
+          confetti({
+            particleCount: 30,
+            spread: 45,
+            origin: { x: 0.5, y: 0.8 },
+            startVelocity: 15,
+            colors: ['#4f46e5', '#06b6d4', '#ffffff'],
+            decay: 0.9,
+          });
+          setAttachedPins(prev => [...prev, relativeHitAngle]);
+          setRemainingPins(prev => prev - 1);
+          if (remainingPins === 1) handleWin();
+        }
+      }
+    };
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    animationRef.current = requestAnimationFrame(animateFlight);
   };
 
   const handleWin = () => {
@@ -167,7 +255,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     }, 1500);
   };
 
-  // ─── Bonus AI Logic ───────────────────────────────────────────────────────
+  // ─── Bonus AI Logic (unchanged) ───────────────────────────────────────────
   const fetchAIQuestion = async (bonus: typeof BONUS_LEVELS[0]) => {
     setSelectedBonus(bonus);
     setPhase('loading_quiz');
@@ -229,10 +317,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     return () => clearInterval(timer);
   }, [phase, selectedAnswer, playSound]);
 
-  // =======================================================================
-  // UI Components
-  // =======================================================================
-
+  // ─── UI Components ─────────────────────────────────────────────────────────
   const VolumeControl = () => (
     <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm px-3 py-1 rounded-full shadow-sm">
       <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1">
@@ -261,9 +346,8 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
         </div>
         <h3 className="text-3xl font-black text-gray-800 mb-2">{isEn ? 'Cell Injector' : 'حقنة الخلية'}</h3>
         <p className="text-sm font-bold text-gray-500 mb-8 max-w-xs mx-auto leading-relaxed">
-          {isEn ? 'Sterilize the cell by injecting all vials. Precision is everything!' : 'قم بتطهير الخلية عن طريق حقن جميع الإبر. الدقة هي كل شيء!'}
+          {isEn ? 'Pull the bowstring to aim and shoot! Power = distance.' : 'اسحب وتر القوس لتصويب وإطلاق! القوة = المسافة.'}
         </p>
-
         <div className="grid grid-cols-1 gap-3 mb-8">
           {LEVELS.map(lvl => (
             <button key={lvl.id} onClick={() => setLevel(lvl)}
@@ -278,7 +362,6 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
             </button>
           ))}
         </div>
-
         <div className="mt-auto flex flex-col gap-4">
           <div className="flex justify-center gap-3">
             <button onClick={() => setLanguage(l => l==='ar'?'en':(l==='en'?'auto':'ar'))} className="px-5 py-2 rounded-xl bg-white text-gray-700 text-xs font-black border border-gray-200 shadow-sm">
@@ -294,11 +377,28 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     );
   }
 
+  // Playing screen with bow
   if (phase === 'playing') {
+    // Calculate string endpoint for visual
+    let stringEndX = 0, stringEndY = 0;
+    if (isDragging) {
+      const dx = dragCurrent.x - dragStart.x;
+      const dy = dragCurrent.y - dragStart.y;
+      // Limit distance to 100px
+      const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 100);
+      const angle = Math.atan2(dy, dx);
+      stringEndX = Math.cos(angle) * dist;
+      stringEndY = Math.sin(angle) * dist;
+    }
+    // Flying needle animation
+    const flyX = isFlying ? (Math.sin(flyAngle * Math.PI / 180) * flyProgress * 300) : 0;
+    const flyY = isFlying ? (Math.cos(flyAngle * Math.PI / 180) * flyProgress * 300) : 0;
     return (
       <div
-        className={`max-w-md mx-auto flex flex-col h-[85vh] select-none touch-none transition-all ${isVibrating ? 'animate-shake' : ''}`}
-        onPointerDown={shootPin}
+        className="max-w-md mx-auto flex flex-col h-[85vh] select-none touch-none"
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={handleDragEnd}
       >
         <div className="flex justify-between items-center p-6 shrink-0 z-50">
           <div className="relative bg-white/60 backdrop-blur-md rounded-2xl p-4 shadow-lg border border-white/30 w-32">
@@ -318,67 +418,122 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
           </div>
         </div>
 
-        {/* Battlefield */}
         <div className="flex-1 relative flex items-center justify-center">
-          {/* Central Cell - now contains needles and counter */}
-          <div
-            className="relative w-48 h-48 md:w-56 md:h-56 rounded-full z-20 flex items-center justify-center"
-            style={{ transform: `rotate(${rotation}deg)` }}
-          >
-            {/* Cell body with glass effect */}
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-700 to-pink-600 rounded-full
+          {/* Power meter */}
+          {isDragging && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-32 bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div className="bg-indigo-600 h-full rounded-full" style={{ width: `${power * 100}%` }}></div>
+            </div>
+          )}
+
+          {/* Central Cell */}
+          <div className="relative w-48 h-48 md:w-56 md:h-56 rounded-full z-20 flex items-center justify-center">
+            {/* Rotating cell body */}
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{ transform: `rotate(${rotation}deg)` }}
+            >
+              <div className="w-full h-full bg-gradient-to-br from-indigo-600 via-purple-700 to-pink-600 rounded-full
                             shadow-[0_0_30px_rgba(99,102,241,0.6),inset_0_-10px_20px_rgba(0,0,0,0.4)]
                             border-2 border-white/30 backdrop-blur-sm
                             before:absolute before:inset-0 before:rounded-full before:bg-white/20 before:blur-lg
                             after:absolute after:inset-0 after:rounded-full after:bg-[radial-gradient(circle_at_30%_30%,white,transparent)] after:opacity-30">
+              </div>
+              {/* Attached needles (inside rotating container) */}
+              {attachedPins.map((relAngle, i) => (
+                <div
+                  key={i}
+                  className="absolute w-1 h-44 origin-bottom"
+                  style={{
+                    transform: `rotate(${relAngle}deg) translateY(-50%)`,
+                    bottom: '50%',
+                  }}
+                >
+                  <div className="w-1.5 h-28 bg-gradient-to-b from-gray-300 to-gray-500 rounded-full mx-auto relative">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-3 bg-red-600/80 rounded-t-full"></div>
+                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-2 bg-gray-200 rounded-full"></div>
+                  </div>
+                  <div className="w-2.5 h-2.5 bg-white border border-gray-400 rounded-full mx-auto -mt-1 shadow-md"></div>
+                </div>
+              ))}
             </div>
-
-            {/* Hit counter inside cell */}
+            {/* Static hit counter (non-rotating) */}
             <div className="relative z-10 bg-black/30 backdrop-blur-sm rounded-full w-16 h-16 flex items-center justify-center">
               <span className="text-3xl font-black text-white">{attachedPins.length}</span>
             </div>
-
-            {/* Attached Needles - now inside rotating container */}
-            {attachedPins.map((relAngle, i) => (
-              <div
-                key={i}
-                className="absolute w-1 h-44 origin-bottom"
-                style={{
-                  transform: `rotate(${relAngle}deg) translateY(-50%)`,
-                  bottom: '50%',
-                }}
-              >
-                <div className="w-1.5 h-28 bg-gradient-to-b from-gray-300 to-gray-500 rounded-full mx-auto relative">
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-3 bg-red-600/80 rounded-t-full"></div>
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-2 bg-gray-200 rounded-full"></div>
-                </div>
-                <div className="w-2.5 h-2.5 bg-white border border-gray-400 rounded-full mx-auto -mt-1 shadow-md"></div>
-              </div>
-            ))}
           </div>
 
-          {/* Ready Syringe - moved further down */}
-          {!isGameOver && remainingPins > 0 && (
-            <div className="absolute bottom-24 flex flex-col items-center animate-in slide-in-from-bottom-10 duration-300">
-              <div className="w-1 h-16 bg-gradient-to-t from-gray-400 to-gray-600 rounded-full mb-1"></div>
-              <div className="w-4 h-10 bg-indigo-500/20 border-2 border-indigo-500/50 rounded-lg flex flex-col items-center p-1 shadow-lg">
-                <div className="w-full h-1 bg-indigo-500 rounded-full mb-1"></div>
-                <div className="w-full h-1 bg-indigo-500 rounded-full opacity-50"></div>
-              </div>
-              <div className="w-6 h-2 bg-gray-800 rounded-full mt-1"></div>
-            </div>
+          {/* Bow (far from cell) */}
+          <div
+            ref={bowRef}
+            className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-32 h-32 pointer-events-auto"
+          >
+            {/* Bow arc */}
+            <svg className="w-full h-full" viewBox="0 0 100 100">
+              <path
+                d="M 20 70 Q 50 20, 80 70"
+                stroke="white"
+                strokeWidth="4"
+                fill="none"
+                strokeLinecap="round"
+              />
+              {/* String */}
+              <line
+                x1="20"
+                y1="70"
+                x2="80"
+                y2="70"
+                stroke="white"
+                strokeWidth="2"
+                strokeDasharray="4"
+              />
+              {/* Drawn string */}
+              {isDragging && (
+                <line
+                  x1="20"
+                  y1="70"
+                  x2={50 + stringEndX}
+                  y2={70 + stringEndY}
+                  stroke="orange"
+                  strokeWidth="3"
+                />
+              )}
+              {isDragging && (
+                <line
+                  x1="80"
+                  y1="70"
+                  x2={50 + stringEndX}
+                  y2={70 + stringEndY}
+                  stroke="orange"
+                  strokeWidth="3"
+                />
+              )}
+              {/* Arrow nock */}
+              <circle cx="50" cy="70" r="3" fill="white" />
+            </svg>
+          </div>
+
+          {/* Flying arrow visual */}
+          {isFlying && (
+            <div
+              className="absolute w-8 h-1 bg-orange-500 rounded-full shadow-lg"
+              style={{
+                left: `calc(50% + ${flyX}px)`,
+                top: `calc(100% - 80px + ${flyY}px)`,
+                transform: `rotate(${flyAngle}deg)`,
+                transition: 'none',
+              }}
+            />
           )}
         </div>
-
-        <div className="p-12 text-center">
-          <p className="text-gray-400 font-black text-[10px] uppercase tracking-[0.3em] animate-pulse">
-            {isEn ? 'Tap anywhere to inject' : 'انقر في أي مكان للإطلاق'}
-          </p>
+        <div className="p-4 text-center text-gray-400 text-xs">
+          {isEn ? 'Drag the string backward to aim and charge' : 'اسحب الوتر للخلف لتوجيه السهم وشحن الطاقة'}
         </div>
       </div>
     );
   }
 
+  // Other screens unchanged...
   if (phase === 'puzzle_solved') {
     return (
       <div className="text-center py-10 px-4 animate-in slide-in-from-bottom" dir="rtl">
