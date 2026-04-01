@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { FlaskConical, CheckCircle, XCircle, Globe, Volume2, VolumeX, Sparkles, Loader2, ArrowRight, Star, Target } from 'lucide-react';
+// تم إضافة Clock هنا في السطر التالي
+import { FlaskConical, CheckCircle, XCircle, Globe, Volume2, VolumeX, Sparkles, Loader2, ArrowRight, Star, Target, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
@@ -48,7 +49,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
     const [timeLeft, setTimeLeft] = useState(0);
 
-    // مرجع للوظيفة لتجنب مشاكل اللوب في الـ Timer
     const handleQuizAnswerRef = useRef<(idx: number) => void>();
 
     const isMedicalEnglishSpecialty = ['بشر', 'أسنان', 'صيدل', 'اسره', 'معمل', 'تمريض'].some(s => 
@@ -72,7 +72,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         } catch {}
     }, [soundEnabled]);
 
-    // ─── 1. بدء اللعبة ───────────────────────────────────
     const startGame = async () => {
         setStarting(true);
         try { await onStart(); } catch { setStarting(false); return; }
@@ -90,7 +89,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         setStarting(false);
     };
 
-    // ─── 2. تحريك الزجاجات ────────────────────────────────
     const handleBottleClick = (idx: number) => {
         if (selectedBottle === null) {
             setSelectedBottle(idx);
@@ -129,7 +127,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         }
     };
 
-    // ─── 3. الجلب الآمن للذكاء الاصطناعي ────────────────────
     const fetchAIQuestion = async (bonus: typeof BONUS_LEVELS[0]) => {
         setSelectedBonus(bonus);
         setPhase('loading_quiz');
@@ -160,7 +157,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
             const q = qArray[0]; 
             const charToIndex: Record<string, number> = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
             
-            // استخراج آمن 100% للخيارات لمنع الكراش
             const safeOptions = Array.isArray(q.options) && q.options.length >= 4 
                 ? q.options 
                 : [q.option_a || 'خيار 1', q.option_b || 'خيار 2', q.option_c || 'خيار 3', q.option_d || 'خيار 4'];
@@ -175,13 +171,11 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
             setTimeLeft(bonus.time);
             setPhase('quiz');
         } catch (err) {
-            console.error("AI Error: ", err);
             toast.error(isEn ? 'AI server busy. You secured base points!' : 'السيرفر مشغول. حصلت على نقاطك الأساسية!');
             onComplete(totalScore, true);
         }
     };
 
-    // ─── 4. مؤقت آمن لا يهنج الصفحة ────────────────────────
     const handleQuizAnswer = useCallback((idx: number) => {
         if (selectedAnswer !== null) return;
         setSelectedAnswer(idx);
@@ -192,15 +186,12 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
             playSound('win');
             confetti({ particleCount: 100, spread: 60, origin: { y: 0.6 } });
             setTotalScore(prev => prev + selectedBonus!.points);
-            toast.success(`إجابة صحيحة! +${selectedBonus!.points} نقطة`);
         } else {
             playSound('lose');
-            toast.error('إجابة خاطئة!');
         }
         setPhase('summary');
     }, [selectedAnswer, quizQuestion, selectedBonus, playSound]);
 
-    // حفظ الدالة في ريفرنس لكي يستخدمها المؤقت بدون إعادة الريندر
     useEffect(() => { handleQuizAnswerRef.current = handleQuizAnswer; }, [handleQuizAnswer]);
 
     useEffect(() => {
@@ -210,7 +201,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
             setTimeLeft(prev => {
                 if (prev <= 1) {
                     clearInterval(timer);
-                    if (handleQuizAnswerRef.current) handleQuizAnswerRef.current(-1); // الوقت انتهى
+                    if (handleQuizAnswerRef.current) handleQuizAnswerRef.current(-1);
                     return 0;
                 }
                 return prev - 1;
@@ -220,10 +211,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
         return () => clearInterval(timer);
     }, [phase, selectedAnswer]);
 
-    // =======================================================================
-    // الواجهات (UI)
-    // =======================================================================
-
+    // الريندر (UI) - نفس الكود الخاص بك مع التأكد من وجود الأيقونات
     if (phase === 'setup') {
         return (
             <div className="text-center py-6 px-4 animate-in zoom-in-95">
@@ -251,7 +239,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
 
     if (phase === 'playing') {
         const remainingAttempts = MAX_ATTEMPTS - history.length;
-        
         return (
             <div className="max-w-md mx-auto py-2 px-2 animate-in slide-in-from-bottom text-center flex flex-col h-[85vh]">
                 <div className="flex justify-between items-center mb-4 px-2 shrink-0">
@@ -307,7 +294,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                                 </span>
                             </div>
                         ))}
-                        {history.length === 0 && <p className="text-[10px] text-gray-400 mt-4">{isEn ? 'No attempts yet' : 'لم تقم بأي فحص بعد'}</p>}
                     </div>
                 </div>
             </div>
@@ -347,8 +333,7 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
     }
 
     if (phase === 'quiz' || phase === 'summary') {
-        if (!quizQuestion) return null; // حماية إضافية للريندر
-
+        if (!quizQuestion) return null;
         const isEnglishQ = /^[A-Za-z]/.test(quizQuestion.question_text || '');
         return (
             <div className="max-w-xl mx-auto w-full animate-in zoom-in-95 duration-300 py-4 px-2">
@@ -377,7 +362,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                     <h3 className={`text-base md:text-lg font-black text-gray-800 leading-relaxed mb-5 ${isEnglishQ ? 'text-left' : 'text-right'}`} dir={isEnglishQ ? 'ltr' : 'rtl'}>
                         {quizQuestion.question_text}
                     </h3>
-
                     <div className="grid grid-cols-1 gap-2" dir={isEnglishQ ? 'ltr' : 'rtl'}>
                         {quizQuestion.options.map((option: string, idx: number) => {
                             let btnClass = 'bg-white border-2 border-gray-100 text-gray-700 hover:border-emerald-300';
@@ -396,7 +380,6 @@ export default function BottleSortGame({ onStart, onComplete, employee }: Props)
                             );
                         })}
                     </div>
-
                     {phase === 'summary' && quizQuestion.explanation && (
                         <div className="mt-4 p-3 rounded-xl text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200" dir={isEnglishQ ? 'ltr' : 'rtl'}>
                             <span className="block mb-1 opacity-70">📚 {isEnglishQ ? 'Explanation:' : 'الشرح:'}</span>
