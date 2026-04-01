@@ -27,14 +27,15 @@ import HangmanGameSingle        from '../../../components/gamification/games/Han
 import SlidingPuzzleGame        from '../../../components/gamification/games/SlidingPuzzleGame';
 import SimonGame                from '../../../components/gamification/games/SimonGame';
 import WaterSortGame            from '../../../components/gamification/games/WaterSortGame';
+import TwistArrowGame           from '../../../components/gamification/games/TwistArrowGame'; // 👈 استيراد اللعبة الجديدة
 import LiveGamesArena           from '../../../components/gamification/LiveGamesArena';
 
 interface Props { employee: Employee; deepLinkRoomId?: string | null; }
 
-// ثابت وقت الانتظار الجديد (4 ساعات)
+// ثابت وقت الانتظار (4 ساعات)
 const CUSTOM_COOLDOWN_HOURS = 4;
 
-// ─── 11 Solo Games ─────────────────────────────────────────────────────────────
+// ─── 12 Solo Games ─────────────────────────────────────────────────────────────
 const GAME_CATALOG = [
     { key: 'spin',     title: 'عجلة الحظ',       icon: Dices,      gradient: 'from-fuchsia-500 to-pink-600',  bg: 'from-fuchsia-50 to-pink-50',  border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
     { key: 'safe',     title: 'الخزنة السرية',    icon: Lock,       gradient: 'from-emerald-500 to-teal-600',  bg: 'from-emerald-50 to-teal-50',  border: 'border-emerald-100 hover:border-emerald-300', tag: 'ذكاء ومنطق', pts: '20-50',  tagColor: 'text-emerald-700', ptsColor: 'text-emerald-600' },
@@ -47,6 +48,8 @@ const GAME_CATALOG = [
     { key: 'sliding',  title: 'ترتيب الأرقام',    icon: Grip,       gradient: 'from-blue-500 to-cyan-600',     bg: 'from-blue-50 to-cyan-50',     border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '20-70',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
     { key: 'simon',    title: 'سيمون يقول',       icon: Target,     gradient: 'from-gray-800 to-black',        bg: 'from-gray-100 to-gray-200',   border: 'border-gray-300 hover:border-gray-500',       tag: 'ذاكرة بصرية', pts: '20-70',  tagColor: 'text-gray-800',    ptsColor: 'text-gray-700'    },
     { key: 'water',    title: 'فرز السوائل',      icon: Droplet,    gradient: 'from-cyan-400 to-blue-600',     bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'تخطيط عميق', pts: '20-80',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
+    // 👈 اللعبة رقم 12 الجديدة
+    { key: 'twist',    title: 'حقنة الخلية',      icon: Target,     gradient: 'from-indigo-500 to-purple-600', bg: 'from-indigo-50 to-purple-50', border: 'border-indigo-100 hover:border-indigo-300',   tag: 'توقيت ودقة', pts: '15-50',  tagColor: 'text-indigo-700',  ptsColor: 'text-indigo-600'  },
 ];
 
 // ─── Game Grid Component ──────────────────────────────────────────────────────
@@ -122,7 +125,6 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
 
     const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
 
-    // جلب آخر موعد لعب
     const { data: lastPlay, isLoading: loadingPlay } = useQuery({
         queryKey: ['last_arcade_play', employee.employee_id],
         queryFn: async () => {
@@ -132,11 +134,8 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
         }
     });
 
-    // حساب الوقت المتبقي (مع استثناء المشرف)
     const timeRemaining = useMemo(() => {
-        // إذا كان العضو هو أدمن، لا يتم تفعيل عداد الانتظار
-        if (employee.role === 'admin') return null;
-
+        if (employee.role === 'admin') return null; // استثناء الإدارة
         if (!lastPlay?.played_at) return null;
         
         const cooldownMs = CUSTOM_COOLDOWN_HOURS * 60 * 60 * 1000;
@@ -218,6 +217,7 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             case 'sliding':  return <SlidingPuzzleGame {...simple}/>;
             case 'simon':    return <SimonGame {...simple}/>;
             case 'water':    return <WaterSortGame {...simple}/>;
+            case 'twist':    return <TwistArrowGame {...simple}/>; // 👈 استدعاء لعبة حقنة الخلية
             default:         return null;
         }
     };
@@ -226,7 +226,6 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
         <div className="space-y-3 animate-in fade-in pb-6">
             <ArcadeHeader employee={employee} onShowLeaderboard={() => setShowLeaderboard(true)}/>
 
-            {/* Tabs */}
             <div className="flex bg-white rounded-xl p-1 shadow-sm border border-gray-100 gap-1">
                 <button onClick={() => setActiveTab('games')}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg font-black text-xs transition-all ${activeTab === 'games' ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow' : 'text-gray-500 hover:bg-gray-50'}`}>
@@ -239,7 +238,6 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
                 </button>
             </div>
 
-            {/* ── LIVE TAB ── */}
             {activeTab === 'live' && (
                 <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden animate-in fade-in">
                     <div className="bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 px-4 py-3 flex items-center gap-2">
@@ -258,7 +256,6 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
                 </div>
             )}
 
-            {/* ── GAMES TAB ── */}
             {activeTab === 'games' && (
                 <>
                     {loadingPlay ? (
