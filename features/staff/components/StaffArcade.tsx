@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-import { getDiffProfile, COOLDOWN_HOURS, DiffProfile } from './arcade/types';
+import { getDiffProfile, DiffProfile } from './arcade/types';
 import ArcadeHeader, { LevelBadge } from './arcade/ArcadeHeader';
 import ArcadeCooldown from './arcade/ArcadeCooldown';
 import ArcadeLeaderboard from './arcade/ArcadeLeaderboard';
@@ -31,6 +31,9 @@ import LiveGamesArena           from '../../../components/gamification/LiveGames
 
 interface Props { employee: Employee; deepLinkRoomId?: string | null; }
 
+// ثابت وقت الانتظار الجديد (4 ساعات)
+const CUSTOM_COOLDOWN_HOURS = 4;
+
 // ─── 11 Solo Games ─────────────────────────────────────────────────────────────
 const GAME_CATALOG = [
     { key: 'spin',     title: 'عجلة الحظ',       icon: Dices,      gradient: 'from-fuchsia-500 to-pink-600',  bg: 'from-fuchsia-50 to-pink-50',  border: 'border-fuchsia-100 hover:border-fuchsia-300', tag: 'حظ + ذكاء',   pts: '5-30',  tagColor: 'text-fuchsia-700', ptsColor: 'text-fuchsia-600' },
@@ -43,15 +46,13 @@ const GAME_CATALOG = [
     { key: 'hangman',  title: 'لعبة المشنقة',     icon: Skull,      gradient: 'from-slate-600 to-slate-800',   bg: 'from-slate-50 to-slate-100',  border: 'border-slate-200 hover:border-slate-400',     tag: 'تخمين وثقافة', pts: '15-60', tagColor: 'text-slate-700',   ptsColor: 'text-slate-600'   },
     { key: 'sliding',  title: 'ترتيب الأرقام',    icon: Grip,       gradient: 'from-blue-500 to-cyan-600',     bg: 'from-blue-50 to-cyan-50',     border: 'border-blue-100 hover:border-blue-300',       tag: 'سرعة بديهة', pts: '20-70',  tagColor: 'text-blue-700',    ptsColor: 'text-blue-600'    },
     { key: 'simon',    title: 'سيمون يقول',       icon: Target,     gradient: 'from-gray-800 to-black',        bg: 'from-gray-100 to-gray-200',   border: 'border-gray-300 hover:border-gray-500',       tag: 'ذاكرة بصرية', pts: '20-70',  tagColor: 'text-gray-800',    ptsColor: 'text-gray-700'    },
-    // 👈 اللعبة رقم 11 التي كانت مفقودة في القائمة
-    { key: 'water',    title: 'فرز السوائل',      icon: Droplet,    gradient: 'from-cyan-400 to-blue-600',     bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'تخطيط عميق', pts: '20-80',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    }
+    { key: 'water',    title: 'فرز السوائل',      icon: Droplet,    gradient: 'from-cyan-400 to-blue-600',     bg: 'from-cyan-50 to-blue-50',     border: 'border-cyan-100 hover:border-cyan-300',       tag: 'تخطيط عميق', pts: '20-80',  tagColor: 'text-cyan-700',    ptsColor: 'text-cyan-600'    },
 ];
 
-// ─── Game Grid ────────────────────────────────────────────────────────────────
+// ─── Game Grid Component ──────────────────────────────────────────────────────
 function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelect: (key: string) => void }) {
     return (
         <div className="space-y-3">
-            {/* Level banner */}
             <div className={`p-3 rounded-xl border-2 flex items-center gap-2 ${diffProfile.color}`}>
                 <span className="text-2xl">{diffProfile.emoji}</span>
                 <div className="flex-1 min-w-0">
@@ -63,8 +64,6 @@ function GameGrid({ diffProfile, onSelect }: { diffProfile: DiffProfile; onSelec
                     <p className="text-[10px] font-bold opacity-70">مضاعف</p>
                 </div>
             </div>
-
-            {/* Games grid */}
             <div className="grid grid-cols-2 gap-2">
                 {GAME_CATALOG.map(g => {
                     const Icon = g.icon;
@@ -112,7 +111,7 @@ function fireConfetti() {
     setTimeout(() => canvas.remove(), 5000);
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
     const queryClient = useQueryClient();
     const [activeGame, setActiveGame]   = useState<string | null>(null);
@@ -123,6 +122,7 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
 
     const diffProfile = useMemo(() => getDiffProfile(employee.total_points || 0), [employee.total_points]);
 
+    // جلب آخر موعد لعب
     const { data: lastPlay, isLoading: loadingPlay } = useQuery({
         queryKey: ['last_arcade_play', employee.employee_id],
         queryFn: async () => {
@@ -132,13 +132,21 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
         }
     });
 
+    // حساب الوقت المتبقي (مع استثناء المشرف)
     const timeRemaining = useMemo(() => {
+        // إذا كان العضو هو أدمن، لا يتم تفعيل عداد الانتظار
+        if (employee.role === 'admin') return null;
+
         if (!lastPlay?.played_at) return null;
-        const diff = (Date.now() - new Date(lastPlay.played_at).getTime()) / (1000 * 60 * 60);
-        if (diff >= COOLDOWN_HOURS) return null;
-        const rem = COOLDOWN_HOURS * 3600000 - (Date.now() - new Date(lastPlay.played_at).getTime());
+        
+        const cooldownMs = CUSTOM_COOLDOWN_HOURS * 60 * 60 * 1000;
+        const diff = Date.now() - new Date(lastPlay.played_at).getTime();
+        
+        if (diff >= cooldownMs) return null;
+
+        const rem = cooldownMs - diff;
         return { hrs: Math.floor(rem / 3600000), mins: Math.floor((rem % 3600000) / 60000) };
-    }, [lastPlay]);
+    }, [lastPlay, employee.role]);
 
     const consumeAttempt = async (gameName: string) => {
         const { data, error } = await supabase.from('arcade_scores').insert({
@@ -167,7 +175,7 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
                 setActiveGame(null);
                 setSessionId(null);
             } else {
-                toast.error('حظ أوفر! تعال جرب تاني بعد 5 ساعات 💔', { duration: 4000 });
+                toast.error(`حظ أوفر! تعال جرب تاني بعد ${CUSTOM_COOLDOWN_HOURS} ساعات 💔`, { duration: 4000 });
                 setActiveGame(null);
                 setSessionId(null);
             }
@@ -209,14 +217,13 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
             case 'hangman':  return <HangmanGameSingle {...simple}/>;
             case 'sliding':  return <SlidingPuzzleGame {...simple}/>;
             case 'simon':    return <SimonGame {...simple}/>;
-            case 'water':    return <WaterSortGame {...simple}/>; // 👈 استدعاء لعبة فرز السوائل
+            case 'water':    return <WaterSortGame {...simple}/>;
             default:         return null;
         }
     };
 
     return (
         <div className="space-y-3 animate-in fade-in pb-6">
-
             <ArcadeHeader employee={employee} onShowLeaderboard={() => setShowLeaderboard(true)}/>
 
             {/* Tabs */}
@@ -259,12 +266,10 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
                             <Loader2 className="w-10 h-10 animate-spin mx-auto text-fuchsia-600 mb-3"/>
                             <p className="text-gray-500 font-bold text-sm">جاري التحميل...</p>
                         </div>
-
                     ) : bonusState?.show ? (
                         <div className="bg-white rounded-2xl shadow-xl border-2 border-amber-200 p-4">
                             <BonusQuestion employee={employee} bonusPoints={bonusState.pts} onFinish={handleBonusFinish}/>
                         </div>
-
                     ) : activeGame !== null ? (
                         <div className="bg-white rounded-2xl shadow-xl border-2 border-gray-100">
                             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -289,10 +294,8 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
                                 ) : gameNode(activeGame)}
                             </div>
                         </div>
-
                     ) : timeRemaining ? (
                         <ArcadeCooldown hrs={timeRemaining.hrs} mins={timeRemaining.mins}/>
-
                     ) : (
                         <GameGrid diffProfile={diffProfile} onSelect={setActiveGame}/>
                     )}
@@ -303,4 +306,3 @@ export default function StaffArcade({ employee, deepLinkRoomId }: Props) {
         </div>
     );
 }
-
