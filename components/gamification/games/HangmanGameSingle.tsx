@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Skull, CheckCircle, XCircle, Loader2, ArrowRight, Star, Heart } from 'lucide-react';
+import { Skull, CheckCircle, XCircle, Loader2, ArrowRight, Star, Clock, Heart } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
 import { Employee } from '../../../types';
