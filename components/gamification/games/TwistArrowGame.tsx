@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../supabaseClient';
 import {
   Target, CheckCircle, XCircle, Globe, Volume2, VolumeX, Loader2, ArrowRight,
-  Star, Clock, Activity, Zap, Volume1, Volume
+  Star, Clock, Activity, Zap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import confetti from 'canvas-confetti';
@@ -33,7 +33,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
   // Game Logic
   const [level, setLevel] = useState<typeof LEVELS[0]>(LEVELS[0]);
   const [rotation, setRotation] = useState(0);
-  const [attachedPins, setAttachedPins] = useState<number[]>([]);
+  const [attachedPins, setAttachedPins] = useState<number[]>([]); // store relative angles
   const [remainingPins, setRemainingPins] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isVibrating, setIsVibrating] = useState(false);
@@ -60,7 +60,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
       case 'win': url = '/applause.mp3'; break;
       case 'lose': url = '/fail.mp3'; break;
       case 'hit': url = '/click.mp3'; break;
-      case 'tick': url = '/sounds/tick.mp3'; break; // optional, fallback to click if missing
+      case 'tick': url = '/sounds/tick.mp3'; break;
       case 'select': url = '/sounds/select.mp3'; break;
       default: return;
     }
@@ -72,12 +72,8 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
       }
       audio.volume = volume;
       audio.currentTime = 0;
-      audio.play().catch(() => {
-        // Silent fail if sound can't play (e.g., missing file)
-      });
-    } catch (e) {
-      // ignore
-    }
+      audio.play().catch(() => {});
+    } catch (e) {}
   }, [soundEnabled, volume]);
 
   const isMedical = ['بشر', 'أسنان', 'صيدل', 'اسره'].some(s =>
@@ -120,20 +116,23 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
   const shootPin = (e: React.PointerEvent | React.MouseEvent) => {
     if (isGameOver || remainingPins <= 0 || phase !== 'playing') return;
 
-    const hitAngle = (90 - rotation + 360) % 360;
+    // Absolute angle where the needle is injected (relative to screen)
+    const absoluteHitAngle = (90 - rotation + 360) % 360;
 
-    const isCollision = attachedPins.some(pinAngle => {
-      const diff = Math.abs(pinAngle - hitAngle);
-      return diff < 14 || diff > 346;
+    // Convert to angle relative to current cell orientation
+    const relativeHitAngle = (absoluteHitAngle - rotation + 360) % 360;
+
+    // Check collision with existing needles (needles are stored as relative angles)
+    const collision = attachedPins.some(relAngle => {
+      const diff = Math.abs(relAngle - relativeHitAngle);
+      return diff < 14 || diff > 346; // close enough to be a collision
     });
 
-    if (isCollision) {
+    if (collision) {
       handleLose();
     } else {
-      // Success: play hit sound, haptic, particle effect
       playSound('hit');
       if (navigator.vibrate) navigator.vibrate(50);
-      // Particle burst
       confetti({
         particleCount: 30,
         spread: 45,
@@ -142,7 +141,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
         colors: ['#4f46e5', '#06b6d4', '#ffffff'],
         decay: 0.9,
       });
-      setAttachedPins(prev => [...prev, hitAngle]);
+      setAttachedPins(prev => [...prev, relativeHitAngle]);
       setRemainingPins(prev => prev - 1);
       if (remainingPins === 1) handleWin();
     }
@@ -219,11 +218,11 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          playSound('tick'); // final tick
+          playSound('tick');
           handleQuizAnswerRef.current?.(-1);
           return 0;
         }
-        playSound('tick'); // tick each second
+        playSound('tick');
         return prev - 1;
       });
     }, 1000);
@@ -234,7 +233,6 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
   // UI Components
   // =======================================================================
 
-  // Volume control component
   const VolumeControl = () => (
     <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm px-3 py-1 rounded-full shadow-sm">
       <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1">
@@ -254,7 +252,7 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     </div>
   );
 
-  // Screen: Setup
+  // ─── Screens ───────────────────────────────────────────────────────────────
   if (phase === 'setup') {
     return (
       <div className="text-center py-6 px-4 animate-in zoom-in-95 flex flex-col h-[85vh] bg-gradient-to-br from-slate-50 to-indigo-50/30 rounded-[2.5rem]">
@@ -296,7 +294,6 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     );
   }
 
-  // Screen: Playing
   if (phase === 'playing') {
     return (
       <div
@@ -323,9 +320,11 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
 
         {/* Battlefield */}
         <div className="flex-1 relative flex items-center justify-center">
-          {/* Central Cell */}
-          <div className="relative w-48 h-48 md:w-56 md:h-56 rounded-full z-20 flex items-center justify-center"
-               style={{ transform: `rotate(${rotation}deg)` }}>
+          {/* Central Cell - now contains needles and counter */}
+          <div
+            className="relative w-48 h-48 md:w-56 md:h-56 rounded-full z-20 flex items-center justify-center"
+            style={{ transform: `rotate(${rotation}deg)` }}
+          >
             {/* Cell body with glass effect */}
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-700 to-pink-600 rounded-full
                             shadow-[0_0_30px_rgba(99,102,241,0.6),inset_0_-10px_20px_rgba(0,0,0,0.4)]
@@ -333,26 +332,34 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
                             before:absolute before:inset-0 before:rounded-full before:bg-white/20 before:blur-lg
                             after:absolute after:inset-0 after:rounded-full after:bg-[radial-gradient(circle_at_30%_30%,white,transparent)] after:opacity-30">
             </div>
-            {/* Inner nucleus */}
-            <div className="w-20 h-20 bg-yellow-300/30 rounded-full blur-md animate-pulse"></div>
-            <span className="absolute bottom-2 text-white/30 text-xs font-black tracking-widest">CELL</span>
+
+            {/* Hit counter inside cell */}
+            <div className="relative z-10 bg-black/30 backdrop-blur-sm rounded-full w-16 h-16 flex items-center justify-center">
+              <span className="text-3xl font-black text-white">{attachedPins.length}</span>
+            </div>
+
+            {/* Attached Needles - now inside rotating container */}
+            {attachedPins.map((relAngle, i) => (
+              <div
+                key={i}
+                className="absolute w-1 h-44 origin-bottom"
+                style={{
+                  transform: `rotate(${relAngle}deg) translateY(-50%)`,
+                  bottom: '50%',
+                }}
+              >
+                <div className="w-1.5 h-28 bg-gradient-to-b from-gray-300 to-gray-500 rounded-full mx-auto relative">
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-3 bg-red-600/80 rounded-t-full"></div>
+                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-2 bg-gray-200 rounded-full"></div>
+                </div>
+                <div className="w-2.5 h-2.5 bg-white border border-gray-400 rounded-full mx-auto -mt-1 shadow-md"></div>
+              </div>
+            ))}
           </div>
 
-          {/* Attached Needles */}
-          {attachedPins.map((angle, i) => (
-            <div key={i} className="absolute w-1 h-44 origin-bottom"
-                 style={{ transform: `rotate(${angle}deg) translateY(-50%)`, bottom: '50%' }}>
-              <div className="w-1.5 h-28 bg-gradient-to-b from-gray-300 to-gray-500 rounded-full mx-auto relative">
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-3 bg-red-600/80 rounded-t-full"></div>
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-2 bg-gray-200 rounded-full"></div>
-              </div>
-              <div className="w-2.5 h-2.5 bg-white border border-gray-400 rounded-full mx-auto -mt-1 shadow-md"></div>
-            </div>
-          ))}
-
-          {/* Ready Syringe */}
+          {/* Ready Syringe - moved further down */}
           {!isGameOver && remainingPins > 0 && (
-            <div className="absolute bottom-10 flex flex-col items-center animate-in slide-in-from-bottom-10 duration-300">
+            <div className="absolute bottom-24 flex flex-col items-center animate-in slide-in-from-bottom-10 duration-300">
               <div className="w-1 h-16 bg-gradient-to-t from-gray-400 to-gray-600 rounded-full mb-1"></div>
               <div className="w-4 h-10 bg-indigo-500/20 border-2 border-indigo-500/50 rounded-lg flex flex-col items-center p-1 shadow-lg">
                 <div className="w-full h-1 bg-indigo-500 rounded-full mb-1"></div>
@@ -372,7 +379,6 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     );
   }
 
-  // Screen: Puzzle Solved
   if (phase === 'puzzle_solved') {
     return (
       <div className="text-center py-10 px-4 animate-in slide-in-from-bottom" dir="rtl">
@@ -399,7 +405,6 @@ export default function TwistArrowGame({ onStart, onComplete, employee }: Props)
     );
   }
 
-  // Screens: Loading Quiz, Quiz, Summary
   if (phase === 'loading_quiz') {
     return (
       <div className="flex flex-col items-center justify-center py-32 text-indigo-600 animate-pulse text-center">
