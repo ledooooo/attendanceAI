@@ -72,7 +72,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   });
   
   // فلتر حالة الموظفين المطلوب
-  const [empStatusFilter, setEmpStatusFilter] = useState<string>('نشط (قوة فعلية)');
+  const [empStatusFilter, setEmpStatusFilter] = useState<string>('نشط');
 
   // التقسيم (Pagination)
   const [currentPage, setCurrentPage] = useState(1);
@@ -245,7 +245,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   const filteredEmployeesForAdd = useMemo(() => {
     return employees.filter(emp => {
       if (empStatusFilter === 'الكل') return true;
-      const currentStatus = emp.status || (emp.is_active ? 'نشط (قوة فعلية)' : 'موقوف');
+      const currentStatus = emp.status || (emp.is_active ? 'نشط' : 'موقوف');
       return currentStatus === empStatusFilter;
     });
   }, [employees, empStatusFilter]);
