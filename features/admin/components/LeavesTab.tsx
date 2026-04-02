@@ -19,12 +19,6 @@ const formatDateForDB = (val: any): string | null => {
     const localDate = new Date(val.getTime() - (val.getTimezoneOffset() * 60000));
     return localDate.toISOString().split('T')[0];
   }
-  const num = Number(val);
-  if (!isNaN(num) && num > 30000 && num < 60000) {
-    const d = new Date(Math.round((num - 25569) * 86400 * 1000));
-    d.setHours(12, 0, 0, 0);
-    return d.toISOString().split('T')[0];
-  }
   const str = String(val).trim();
   const d = new Date(str);
   if (!isNaN(d.getTime())) {
@@ -34,7 +28,7 @@ const formatDateForDB = (val: any): string | null => {
   return null;
 };
 
-// --- الثوابت الجديدة المطلوبة ---
+// --- الثوابت المطلوبة ---
 const REQUEST_TYPES = [
   'اعتيادى', 'عارضة', 'تدريب', 'مامورية', 'مرضى', 
   'بدل راحة', 'خط سير', 'اذن صباحى', 'اذن مسائى'
@@ -93,10 +87,10 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
       .select('*, employees(name)')
       .order('start_date', { ascending: false });
 
-    // جلب بيانات الموظفين مع الحالة والتخصص لضمان الترتيب والفلترة
+    // جلب بيانات الموظفين (تم حذف is_active لحل مشكلة الخطأ 400)
     const { data: empsData } = await supabase
       .from('employees')
-      .select('id, employee_id, name, specialty, status, is_active');
+      .select('id, employee_id, name, specialty, status');
 
     if (leavesData) {
       const formattedLeaves = leavesData.map(l => ({
@@ -107,7 +101,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     }
     
     if (empsData) {
-      // ✅ ترتيب الموظفين حسب التخصص ثم الاسم
+      // ترتيب الموظفين حسب التخصص ثم الاسم
       const sortedEmps = (empsData as Employee[]).sort((a, b) => {
         const specCompare = (a.specialty || '').localeCompare(b.specialty || '');
         if (specCompare !== 0) return specCompare;
@@ -137,7 +131,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     XLSX.writeFile(wb, "نموذج_طلبات_الإجازات.xlsx");
   };
 
-  // ✅ الحفاظ على منطق استيراد الإكسيل بالكامل كما هو
+  // الحفاظ على منطق استيراد الإكسيل بالكامل كما هو
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     let inserted = 0; let updated = 0; let skipped = 0;
@@ -241,12 +235,11 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     }
   };
 
-  // ✅ منطق الفلترة لتبويب الإضافة الجديد
+  // ✅ منطق الفلترة المصلح ليعتمد على الحالة فقط
   const filteredEmployeesForAdd = useMemo(() => {
     return employees.filter(emp => {
       if (empStatusFilter === 'الكل') return true;
-      const currentStatus = emp.status || (emp.is_active ? 'نشط' : 'موقوف');
-      return currentStatus === empStatusFilter;
+      return emp.status === empStatusFilter;
     });
   }, [employees, empStatusFilter]);
 
@@ -286,7 +279,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     setIsProcessing(false);
   };
 
-  // ✅ الحفاظ على منطق التعديل السريع
+  // الحفاظ على منطق التعديل السريع
   const startEditing = (req: LeaveRequest) => {
     setEditingId(req.id);
     setEditFormData({ ...req });
@@ -403,6 +396,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
 
       {activeTab === 'view' ? (
         <>
+          {/* فلاتر البحث */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-3xl border border-gray-100 shadow-inner">
             <Input label="بحث (اسم/كود)" value={fEmployee} onChange={setFEmployee} placeholder="اسم الموظف..." />
             <Input type="month" label="الشهر" value={fMonth} onChange={setFMonth} />
@@ -471,6 +465,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
                 </tbody>
               </table>
             </div>
+            {/* Pagination UI */}
             {filteredLeaves.length > 0 && (
               <div className="border-t bg-gray-50/80 p-4 flex flex-col sm:flex-row justify-between items-center gap-4 rounded-b-[30px]">
                 <div className="text-xs font-bold text-gray-500 bg-white px-3 py-1.5 rounded-lg border shadow-sm">إجمالي السجلات: <span className="text-orange-600">{filteredLeaves.length}</span></div>
@@ -484,13 +479,13 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
           </div>
         </>
       ) : (
-        // --- تبويب إضافة طلب جديد مع الفرز والفلترة والاحتساب التلقائي ---
+        // --- تبويب إضافة طلب جديد ---
         <div className="max-w-4xl mx-auto bg-white border border-gray-100 shadow-xl rounded-[35px] overflow-hidden">
           <div className="bg-orange-600 p-6 text-white flex items-center gap-3">
             <UserPlus className="w-8 h-8"/>
             <div>
               <h3 className="text-xl font-black">إضافة طلب جديد</h3>
-              <p className="text-orange-100 text-xs font-bold">يرجى ملء تفاصيل الطلب للموظف</p>
+              <p className="text-orange-100 text-xs font-bold">قم بتعبئة بيانات الطلب للموظف المختار</p>
             </div>
           </div>
 
@@ -499,31 +494,19 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
               
               {/* اختيار الموظف مع الفلترة المطلوبة والترتيب */}
               <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-black text-gray-700 px-1 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-orange-600"/> فلترة الموظفين (حسب القوة)
-                </label>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {['الكل', ...EMP_STATUS_OPTIONS].map((st) => (
-                    <button 
-                      key={st} type="button"
-                      onClick={() => setEmpStatusFilter(st)}
-                      className={`text-[10px] px-3 py-1.5 rounded-full border transition-all font-bold ${empStatusFilter === st ? 'bg-orange-600 text-white border-orange-600 shadow-md' : 'bg-gray-50 text-gray-400 border-gray-200'}`}
-                    >
-                      {st}
-                    </button>
-                  ))}
+                <div className="flex justify-between items-center px-1">
+                  <label className="text-sm font-black text-gray-700">الموظف (الفلترة حسب الحالة)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {['الكل', ...EMP_STATUS_OPTIONS].map((st) => (
+                      <button key={st} type="button" onClick={() => setEmpStatusFilter(st)} className={`text-[10px] px-3 py-1.5 rounded-full border transition-all font-bold ${empStatusFilter === st ? 'bg-orange-600 text-white border-orange-600 shadow-md' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>{st}</button>
+                    ))}
+                  </div>
                 </div>
-                
-                <select 
-                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm font-bold outline-none focus:border-orange-500 transition-all shadow-sm"
-                  value={newReq.employee_id}
-                  onChange={(e) => setNewReq({...newReq, employee_id: e.target.value})}
-                  required
-                >
+                <select className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm font-bold outline-none focus:border-orange-500 transition-all shadow-sm" value={newReq.employee_id} onChange={(e) => setNewReq({...newReq, employee_id: e.target.value})} required>
                   <option value="">-- اختر الموظف من القائمة --</option>
                   {filteredEmployeesForAdd.map(emp => (
                     <option key={emp.id} value={emp.employee_id}>
-                      [{emp.specialty || 'بدون تخصص'}] - {emp.name}
+                      [{emp.specialty || 'تخصص عام'}] - {emp.name}
                     </option>
                   ))}
                 </select>
@@ -531,19 +514,12 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
               </div>
 
               <Select label="نوع الطلب" options={REQUEST_TYPES} value={newReq.type} onChange={(val) => setNewReq({...newReq, type: val})} />
-
               <Input type="date" label="بداية الطلب" value={newReq.start_date} onChange={(val) => setNewReq({...newReq, start_date: val})} />
 
               <div className="space-y-1">
                 <label className="text-sm font-black text-gray-700 px-1">الفترة (بالأيام)</label>
                 <div className="flex items-center gap-3">
-                  <input 
-                    type="number" min="1"
-                    className="flex-1 bg-gray-50 border border-gray-200 rounded-2xl p-3 text-sm font-bold outline-none focus:border-orange-500 transition-all shadow-sm"
-                    value={newReq.duration}
-                    onChange={(e) => setNewReq({...newReq, duration: e.target.value})}
-                    required
-                  />
+                  <input type="number" min="1" className="flex-1 bg-gray-50 border border-gray-200 rounded-2xl p-3 text-sm font-bold outline-none focus:border-orange-500 transition-all shadow-sm" value={newReq.duration} onChange={(e) => setNewReq({...newReq, duration: e.target.value})} required />
                   <span className="text-sm font-bold text-gray-400">يوم</span>
                 </div>
               </div>
@@ -558,13 +534,12 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
             <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
                <div className="flex items-center gap-2 text-blue-800">
                   <Clock className="w-5 h-5"/>
-                  <span className="text-sm font-black">سيتم تسجيل العودة للعمل في تاريخ:</span>
+                  <span className="text-sm font-black">سيتم تسجيل العودة في تاريخ:</span>
                </div>
                <div className="text-lg font-black text-blue-600">
                   {(() => {
                     const d = new Date(newReq.start_date);
                     if (isNaN(d.getTime())) return '-';
-                    // إضافة المدة للحصول على تاريخ العودة (إذا كانت المدة 1، تاريخ العودة هو اليوم التالي)
                     d.setDate(d.getDate() + parseInt(newReq.duration || '0'));
                     return d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' });
                   })()}
