@@ -40,7 +40,7 @@ const REQUEST_TYPES = [
   'بدل راحة', 'خط سير', 'اذن صباحى', 'اذن مسائى'
 ];
 
-const EMP_STATUS_OPTIONS = ['نشط (قوة فعلية)', 'خارج المركز', 'اجازة', 'موقوف'];
+const EMP_STATUS_OPTIONS = ['نشط', 'خارج المركز', 'اجازة', 'موقوف'];
 
 export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
   // التبويب النشط
