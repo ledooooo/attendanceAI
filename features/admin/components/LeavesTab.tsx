@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { LeaveRequest, Employee } from '../../../types';
 import { Input, Select } from '../../../components/ui/FormElements';
@@ -7,8 +7,9 @@ import * as XLSX from 'xlsx';
 import { 
   ClipboardList, CheckCircle, XCircle, Clock, 
   Search, Filter, Download, Trash2, Edit, Save, X, UserCheck,
-  ChevronRight, ChevronLeft // ✅ تم إضافة أيقونات التقليب
+  ChevronRight, ChevronLeft, PlusCircle, UserPlus, ListFilter
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 // دالة تنسيق التاريخ
 const formatDateForDB = (val: any): string | null => {
@@ -34,26 +35,39 @@ const formatDateForDB = (val: any): string | null => {
 };
 
 export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
+  // التبويب النشط
+  const [activeTab, setActiveTab] = useState<'view' | 'add'>('view');
+  
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-  const [employees, setEmployees] = useState<Partial<Employee>[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // حالات التعديل
+  // حالات التعديل السريع في الجدول
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<LeaveRequest>>({});
 
-  // فلاتر البحث
+  // فلاتر البحث في الجدول
   const [fEmployee, setFEmployee] = useState('');
   const [fType, setFType] = useState('all');
   const [fStatus, setFStatus] = useState('all');
   const [fMonth, setFMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  // ✅ حالات التقسيم (Pagination)
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10; // يمكنك تغيير هذا الرقم لعدد الصفوف التي تريدها في كل صفحة
+  // --- حالات نموذج الإضافة الجديد ---
+  const [newReq, setNewReq] = useState({
+    employee_id: '',
+    type: 'اعتيادية',
+    start_date: new Date().toISOString().split('T')[0],
+    duration: '1',
+    backup_person: '',
+    notes: ''
+  });
+  const [empStatusFilter, setEmpStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
 
-  // ✅ العودة للصفحة الأولى عند تغيير أي فلتر بحث
+  // التقسيم (Pagination)
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   useEffect(() => {
     setCurrentPage(1);
   }, [fEmployee, fType, fStatus, fMonth]);
@@ -69,9 +83,10 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
       .select('*, employees(name)')
       .order('start_date', { ascending: false });
 
+    // جلب بيانات الموظفين مع الحالة والتخصص
     const { data: empsData } = await supabase
       .from('employees')
-      .select('id, employee_id, name');
+      .select('id, employee_id, name, specialty, is_active');
 
     if (leavesData) {
       const formattedLeaves = leavesData.map(l => ({
@@ -81,7 +96,15 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
       setLeaves(formattedLeaves);
     }
     
-    if (empsData) setEmployees(empsData);
+    if (empsData) {
+      // ✅ ترتيب الموظفين حسب التخصص ثم الاسم كما طلبت
+      const sortedEmps = (empsData as Employee[]).sort((a, b) => {
+        const specCompare = (a.specialty || '').localeCompare(b.specialty || '');
+        if (specCompare !== 0) return specCompare;
+        return a.name.localeCompare(b.name);
+      });
+      setEmployees(sortedEmps);
+    }
     setLoading(false);
   };
 
@@ -104,6 +127,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     XLSX.writeFile(wb, "نموذج_طلبات_الإجازات.xlsx");
   };
 
+  // ✅ الحفاظ على منطق استيراد الإكسيل القديم بالكامل بدون حذف
   const handleExcelImport = async (data: any[]) => {
     setIsProcessing(true);
     let inserted = 0; let updated = 0; let skipped = 0;
@@ -206,7 +230,53 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
         setIsProcessing(false);
     }
   };
-  
+
+  // --- منطق إضافة طلب جديد يدوي ---
+  const filteredEmployeesForAdd = useMemo(() => {
+    return employees.filter(emp => {
+      if (empStatusFilter === 'active') return emp.is_active;
+      if (empStatusFilter === 'inactive') return !emp.is_active;
+      return true;
+    });
+  }, [employees, empStatusFilter]);
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newReq.employee_id || !newReq.start_date || !newReq.duration) {
+      alert("يرجى ملء البيانات الأساسية");
+      return;
+    }
+
+    setIsProcessing(true);
+    
+    // ✅ حساب تاريخ النهاية تلقائياً: (بداية الطلب + المدة - 1)
+    const startDateObj = new Date(newReq.start_date);
+    const endDateObj = new Date(startDateObj);
+    endDateObj.setDate(startDateObj.getDate() + (parseInt(newReq.duration) - 1));
+    const endDateStr = endDateObj.toISOString().split('T')[0];
+
+    const { error } = await supabase.from('leave_requests').insert({
+      employee_id: newReq.employee_id,
+      type: newReq.type,
+      start_date: newReq.start_date,
+      end_date: endDateStr,
+      backup_person: newReq.backup_person,
+      notes: newReq.notes,
+      status: 'مقبول' 
+    });
+
+    if (!error) {
+      toast.success("تم إضافة الطلب بنجاح");
+      setNewReq({ ...newReq, duration: '1', notes: '', backup_person: '' });
+      fetchData();
+      setActiveTab('view');
+    } else {
+      alert("خطأ أثناء الإضافة: " + error.message);
+    }
+    setIsProcessing(false);
+  };
+
+  // ✅ الحفاظ على منطق التعديل والحذف وتحديث الحالة القديم
   const startEditing = (req: LeaveRequest) => {
     setEditingId(req.id);
     setEditFormData({ ...req });
@@ -234,6 +304,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     if (!error) {
       setEditingId(null);
       fetchData();
+      toast.success("تم تعديل الطلب بنجاح");
     } else {
       alert("خطأ في حفظ التعديلات");
     }
@@ -272,7 +343,7 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     fetchData();
   };
 
-  // ✅ الفلترة الأساسية
+  // الفلترة لجدول العرض
   const filteredLeaves = leaves.filter(l => {
     const matchName = l.employee_name?.includes(fEmployee) || l.employee_id.includes(fEmployee);
     const matchType = fType === 'all' || l.type === fType;
@@ -281,193 +352,223 @@ export default function LeavesTab({ onRefresh }: { onRefresh?: () => void }) {
     return matchName && matchType && matchStatus && matchMonth;
   });
 
-  // ✅ حساب بيانات الـ Pagination
   const totalPages = Math.ceil(filteredLeaves.length / itemsPerPage);
-  const paginatedLeaves = filteredLeaves.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const paginatedLeaves = filteredLeaves.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row justify-between items-center border-b pb-4 gap-4">
-        <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800">
-          <ClipboardList className="w-7 h-7 text-orange-600"/> طلبات الإجازات
-        </h2>
+      {/* الرأس والتبويبات */}
+      <div className="flex flex-col md:flex-row justify-between items-center border-b pb-2 gap-4">
+        <div className="flex items-center gap-6">
+          <h2 className="text-2xl font-black flex items-center gap-2 text-gray-800">
+            <ClipboardList className="w-7 h-7 text-orange-600"/> الإجازات
+          </h2>
+          <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
+            <button 
+              onClick={() => setActiveTab('view')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'view' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}
+            >
+              <ListFilter className="w-4 h-4"/> عرض السجلات
+            </button>
+            <button 
+              onClick={() => setActiveTab('add')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'add' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}
+            >
+              <PlusCircle className="w-4 h-4"/> إضافة طلب
+            </button>
+          </div>
+        </div>
+
         <div className="flex gap-2">
-          <button onClick={handleDownloadSample} className="bg-white text-gray-600 border px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 transition-all shadow-sm text-sm">
-            <Download className="w-4 h-4"/> نموذج العينة
-          </button>
-          <ExcelUploadButton onData={handleExcelImport} label={isProcessing ? "جاري المعالجة..." : "رفع ومزامنة"} />
+          {activeTab === 'view' && (
+            <>
+              <button onClick={handleDownloadSample} className="bg-white text-gray-600 border px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-gray-50 transition-all shadow-sm text-sm">
+                <Download className="w-4 h-4"/> نموذج العينة
+              </button>
+              <ExcelUploadButton onData={handleExcelImport} label={isProcessing ? "جاري المعالجة..." : "رفع ومزامنة"} />
+            </>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-3xl border border-gray-100 shadow-inner">
-        <Input label="بحث (اسم/كود)" value={fEmployee} onChange={setFEmployee} placeholder="اسم الموظف..." />
-        <Input type="month" label="الشهر" value={fMonth} onChange={setFMonth} />
-        <Select label="نوع الإجازة" options={['all', 'اعتيادية', 'عارضة', 'مرضي', 'مأمورية', 'بدل راحة']} value={fType} onChange={setFType} />
-        <Select label="الحالة" options={['all', 'مقبول', 'مرفوض', 'معلق']} value={fStatus} onChange={setFStatus} />
-      </div>
+      {activeTab === 'view' ? (
+        <>
+          {/* فلاتر البحث */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-50 p-4 rounded-3xl border border-gray-100 shadow-inner">
+            <Input label="بحث (اسم/كود)" value={fEmployee} onChange={setFEmployee} placeholder="اسم الموظف..." />
+            <Input type="month" label="الشهر" value={fMonth} onChange={setFMonth} />
+            <Select label="نوع الإجازة" options={['all', 'اعتيادية', 'عارضة', 'مرضي', 'مأمورية', 'بدل راحة']} value={fType} onChange={setFType} />
+            <Select label="الحالة" options={['all', 'مقبول', 'مرفوض', 'معلق']} value={fStatus} onChange={setFStatus} />
+          </div>
 
-      {/* ✅ تعديل ارتفاع الحاوية لإظهار شريط التنقل بوضوح */}
-      <div className="border rounded-[30px] bg-white shadow-sm flex flex-col">
-        <div className="overflow-x-auto custom-scrollbar flex-1 min-h-[400px]">
-          <table className="w-full text-sm text-right min-w-[1000px]">
-            <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
-              <tr>
-                <th className="p-4">الموظف</th>
-                <th className="p-4">النوع</th>
-                <th className="p-4">من</th>
-                <th className="p-4">إلى</th>
-                <th className="p-4">المدة</th>
-                <th className="p-4">البديل</th>
-                <th className="p-4">بواسطة</th>
-                <th className="p-4 text-center">الحالة</th>
-                <th className="p-4">إجراءات</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* ✅ عرض البيانات المقسمة بدلاً من كل البيانات المفلترة */}
-              {paginatedLeaves.map(req => {
-                const isEditing = editingId === req.id;
-                const days = Math.ceil((new Date(isEditing ? editFormData.end_date! : req.end_date).getTime() - new Date(isEditing ? editFormData.start_date! : req.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                
-                return (
-                  <tr key={req.id} className={`border-b transition-colors ${isEditing ? 'bg-orange-50' : 'hover:bg-orange-50/50'}`}>
-                    <td className="p-4">
-                      <div className="font-bold text-gray-800">{req.employee_name}</div>
-                      <div className="text-xs text-gray-400 font-mono">{req.employee_id}</div>
-                    </td>
-                    
-                    <td className="p-4">
-                      {isEditing ? (
-                        <select 
-                          value={editFormData.type} 
-                          onChange={e => setEditFormData({...editFormData, type: e.target.value})}
-                          className="p-1 border rounded text-xs"
-                        >
-                          {['اعتيادية', 'عارضة', 'مرضي', 'مأمورية', 'بدل راحة'].map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      ) : (
-                        <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">{req.type}</span>
-                      )}
-                    </td>
-
-                    <td className="p-4 font-mono">
-                      {isEditing ? (
-                        <input type="date" value={editFormData.start_date} onChange={e => setEditFormData({...editFormData, start_date: e.target.value})} className="p-1 border rounded text-xs" />
-                      ) : req.start_date}
-                    </td>
-
-                    <td className="p-4 font-mono">
-                      {isEditing ? (
-                        <input type="date" value={editFormData.end_date} onChange={e => setEditFormData({...editFormData, end_date: e.target.value})} className="p-1 border rounded text-xs" />
-                      ) : req.end_date}
-                    </td>
-
-                    <td className="p-4 font-bold text-blue-600">{days} يوم</td>
-                    
-                    <td className="p-4 text-gray-500">
-                      {isEditing ? (
-                        <input type="text" value={editFormData.backup_person || ''} onChange={e => setEditFormData({...editFormData, backup_person: e.target.value})} className="p-1 border rounded text-xs w-24" />
-                      ) : (req.backup_person || '-')}
-                    </td>
-
-                    <td className="p-4 text-xs font-bold text-purple-600">
-                      {req.approved_by ? <div className="flex items-center gap-1"><UserCheck className="w-3 h-3"/> {req.approved_by}</div> : '-'}
-                    </td>
-
-                    <td className="p-4 text-center">
-                      <select 
-                        value={req.status}
-                        onChange={(e) => updateStatus(req, e.target.value)}
-                        disabled={isEditing}
-                        className={`px-2 py-1 rounded-lg text-xs font-bold border outline-none cursor-pointer ${
-                          req.status === 'مقبول' ? 'bg-green-100 text-green-700 border-green-200' :
-                          req.status === 'مرفوض' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'
-                        }`}
-                      >
-                        <option value="معلق">معلق</option>
-                        <option value="مقبول">مقبول</option>
-                        <option value="مرفوض">مرفوض</option>
-                      </select>
-                    </td>
-
-                    <td className="p-4">
-                      <div className="flex gap-1">
-                        {isEditing ? (
-                          <>
-                            <button onClick={saveEdit} className="text-green-600 hover:bg-green-100 p-2 rounded-lg transition-colors" title="حفظ">
-                              <Save className="w-4 h-4"/>
-                            </button>
-                            <button onClick={cancelEditing} className="text-gray-400 hover:bg-gray-100 p-2 rounded-lg transition-colors" title="إلغاء">
-                              <X className="w-4 h-4"/>
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button onClick={() => startEditing(req)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="تعديل">
-                              <Edit className="w-4 h-4"/>
-                            </button>
-                            <button onClick={() => handleDelete(req.id)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg transition-colors" title="حذف">
-                              <Trash2 className="w-4 h-4"/>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              
-              {/* رسالة في حالة عدم وجود بيانات */}
-              {paginatedLeaves.length === 0 && (
+          <div className="border rounded-[30px] bg-white shadow-sm flex flex-col">
+            <div className="overflow-x-auto custom-scrollbar flex-1 min-h-[400px]">
+              <table className="w-full text-sm text-right min-w-[1000px]">
+                <thead className="bg-gray-100 font-black border-b sticky top-0 z-10 text-gray-600">
                   <tr>
-                      <td colSpan={9} className="p-8 text-center text-gray-500 font-bold">
-                          لا توجد إجازات مطابقة لنتائج البحث
-                      </td>
+                    <th className="p-4">الموظف</th>
+                    <th className="p-4">النوع</th>
+                    <th className="p-4">من</th>
+                    <th className="p-4">إلى</th>
+                    <th className="p-4">المدة</th>
+                    <th className="p-4">البديل</th>
+                    <th className="p-4">بواسطة</th>
+                    <th className="p-4 text-center">الحالة</th>
+                    <th className="p-4">إجراءات</th>
                   </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* ✅ شريط التنقل (Pagination UI) */}
-        {filteredLeaves.length > 0 && (
-          <div className="border-t bg-gray-50/80 p-4 flex flex-col sm:flex-row justify-between items-center gap-4 rounded-b-[30px]">
-            <div className="text-xs font-bold text-gray-500 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
-              إجمالي السجلات: <span className="text-orange-600">{filteredLeaves.length}</span>
+                </thead>
+                <tbody>
+                  {paginatedLeaves.map(req => {
+                    const isEditing = editingId === req.id;
+                    const days = Math.ceil((new Date(isEditing ? editFormData.end_date! : req.end_date).getTime() - new Date(isEditing ? editFormData.start_date! : req.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                    
+                    return (
+                      <tr key={req.id} className={`border-b transition-colors ${isEditing ? 'bg-orange-50' : 'hover:bg-orange-50/50'}`}>
+                        <td className="p-4">
+                          <div className="font-bold text-gray-800">{req.employee_name}</div>
+                          <div className="text-xs text-gray-400 font-mono">{req.employee_id}</div>
+                        </td>
+                        <td className="p-4">
+                          {isEditing ? (
+                            <select value={editFormData.type} onChange={e => setEditFormData({...editFormData, type: e.target.value})} className="p-1 border rounded text-xs">
+                              {['اعتيادية', 'عارضة', 'مرضي', 'مأمورية', 'بدل راحة'].map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          ) : <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">{req.type}</span>}
+                        </td>
+                        <td className="p-4 font-mono">{isEditing ? <input type="date" value={editFormData.start_date} onChange={e => setEditFormData({...editFormData, start_date: e.target.value})} className="p-1 border rounded text-xs" /> : req.start_date}</td>
+                        <td className="p-4 font-mono">{isEditing ? <input type="date" value={editFormData.end_date} onChange={e => setEditFormData({...editFormData, end_date: e.target.value})} className="p-1 border rounded text-xs" /> : req.end_date}</td>
+                        <td className="p-4 font-bold text-blue-600">{days} يوم</td>
+                        <td className="p-4 text-gray-500">{isEditing ? <input type="text" value={editFormData.backup_person || ''} onChange={e => setEditFormData({...editFormData, backup_person: e.target.value})} className="p-1 border rounded text-xs w-24" /> : (req.backup_person || '-')}</td>
+                        <td className="p-4 text-xs font-bold text-purple-600">{req.approved_by ? <div className="flex items-center gap-1"><UserCheck className="w-3 h-3"/> {req.approved_by}</div> : '-'}</td>
+                        <td className="p-4 text-center">
+                          <select value={req.status} onChange={(e) => updateStatus(req, e.target.value)} disabled={isEditing} className={`px-2 py-1 rounded-lg text-xs font-bold border outline-none cursor-pointer ${req.status === 'مقبول' ? 'bg-green-100 text-green-700 border-green-200' : req.status === 'مرفوض' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
+                            <option value="معلق">معلق</option>
+                            <option value="مقبول">مقبول</option>
+                            <option value="مرفوض">مرفوض</option>
+                          </select>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex gap-1">
+                            {isEditing ? (
+                              <><button onClick={saveEdit} className="text-green-600 hover:bg-green-100 p-2 rounded-lg transition-colors"><Save className="w-4 h-4"/></button><button onClick={cancelEditing} className="text-gray-400 hover:bg-gray-100 p-2 rounded-lg transition-colors"><X className="w-4 h-4"/></button></>
+                            ) : (
+                              <><button onClick={() => startEditing(req)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-colors"><Edit className="w-4 h-4"/></button><button onClick={() => handleDelete(req.id)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button></>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-            
-            <div className="flex items-center gap-2" dir="ltr">
-              {/* زر السابق (سهم يسار لأننا نعكس الاتجاه للغة العربية) */}
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-2 bg-white border rounded-lg hover:bg-orange-50 hover:text-orange-600 disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-gray-700 transition-colors shadow-sm"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              
-              {/* أرقام الصفحات */}
-              <div className="px-4 py-1.5 bg-white border rounded-lg text-sm font-bold text-gray-700 shadow-sm flex items-center gap-1">
-                <span>{currentPage}</span>
-                <span className="text-gray-400 text-xs mx-1">من</span>
-                <span>{totalPages}</span>
+            {/* Pagination UI */}
+            {filteredLeaves.length > 0 && (
+              <div className="border-t bg-gray-50/80 p-4 flex flex-col sm:flex-row justify-between items-center gap-4 rounded-b-[30px]">
+                <div className="text-xs font-bold text-gray-500 bg-white px-3 py-1.5 rounded-lg border shadow-sm">إجمالي السجلات: <span className="text-orange-600">{filteredLeaves.length}</span></div>
+                <div className="flex items-center gap-2" dir="ltr">
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-2 bg-white border rounded-lg hover:bg-orange-50 disabled:opacity-50 transition-colors shadow-sm"><ChevronLeft className="w-5 h-5" /></button>
+                  <div className="px-4 py-1.5 bg-white border rounded-lg text-sm font-bold text-gray-700 shadow-sm flex items-center gap-1"><span>{currentPage}</span><span className="text-gray-400 text-xs mx-1">من</span><span>{totalPages}</span></div>
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-2 bg-white border rounded-lg hover:bg-orange-50 disabled:opacity-50 transition-colors shadow-sm"><ChevronRight className="w-5 h-5" /></button>
+                </div>
               </div>
-
-              {/* زر التالي */}
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-2 bg-white border rounded-lg hover:bg-orange-50 hover:text-orange-600 disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-gray-700 transition-colors shadow-sm"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        // --- تبويب إضافة طلب جديد مع الفرز والفلترة والاحتساب التلقائي ---
+        <div className="max-w-4xl mx-auto bg-white border border-gray-100 shadow-xl rounded-[35px] overflow-hidden">
+          <div className="bg-orange-600 p-6 text-white flex items-center gap-3">
+            <UserPlus className="w-8 h-8"/>
+            <div>
+              <h3 className="text-xl font-black">إضافة طلب جديد</h3>
+              <p className="text-orange-100 text-xs font-bold">قم بتعبئة بيانات الطلب للموظف المختار</p>
             </div>
           </div>
-        )}
-      </div>
+
+          <form onSubmit={handleAddSubmit} className="p-8 space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* اختيار الموظف مع فلترة الحالة والترتيب */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1">
+                  <label className="text-sm font-black text-gray-700">الموظف (مرتب حسب التخصص والاسم)</label>
+                  <div className="flex gap-2">
+                    {['active', 'inactive', 'all'].map((st) => (
+                      <button 
+                        key={st} type="button"
+                        onClick={() => setEmpStatusFilter(st as any)}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-all ${empStatusFilter === st ? 'bg-orange-600 text-white border-orange-600' : 'bg-gray-50 text-gray-400 border-gray-200'}`}
+                      >
+                        {st === 'active' ? 'نشط' : st === 'inactive' ? 'غير نشط' : 'الكل'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <select 
+                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-3 text-sm font-bold outline-none focus:border-orange-500 transition-all"
+                  value={newReq.employee_id}
+                  onChange={(e) => setNewReq({...newReq, employee_id: e.target.value})}
+                  required
+                >
+                  <option value="">اختر الموظف...</option>
+                  {filteredEmployeesForAdd.map(emp => (
+                    <option key={emp.id} value={emp.employee_id}>
+                      [{emp.specialty || 'بدون تخصص'}] - {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <Select label="نوع الطلب" options={['اعتيادية', 'عارضة', 'مرضي', 'مأمورية', 'بدل راحة']} value={newReq.type} onChange={(val) => setNewReq({...newReq, type: val})} />
+
+              <Input type="date" label="بداية الطلب" value={newReq.start_date} onChange={(val) => setNewReq({...newReq, start_date: val})} />
+
+              <div className="space-y-1">
+                <label className="text-sm font-black text-gray-700 px-1">الفترة (بالأيام)</label>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="number" min="1"
+                    className="flex-1 bg-gray-50 border border-gray-200 rounded-2xl p-3 text-sm font-bold outline-none focus:border-orange-500 transition-all"
+                    value={newReq.duration}
+                    onChange={(e) => setNewReq({...newReq, duration: e.target.value})}
+                    required
+                  />
+                  <span className="text-sm font-bold text-gray-400">يوم</span>
+                </div>
+              </div>
+
+              <Input label="الموظف البديل" value={newReq.backup_person} onChange={(val) => setNewReq({...newReq, backup_person: val})} placeholder="اختياري..." />
+              <div className="md:col-span-2">
+                <Input label="ملاحظات" value={newReq.notes} onChange={(val) => setNewReq({...newReq, notes: val})} placeholder="تفاصيل إضافية..." />
+              </div>
+            </div>
+
+            {/* ملخص الحساب التلقائي لتاريخ العودة */}
+            <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-center justify-between">
+               <div className="flex items-center gap-2 text-blue-800">
+                  <Clock className="w-5 h-5"/>
+                  <span className="text-sm font-black">سيتم تسجيل العودة في تاريخ:</span>
+               </div>
+               <div className="text-lg font-black text-blue-600">
+                  {(() => {
+                    const d = new Date(newReq.start_date);
+                    // إذا كانت المدة يوم واحد، تاريخ النهاية هو نفس البداية، والعودة في اليوم التالي
+                    d.setDate(d.getDate() + parseInt(newReq.duration || '0'));
+                    return d.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' });
+                  })()}
+               </div>
+            </div>
+
+            <button 
+              disabled={isProcessing}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white py-4 rounded-2xl font-black text-lg transition-all shadow-lg shadow-orange-100 disabled:opacity-50"
+            >
+              {isProcessing ? "جاري الحفظ..." : "حفظ الطلب واعتماده"}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
