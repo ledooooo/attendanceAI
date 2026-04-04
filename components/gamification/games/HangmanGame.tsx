@@ -5,241 +5,102 @@ import toast from 'react-hot-toast';
 import { Employee } from '../../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MAX_WRONG  = 6;
 const ROUND_SECS = 120;
+
+// ─── Difficulty Levels ────────────────────────────────────────────────────────
+const DIFFICULTIES = [
+    { key: 'easy',   label: 'سهل',   maxWrong: 6, emoji: '🟢', color: 'from-emerald-500 to-green-600',   border: 'border-emerald-400', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+    { key: 'medium', label: 'متوسط', maxWrong: 5, emoji: '🟡', color: 'from-amber-500 to-yellow-500',    border: 'border-amber-400',   bg: 'bg-amber-50',   text: 'text-amber-700'   },
+    { key: 'hard',   label: 'صعب',   maxWrong: 4, emoji: '🔴', color: 'from-rose-500 to-red-600',        border: 'border-rose-400',    bg: 'bg-rose-50',    text: 'text-rose-700'    },
+];
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 const CATEGORIES = [
-    { key: 'medical',   label: 'طبي',       emoji: '🏥', color: 'from-blue-500 to-cyan-600'      },
-    { key: 'famous',    label: 'مشاهير',    emoji: '⭐', color: 'from-amber-500 to-yellow-600'   },
-    { key: 'countries', label: 'بلاد',      emoji: '🌍', color: 'from-green-500 to-emerald-600'  },
-    { key: 'animals',   label: 'حيوانات',   emoji: '🐾', color: 'from-orange-500 to-amber-600'   },
-    { key: 'food',      label: 'أكل وشرب',  emoji: '🍽️', color: 'from-rose-500 to-pink-600'     },
-    { key: 'sports',    label: 'رياضة',     emoji: '⚽', color: 'from-violet-500 to-purple-600'  },
-    { key: 'mixed',     label: 'متنوع',     emoji: '🎲', color: 'from-indigo-500 to-violet-600'  },
+    { key: 'celebrities', label: 'مشاهير مصريين', emoji: '⭐', color: 'from-yellow-500 to-amber-600'    },
+    { key: 'movies',      label: 'أفلام مصرية',    emoji: '🎬', color: 'from-rose-500 to-pink-600'      },
+    { key: 'series',      label: 'مسلسلات مصرية',  emoji: '📺', color: 'from-purple-500 to-violet-600'  },
+    { key: 'novels',      label: 'روايات',          emoji: '📚', color: 'from-blue-500 to-indigo-600'    },
+    { key: 'countries',   label: 'بلاد',            emoji: '🌍', color: 'from-green-500 to-emerald-600'  },
+    { key: 'food',        label: 'أكلات',           emoji: '🍽️', color: 'from-orange-500 to-amber-500'  },
 ];
 
 // ─── Word Bank ────────────────────────────────────────────────────────────────
-const WORD_BANK: Record<string, { word: string; hint: string }[]> = {
-
-    medical: [
-        { word: 'السكري',       hint: 'مرض يرتفع فيه سكر الدم' },
-        { word: 'الربو',        hint: 'مرض تنفسي مزمن' },
-        { word: 'الكوليرا',     hint: 'مرض معوي معدٍ' },
-        { word: 'الملاريا',     hint: 'مرض تنقله البعوضة' },
-        { word: 'الزهايمر',     hint: 'مرض يصيب الذاكرة' },
-        { word: 'الإيدز',       hint: 'مرض نقص المناعة' },
-        { word: 'الجدري',       hint: 'مرض فيروسي قديم' },
-        { word: 'التيفود',      hint: 'مرض معدي من الطعام' },
-        { word: 'الأنيميا',     hint: 'نقص الهيموجلوبين' },
-        { word: 'الصداع',       hint: 'ألم في الرأس' },
-        { word: 'الحمى',        hint: 'ارتفاع درجة الحرارة' },
-        { word: 'الإسهال',      hint: 'أعراض هضمية' },
-        { word: 'الغثيان',      hint: 'إحساس بالدوار والقيء' },
-        { word: 'الدوخة',       hint: 'فقدان التوازن' },
-        { word: 'الكبد',        hint: 'أكبر غدة في الجسم' },
-        { word: 'الكلية',       hint: 'تصفي الدم' },
-        { word: 'الطحال',       hint: 'عضو في البطن الأيسر' },
-        { word: 'البنكرياس',    hint: 'يفرز الأنسولين' },
-        { word: 'المريء',       hint: 'أنبوب بين الفم والمعدة' },
-        { word: 'القصبة',       hint: 'مجرى الهواء للرئتين' },
-        { word: 'الأسبرين',     hint: 'مسكن ومضاد التهاب' },
-        { word: 'الأنسولين',    hint: 'هرمون ينظم السكر' },
-        { word: 'المورفين',     hint: 'مسكن ألم قوي' },
-        { word: 'الكورتيزون',   hint: 'مضاد التهاب قوي' },
-        { word: 'الجراحة',      hint: 'تخصص يعمل بالعمليات' },
-        { word: 'الأشعة',       hint: 'تصوير تشخيصي' },
-        { word: 'التمريض',      hint: 'مهنة رعاية المريض' },
-        { word: 'الصيدلة',      hint: 'علم الأدوية' },
-        { word: 'الطوارئ',      hint: 'قسم الحالات الحرجة' },
-        { word: 'المستشفى',     hint: 'مكان العلاج' },
-        { word: 'التشخيص',      hint: 'تحديد المرض' },
-        { word: 'الوصفة',       hint: 'ورقة الطبيب للدواء' },
-        { word: 'البكتيريا',    hint: 'كائن دقيق أحادي الخلية' },
-        { word: 'الفيروس',      hint: 'عدوى أصغر من البكتيريا' },
-        { word: 'التطعيم',      hint: 'وقاية من الأمراض' },
-        { word: 'الضغط',        hint: 'قوة ضخ الدم' },
-        { word: 'الكوليسترول',  hint: 'دهون في الدم' },
-        { word: 'الأكزيما',     hint: 'مرض جلدي' },
-        { word: 'الصدفية',      hint: 'مرض جلدي مزمن' },
-        { word: 'الإنفلونزا',   hint: 'مرض فيروسي موسمي' },
+const WORD_BANK: Record<string, string[]> = {
+    celebrities: [
+        'عادل إمام', 'عمرو دياب', 'محمد صلاح', 'أحمد زكي', 'أم كلثوم',
+        'عبد الحليم حافظ', 'مجدي يعقوب', 'أحمد زويل', 'نجيب محفوظ', 'طه حسين',
+        'محمود المليجي', 'يحيى الفخراني', 'سعاد حسني', 'فاتن حمامة', 'شادية',
+        'نادية لطفي', 'عمر الشريف', 'فريد شوقي', 'إسماعيل ياسين', 'رشدي أباظة',
+        'حسن يوسف', 'أحمد مظهر', 'كمال الشناوي', 'عبد المنعم مدبولي', 'فؤاد المهندس',
+        'محمد عبد الوهاب', 'مصطفى محمود', 'أحمد شوقي', 'توفيق الحكيم', 'يوسف إدريس',
+        'سميرة موسى', 'فاروق الباز', 'محمد البرادعي', 'علي مشرفة', 'يوسف شاهين',
+        'سيد درويش', 'محمود مختار', 'هدى شعراوي', 'نوال السعداوي', 'سمير غانم',
+        'أحمد حلمي', 'تامر حسني', 'محمد منير', 'هاني شاكر', 'علاء ولي الدين',
+        'أشرف عبد الباقي', 'كريم عبد العزيز', 'أحمد السقا', 'مني زكي', 'يسرا',
     ],
-
-    famous: [
-        { word: 'ابن سينا',       hint: 'طبيب وفيلسوف إسلامي عظيم' },
-        { word: 'ابن خلدون',      hint: 'مؤسس علم الاجتماع' },
-        { word: 'الخوارزمي',      hint: 'أبو الجبر والرياضيات' },
-        { word: 'صلاح الدين',     hint: 'محرر بيت المقدس' },
-        { word: 'الرازي',         hint: 'طبيب عربي اكتشف الجدري' },
-        { word: 'نيوتن',          hint: 'اكتشف قانون الجاذبية' },
-        { word: 'أينشتاين',       hint: 'النظرية النسبية' },
-        { word: 'داروين',         hint: 'نظرية التطور' },
-        { word: 'غاندي',          hint: 'رمز السلام الهندي' },
-        { word: 'نابليون',        hint: 'قائد عسكري فرنسي' },
-        { word: 'كليوباترا',      hint: 'ملكة مصر القديمة' },
-        { word: 'الإسكندر',       hint: 'قائد عسكري فتح العالم' },
-        { word: 'شكسبير',         hint: 'أشهر كتّاب المسرح' },
-        { word: 'موزارت',         hint: 'موسيقار نمساوي عبقري' },
-        { word: 'بيتهوفن',        hint: 'موسيقار ألماني عظيم' },
-        { word: 'ليوناردو دافنشي', hint: 'فنان وعالم إيطالي' },
-        { word: 'فرويد',          hint: 'مؤسس التحليل النفسي' },
-        { word: 'ماري كوري',      hint: 'أول امرأة تنال نوبل' },
-        { word: 'نيلسون مانديلا', hint: 'رمز النضال ضد التمييز' },
-        { word: 'أبو بكر الصديق', hint: 'أول الخلفاء الراشدين' },
-        { word: 'عمر بن الخطاب',  hint: 'ثاني الخلفاء الراشدين' },
-        { word: 'الإمام الشافعي', hint: 'أحد أئمة المذاهب الأربعة' },
-        { word: 'أبو حنيفة',      hint: 'إمام أهل الرأي' },
-        { word: 'ابن بطوطة',      hint: 'أشهر رحالة عربي' },
-        { word: 'الجاحظ',         hint: 'أديب عربي عباسي' },
+    movies: [
+        'الإرهابي', 'العفاريت', 'عمارة يعقوبيان', 'الجزيرة', 'الممر',
+        'الفيل الأزرق', 'الكيف', 'صعيدي في الجامعة', 'همام في أمستردام', 'الناظر',
+        'عبود على الحدود', 'مافيا', 'تيتو', 'ملاكي إسكندرية', 'ولاد العم',
+        'إبراهيم الأبيض', 'المصلحة', 'الخلية', 'كازابلانكا', 'هروب اضطراري',
+        'نادي الرجال السري', 'ولاد رزق', 'الفلوس', 'الكنز', 'حرب كرموز',
+        'تراب الماس', 'كيرة والجن', 'العارف', 'موسى', 'الإنس والنمس',
+        'وقفة رجالة', 'ديدو', 'الغسالة', 'الصندوق الأسود', 'صاحب المقام',
+        'توأم روحي', 'لص بغداد', 'خيال مآتة', 'سبع البرمبة', 'اللمبي',
+        'بوحة', 'عوكل', 'كباريه', 'السفارة في العمارة', 'حسن ومرقص',
+        'عمر وسلمى', 'زهايمر', 'طير إنتا', 'رسالة إلى الوالي', 'أسرار البنات',
     ],
-
+    series: [
+        'رأفت الهجان', 'ليالي الحلمية', 'الاختيار', 'الجماعة', 'زيزينيا',
+        'المال والبنون', 'ذئاب الجبل', 'يتربى في عزو', 'الضوء الشارد', 'أرابيسك',
+        'الشهد والدموع', 'غوايش', 'بوابة الحلواني', 'رحلة السيد أبو العلا', 'العائلة',
+        'نصف ربيع الآخر', 'الوتد', 'خالتي صفية والدير', 'أم كلثوم', 'أوان الورد',
+        'عائلة الحاج متولي', 'يوميات مدير عام', 'العيان', 'حديث الصباح والمساء',
+        'أميرة في عابدين', 'الليل وآخره', 'أسمهان', 'الملك فاروق', 'أهل كايرو',
+        'عايزة أتجوز', 'نيران صديقة', 'دوران شبرا', 'المواطن إكس', 'رقم مجهول',
+        'طرف ثالث', 'السبع وصايا', 'سجن النسا', 'طريقي', 'جراند أوتيل',
+        'أفراح القبة', 'الأسطورة', 'كلبش', 'لا تطفئ الشمس', 'قضية رأي عام',
+        'حضرة المتهم أبي', 'الراية البيضا', 'أبو العروسة', 'هجمة مرتدة', 'الكبير',
+    ],
+    novels: [
+        'ثلاثية القاهرة', 'أولاد حارتنا', 'الحرافيش', 'بين القصرين', 'قصر الشوق',
+        'السكرية', 'زقاق المدق', 'اللص والكلاب', 'خان الخليلي', 'ميرامار',
+        'الكرنك', 'أفراح القبة', 'يوميات نائب في الأرياف', 'دعاء الكروان', 'البوسطجي',
+        'رد قلبي', 'لا أنام', 'في بيتنا رجل', 'شيء في صدري', 'لا تطفئ الشمس',
+        'الباب المفتوح', 'الأرض', 'الحرام', 'النداهة', 'عزازيل',
+        'يوتوبيا', 'الفيل الأزرق', 'تراب الماس', 'شيكاغو', 'عمارة يعقوبيان',
+        'البؤساء', 'الجريمة والعقاب', 'مائة عام من العزلة', 'الخيميائي', 'دون كيشوت',
+        'شيفرة دا فينشي', 'مزرعة الحيوان', 'غاتسبي العظيم', 'مدام بوفاري', 'الغريب',
+        'المسخ', 'الطاعون', 'العمى', 'آنا كارنينا', 'الحرب والسلام',
+        'العجوز والبحر', 'ذهب مع الريح', 'فرانكشتاين', 'دراكولا', 'موبي ديك',
+    ],
     countries: [
-        { word: 'السعودية',     hint: 'أكبر دولة عربية مساحةً' },
-        { word: 'الإمارات',     hint: 'دولة الخليج الاتحادية' },
-        { word: 'الأردن',       hint: 'المملكة الهاشمية' },
-        { word: 'الجزائر',      hint: 'أكبر دولة في أفريقيا' },
-        { word: 'المغرب',       hint: 'دولة المغرب العربي' },
-        { word: 'تونس',         hint: 'جمهورية شمال أفريقيا الصغيرة' },
-        { word: 'ليبيا',        hint: 'دولة عربية شمال أفريقيا' },
-        { word: 'السودان',      hint: 'أرض الحضارات النيلية' },
-        { word: 'اليمن',        hint: 'جنوب الجزيرة العربية' },
-        { word: 'العراق',       hint: 'بلاد الرافدين' },
-        { word: 'سوريا',        hint: 'الشام العربي' },
-        { word: 'لبنان',        hint: 'سويسرا الشرق' },
-        { word: 'فلسطين',       hint: 'الأرض المقدسة' },
-        { word: 'تركيا',        hint: 'جسر بين أوروبا وآسيا' },
-        { word: 'إيران',        hint: 'بلاد فارس' },
-        { word: 'الهند',        hint: 'أكثر دول العالم سكاناً' },
-        { word: 'الصين',        hint: 'أكبر اقتصاد آسيوي' },
-        { word: 'اليابان',      hint: 'أرض الشمس المشرقة' },
-        { word: 'البرازيل',     hint: 'أكبر دول أمريكا اللاتينية' },
-        { word: 'الأرجنتين',    hint: 'بلد ميسي ومارادونا' },
-        { word: 'إسبانيا',      hint: 'بلاد الفلامنكو' },
-        { word: 'إيطاليا',      hint: 'حضارة روما' },
-        { word: 'ألمانيا',      hint: 'قلب أوروبا الاقتصادي' },
-        { word: 'فرنسا',        hint: 'بلد برج إيفل' },
-        { word: 'أستراليا',     hint: 'القارة الجنوبية' },
-        { word: 'إثيوبيا',      hint: 'أقدم دولة أفريقية' },
-        { word: 'نيجيريا',      hint: 'عملاق أفريقيا السكاني' },
-        { word: 'أفغانستان',    hint: 'دولة في قلب آسيا' },
-        { word: 'إندونيسيا',    hint: 'أكبر دولة مسلمة' },
-        { word: 'باكستان',      hint: 'دولة إسلامية جنوب آسيا' },
+        'مصر', 'السعودية', 'الإمارات', 'الكويت', 'البحرين',
+        'عمان', 'قطر', 'اليمن', 'العراق', 'سوريا',
+        'الجزائر', 'تونس', 'المغرب', 'ليبيا', 'السودان',
+        'فلسطين', 'الأردن', 'لبنان', 'تركيا', 'إيران',
+        'الهند', 'الصين', 'اليابان', 'البرازيل', 'الأرجنتين',
+        'إسبانيا', 'إيطاليا', 'ألمانيا', 'فرنسا', 'أستراليا',
+        'إثيوبيا', 'نيجيريا', 'إندونيسيا', 'باكستان', 'روسيا',
+        'كندا', 'أمريكا', 'المكسيك', 'البرتغال', 'هولندا',
+        'بلجيكا', 'السويد', 'النرويج', 'فنلندا', 'اليونان',
+        'بريطانيا', 'أوكرانيا', 'أفغانستان', 'ماليزيا', 'كوريا',
     ],
-
-    animals: [
-        { word: 'الفيل',        hint: 'أضخم حيوان بري' },
-        { word: 'الزرافة',      hint: 'أطول حيوان في العالم' },
-        { word: 'الأسد',        hint: 'ملك الغابة' },
-        { word: 'النمر',        hint: 'قط ضخم مخطط' },
-        { word: 'الفهد',        hint: 'أسرع حيوان بري' },
-        { word: 'الدولفين',     hint: 'أذكى حيوان بحري' },
-        { word: 'الحوت',        hint: 'أضخم مخلوق حي' },
-        { word: 'الأخطبوط',     hint: 'له ثمانية أذرع' },
-        { word: 'التمساح',      hint: 'زاحف قديم يعيش في المياه' },
-        { word: 'الببغاء',      hint: 'طير يقلد الكلام' },
-        { word: 'النسر',        hint: 'ملك الطيور' },
-        { word: 'الطاووس',      hint: 'طير بريش جميل' },
-        { word: 'الجمل',        hint: 'سفينة الصحراء' },
-        { word: 'الأرنب',       hint: 'حيوان سريع بأذنين طويلتين' },
-        { word: 'الثعلب',       hint: 'حيوان ذكي محتال' },
-        { word: 'الذئب',        hint: 'يعيش في قطيع' },
-        { word: 'الدب',         hint: 'يشتي في كهوف' },
-        { word: 'القنفذ',       hint: 'جسمه مغطى بأشواك' },
-        { word: 'الخفاش',       hint: 'الثدييات الطائرة' },
-        { word: 'العقرب',       hint: 'حشرة ذات لسعة سامة' },
-        { word: 'الكوبرا',      hint: 'ثعبان سام خطير' },
-        { word: 'البطريق',      hint: 'طير لا يطير في القطب' },
-        { word: 'الكنغر',       hint: 'حيوان أسترالي بجيب' },
-        { word: 'الوعل',        hint: 'حيوان جبلي بقرون' },
-        { word: 'الإبل',        hint: 'جمع الجمل' },
-    ],
-
     food: [
-        { word: 'الكنافة',      hint: 'حلوى شرقية بالجبن' },
-        { word: 'المنسف',       hint: 'الطبق الوطني الأردني' },
-        { word: 'الكبسة',       hint: 'أرز سعودي بالدجاج' },
-        { word: 'الكوشري',      hint: 'الطبق الشعبي المصري' },
-        { word: 'الشاورما',     hint: 'لحم مشوي بخبز' },
-        { word: 'الفلافل',      hint: 'أكلة من الحمص المقلي' },
-        { word: 'الحمص',        hint: 'معجون حبوب بالطحينة' },
-        { word: 'التبولة',      hint: 'سلطة بقدونس وبرغل' },
-        { word: 'البقلاوة',     hint: 'حلوى شرقية بالمكسرات' },
-        { word: 'المهلبية',     hint: 'حلوى بيضاء بالنشا' },
-        { word: 'القطايف',      hint: 'حلوى رمضانية' },
-        { word: 'الأرز',        hint: 'الغذاء الأساسي في آسيا' },
-        { word: 'العدس',        hint: 'بقوليات غنية بالبروتين' },
-        { word: 'الفول',        hint: 'فطور مصري شعبي' },
-        { word: 'الزيتون',      hint: 'ثمرة شجر البحر المتوسط' },
-        { word: 'التمر',        hint: 'ثمرة النخيل' },
-        { word: 'الرمان',       hint: 'فاكهة حمراء بحبوب' },
-        { word: 'الشاي',        hint: 'أكثر مشروب شعبية في العالم' },
-        { word: 'القهوة',       hint: 'مشروب من حبوب محمصة' },
-        { word: 'الإجاص',       hint: 'فاكهة شبيهة بالتفاح' },
-        { word: 'الأناناس',     hint: 'فاكهة استوائية شوكية' },
-        { word: 'الكاكاو',      hint: 'أصل الشوكولاتة' },
-        { word: 'الفستق',       hint: 'مكسرات خضراء' },
-        { word: 'اللوز',        hint: 'مكسرات بيضاء' },
-        { word: 'الأفوكادو',    hint: 'فاكهة الزبدة الخضراء' },
-    ],
-
-    sports: [
-        { word: 'كرة القدم',    hint: 'الرياضة الأشهر في العالم' },
-        { word: 'كرة السلة',    hint: 'رياضة التسجيل في السلة' },
-        { word: 'كرة الطائرة',  hint: 'رياضة الشبكة والفرق' },
-        { word: 'التنس',        hint: 'رياضة المضرب والكرة' },
-        { word: 'السباحة',      hint: 'رياضة في الماء' },
-        { word: 'الجودو',       hint: 'فن قتالي ياباني' },
-        { word: 'الكاراتيه',    hint: 'فن دفاع ذاتي ياباني' },
-        { word: 'الملاكمة',     hint: 'رياضة القبضات' },
-        { word: 'الغولف',       hint: 'رياضة الضرب بالعصا' },
-        { word: 'الرغبي',       hint: 'رياضة الكرة البيضية' },
-        { word: 'الفروسية',     hint: 'رياضة ركوب الخيل' },
-        { word: 'الجمباز',      hint: 'رياضة التوازن والحركات' },
-        { word: 'الرماية',      hint: 'رياضة إطلاق السهام' },
-        { word: 'الدراجات',     hint: 'رياضة ركوب العجل' },
-        { word: 'العدو',        hint: 'أسرع رياضة على الأقدام' },
-        { word: 'المصارعة',     hint: 'رياضة الإمساك والصراع' },
-        { word: 'الاسكواش',     hint: 'رياضة الكرة في الغرفة المغلقة' },
-        { word: 'البيسبول',     hint: 'رياضة المضرب الأمريكية' },
-        { word: 'الإسكي',       hint: 'رياضة الجليد بالزلاجات' },
-        { word: 'التجديف',      hint: 'رياضة القوارب بالمجاديف' },
-    ],
-
-    mixed: [
-        { word: 'الذكاء',       hint: 'القدرة على التفكير والفهم' },
-        { word: 'الإبداع',      hint: 'القدرة على الابتكار' },
-        { word: 'الصداقة',      hint: 'علاقة حب واحترام متبادل' },
-        { word: 'الشجاعة',      hint: 'الإقدام رغم الخوف' },
-        { word: 'الأمانة',      hint: 'الصدق وعدم الخيانة' },
-        { word: 'الصبر',        hint: 'التحمل وانتظار النتيجة' },
-        { word: 'الكمبيوتر',    hint: 'جهاز إلكتروني للمعالجة' },
-        { word: 'الهاتف',       hint: 'جهاز التواصل الأشهر' },
-        { word: 'الإنترنت',     hint: 'شبكة المعلومات العالمية' },
-        { word: 'البرمجة',      hint: 'لغة الحواسيب' },
-        { word: 'الطائرة',      hint: 'وسيلة نقل جوية' },
-        { word: 'الغواصة',      hint: 'مركبة تحت الماء' },
-        { word: 'الصاروخ',      hint: 'يصل الفضاء الخارجي' },
-        { word: 'الكيمياء',     hint: 'علم دراسة المواد' },
-        { word: 'الفيزياء',     hint: 'علم القوى والطاقة' },
-        { word: 'الرياضيات',    hint: 'علم الأعداد والمنطق' },
-        { word: 'الجغرافيا',    hint: 'علم الأرض والبيئة' },
-        { word: 'التاريخ',      hint: 'علم الأحداث الماضية' },
-        { word: 'الفلسفة',      hint: 'علم التفكير والوجود' },
-        { word: 'الاقتصاد',     hint: 'علم إدارة الثروات' },
-        { word: 'الصحافة',      hint: 'مهنة نقل الأخبار' },
-        { word: 'السينما',      hint: 'فن الصور المتحركة' },
-        { word: 'الموسيقى',     hint: 'فن الألحان والأصوات' },
-        { word: 'الشعر',        hint: 'فن الكلام الموزون' },
-        { word: 'الديمقراطية',  hint: 'حكم الشعب' },
-        { word: 'الأرستقراطية', hint: 'حكم النخبة' },
-        { word: 'الإلكترونيات', hint: 'علم الدوائر الكهربائية' },
-        { word: 'الأقمار الصناعية', hint: 'تدور حول الأرض' },
-        { word: 'الأرصاد الجوية',   hint: 'علم التنبؤ بالطقس' },
-        { word: 'الأنثروبولوجيا',   hint: 'علم دراسة الإنسان' },
+        'الكنافة', 'المنسف', 'الكبسة', 'الكوشري', 'الشاورما',
+        'الفلافل', 'الحمص', 'التبولة', 'البقلاوة', 'المهلبية',
+        'القطايف', 'الأرز', 'العدس', 'الفول', 'الزيتون',
+        'التمر', 'الرمان', 'الشاي', 'القهوة', 'الأناناس',
+        'الكاكاو', 'الفستق', 'اللوز', 'الأفوكادو', 'الكنافة',
+        'المحشي', 'الملوخية', 'الفتة', 'البسطرمة', 'الطحينة',
+        'الكباب', 'الكفتة', 'الحواوشي', 'الهريسة', 'البريك',
+        'المقلوبة', 'المجدرة', 'الكليجة', 'الباكلاوة', 'الأوملت',
+        'الإسكالوب', 'الباجة', 'الترمس', 'السمبوسك', 'البليلة',
+        'الشكشوكة', 'الرقاق', 'المبطن', 'الجريش', 'الهامبرجر',
     ],
 };
 
-// ─── Complete Arabic keyboard ─────────────────────────────────────────────────
+// ─── Arabic Keyboard ──────────────────────────────────────────────────────────
 const AR_LETTERS = [
     'ا', 'أ', 'إ', 'آ', 'ء', 'ب', 'ت', 'ث', 'ج', 'ح',
     'خ', 'د', 'ذ', 'ر', 'ز', 'س', 'ش', 'ص', 'ض', 'ط',
@@ -247,15 +108,7 @@ const AR_LETTERS = [
     'و', 'ي', 'ة', 'ى', 'ئ', 'ؤ',
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function pickWordFromCategory(cat: string) {
-    const pool = cat === 'mixed'
-        ? Object.values(WORD_BANK).flat()
-        : (WORD_BANK[cat] ?? WORD_BANK.mixed);
-    return pool[Math.floor(Math.random() * pool.length)];
-}
-
-// Normalize hamza forms so pressing أ matches إ آ ا etc.
+// ─── Normalize Arabic ─────────────────────────────────────────────────────────
 function normalizeChar(ch: string): string {
     if ('أإآءئؤا'.includes(ch)) return 'ا';
     if (ch === 'ة') return 'ه';
@@ -277,6 +130,11 @@ function isWordSolved(word: string, guessed: string[]): boolean {
     return word.split('').filter(c => c !== ' ').every(ch => isLetterRevealed(ch, guessed));
 }
 
+function pickWord(cat: string): string {
+    const pool = WORD_BANK[cat] ?? WORD_BANK.food;
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface PlayerState {
     id:         string;
@@ -290,11 +148,19 @@ interface PlayerState {
 
 interface HangmanGS {
     word:       string;
-    hint:       string;
     category:   string;
+    difficulty: string;
+    maxWrong:   number;
     players:    PlayerState[];
     startedAt:  number;
     winnerId:   string | null;
+}
+
+interface Props {
+    match: any;
+    employee: Employee;
+    onExit: () => void;
+    grantPoints: (pts: number) => Promise<void>;
 }
 
 // ─── Sound ────────────────────────────────────────────────────────────────────
@@ -313,7 +179,8 @@ function useSound() {
                     o.connect(g); g.connect(ac.destination);
                     o.type = 'sine'; o.frequency.value = f;
                     const t = now + i * 0.1;
-                    g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+                    g.gain.setValueAtTime(0.2, t);
+                    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
                     o.start(t); o.stop(t + 0.15);
                 });
             }
@@ -321,7 +188,8 @@ function useSound() {
                 const o = ac.createOscillator(), g = ac.createGain();
                 o.connect(g); g.connect(ac.destination);
                 o.type = 'sawtooth'; o.frequency.value = 180;
-                g.gain.setValueAtTime(0.2, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+                g.gain.setValueAtTime(0.2, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
                 o.start(now); o.stop(now + 0.18);
             }
             if (type === 'win') {
@@ -330,7 +198,8 @@ function useSound() {
                     o.connect(g); g.connect(ac.destination);
                     o.type = 'triangle'; o.frequency.value = f;
                     const t = now + i * 0.12;
-                    g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+                    g.gain.setValueAtTime(0.25, t);
+                    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
                     o.start(t); o.stop(t + 0.3);
                 });
             }
@@ -340,7 +209,8 @@ function useSound() {
                     o.connect(g); g.connect(ac.destination);
                     o.type = 'sine'; o.frequency.value = f;
                     const t = now + i * 0.22;
-                    g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+                    g.gain.setValueAtTime(0.2, t);
+                    g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
                     o.start(t); o.stop(t + 0.25);
                 });
             }
@@ -348,7 +218,8 @@ function useSound() {
                 const o = ac.createOscillator(), g = ac.createGain();
                 o.connect(g); g.connect(ac.destination);
                 o.type = 'sine'; o.frequency.value = 880;
-                g.gain.setValueAtTime(0.08, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+                g.gain.setValueAtTime(0.08, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
                 o.start(now); o.stop(now + 0.06);
             }
         } catch (_) {}
@@ -356,32 +227,39 @@ function useSound() {
 }
 
 // ─── Hangman SVG ──────────────────────────────────────────────────────────────
-function HangmanSVG({ wrong }: { wrong: number }) {
-    const pct   = wrong / MAX_WRONG;
-    const color = pct >= 1 ? '#ef4444' : pct >= 0.5 ? '#f97316' : '#6366f1';
+function HangmanSVG({ wrong, maxWrong }: { wrong: number; maxWrong: number }) {
+    const pct   = wrong / maxWrong;
+    // حساب كم جزء يظهر من أصل 6 أجزاء حسب نسبة الأخطاء
+    const parts = Math.round(pct * 6);
+    const color = pct >= 1 ? '#ef4444' : pct >= 0.6 ? '#f97316' : '#6366f1';
+
     return (
         <svg viewBox="0 0 100 110" className="w-full h-full" strokeLinecap="round" strokeLinejoin="round">
+            {/* الهيكل ثابت دائماً */}
             <line x1="10" y1="105" x2="90" y2="105" stroke="#94a3b8" strokeWidth="3"/>
             <line x1="25" y1="105" x2="25" y2="10"  stroke="#94a3b8" strokeWidth="3"/>
             <line x1="25" y1="10"  x2="60" y2="10"  stroke="#94a3b8" strokeWidth="3"/>
             <line x1="60" y1="10"  x2="60" y2="22"  stroke="#94a3b8" strokeWidth="3"/>
-            {wrong >= 1 && <circle cx="60" cy="30" r="8" stroke={color} strokeWidth="2.5" fill="none"/>}
-            {wrong >= 2 && <line x1="60" y1="38" x2="60" y2="65" stroke={color} strokeWidth="2.5"/>}
-            {wrong >= 3 && <line x1="60" y1="45" x2="45" y2="57" stroke={color} strokeWidth="2.5"/>}
-            {wrong >= 4 && <line x1="60" y1="45" x2="75" y2="57" stroke={color} strokeWidth="2.5"/>}
-            {wrong >= 5 && <line x1="60" y1="65" x2="45" y2="80" stroke={color} strokeWidth="2.5"/>}
-            {wrong >= 6 && <line x1="60" y1="65" x2="75" y2="80" stroke={color} strokeWidth="2.5"/>}
-            {wrong >= MAX_WRONG && (
+            {/* الأجزاء تظهر تدريجياً */}
+            {parts >= 1 && <circle cx="60" cy="30" r="8" stroke={color} strokeWidth="2.5" fill="none"/>}
+            {parts >= 2 && <line x1="60" y1="38" x2="60" y2="65" stroke={color} strokeWidth="2.5"/>}
+            {parts >= 3 && <line x1="60" y1="45" x2="45" y2="57" stroke={color} strokeWidth="2.5"/>}
+            {parts >= 4 && <line x1="60" y1="45" x2="75" y2="57" stroke={color} strokeWidth="2.5"/>}
+            {parts >= 5 && <line x1="60" y1="65" x2="45" y2="80" stroke={color} strokeWidth="2.5"/>}
+            {parts >= 6 && <line x1="60" y1="65" x2="75" y2="80" stroke={color} strokeWidth="2.5"/>}
+            {/* وجه حزين عند الخسارة */}
+            {pct >= 1 && (
                 <>
                     <line x1="56" y1="27" x2="58" y2="29" stroke={color} strokeWidth="1.5"/>
                     <line x1="58" y1="27" x2="56" y2="29" stroke={color} strokeWidth="1.5"/>
                     <line x1="62" y1="27" x2="64" y2="29" stroke={color} strokeWidth="1.5"/>
                     <line x1="64" y1="27" x2="62" y2="29" stroke={color} strokeWidth="1.5"/>
-                    <path d="M56 34 Q60 31 64 34" stroke={color} strokeWidth="1.5" fill="none"/>
+                    <path d="M56 35 Q60 31 64 35" stroke={color} strokeWidth="1.5" fill="none"/>
                 </>
             )}
-            {wrong > 0 && wrong < MAX_WRONG && (
-                <path d="M56 33 Q60 36 64 33" stroke={color} strokeWidth="1.5" fill="none"/>
+            {/* وجه مبتسم قبل الخسارة */}
+            {parts >= 1 && pct < 1 && (
+                <path d="M56 33 Q60 37 64 33" stroke={color} strokeWidth="1.5" fill="none"/>
             )}
         </svg>
     );
@@ -392,22 +270,26 @@ function WordDisplay({ word, guessed, solved, eliminated }: {
     word: string; guessed: string[]; solved: boolean; eliminated: boolean;
 }) {
     return (
-        <div className="flex gap-1.5 flex-wrap justify-center" dir="rtl">
+        <div className="flex gap-2 flex-wrap justify-center py-1" dir="rtl">
             {word.split('').map((ch, i) => {
-                if (ch === ' ') return <div key={i} className="w-4"/>;
+                if (ch === ' ') return <div key={i} className="w-5"/>;
                 const revealed = solved || eliminated || isLetterRevealed(ch, guessed);
                 return (
                     <div key={i} className="flex flex-col items-center gap-0.5">
-                        <span className={`text-xl font-black min-w-[1.8rem] text-center transition-all duration-300 ${
+                        <span className={`text-xl font-black min-w-[1.6rem] text-center transition-all duration-300 ${
                             revealed
-                                ? solved ? 'text-green-600' : eliminated ? 'text-red-500' : 'text-gray-800'
-                                : 'text-transparent'
+                                ? solved      ? 'text-emerald-600'
+                                : eliminated  ? 'text-red-500'
+                                              : 'text-gray-800'
+                                : 'text-transparent select-none'
                         }`}>
                             {revealed ? ch : 'ـ'}
                         </span>
-                        <div className={`h-0.5 w-6 rounded-full transition-all ${
+                        <div className={`h-[3px] w-6 rounded-full transition-all ${
                             revealed
-                                ? solved ? 'bg-green-400' : eliminated ? 'bg-red-300' : 'bg-indigo-400'
+                                ? solved      ? 'bg-emerald-400'
+                                : eliminated  ? 'bg-red-300'
+                                              : 'bg-indigo-400'
                                 : 'bg-gray-300'
                         }`}/>
                     </div>
@@ -418,38 +300,57 @@ function WordDisplay({ word, guessed, solved, eliminated }: {
 }
 
 // ─── Lives Bar ────────────────────────────────────────────────────────────────
-function LivesBar({ wrong }: { wrong: number }) {
+function LivesBar({ wrong, maxWrong }: { wrong: number; maxWrong: number }) {
     return (
         <div className="flex gap-1 justify-center">
-            {Array.from({ length: MAX_WRONG }).map((_, i) => (
-                <Heart key={i} className={`w-5 h-5 transition-all ${
-                    i < MAX_WRONG - wrong ? 'text-red-500 fill-red-500' : 'text-gray-200 fill-gray-200'
-                }`}/>
+            {Array.from({ length: maxWrong }).map((_, i) => (
+                <Heart
+                    key={i}
+                    className={`w-5 h-5 transition-all duration-300 ${
+                        i < maxWrong - wrong
+                            ? 'text-red-500 fill-red-500'
+                            : 'text-gray-200 fill-gray-200'
+                    }`}
+                />
             ))}
         </div>
     );
 }
 
 // ─── Player Row ───────────────────────────────────────────────────────────────
-function PlayerRow({ ps, isMe, rank }: { ps: PlayerState; isMe: boolean; rank: number }) {
+function PlayerRow({ ps, isMe, rank, maxWrong }: {
+    ps: PlayerState; isMe: boolean; rank: number; maxWrong: number;
+}) {
     const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
     return (
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 ${
-            isMe           ? 'border-indigo-300 bg-indigo-50' :
-            ps.solved      ? 'border-green-200 bg-green-50' :
-            ps.eliminated  ? 'border-red-100 bg-red-50/50 opacity-60' :
-                             'border-gray-100 bg-white'
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all ${
+            isMe          ? 'border-indigo-300 bg-indigo-50'  :
+            ps.solved     ? 'border-emerald-200 bg-emerald-50' :
+            ps.eliminated ? 'border-red-100 bg-red-50/50 opacity-60' :
+                            'border-gray-100 bg-white'
         }`}>
-            <span className="text-base w-6 text-center flex-shrink-0">{medal ?? `#${rank}`}</span>
+            <span className="text-base w-6 text-center flex-shrink-0">
+                {medal ?? `#${rank}`}
+            </span>
             <p className={`text-xs font-black flex-1 truncate ${isMe ? 'text-indigo-700' : 'text-gray-700'}`}>
                 {ps.name}{isMe && ' (أنت)'}
             </p>
-            {ps.solved    && <span className="text-[10px] font-black text-green-600 bg-green-100 px-2 py-0.5 rounded-full">✓ حلّها!</span>}
-            {ps.eliminated && !ps.solved && <span className="text-[10px] font-black text-red-500 bg-red-100 px-2 py-0.5 rounded-full">💀 خرج</span>}
+            {ps.solved && (
+                <span className="text-[10px] font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
+                    ✓ حلّها!
+                </span>
+            )}
+            {ps.eliminated && !ps.solved && (
+                <span className="text-[10px] font-black text-red-500 bg-red-100 px-2 py-0.5 rounded-full">
+                    💀 خرج
+                </span>
+            )}
             {!ps.solved && !ps.eliminated && (
                 <div className="flex gap-0.5">
-                    {Array.from({ length: MAX_WRONG }).map((_, i) => (
-                        <div key={i} className={`w-2 h-2 rounded-full ${i < MAX_WRONG - ps.wrong ? 'bg-red-400' : 'bg-gray-200'}`}/>
+                    {Array.from({ length: maxWrong }).map((_, i) => (
+                        <div key={i} className={`w-2 h-2 rounded-full ${
+                            i < maxWrong - ps.wrong ? 'bg-red-400' : 'bg-gray-200'
+                        }`}/>
                     ))}
                 </div>
             )}
@@ -457,21 +358,17 @@ function PlayerRow({ ps, isMe, rank }: { ps: PlayerState; isMe: boolean; rank: n
     );
 }
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-interface Props {
-    match: any; employee: Employee; onExit: () => void; grantPoints: (pts: number) => Promise<void>;
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function HangmanGame({ match, employee, onExit, grantPoints }: Props) {
     const play   = useSound();
     const myId   = employee.employee_id;
     const isHost = match.players?.[0]?.id === myId;
 
-    const gs: HangmanGS       = match.game_state ?? {};
-    const word: string        = gs.word ?? '';
-    const players: PlayerState[] = gs.players ?? [];
-    const status: string      = match.status ?? 'waiting';
+    const gs: HangmanGS          = match.game_state ?? {};
+    const word: string            = gs.word ?? '';
+    const players: PlayerState[]  = gs.players ?? [];
+    const status: string          = match.status ?? 'waiting';
+    const gsMaxWrong: number      = gs.maxWrong ?? 6;
 
     const myPS         = players.find(p => p.id === myId);
     const myGuessed    = myPS?.guessed    ?? [];
@@ -479,10 +376,15 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
     const mySolved     = myPS?.solved     ?? false;
     const myEliminated = myPS?.eliminated ?? false;
 
-    const [selectedCat, setSelectedCat] = useState('medical');
-    const [timeLeft, setTimeLeft]       = useState(ROUND_SECS);
-    const prevTickRef                   = useRef(ROUND_SECS);
-    const resultDoneRef                 = useRef(false);
+    // Host settings
+    const [selectedCat,  setSelectedCat]  = useState('celebrities');
+    const [selectedDiff, setSelectedDiff] = useState('easy');
+    const [timeLeft, setTimeLeft]         = useState(ROUND_SECS);
+    const prevTickRef   = useRef(ROUND_SECS);
+    const resultDoneRef = useRef(false);
+
+    const diffInfo = DIFFICULTIES.find(d => d.key === gs.difficulty) ?? DIFFICULTIES[0];
+    const catInfo  = CATEGORIES.find(c => c.key === gs.category);
 
     // ── Timer ─────────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -491,7 +393,8 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
             const left = Math.max(0, ROUND_SECS - Math.floor((Date.now() - gs.startedAt) / 1000));
             setTimeLeft(left);
             if ([30, 20, 10, 5, 4, 3, 2, 1].includes(left) && left !== prevTickRef.current) {
-                prevTickRef.current = left; play('tick');
+                prevTickRef.current = left;
+                play('tick');
             }
             if (left === 0 && isHost && status === 'playing') finishGame(null);
         };
@@ -500,13 +403,13 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
         return () => clearInterval(iv);
     }, [status, gs.startedAt]);
 
-    // ── Grant points ──────────────────────────────────────────────────────────
+    // ── Grant points on finish ────────────────────────────────────────────────
     useEffect(() => {
         if (status !== 'finished' || resultDoneRef.current) return;
         resultDoneRef.current = true;
         if (gs.winnerId === myId) { play('win'); grantPoints(15); }
-        else if (mySolved) { play('win'); grantPoints(5); }
-        else play('lose');
+        else if (mySolved)        { play('win'); grantPoints(5);  }
+        else                        play('lose');
     }, [status]);
 
     // ── Guess ─────────────────────────────────────────────────────────────────
@@ -520,7 +423,7 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
         play(inWord ? 'correct' : 'wrong');
 
         const solved     = isWordSolved(word, newGuessed);
-        const eliminated = newWrong >= MAX_WRONG;
+        const eliminated = newWrong >= gsMaxWrong;
 
         const updatedPlayers = players.map(p =>
             p.id === myId
@@ -542,27 +445,37 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
 
     const finishGame = async (forceWinner: string | null) => {
         if (status === 'finished') return;
-        const solvers = players.filter(p => p.solved).sort((a, b) => (a.solvedAt ?? 0) - (b.solvedAt ?? 0));
-        const winner  = forceWinner ?? solvers[0]?.id ?? null;
+        const solvers = players
+            .filter(p => p.solved)
+            .sort((a, b) => (a.solvedAt ?? 0) - (b.solvedAt ?? 0));
+        const winner = forceWinner ?? solvers[0]?.id ?? null;
         await supabase.from('live_matches').update({
-            status: 'finished', winner_id: winner,
+            status: 'finished',
+            winner_id: winner,
             game_state: { ...gs, winnerId: winner },
         }).eq('id', match.id);
     };
 
     // ── Start ─────────────────────────────────────────────────────────────────
     const handleStart = async () => {
-        const picked    = pickWordFromCategory(selectedCat);
-        const catLabel  = CATEGORIES.find(c => c.key === selectedCat)?.label ?? selectedCat;
+        const word        = pickWord(selectedCat);
+        const catLabel    = CATEGORIES.find(c => c.key === selectedCat)?.label ?? selectedCat;
+        const diff        = DIFFICULTIES.find(d => d.key === selectedDiff) ?? DIFFICULTIES[0];
         const matchPlayers: PlayerState[] = match.players.map((p: any) => ({
-            id: p.id, name: p.name, guessed: [], wrong: 0,
+            id: p.id, name: p.name,
+            guessed: [], wrong: 0,
             solved: false, eliminated: false, solvedAt: null,
         }));
         await supabase.from('live_matches').update({
             status: 'playing',
             game_state: {
-                word: picked.word, hint: picked.hint, category: catLabel,
-                players: matchPlayers, startedAt: Date.now(), winnerId: null,
+                word,
+                category:   catLabel,
+                difficulty: diff.key,
+                maxWrong:   diff.maxWrong,
+                players:    matchPlayers,
+                startedAt:  Date.now(),
+                winnerId:   null,
             },
         }).eq('id', match.id);
     };
@@ -576,17 +489,26 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
 
     const amIWinner  = match.winner_id === myId;
     const timerPct   = timeLeft / ROUND_SECS;
-    const timerColor = timerPct < 0.2 ? 'text-red-600' : timerPct < 0.4 ? 'text-orange-500' : 'text-green-700';
+    const timerColor = timerPct < 0.2 ? '#ef4444' : timerPct < 0.4 ? '#f97316' : '#22c55e';
 
-    // ── WAITING ───────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // WAITING
+    // ─────────────────────────────────────────────────────────────────────────
     if (status === 'waiting') return (
         <div className="py-5 px-4 flex flex-col gap-4" dir="rtl">
+
+            {/* Header */}
             <div className="text-center">
-                <div className="w-20 h-20 bg-gradient-to-br from-rose-500 to-pink-700 rounded-3xl flex items-center justify-center mx-auto mb-3 shadow-2xl text-4xl">🪢</div>
+                <div className="w-20 h-20 bg-gradient-to-br from-rose-500 to-pink-700 rounded-3xl flex items-center justify-center mx-auto mb-3 shadow-2xl text-4xl">
+                    🪢
+                </div>
                 <h3 className="text-xl font-black text-gray-800 mb-1">المشنقة!</h3>
-                <p className="text-sm font-bold text-gray-400">{match.players?.length ?? 0} لاعب في الغرفة</p>
+                <p className="text-sm font-bold text-gray-400">
+                    {match.players?.length ?? 0} لاعب في الغرفة
+                </p>
             </div>
 
+            {/* Players */}
             <div className="flex flex-wrap gap-2 justify-center">
                 {match.players?.map((p: any) => (
                     <div key={p.id} className="flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-full">
@@ -598,16 +520,20 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
 
             {isHost ? (
                 <>
+                    {/* Category Selection */}
                     <div>
-                        <p className="text-xs font-black text-gray-600 mb-2.5 text-center">اختر فئة الكلمات:</p>
+                        <p className="text-xs font-black text-gray-600 mb-2 text-center">اختر الفئة:</p>
                         <div className="grid grid-cols-2 gap-2">
                             {CATEGORIES.map(cat => (
-                                <button key={cat.key} onClick={() => setSelectedCat(cat.key)}
+                                <button
+                                    key={cat.key}
+                                    onClick={() => setSelectedCat(cat.key)}
                                     className={`flex items-center gap-2.5 px-3 py-3 rounded-2xl border-2 font-black text-sm transition-all ${
                                         selectedCat === cat.key
                                             ? `bg-gradient-to-r ${cat.color} text-white border-transparent shadow-lg scale-105`
                                             : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
-                                    }`}>
+                                    }`}
+                                >
                                     <span className="text-xl">{cat.emoji}</span>
                                     <span className="flex-1 text-right">{cat.label}</span>
                                     {selectedCat === cat.key && <span className="text-xs opacity-80">✓</span>}
@@ -615,11 +541,43 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
                             ))}
                         </div>
                     </div>
-                    <button onClick={handleStart}
+
+                    {/* Difficulty Selection */}
+                    <div>
+                        <p className="text-xs font-black text-gray-600 mb-2 text-center">اختر الصعوبة:</p>
+                        <div className="grid grid-cols-3 gap-2">
+                            {DIFFICULTIES.map(diff => (
+                                <button
+                                    key={diff.key}
+                                    onClick={() => setSelectedDiff(diff.key)}
+                                    className={`flex flex-col items-center gap-1 py-3 px-2 rounded-2xl border-2 font-black text-sm transition-all ${
+                                        selectedDiff === diff.key
+                                            ? `bg-gradient-to-br ${diff.color} text-white border-transparent shadow-lg scale-105`
+                                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                                    }`}
+                                >
+                                    <span className="text-xl">{diff.emoji}</span>
+                                    <span className="text-xs font-black">{diff.label}</span>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                        selectedDiff === diff.key
+                                            ? 'bg-white/25 text-white'
+                                            : 'bg-gray-100 text-gray-500'
+                                    }`}>
+                                        {diff.maxWrong} محاولات
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleStart}
                         disabled={match.players?.length < 2}
-                        className="w-full bg-gradient-to-r from-rose-500 to-pink-700 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
+                        className="w-full bg-gradient-to-r from-rose-500 to-pink-700 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    >
                         🎮 ابدأ اللعبة
                     </button>
+
                     {match.players?.length < 2 && (
                         <p className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl text-center">
                             ⏳ في انتظار لاعب آخر للانضمام...
@@ -628,7 +586,7 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
                 </>
             ) : (
                 <div className="flex items-center gap-2 justify-center text-sm font-bold text-gray-400 py-6 bg-gray-50 rounded-2xl">
-                    <Loader2 className="w-4 h-4 animate-spin"/> في انتظار المضيف ليختار الفئة...
+                    <Loader2 className="w-4 h-4 animate-spin"/> في انتظار المضيف ليختار الإعدادات...
                 </div>
             )}
 
@@ -638,67 +596,112 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
         </div>
     );
 
-    // ── PLAYING ───────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // PLAYING
+    // ─────────────────────────────────────────────────────────────────────────
     if (status === 'playing') return (
         <div className="flex flex-col gap-3 py-2 px-3" dir="rtl">
+
+            {/* Header: Category + Difficulty + Timer */}
             <div className="flex items-center justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[10px] font-black bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">{gs.category}</span>
-                        <span className="text-[10px] font-bold text-gray-400">{word.split('').filter(c => c !== ' ').length} حرف</span>
-                    </div>
-                    <p className="text-sm font-black text-gray-700 truncate">{gs.hint}</p>
+                <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                    {/* Category badge */}
+                    <span className="text-[10px] font-black bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        {catInfo?.emoji} {gs.category}
+                    </span>
+                    {/* Difficulty badge */}
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${diffInfo.bg} ${diffInfo.text}`}>
+                        {diffInfo.emoji} {diffInfo.label}
+                    </span>
+                    {/* Letter count */}
+                    <span className="text-[10px] font-bold text-gray-400">
+                        {word.replace(/ /g, '').length} حرف
+                    </span>
                 </div>
+
+                {/* Timer ring */}
                 <div className="relative w-14 h-14 flex-shrink-0">
                     <svg width={56} height={56} viewBox="0 0 56 56" style={{ transform: 'rotate(-90deg)' }}>
                         <circle cx={28} cy={28} r={24} fill="none" stroke="#e5e7eb" strokeWidth={4}/>
                         <circle cx={28} cy={28} r={24} fill="none"
-                            stroke={timerPct < 0.2 ? '#ef4444' : timerPct < 0.4 ? '#f97316' : '#22c55e'}
-                            strokeWidth={4} strokeDasharray={2 * Math.PI * 24}
+                            stroke={timerColor} strokeWidth={4}
+                            strokeDasharray={2 * Math.PI * 24}
                             strokeDashoffset={2 * Math.PI * 24 * (1 - timerPct)}
-                            strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s linear, stroke 0.4s' }}/>
+                            strokeLinecap="round"
+                            style={{ transition: 'stroke-dashoffset 0.5s linear, stroke 0.4s' }}
+                        />
                     </svg>
-                    <span className={`absolute inset-0 flex items-center justify-center text-xs font-black ${timerColor}`}>
-                        {timeLeft < 60 ? timeLeft : `${Math.floor(timeLeft/60)}:${String(timeLeft%60).padStart(2,'0')}`}
+                    <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-gray-700">
+                        {timeLeft < 60 ? timeLeft : `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')}`}
                     </span>
                 </div>
             </div>
 
+            {/* Game Area */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
                 <div className="flex items-start gap-3">
-                    <div className="w-24 h-24 flex-shrink-0"><HangmanSVG wrong={myWrong}/></div>
-                    <div className="flex-1 flex flex-col gap-3 pt-1">
-                        <WordDisplay word={word} guessed={myGuessed} solved={mySolved} eliminated={myEliminated}/>
-                        <LivesBar wrong={myWrong}/>
-                        {mySolved && <div className="text-center text-xs font-black text-green-600 bg-green-50 rounded-xl py-1.5 animate-bounce">🎉 أحسنت! حللتها!</div>}
-                        {myEliminated && <div className="text-center text-xs font-black text-red-500 bg-red-50 rounded-xl py-1.5">💀 استنفدت فرصك! الكلمة: <span className="font-black">{word}</span></div>}
+                    {/* Hangman SVG */}
+                    <div className="w-24 h-24 flex-shrink-0">
+                        <HangmanSVG wrong={myWrong} maxWrong={gsMaxWrong}/>
+                    </div>
+                    {/* Word + Lives */}
+                    <div className="flex-1 flex flex-col gap-3 pt-1 min-w-0">
+                        <WordDisplay
+                            word={word}
+                            guessed={myGuessed}
+                            solved={mySolved}
+                            eliminated={myEliminated}
+                        />
+                        <LivesBar wrong={myWrong} maxWrong={gsMaxWrong}/>
+                        {mySolved && (
+                            <div className="text-center text-xs font-black text-emerald-600 bg-emerald-50 rounded-xl py-1.5 animate-bounce">
+                                🎉 أحسنت! حللتها!
+                            </div>
+                        )}
+                        {myEliminated && !mySolved && (
+                            <div className="text-center text-xs font-black text-red-500 bg-red-50 rounded-xl py-1.5">
+                                💀 الكلمة: <span className="font-black">{word}</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
 
+            {/* Other players */}
             {players.length > 1 && (
                 <div className="space-y-1.5">
                     <p className="text-[11px] font-black text-gray-400 px-1">اللاعبون:</p>
-                    {sortedPlayers.map((ps, i) => <PlayerRow key={ps.id} ps={ps} isMe={ps.id === myId} rank={i + 1}/>)}
+                    {sortedPlayers.map((ps, i) => (
+                        <PlayerRow
+                            key={ps.id} ps={ps}
+                            isMe={ps.id === myId}
+                            rank={i + 1}
+                            maxWrong={gsMaxWrong}
+                        />
+                    ))}
                 </div>
             )}
 
+            {/* Keyboard */}
             {!mySolved && !myEliminated && (
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3">
                     <p className="text-[10px] font-black text-gray-400 mb-2 text-center">اختر حرفاً:</p>
                     <div className="flex flex-wrap gap-1.5 justify-center">
                         {AR_LETTERS.map(letter => {
-                            const used   = myGuessed.some(g => normalizeChar(g) === normalizeChar(letter));
-                            const inWord = wordContains(word, letter);
+                            const used    = myGuessed.some(g => normalizeChar(g) === normalizeChar(letter));
+                            const correct = used && wordContains(word, letter);
+                            const wrong   = used && !wordContains(word, letter);
                             return (
-                                <button key={letter} onClick={() => handleGuess(letter)} disabled={used}
+                                <button
+                                    key={letter}
+                                    onClick={() => handleGuess(letter)}
+                                    disabled={used}
                                     className={`w-9 h-9 rounded-xl font-black text-sm transition-all border-2 active:scale-95 ${
-                                        !used
-                                            ? 'bg-white border-gray-200 text-gray-700 hover:border-rose-400 hover:bg-rose-50 hover:text-rose-700 shadow-sm'
-                                            : inWord
-                                                ? 'bg-green-100 border-green-300 text-green-700 cursor-not-allowed'
-                                                : 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed'
-                                    }`}>
+                                        correct ? 'bg-emerald-100 border-emerald-300 text-emerald-700 cursor-not-allowed' :
+                                        wrong   ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed' :
+                                                  'bg-white border-gray-200 text-gray-700 hover:border-rose-400 hover:bg-rose-50 hover:text-rose-700 shadow-sm'
+                                    }`}
+                                >
                                     {letter}
                                 </button>
                             );
@@ -708,45 +711,83 @@ export default function HangmanGame({ match, employee, onExit, grantPoints }: Pr
             )}
 
             {mySolved && (
-                <div className="text-center bg-green-50 border-2 border-green-200 rounded-2xl py-4 px-3">
+                <div className="text-center bg-emerald-50 border-2 border-emerald-200 rounded-2xl py-4 px-3">
                     <Trophy className="w-8 h-8 text-yellow-400 mx-auto mb-1"/>
-                    <p className="text-sm font-black text-green-800">حللتها! في انتظار باقي اللاعبين...</p>
+                    <p className="text-sm font-black text-emerald-800">حللتها! في انتظار باقي اللاعبين...</p>
                 </div>
             )}
 
-            <button onClick={onExit} className="text-xs font-bold text-gray-400 hover:text-gray-600 py-1 text-center">← العودة</button>
+            <button onClick={onExit} className="text-xs font-bold text-gray-400 hover:text-gray-600 py-1 text-center">
+                ← العودة
+            </button>
         </div>
     );
 
-    // ── FINISHED ──────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // FINISHED
+    // ─────────────────────────────────────────────────────────────────────────
     if (status === 'finished') return (
         <div className="flex flex-col gap-3 py-2 px-3 animate-in fade-in duration-400" dir="rtl">
+
+            {/* Result banner */}
             <div className={`rounded-2xl p-5 text-center text-white shadow-xl ${
                 amIWinner ? 'bg-gradient-to-br from-yellow-400 to-amber-500' :
-                mySolved  ? 'bg-gradient-to-br from-green-500 to-emerald-600' :
+                mySolved  ? 'bg-gradient-to-br from-emerald-500 to-green-600' :
                             'bg-gradient-to-br from-gray-500 to-gray-700'
             }`}>
-                {amIWinner
-                    ? <><Trophy className="w-14 h-14 mx-auto mb-2 drop-shadow-xl animate-bounce"/><h3 className="text-2xl font-black">🎉 أنت الأسرع!</h3><p className="text-amber-100 text-sm mt-1">+15 نقطة 🏆</p></>
-                    : mySolved
-                        ? <><div className="text-5xl mb-2">🌟</div><h3 className="text-2xl font-black">أحسنت!</h3><p className="text-green-100 text-sm mt-1">+5 نقاط</p></>
-                        : <><Skull className="w-14 h-14 mx-auto mb-2 opacity-70"/><h3 className="text-2xl font-black">لم تكملها</h3><p className="text-gray-300 text-sm mt-1">الكلمة كانت: <span className="text-white font-black">{word}</span></p></>
-                }
+                {amIWinner ? (
+                    <>
+                        <Trophy className="w-14 h-14 mx-auto mb-2 drop-shadow-xl animate-bounce"/>
+                        <h3 className="text-2xl font-black">🎉 أنت الأسرع!</h3>
+                        <p className="text-amber-100 text-sm mt-1">+15 نقطة 🏆</p>
+                    </>
+                ) : mySolved ? (
+                    <>
+                        <div className="text-5xl mb-2">🌟</div>
+                        <h3 className="text-2xl font-black">أحسنت!</h3>
+                        <p className="text-green-100 text-sm mt-1">+5 نقاط</p>
+                    </>
+                ) : (
+                    <>
+                        <Skull className="w-14 h-14 mx-auto mb-2 opacity-70"/>
+                        <h3 className="text-2xl font-black">لم تكملها</h3>
+                        <p className="text-gray-300 text-sm mt-1">
+                            الكلمة كانت: <span className="text-white font-black">{word}</span>
+                        </p>
+                    </>
+                )}
             </div>
 
+            {/* Word reveal */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center">
                 <p className="text-xs font-black text-gray-400 mb-2">الكلمة الصحيحة</p>
                 <p className="text-2xl font-black text-gray-800">{word}</p>
-                <p className="text-xs text-gray-400 mt-1">{gs.hint}</p>
+                <div className="flex items-center justify-center gap-2 mt-1">
+                    <span className="text-[10px] text-gray-400 font-bold">{gs.category}</span>
+                    <span className="text-gray-300">•</span>
+                    <span className={`text-[10px] font-black ${diffInfo.text}`}>
+                        {diffInfo.emoji} {diffInfo.label}
+                    </span>
+                </div>
             </div>
 
+            {/* Rankings */}
             <div className="space-y-1.5">
                 <p className="text-xs font-black text-gray-500 px-1">الترتيب النهائي:</p>
-                {sortedPlayers.map((ps, i) => <PlayerRow key={ps.id} ps={ps} isMe={ps.id === myId} rank={i + 1}/>)}
+                {sortedPlayers.map((ps, i) => (
+                    <PlayerRow
+                        key={ps.id} ps={ps}
+                        isMe={ps.id === myId}
+                        rank={i + 1}
+                        maxWrong={gsMaxWrong}
+                    />
+                ))}
             </div>
 
-            <button onClick={onExit}
-                className="w-full bg-gradient-to-r from-rose-500 to-pink-700 text-white py-3.5 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2">
+            <button
+                onClick={onExit}
+                className="w-full bg-gradient-to-r from-rose-500 to-pink-700 text-white py-3.5 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
                 <Users className="w-5 h-5"/> العودة إلى الصالة
             </button>
         </div>
