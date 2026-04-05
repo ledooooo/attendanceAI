@@ -1,802 +1,891 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '../../../supabaseClient';
-import { Loader2, CheckCircle, XCircle, Flag, Users, Trophy, Medal, BrainCircuit, Timer } from 'lucide-react';
+import { CheckCircle, XCircle, Flag, Users, Trophy, Timer, Crown, Star, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Employee } from '../../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const TIMER_SECS = 120;
-const MAX_VOTE_ROUNDS = 3; // max re-vote attempts on conflict
+const TIMER_SECS = 120; // 2 minutes
+const MAX_PLAYERS = 10;
 
-const ARABIC_LETTERS = [
-    'أ','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز','س','ش',
-    'ص','ض','ط','ظ','ع','غ','ف','ق','ك','ل','م','ن','ه','و','ي',
-];
-
+// ─── Categories ──────────────────────────────────────────────────────────────
 const CATEGORIES = [
-    { key: 'male',    label: 'اسم ذكر',  emoji: '👨' },
-    { key: 'female',  label: 'اسم أنثى', emoji: '👩' },
-    { key: 'plant',   label: 'نبات',      emoji: '🌿' },
-    { key: 'food',    label: 'أكلة',      emoji: '🍽️' },
-    { key: 'object',  label: 'جماد',      emoji: '📦' },
-    { key: 'animal',  label: 'حيوان',     emoji: '🐾' },
-    { key: 'country', label: 'بلد',       emoji: '🌍' },
-    { key: 'famous',  label: 'مشهور',     emoji: '⭐' },
+  { key: 'male',    label: 'اسم ذكر',     emoji: '👨' },
+  { key: 'female',  label: 'اسم أنثى',    emoji: '👩' },
+  { key: 'plant',   label: 'نبات',         emoji: '🌿' },
+  { key: 'food',    label: 'أكلة',         emoji: '🍽️' },
+  { key: 'object',  label: 'جماد',         emoji: '📦' },
+  { key: 'animal',  label: 'حيوان',        emoji: '🐾' },
+  { key: 'country', label: 'بلد',          emoji: '🌍' },
+  { key: 'famous',  label: 'مشهور',        emoji: '⭐' },
 ];
 
 type Answers = Record<string, string>;
+type Evaluation = Record<string, number>; // playerId -> score
 
 type PlayerRecord = {
-    playerId:   string;
-    playerName: string;      // alias or real name — never changes
-    answers:    Answers;
-    stopped:    boolean;
-    vote:       'win' | 'lose' | 'draw' | null;
-    voteRound:  number;      // which conflict round this vote belongs to
+  playerId:   string;
+  playerName: string;
+  answers:    Answers;
+  stopped:    boolean;
+  stoppedAt:  number;
 };
 
-// ─── Question helpers ─────────────────────────────────────────────────────────
-const normalizeQuestion = (rawQ: any) => {
-    let questionText = rawQ.question || rawQ.question_text || '';
-    if (rawQ.scenario) questionText = `${rawQ.scenario} - ${questionText}`;
-    let opts: string[] = [];
-    let correctAns = '';
-    if (rawQ.source === 'standard_quiz') {
-        try {
-            let parsed = rawQ.options;
-            if (typeof parsed === 'string') { if (parsed.startsWith('"')) parsed = JSON.parse(parsed); if (typeof parsed === 'string') parsed = JSON.parse(parsed); }
-            opts = Array.isArray(parsed) ? parsed : [];
-        } catch { opts = []; }
-        correctAns = rawQ.correct_answer;
-    } else {
-        opts = [rawQ.option_a, rawQ.option_b, rawQ.option_c, rawQ.option_d].filter(o => o && String(o).trim() !== '' && o !== 'null');
-        if (rawQ.correct_index !== undefined && rawQ.correct_index !== null) correctAns = opts[rawQ.correct_index];
-        else {
-            const letter = String(rawQ.correct_option || rawQ.correct_answer || '').trim().toLowerCase();
-            correctAns = ['a','b','c','d'].includes(letter) ? rawQ[`option_${letter}`] : letter;
-        }
-    }
-    if (!correctAns || opts.length < 2) return null;
-    return { id: rawQ.id, questionText, options: opts, correctAnswer: String(correctAns).trim().toLowerCase() };
+type GameState = {
+  letter:        string;
+  startedAt:     number;
+  records:       PlayerRecord[];
+  evaluations:   Evaluation;
+  evaluatedBy:   string | null;
+  isEvaluated:   boolean;
 };
 
-const fetchQuestion = async (employee: Employee) => {
-    const spec = employee.specialty || '';
-    const s = spec.toLowerCase();
-    let vars = [spec, 'الكل'];
-    if (s.includes('بشر') || s.includes('عام')) vars = ['بشري', 'طبيب بشرى', 'طبيب عام'];
-    else if (s.includes('سنان') || s.includes('أسنان')) vars = ['أسنان', 'اسنان', 'طبيب أسنان'];
-    else if (s.includes('تمريض') || s.includes('ممرض')) vars = ['تمريض', 'ممرض', 'ممرضة'];
-    else if (s.includes('صيدل')) vars = ['صيدلة', 'صيدلي'];
-    else if (s.includes('معمل') || s.includes('مختبر')) vars = ['معمل', 'فني معمل'];
-
-    const orFilter = vars.map(v => `specialty.ilike.%${v}%`).join(',');
-    let pool: any[] = [];
-    const [r1, r2, r3] = await Promise.all([
-        supabase.from('arcade_quiz_questions').select('*').or(orFilter),
-        supabase.from('arcade_dose_scenarios').select('*').or(orFilter),
-        supabase.from('quiz_questions').select('*').or(orFilter),
-    ]);
-    if (r1.data) pool.push(...r1.data.map((q: any) => ({ ...q, source: 'arcade_quiz' })));
-    if (r2.data) pool.push(...r2.data.map((q: any) => ({ ...q, source: 'arcade_dose' })));
-    if (r3.data) pool.push(...r3.data.map((q: any) => ({ ...q, source: 'standard_quiz' })));
-    if (pool.length === 0) {
-        const { data } = await supabase.from('arcade_quiz_questions').select('*').limit(30);
-        if (data) pool = data.map((q: any) => ({ ...q, source: 'arcade_quiz' }));
-    }
-    for (let i = 0; i < 8; i++) {
-        const n = normalizeQuestion(pool[Math.floor(Math.random() * pool.length)]);
-        if (n) return n;
-    }
-    return null;
-};
-
-// ─── Audio ────────────────────────────────────────────────────────────────────
-function useSound() {
-    const ctx = useRef<AudioContext | null>(null);
-    const get = () => {
-        if (!ctx.current) ctx.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        return ctx.current;
-    };
-    return useCallback((type: 'tick' | 'stop' | 'win' | 'lose' | 'timeout') => {
-        try {
-            const ac = get(), now = ac.currentTime;
-            if (type === 'tick') {
-                const o = ac.createOscillator(), g = ac.createGain();
-                o.connect(g); g.connect(ac.destination);
-                o.type = 'sine'; o.frequency.value = 880;
-                g.gain.setValueAtTime(0.13, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-                o.start(now); o.stop(now + 0.07);
-            }
-            if (type === 'stop') {
-                [659, 784, 1047].forEach((f, i) => {
-                    const o = ac.createOscillator(), g = ac.createGain();
-                    o.connect(g); g.connect(ac.destination);
-                    o.type = 'square'; o.frequency.value = f;
-                    const t = now + i * 0.09;
-                    g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-                    o.start(t); o.stop(t + 0.25);
-                });
-            }
-            if (type === 'win') {
-                [523, 659, 784, 1047].forEach((f, i) => {
-                    const o = ac.createOscillator(), g = ac.createGain();
-                    o.connect(g); g.connect(ac.destination);
-                    o.type = 'triangle'; o.frequency.value = f;
-                    const t = now + i * 0.13;
-                    g.gain.setValueAtTime(0.28, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
-                    o.start(t); o.stop(t + 0.32);
-                });
-            }
-            if (type === 'lose' || type === 'timeout') {
-                [330, 220].forEach((f, i) => {
-                    const o = ac.createOscillator(), g = ac.createGain();
-                    o.connect(g); g.connect(ac.destination);
-                    o.type = 'sine'; o.frequency.value = f;
-                    const t = now + i * 0.2;
-                    g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
-                    o.start(t); o.stop(t + 0.25);
-                });
-            }
-        } catch (_) {}
-    }, []);
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 function pickLetter() {
-    return ARABIC_LETTERS[Math.floor(Math.random() * ARABIC_LETTERS.length)];
+  const LETTERS = ['أ','ب','ت','ث','ج','ح','خ','د','ذ','ر','ز','س','ش','ص','ض','ط','ظ','ع','غ','ف','ق','ك','ل','م','ن','ه','و','ي'];
+  return LETTERS[Math.floor(Math.random() * LETTERS.length)];
 }
+
 function emptyAnswers(): Answers {
-    return Object.fromEntries(CATEGORIES.map(c => [c.key, '']));
-}
-function validCount(answers: Answers, letter: string) {
-    return Object.values(answers).filter(v => v.trim().startsWith(letter) && v.trim().length > 1).length;
+  return Object.fromEntries(CATEGORIES.map(c => [c.key, '']));
 }
 
-// ─── Resolve outcome from votes ───────────────────────────────────────────────
-function resolveVotes(records: PlayerRecord[], round: number): { result: 'valid' | 'conflict' | 'draw' | 'force_draw'; winnerId?: string } {
-    const votes = records.filter(r => r.voteRound === round).map(r => ({ id: r.playerId, vote: r.vote }));
-    const winners = votes.filter(v => v.vote === 'win');
-    const losers  = votes.filter(v => v.vote === 'lose');
-    const draws   = votes.filter(v => v.vote === 'draw');
-
-    if (draws.length === votes.length) return { result: 'draw' };
-    if (losers.length === votes.length) return { result: 'draw' };
-    if (winners.length === votes.length) return { result: 'conflict' };
-    if (winners.length === 1 && losers.length === votes.length - 1) {
-        return { result: 'valid', winnerId: winners[0].id };
-    }
-    if (draws.length > 0 && winners.length > 0) return { result: 'conflict' };
-    return { result: 'conflict' };
+function validCount(answers: Answers, letter: string): number {
+  return Object.values(answers).filter(v =>
+    v.trim().startsWith(letter) && v.trim().length > 1
+  ).length;
 }
 
-// ─── Timer Ring ───────────────────────────────────────────────────────────────
+// ─── Timer Ring Component ────────────────────────────────────────────────────
 function TimerRing({ seconds, total }: { seconds: number; total: number }) {
-    const r = 26, circ = 2 * Math.PI * r;
-    const color = seconds <= 20 ? '#ef4444' : seconds <= 45 ? '#f97316' : '#22c55e';
-    return (
-        <div className="relative w-14 h-14 flex items-center justify-center flex-shrink-0">
-            <svg width={56} height={56} viewBox="0 0 56 56" style={{ transform: 'rotate(-90deg)' }}>
-                <circle cx={28} cy={28} r={r} fill="none" stroke="#e5e7eb" strokeWidth={4.5}/>
-                <circle cx={28} cy={28} r={r} fill="none" stroke={color} strokeWidth={4.5}
-                    strokeDasharray={circ}
-                    strokeDashoffset={circ * (1 - seconds / total)}
-                    strokeLinecap="round"
-                    style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.4s' }}/>
-            </svg>
-            <span className={`absolute text-xs font-black ${seconds <= 20 ? 'text-red-600 animate-pulse' : seconds <= 45 ? 'text-orange-600' : 'text-green-700'}`}>
-                {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
-            </span>
-        </div>
-    );
+  const r = 26, circ = 2 * Math.PI * r;
+  const color = seconds <= 20 ? '#ef4444' : seconds <= 45 ? '#f97316' : '#22c55e';
+
+  return (
+    <div className="relative w-14 h-14 flex items-center justify-center flex-shrink-0">
+      <svg width={56} height={56} viewBox="0 0 56 56" style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={28} cy={28} r={r} fill="none" stroke="#e5e7eb" strokeWidth={4.5}/>
+        <circle cx={28} cy={28} r={r} fill="none" stroke={color} strokeWidth={4.5}
+          strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - seconds / total)}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.4s' }}/>
+      </svg>
+      <span className={`absolute text-xs font-black ${seconds <= 20 ? 'text-red-600 animate-pulse' : seconds <= 45 ? 'text-orange-600' : 'text-green-700'}`}>
+        {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+      </span>
+    </div>
+  );
 }
 
-// ─── Answer Form ──────────────────────────────────────────────────────────────
+// ─── Answer Form Component ──────────────────────────────────────────────────
 function AnswerForm({ letter, answers, onChange, disabled }: {
-    letter: string; answers: Answers;
-    onChange: (key: string, val: string) => void;
-    disabled: boolean;
+  letter: string; answers: Answers;
+  onChange: (key: string, val: string) => void;
+  disabled: boolean;
 }) {
-    const filled = validCount(answers, letter);
-    return (
-        <div className="space-y-1.5">
-            {CATEGORIES.map(cat => {
-                const val   = answers[cat.key] ?? '';
-                const valid = val.trim().startsWith(letter) && val.trim().length > 1;
-                const has   = val.trim().length > 0;
-                return (
-                    <div key={cat.key} className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all ${valid ? 'border-green-400 bg-green-50' : has ? 'border-orange-300 bg-orange-50' : 'border-gray-200 bg-white'}`}>
-                        <span className="text-base flex-shrink-0">{cat.emoji}</span>
-                        <span className="text-[11px] font-black text-gray-500 w-14 flex-shrink-0">{cat.label}</span>
-                        <input type="text" value={val} onChange={e => onChange(cat.key, e.target.value)}
-                            disabled={disabled} placeholder={`يبدأ بـ "${letter}"`} dir="rtl"
-                            className="flex-1 text-sm font-bold bg-transparent outline-none text-gray-800 placeholder:text-gray-300 disabled:opacity-50 min-w-0"/>
-                        {valid && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0"/>}
-                        {!valid && has && <XCircle className="w-4 h-4 text-orange-400 flex-shrink-0"/>}
-                    </div>
-                );
-            })}
-            <div className="flex items-center justify-between px-1 pt-0.5">
-                <span className="text-[11px] font-bold text-gray-400">{filled}/{CATEGORIES.length} صحيح</span>
-                <div className="flex gap-1">{CATEGORIES.map((_, i) => (
-                    <div key={i} className={`w-2 h-2 rounded-full ${i < filled ? 'bg-green-400' : 'bg-gray-200'}`}/>
-                ))}</div>
-            </div>
+  const filled = validCount(answers, letter);
+
+  return (
+    <div className="space-y-1.5">
+      {CATEGORIES.map(cat => {
+        const val = answers[cat.key] ?? '';
+        const valid = val.trim().startsWith(letter) && val.trim().length > 1;
+        const has = val.trim().length > 0;
+
+        return (
+          <div key={cat.key} className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all ${
+            valid ? 'border-green-400 bg-green-50' :
+            has ? 'border-orange-300 bg-orange-50' :
+            'border-gray-200 bg-white'
+          }`}>
+            <span className="text-base flex-shrink-0">{cat.emoji}</span>
+            <span className="text-[11px] font-black text-gray-500 w-14 flex-shrink-0">{cat.label}</span>
+            <input
+              type="text"
+              value={val}
+              onChange={e => onChange(cat.key, e.target.value)}
+              disabled={disabled}
+              placeholder={`يبدأ بـ "${letter}"`}
+              dir="rtl"
+              className="flex-1 text-sm font-bold bg-transparent outline-none text-gray-800 placeholder:text-gray-300 disabled:opacity-50 min-w-0"
+            />
+            {valid && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0"/>}
+            {!valid && has && <XCircle className="w-4 h-4 text-orange-400 flex-shrink-0"/>}
+          </div>
+        );
+      })}
+      <div className="flex items-center justify-between px-1 pt-0.5">
+        <span className="text-[11px] font-bold text-gray-400">{filled}/{CATEGORIES.length} صحيح</span>
+        <div className="flex gap-1">
+          {CATEGORIES.map((_, i) => (
+            <div key={i} className={`w-2 h-2 rounded-full ${i < filled ? 'bg-green-400' : 'bg-gray-200'}`}/>
+          ))}
         </div>
-    );
+      </div>
+    </div>
+  );
 }
 
-// ─── Answers Comparison Table (with alias reveal) ─────────────────────────────
-function AnswersTable({ records, letter, myId }: {
-    records: PlayerRecord[]; letter: string; myId: string;
+// ─── Waiting Room Component ──────────────────────────────────────────────────
+function WaitingRoom({
+  players,
+  myId,
+  isHost,
+  onStart,
+  onLeave,
+  gameCode
+}: {
+  players: { id: string; name: string }[];
+  myId: string;
+  isHost: boolean;
+  onStart: () => void;
+  onLeave: () => void;
+  gameCode: string;
 }) {
-    const getName = (p: PlayerRecord) => {
-        if (p.playerId === myId) return 'أنت';
-        return p.playerName; // alias stays permanent — never revealed
-    };
-    return (
-        <div className="space-y-2">
-            <div className="px-1">
-                <p className="text-xs font-black text-gray-500">إجابات اللاعبين:</p>
-            </div>
-            {CATEGORIES.map(cat => (
-                <div key={cat.key} className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-                    <div className="bg-gray-50 px-3 py-1.5 flex items-center gap-1.5 border-b border-gray-100">
-                        <span className="text-base">{cat.emoji}</span>
-                        <span className="text-xs font-black text-gray-600">{cat.label}</span>
-                    </div>
-                    {records.map(p => {
-                        const val   = p.answers[cat.key]?.trim() ?? '';
-                        const valid = val.startsWith(letter) && val.length > 1;
-                        const isMe  = p.playerId === myId;
-                        return (
-                            <div key={p.playerId} className={`flex items-center gap-2 px-3 py-2 border-b border-gray-50 last:border-0 ${isMe ? 'bg-blue-50/60' : ''}`}>
-                                <span className={`text-[10px] font-black flex-shrink-0 truncate ${isMe ? 'text-blue-600' : 'text-gray-400'}`}
-                                    style={{ maxWidth: 80 }}>
-                                    {getName(p)}
-                                    {p.stopped && <span className="text-green-600"> 🏁</span>}
-                                </span>
-                                {val ? (
-                                    <>
-                                        <span className={`text-sm font-bold flex-1 ${valid ? 'text-gray-800' : 'text-red-400 line-through'}`}>{val}</span>
-                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0 ${valid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-500'}`}>
-                                            {valid ? '✓' : '✗'}
-                                        </span>
-                                    </>
-                                ) : (
-                                    <span className="text-xs text-gray-300 flex-1 italic">لا يوجد</span>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            ))}
+  return (
+    <div className="text-center py-6 px-4">
+      <div className="w-24 h-24 bg-gradient-to-br from-violet-500 to-purple-700 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xl">
+        <span className="text-5xl">🚌</span>
+      </div>
+
+      <h3 className="text-2xl font-black text-gray-800 mb-1">أوتوبيس كومبليت!</h3>
+      <p className="text-sm font-bold text-gray-400 mb-2">كود الغرفة: <span className="text-violet-600 font-black">{gameCode}</span></p>
+
+      <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl p-4 mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-black text-gray-700">
+            <Users className="w-4 h-4 inline ml-1"/>
+            اللاعبين ({players.length}/{MAX_PLAYERS})
+          </p>
         </div>
-    );
-}
 
-// ─── Voting Panel with round tracking ─────────────────────────────────────────
-function VotingPanel({ records, myId, onVote, currentRound, maxRounds }: {
-    records: PlayerRecord[]; myId: string;
-    onVote: (v: 'win' | 'lose' | 'draw') => void;
-    currentRound: number;
-    maxRounds: number;
-}) {
-    const roundRecords = records.filter(r => r.voteRound === currentRound || r.playerId === myId);
-    const myRecord = records.find(r => r.playerId === myId);
-    const myVote = myRecord?.voteRound === currentRound ? myRecord.vote : null;
-    const allVoted = records.length > 0 && records.every(r => r.vote !== null && r.voteRound === currentRound);
-    const outcome  = allVoted ? resolveVotes(records, currentRound) : null;
-    const others = records.filter(r => r.playerId !== myId);
-    const isConflictRound = currentRound > 1;
-    const roundsLeft = maxRounds - currentRound;
+        <div className="flex flex-wrap gap-2 justify-center">
+          {players.map((p, index) => (
+            <div
+              key={p.id}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all ${
+                p.id === myId
+                  ? 'bg-violet-100 border-violet-400'
+                  : 'bg-white border-gray-200'
+              }`}
+            >
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                index === 0 ? 'bg-amber-400 text-white' : 'bg-violet-100 text-violet-700'
+              }`}>
+                {index === 0 ? <Crown className="w-4 h-4" /> : index + 1}
+              </div>
+              <span className={`text-sm font-bold ${
+                p.id === myId ? 'text-violet-700' : 'text-gray-700'
+              }`}>
+                {p.name}
+                {p.id === myId && <span className="text-xs text-violet-400 mr-1">(أنت)</span>}
+              </span>
+              {index === 0 && <Star className="w-4 h-4 text-amber-500" />}
+            </div>
+          ))}
 
-    return (
-        <div className={`border-2 rounded-2xl p-4 space-y-3 ${isConflictRound ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'}`}>
-            {isConflictRound && (
-                <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-black text-red-700">⚠️ تعارض في الجولة {currentRound - 1}!</p>
-                    <span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
-                        {roundsLeft > 0 ? `${roundsLeft} فرصة متبقية` : 'آخر فرصة'}
-                    </span>
-                </div>
-            )}
-            <p className="text-sm font-black text-center" style={{ color: isConflictRound ? '#7f1d1d' : '#78350f' }}>
-                {isConflictRound ? 'أعد التصويت بعناية...' : 'بعد مراجعة الإجابات... ما قرارك؟'}
+          {/* Empty slots */}
+          {Array.from({ length: Math.min(MAX_PLAYERS - players.length, 3) }).map((_, i) => (
+            <div
+              key={`empty-${i}`}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50"
+            >
+              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                <UserPlus className="w-4 h-4 text-gray-400" />
+              </div>
+              <span className="text-sm font-bold text-gray-400">في انتظار...</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {isHost ? (
+        <div className="flex flex-col items-center gap-3">
+          <button
+            onClick={onStart}
+            disabled={players.length < 1}
+            className="bg-gradient-to-r from-violet-500 to-purple-700 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            🎲 ابدأ اللعبة ({players.length} لاعب)
+          </button>
+          {players.length < 1 && (
+            <p className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl">
+              ⏳ في انتظار اللاعبين...
             </p>
-
-            {myVote === null ? (
-                <div className="grid grid-cols-3 gap-2">
-                    <button onClick={() => onVote('win')}
-                        className="flex flex-col items-center gap-1.5 bg-gradient-to-b from-emerald-400 to-green-600 text-white py-3 rounded-2xl font-black shadow-md hover:scale-105 active:scale-95 transition-all">
-                        <Trophy className="w-6 h-6"/>
-                        <span className="text-xs">فزت 🏆</span>
-                    </button>
-                    <button onClick={() => onVote('draw')}
-                        className="flex flex-col items-center gap-1.5 bg-gradient-to-b from-blue-400 to-blue-600 text-white py-3 rounded-2xl font-black shadow-md hover:scale-105 active:scale-95 transition-all">
-                        <Medal className="w-6 h-6"/>
-                        <span className="text-xs">تعادل 🤝</span>
-                    </button>
-                    <button onClick={() => onVote('lose')}
-                        className="flex flex-col items-center gap-1.5 bg-gradient-to-b from-gray-400 to-gray-600 text-white py-3 rounded-2xl font-black shadow-md hover:scale-105 active:scale-95 transition-all">
-                        <XCircle className="w-6 h-6"/>
-                        <span className="text-xs">خسرت 😔</span>
-                    </button>
-                </div>
-            ) : (
-                <div className={`text-center py-2.5 rounded-xl font-black text-sm ${
-                    myVote === 'win' ? 'bg-green-100 text-green-800' :
-                    myVote === 'draw' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-700'}`}>
-                    {myVote === 'win' ? '🏆 اخترت: فزت' : myVote === 'draw' ? '🤝 اخترت: تعادل' : '😔 اخترت: خسرت'}
-                </div>
-            )}
-
-            {others.length > 0 && (
-                <div className="flex gap-2 flex-wrap">
-                    {others.map(r => {
-                        const voted = r.vote !== null && r.voteRound === currentRound;
-                        return (
-                            <div key={r.playerId} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${voted ? 'bg-green-100 border-green-300 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
-                                {voted ? '✓ صوّت' : <><Loader2 className="w-3 h-3 animate-spin inline ml-1"/>ينتظر</>} {r.playerName}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            {outcome && (
-                <div className={`rounded-xl p-3 text-center font-black text-sm border-2 ${
-                    outcome.result === 'valid' ? 'bg-emerald-50 border-emerald-400 text-emerald-800' :
-                    outcome.result === 'draw'  ? 'bg-blue-50 border-blue-400 text-blue-800' :
-                    outcome.result === 'force_draw' ? 'bg-gray-50 border-gray-400 text-gray-700' :
-                    'bg-red-50 border-red-300 text-red-700'}`}>
-                    {outcome.result === 'conflict' && roundsLeft > 0 && '⚠️ تعارض — ستبدأ جولة تصويت جديدة'}
-                    {outcome.result === 'conflict' && roundsLeft <= 0 && '⚠️ انتهت الفرص — سيُعتبر تعادلاً'}
-                    {outcome.result === 'draw'     && '🤝 تعادل! سيحصل الجميع على 5 نقاط'}
-                    {outcome.result === 'force_draw' && '🤝 تعادل إجباري بعد تكرار التعارض'}
-                    {outcome.result === 'valid'    && (outcome.winnerId === myId ? '🏆 أنت الفائز! استعد للسؤال' : '🎖️ الفائز محدد — انتظر السؤال')}
-                </div>
-            )}
+          )}
         </div>
-    );
+      ) : (
+        <div className="flex items-center gap-2 justify-center text-sm font-bold text-gray-400 bg-gray-50 rounded-xl py-3">
+          <div className="w-5 h-5 border-2 border-gray-300 border-t-violet-500 rounded-full animate-spin"/>
+          في انتظار المضيف لبدء اللعبة...
+        </div>
+      )}
+
+      <button
+        onClick={onLeave}
+        className="mt-4 text-sm font-bold text-gray-400 hover:text-gray-600"
+      >
+        ← مغادرة الغرفة
+      </button>
+    </div>
+  );
 }
 
-// ─── Question Screen ──────────────────────────────────────────────────────────
-function QuestionScreen({ question, onAnswer, timeLeft, answered, isCorrect, loading }: {
-    question: any; onAnswer: (opt: string) => void;
-    timeLeft: number; answered: boolean; isCorrect: boolean | null; loading: boolean;
+// ─── Results Table Component ─────────────────────────────────────────────────
+function ResultsTable({
+  records,
+  letter,
+  evaluations,
+  isHost,
+  onEvaluate,
+  onStartEvaluation,
+  isEvaluated
+}: {
+  records: PlayerRecord[];
+  letter: string;
+  evaluations: Evaluation;
+  isHost: boolean;
+  isEvaluated: boolean;
+  onEvaluate: (playerId: string, score: number) => void;
+  onStartEvaluation: () => void;
 }) {
-    return (
-        <div className="bg-white rounded-2xl border-2 border-indigo-200 p-4 space-y-3 shadow-lg animate-in fade-in duration-400">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <BrainCircuit className="w-5 h-5 text-indigo-600"/>
-                    <span className="text-xs font-black text-indigo-700">سؤال المكافأة</span>
-                </div>
-                <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full font-black text-xs border ${timeLeft <= 5 ? 'bg-red-100 border-red-400 text-red-700 animate-pulse' : 'bg-indigo-50 border-indigo-300 text-indigo-700'}`}>
-                    <Timer className="w-3 h-3"/> {timeLeft}ث
-                </div>
-            </div>
-            <p className="text-sm font-bold text-gray-800 leading-relaxed">{question.questionText}</p>
-            {!answered ? (
-                <div className="space-y-2">
-                    {question.options.map((opt: string, i: number) => (
-                        <button key={i} onClick={() => onAnswer(opt)} disabled={loading}
-                            className="w-full bg-white border-2 border-gray-100 p-3 rounded-xl font-bold text-gray-700 text-sm hover:border-indigo-400 hover:bg-indigo-50 active:scale-95 transition-all text-right">
-                            {opt}
-                        </button>
-                    ))}
-                </div>
-            ) : (
-                <div className={`text-center py-3 rounded-xl font-black text-sm ${isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'}`}>
-                    {isCorrect ? '✅ إجابة صحيحة! تمت إضافة النقاط' : '❌ إجابة خاطئة — حظ أوفر'}
-                </div>
-            )}
+  // Calculate total scores
+  const calculateTotal = (playerId: string): number => {
+    if (!evaluations[playerId]) return 0;
+    return Object.values(evaluations[playerId] as Record<string, number>).reduce((sum, val) => sum + val, 0);
+  };
+
+  const totalEvaluations = evaluations ? Object.keys(evaluations).length : 0;
+  const allEvaluated = records.length > 0 && totalEvaluations === records.length;
+
+  return (
+    <div className="space-y-4">
+      {/* Table Header */}
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gradient-to-r from-violet-500 to-purple-600 text-white">
+                <th className="px-3 py-3 text-right font-black text-xs sticky left-0 bg-violet-600 z-10">
+                  <Users className="w-4 h-4 inline ml-1"/>
+                  اللاعب
+                </th>
+                {CATEGORIES.map(cat => (
+                  <th key={cat.key} className="px-2 py-3 text-center font-black text-xs min-w-[80px]">
+                    {cat.emoji} {cat.label}
+                  </th>
+                ))}
+                <th className="px-3 py-3 text-center font-black text-xs bg-violet-700">
+                  <Trophy className="w-4 h-4 inline ml-1"/>
+                  المجموع
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.map((record, index) => {
+                const isMe = false; // We can add this if needed
+                return (
+                  <tr
+                    key={record.playerId}
+                    className={`border-b border-gray-100 last:border-0 ${
+                      record.stopped ? 'bg-green-50' : 'bg-white'
+                    }`}
+                  >
+                    <td className="px-3 py-2 sticky left-0 bg-inherit z-10">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                          index === 0 ? 'bg-amber-400 text-white' : 'bg-violet-100 text-violet-700'
+                        }`}>
+                          {index === 0 ? '👑' : index + 1}
+                        </div>
+                        <span className="font-bold text-gray-800">
+                          {record.playerName}
+                          {record.stopped && <span className="text-green-500 mr-1">✓</span>}
+                        </span>
+                      </div>
+                    </td>
+                    {CATEGORIES.map(cat => {
+                      const val = record.answers[cat.key]?.trim() ?? '';
+                      const valid = val.startsWith(letter) && val.length > 1;
+                      const catScore = evaluations[record.playerId]?.[cat.key];
+
+                      return (
+                        <td key={cat.key} className="px-2 py-2 text-center min-w-[80px]">
+                          {val ? (
+                            <div className="space-y-1">
+                              <span className={`text-xs font-bold block ${
+                                valid ? 'text-gray-800' : 'text-red-500 line-through'
+                              }`}>
+                                {val}
+                              </span>
+                              {isHost && !isEvaluated && (
+                                <div className="flex gap-1 justify-center">
+                                  {[10, 5, 0].map(score => (
+                                    <button
+                                      key={score}
+                                      onClick={() => onEvaluate(record.playerId, score)}
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                                        catScore === score
+                                          ? score === 10 ? 'bg-green-500 text-white'
+                                          : score === 5 ? 'bg-yellow-500 text-white'
+                                          : 'bg-red-500 text-white'
+                                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                      }`}
+                                    >
+                                      {score}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                              {isEvaluated && catScore !== undefined && (
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${
+                                  catScore === 10 ? 'bg-green-100 text-green-700' :
+                                  catScore === 5 ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>
+                                  {catScore}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )
+                        );
+                      })}
+                    </td>
+                    <td className="px-3 py-2 text-center bg-gray-50">
+                      <span className="font-black text-violet-700">
+                        {calculateTotal(record.playerId)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-    );
+      </div>
+
+      {/* Evaluation Status */}
+      {isHost && !isEvaluated && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 text-center">
+          <p className="text-sm font-black text-amber-800 mb-2">
+            <Star className="w-4 h-4 inline ml-1"/>
+            أنت المضيف - قيّم إجابات اللاعبين
+          </p>
+          <p className="text-xs text-amber-600 mb-3">
+            اضغط على 10 للإجابة الصحيحة، 5 للإجابة المقبولة، 0 للخاطئة
+          </p>
+          {allEvaluated && (
+            <div className="bg-green-100 text-green-800 rounded-xl py-2 px-4 inline-block">
+              ✓ تم تقييم كل الإجابات
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Final Scores */}
+      {isEvaluated && (
+        <div className="bg-gradient-to-r from-violet-500 to-purple-600 rounded-2xl p-4 text-white text-center">
+          <p className="font-black text-lg mb-2">🏆 الترتيب النهائي</p>
+          <div className="space-y-2">
+            {[...records]
+              .sort((a, b) => calculateTotal(b.playerId) - calculateTotal(a.playerId))
+              .map((record, index) => (
+                <div
+                  key={record.playerId}
+                  className={`flex items-center justify-between px-3 py-2 rounded-xl ${
+                    index === 0 ? 'bg-amber-400 text-amber-900' :
+                    index === 1 ? 'bg-gray-200 text-gray-700' :
+                    index === 2 ? 'bg-amber-700 text-amber-100' :
+                    'bg-white/20'
+                  }`}
+                >
+                  <span className="font-bold">
+                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
+                    {' '}{record.playerName}
+                  </span>
+                  <span className="font-black">{calculateTotal(record.playerId)} نقطة</span>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-interface Props {
-    match:       any;
-    employee:    Employee;
-    onExit:      () => void;
-    grantPoints: (pts: number) => Promise<void>;
-}
+export default function StopTheBusGame() {
+  const [gameState, setGameState] = useState<'menu' | 'join' | 'waiting' | 'playing' | 'finished'>('menu');
+  const [players, setPlayers] = useState<{ id: string; name: string }[]>([]);
+  const [myId, setMyId] = useState('');
+  const [gameCode, setGameCode] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [playerName, setPlayerName] = useState('');
+  const [hostName, setHostName] = useState('');
 
-export default function StopTheBusGame({ match, employee, onExit, grantPoints }: Props) {
-    const play   = useSound();
-    const myId   = employee.employee_id;
-    const myName = employee.name?.split(' ')[0] || 'أنت';
+  // Game state
+  const [letter, setLetter] = useState('');
+  const [answers, setAnswers] = useState<Answers>(emptyAnswers());
+  const [timeLeft, setTimeLeft] = useState(TIMER_SECS);
+  const [stopped, setStopped] = useState(false);
+  const [records, setRecords] = useState<PlayerRecord[]>([]);
+  const [evaluations, setEvaluations] = useState<Evaluation>({});
+  const [isEvaluated, setIsEvaluated] = useState(false);
+  const [startedAt, setStartedAt] = useState(0);
 
-    // ── Derived from match ────────────────────────────────────────────────────
-    const gs:      any            = match.game_state ?? {};
-    const letter:  string         = gs.letter    ?? '';
-    const startedAt: number       = gs.startedAt ?? 0;
-    const records: PlayerRecord[] = gs.records   ?? [];
-    const currentVoteRound: number = gs.voteRound ?? 1;
-    const status:  string         = match.status  ?? 'waiting';
-    const players: any[]          = match.players ?? [];
+  const prevTickRef = useRef(TIMER_SECS);
+  const soundedStop = useRef(false);
+  const savedOnStop = useRef(false);
 
-    // ── Local state ───────────────────────────────────────────────────────────
-    const [answers, setAnswers]       = useState<Answers>(emptyAnswers);
-    const [timeLeft, setTimeLeft]     = useState(TIMER_SECS);
-    const [stopped, setStopped]       = useState(false);
-    const [submitting, setSubmitting] = useState(false);
+  // Simulate other players joining (for demo)
+  const [simulatedPlayers, setSimulatedPlayers] = useState<{ id: string; name: string }[]>([]);
 
-    // Question phase
-    const [question, setQuestion]     = useState<any>(null);
-    const [qTime, setQTime]           = useState(20);
-    const [qAnswered, setQAnswered]   = useState(false);
-    const [qCorrect, setQCorrect]     = useState<boolean | null>(null);
-    const [qLoading, setQLoading]     = useState(false);
+  // Is this player the host?
+  const isHost = players.length > 0 && [...players].sort((a, b) => a.id.localeCompare(b.id))[0]?.id === myId;
 
-    const prevTickRef   = useRef(TIMER_SECS);
-    const soundedStop   = useRef(false);
-    const savedOnStop   = useRef(false);
+  // ── Join/Create Room ──────────────────────────────────────────────────────────
+  const handleCreateRoom = () => {
+    if (!hostName.trim()) {
+      toast.error('أدخل اسمك أولاً');
+      return;
+    }
+    const newId = 'host_' + Math.random().toString(36).substr(2, 9);
+    const code = Math.random().toString(36).substr(2, 6).toUpperCase();
 
-    // ── My DB record ──────────────────────────────────────────────────────────
-    const myRecord  = records.find(r => r.playerId === myId);
-    const iStopped  = stopped || !!myRecord;
-    const stopper   = records.find(r => r.stopped);
+    setMyId(newId);
+    setGameCode(code);
+    setPlayers([{ id: newId, name: hostName.trim() }]);
+    setGameState('waiting');
+    toast.success(`تم إنشاء الغرفة! كود: ${code}`);
+  };
 
-    // My player info from match (includes alias if set)
-    const myPlayerInfo = players.find((p: any) => p.id === myId);
-    const myDisplayName = myPlayerInfo?.name || myName;
-    const isAlias = myPlayerInfo?.isAlias ?? false;
+  const handleJoinRoom = () => {
+    if (!playerName.trim()) {
+      toast.error('أدخل اسمك أولاً');
+      return;
+    }
+    if (!joinCode.trim()) {
+      toast.error('أدخل كود الغرفة');
+      return;
+    }
 
-    // When someone else stops → save my answers
-    useEffect(() => {
-        if (!stopper) return;
-        if (stopper.playerId === myId) return;
-        if (savedOnStop.current) return;
-        if (iStopped) return;
+    const newId = 'player_' + Math.random().toString(36).substr(2, 9);
+    setMyId(newId);
+    setGameCode(joinCode.toUpperCase());
+
+    // Simulate joining (in real app, this would connect to server)
+    setPlayers(prev => [...prev, { id: newId, name: playerName.trim() }]);
+    setGameState('waiting');
+    toast.success('تم الانضمام للغرفة!');
+  };
+
+  // ── Start Game ──────────────────────────────────────────────────────────────
+  const handleStart = () => {
+    const newLetter = pickLetter();
+    setLetter(newLetter);
+    setStartedAt(Date.now());
+    setGameState('playing');
+    toast.success(`حرف الجولة: ${newLetter}`);
+  };
+
+  // ── Timer ───────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (gameState !== 'playing' || !startedAt) return;
+
+    const tick = () => {
+      const left = Math.max(0, TIMER_SECS - Math.floor((Date.now() - startedAt) / 1000));
+      setTimeLeft(left);
+
+      if ([30, 20, 10, 5, 4, 3, 2, 1].includes(left) && left !== prevTickRef.current) {
+        prevTickRef.current = left;
+        // Play tick sound
+      }
+
+      if (left === 0 && !savedOnStop.current && !stopped) {
         savedOnStop.current = true;
-        if (!soundedStop.current) { soundedStop.current = true; play('stop'); }
-        saveMyAnswers(false);
-    }, [stopper?.playerId]);
+        handleTimerEnd();
+      }
+    };
 
-    // ── Timer ─────────────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (status !== 'playing' || !startedAt) return;
-        const tick = () => {
-            const left = Math.max(0, TIMER_SECS - Math.floor((Date.now() - startedAt) / 1000));
-            setTimeLeft(left);
-            if ([30, 20, 10, 5, 4, 3, 2, 1].includes(left) && left !== prevTickRef.current) {
-                prevTickRef.current = left;
-                play('tick');
-            }
-            if (left === 0 && !savedOnStop.current && !iStopped) {
-                savedOnStop.current = true;
-                play('timeout');
-                saveMyAnswers(false);
-            }
-        };
-        tick();
-        const t = setInterval(tick, 500);
-        return () => clearInterval(t);
-    }, [status, startedAt]);
+    tick();
+    const interval = setInterval(tick, 500);
+    return () => clearInterval(interval);
+  }, [gameState, startedAt]);
 
-    // ── Question timer ────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (!question || qAnswered) return;
-        if (qTime <= 0) { handleQAnswer('__timeout__'); return; }
-        const t = setInterval(() => setQTime(p => p - 1), 1000);
-        return () => clearInterval(t);
-    }, [question, qTime, qAnswered]);
+  const handleTimerEnd = useCallback(() => {
+    saveMyAnswers(false);
+  }, [answers, records, players, myId, stopped]);
 
-    // ── Resolve votes → trigger question for winner ───────────────────────────
-    useEffect(() => {
-        if (status !== 'finished') return;
-        const allVoted = records.length === players.length &&
-            records.every(r => r.vote !== null && r.voteRound === currentVoteRound);
-        if (!allVoted) return;
+  // ── Save Answers ─────────────────────────────────────────────────────────────
+  const saveMyAnswers = (iAmStopper: boolean) => {
+    if (stopped) return;
 
-        const outcome = resolveVotes(records, currentVoteRound);
+    setStopped(true);
 
-        if (outcome.result === 'conflict') {
-            // If still have rounds left — bump voteRound and reset votes
-            if (currentVoteRound < MAX_VOTE_ROUNDS) {
-                const nextRound = currentVoteRound + 1;
-                const resetRecords = records.map(r => ({ ...r, vote: null, voteRound: nextRound }));
-                supabase.from('live_matches').update({
-                    game_state: { ...gs, records: resetRecords, voteRound: nextRound },
-                }).eq('id', match.id);
-            } else {
-                // Force draw after max rounds
-                if (!qAnswered && !question) {
-                    play('win');
-                    grantPoints(5).then(() => toast.success('تعادل إجباري بعد تكرار التعارض! +5 نقاط 🤝'));
-                    setQAnswered(true);
-                }
-            }
-            return;
+    const record: PlayerRecord = {
+      playerId: myId,
+      playerName: players.find(p => p.id === myId)?.name || 'لاعب',
+      answers: { ...answers },
+      stopped: iAmStopper,
+      stoppedAt: Date.now(),
+    };
+
+    const updatedRecords = [...records.filter(r => r.playerId !== myId), record];
+    setRecords(updatedRecords);
+
+    // Check if all players have submitted
+    if (updatedRecords.length >= players.length) {
+      setTimeout(() => {
+        setGameState('finished');
+      }, 1000);
+    }
+  };
+
+  // ── Stop Button ─────────────────────────────────────────────────────────────
+  const handleStop = () => {
+    if (stopped) return;
+    saveMyAnswers(true);
+  };
+
+  // ── Evaluate Answer ─────────────────────────────────────────────────────────
+  const handleEvaluate = (playerId: string, score: number) => {
+    // Find which category is being evaluated based on current selection
+    // For simplicity, we'll evaluate all unanswered categories at once
+    setEvaluations(prev => {
+      const playerEval = prev[playerId] || {};
+      const playerRecord = records.find(r => r.playerId === playerId);
+      if (!playerRecord) return prev;
+
+      // Get categories that haven't been evaluated yet for this player
+      const evaluatedCats = Object.keys(playerEval);
+      const nextCat = CATEGORIES.find(c => !evaluatedCats.includes(c.key));
+
+      if (!nextCat) return prev;
+
+      return {
+        ...prev,
+        [playerId]: {
+          ...playerEval,
+          [nextCat.key]: score,
         }
+      };
+    });
+  };
 
-        if (outcome.result === 'draw' || outcome.result === 'force_draw') {
-            if (!qAnswered && !question) {
-                play('win');
-                grantPoints(5).then(() => toast.success('تعادل! +5 نقاط 🤝'));
-                setQAnswered(true);
-            }
-            return;
-        }
+  // ── Complete Evaluation ─────────────────────────────────────────────────────
+  const handleCompleteEvaluation = () => {
+    setIsEvaluated(true);
+    toast.success('تم تقييم جميع الإجابات!');
+  };
 
-        // Valid result: winner gets question
-        if (outcome.winnerId === myId && !question && !qAnswered) {
-            setQLoading(true);
-            fetchQuestion(employee).then(q => {
-                setQLoading(false);
-                if (q) { setQuestion(q); setQTime(20); }
-                else {
-                    grantPoints(15).then(() => toast.success('فزت! +15 نقطة 🏆'));
-                    setQAnswered(true);
-                }
-            });
-        }
-    }, [records, status, currentVoteRound]);
+  // ── Add Simulated Player (Demo) ─────────────────────────────────────────────
+  const addSimulatedPlayer = () => {
+    if (simulatedPlayers.length >= MAX_PLAYERS - 1) {
+      toast.error('الغرفة ممتلئة!');
+      return;
+    }
 
-    // ── Save my answers ───────────────────────────────────────────────────────
-    const saveMyAnswers = async (iAmStopper: boolean) => {
-        if (submitting) return;
-        setSubmitting(true);
-        setStopped(true);
+    const names = ['أحمد', 'محمد', 'فاطمة', 'عمر', 'سارة', 'يوسف', 'نورة', 'خالد', 'ليلى', 'عبدالله'];
+    const randomName = names[Math.floor(Math.random() * names.length)] + ' ' + Math.floor(Math.random() * 100);
+    const newId = 'sim_' + Math.random().toString(36).substr(2, 9);
 
-        const rec: PlayerRecord = {
-            playerId:   myId,
-            playerName: myDisplayName,
-            answers,
-            stopped:    iAmStopper,
-            vote:       null,
-            voteRound:  1,
-        };
+    const newPlayer = { id: newId, name: randomName };
+    setSimulatedPlayers(prev => [...prev, newPlayer]);
+    setPlayers(prev => [...prev, newPlayer]);
+    toast.success(`${randomName} انضم للغرفة!`);
+  };
 
-        const updatedRecords = [...records.filter(r => r.playerId !== myId), rec];
-        const update: any = { game_state: { ...gs, records: updatedRecords, voteRound: gs.voteRound ?? 1 } };
-        if (iAmStopper) update.status = 'finished';
+  // ── Add Simulated Records (Demo) ─────────────────────────────────────────────
+  const addSimulatedRecord = () => {
+    const simPlayer = simulatedPlayers.find(p => !records.find(r => r.playerId === p.id));
+    if (!simPlayer) return;
 
-        await supabase.from('live_matches').update(update).eq('id', match.id);
-        setSubmitting(false);
+    const sampleAnswers: Answers = {
+      male: letter ? String.fromCharCode(letter.charCodeAt(0) + 1) + 'حمد' : 'أحمد',
+      female: 'أمينة',
+      plant: 'ليمون',
+      food: 'كبسة',
+      object: 'كتاب',
+      animal: 'قطة',
+      country: 'مصر',
+      famous: 'عمرو دياب',
     };
 
-    // ── "خلصت" button ────────────────────────────────────────────────────────
-    const handleStop = async () => {
-        if (submitting || iStopped) return;
-        if (!soundedStop.current) { soundedStop.current = true; play('stop'); }
-        await saveMyAnswers(true);
+    const record: PlayerRecord = {
+      playerId: simPlayer.id,
+      playerName: simPlayer.name,
+      answers: sampleAnswers,
+      stopped: false,
+      stoppedAt: Date.now(),
     };
 
-    // ── Vote (with round tracking) ────────────────────────────────────────────
-    const handleVote = async (vote: 'win' | 'lose' | 'draw') => {
-        if (!myRecord) return;
-        const updated = records.map(r =>
-            r.playerId === myId ? { ...r, vote, voteRound: currentVoteRound } : r
-        );
-        await supabase.from('live_matches').update({
-            game_state: { ...gs, records: updated },
-        }).eq('id', match.id);
-    };
+    setRecords(prev => [...prev, record]);
 
-    // ── Question answer ───────────────────────────────────────────────────────
-    const handleQAnswer = async (ans: string) => {
-        if (qAnswered) return;
-        setQAnswered(true);
-        setQTime(0);
-        const correct = question?.correctAnswer ?? '';
-        const sel = ans.trim().toLowerCase();
-        const ok  = ans !== '__timeout__' && (correct === sel || correct.includes(sel) || sel.includes(correct));
-        setQCorrect(ok);
-        play(ok ? 'win' : 'lose');
-        if (ok) await grantPoints(15);
-        else    toast.error('إجابة خاطئة — حظ أوفر 😅');
-    };
+    if (records.length + 1 >= players.length) {
+      setTimeout(() => {
+        setGameState('finished');
+      }, 1000);
+    }
+  };
 
-    // ── Host: المضيف هو أول لاعب دخل الغرفة (من match.players) ───────────────
-    const isHost = (match.players?.length ?? 0) > 0 &&
-        [...(match.players ?? [])].sort((a: any, b: any) => a.id.localeCompare(b.id))[0]?.id === myId;
-
-    const handleStart = async () => {
-        await supabase.from('live_matches').update({
-            status:     'playing',
-            game_state: { letter: pickLetter(), startedAt: Date.now(), records: [], voteRound: 1 },
-        }).eq('id', match.id);
-    };
-
-    const myVote = (myRecord?.voteRound === currentVoteRound) ? (myRecord?.vote ?? null) : null;
-    // allVoted: everyone submitted a vote for the CURRENT round specifically
-    const allVoted = status === 'finished' && records.length >= players.length &&
-        records.every(r => r.vote !== null && r.voteRound === currentVoteRound);
-    const outcome = allVoted ? resolveVotes(records, currentVoteRound) : null;
-    // showVotingPanel: show whenever not everyone has voted in current round OR conflict needs re-vote
-    const showVotingPanel = status === 'finished' && !allVoted;
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // WAITING
-    // ─────────────────────────────────────────────────────────────────────────
-    if (status === 'waiting') return (
-        <div className="text-center py-8 px-4">
-            <div className="w-20 h-20 bg-gradient-to-br from-violet-500 to-purple-700 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xl">
-                <span className="text-4xl">🚌</span>
+  // ── Menu Screen ─────────────────────────────────────────────────────────────
+  if (gameState === 'menu') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-violet-100 via-purple-50 to-indigo-100 p-4 flex items-center justify-center">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <div className="w-32 h-32 bg-gradient-to-br from-violet-500 to-purple-700 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-2xl">
+              <span className="text-6xl">🚌</span>
             </div>
-            <h3 className="text-xl font-black text-gray-800 mb-1">أتوبيس كومبليت!</h3>
-            <p className="text-sm font-bold text-gray-400 mb-5">{players.length} لاعب في الغرفة</p>
-            <div className="flex flex-wrap gap-2 justify-center mb-6">
-                {players.map((p: any) => (
-                    <div key={p.id} className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 px-3 py-1.5 rounded-full">
-                        <span className="text-sm">{p.avatar?.startsWith('http') ? '👤' : (p.avatar || '👤')}</span>
-                        <span className="text-xs font-bold text-purple-700">{p.name}</span>
-                        {p.id === myId && <span className="text-[10px] text-purple-400">(أنت)</span>}
-                        {p.isAlias && <span className="text-[10px] bg-purple-200 text-purple-600 px-1.5 rounded-full font-bold">🥷 مجهول</span>}
-                    </div>
-                ))}
+            <h1 className="text-3xl font-black text-gray-800 mb-2">أوتوبيس كومبليت!</h1>
+            <p className="text-gray-500 font-bold">لعبة الجماعات</p>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-xl p-6 space-y-4">
+            {/* Create Room */}
+            <div className="space-y-3">
+              <h3 className="text-lg font-black text-gray-800 text-center">🏠 إنشاء غرفة جديدة</h3>
+              <input
+                type="text"
+                value={hostName}
+                onChange={e => setHostName(e.target.value)}
+                placeholder="أدخل اسمك"
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-violet-400 outline-none text-right font-bold"
+                dir="rtl"
+              />
+              <button
+                onClick={handleCreateRoom}
+                className="w-full bg-gradient-to-r from-violet-500 to-purple-700 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all"
+              >
+                🎲 إنشاء غرفة
+              </button>
             </div>
-            {isHost ? (
-                <div className="flex flex-col items-center gap-2">
-                    <button onClick={handleStart}
-                        disabled={players.length < 2}
-                        className="bg-gradient-to-r from-violet-500 to-purple-700 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">
-                        🎲 ابدأ اللعبة
-                    </button>
-                    {players.length < 2 && (
-                        <p className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
-                            ⏳ في انتظار لاعب آخر للانضمام...
-                        </p>
-                    )}
-                </div>
-            ) : (
-                <div className="flex items-center gap-2 justify-center text-sm font-bold text-gray-400">
-                    <Loader2 className="w-4 h-4 animate-spin"/> في انتظار المضيف...
-                </div>
-            )}
-            <button onClick={onExit} className="mt-4 text-sm font-bold text-gray-400 hover:text-gray-600 block mx-auto">
-                ← العودة إلى الصالة
-            </button>
+
+            <div className="flex items-center gap-4">
+              <div className="flex-1 h-px bg-gray-200"/>
+              <span className="text-gray-400 text-sm font-bold">أو</span>
+              <div className="flex-1 h-px bg-gray-200"/>
+            </div>
+
+            {/* Join Room */}
+            <div className="space-y-3">
+              <h3 className="text-lg font-black text-gray-800 text-center">🔗 الانضمام لغرفة</h3>
+              <input
+                type="text"
+                value={playerName}
+                onChange={e => setPlayerName(e.target.value)}
+                placeholder="أدخل اسمك"
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-violet-400 outline-none text-right font-bold"
+                dir="rtl"
+              />
+              <input
+                type="text"
+                value={joinCode}
+                onChange={e => setJoinCode(e.target.value.toUpperCase())}
+                placeholder="أدخل كود الغرفة"
+                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-violet-400 outline-none text-center font-black text-xl tracking-widest"
+                maxLength={6}
+              />
+              <button
+                onClick={handleJoinRoom}
+                className="w-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all"
+              >
+                🚪 انضم للغرفة
+              </button>
+            </div>
+          </div>
+
+          <p className="text-center text-gray-400 text-xs mt-4">
+            {MAX_PLAYERS} لاعبين كحد أقصى
+          </p>
         </div>
+      </div>
     );
+  }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // PLAYING
-    // ─────────────────────────────────────────────────────────────────────────
-    if (status === 'playing') return (
-        <div className="flex flex-col gap-2 py-2 px-3" dir="rtl">
-            <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-700 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
-                        <span className="text-2xl font-black text-white">{letter}</span>
-                    </div>
-                    <div className="min-w-0">
-                        <p className="text-xs font-black text-gray-700">حرف الجولة</p>
-                        <p className="text-[11px] font-bold text-gray-400 truncate">
-                            {iStopped ? '✅ إجاباتك محفوظة' : `${validCount(answers, letter)}/${CATEGORIES.length} إجابة صحيحة`}
-                        </p>
-                    </div>
-                </div>
-                <TimerRing seconds={timeLeft} total={TIMER_SECS}/>
+  // ── Waiting Room ─────────────────────────────────────────────────────────────
+  if (gameState === 'waiting') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-violet-100 via-purple-50 to-indigo-100 p-4">
+        <WaitingRoom
+          players={players}
+          myId={myId}
+          isHost={isHost}
+          onStart={handleStart}
+          onLeave={() => setGameState('menu')}
+          gameCode={gameCode}
+        />
+
+        {/* Demo: Add simulated players */}
+        {isHost && gameState === 'waiting' && (
+          <div className="max-w-md mx-auto mt-4 bg-white rounded-2xl p-4 shadow-lg">
+            <p className="text-xs text-center text-gray-500 mb-2">🔧 للتجربة (إضافة لاعبين وهميين):</p>
+            <div className="flex gap-2">
+              <button
+                onClick={addSimulatedPlayer}
+                className="flex-1 bg-violet-100 text-violet-700 py-2 rounded-xl font-bold text-sm hover:bg-violet-200 transition-all"
+              >
+                + إضافة لاعب
+              </button>
+              <button
+                onClick={addSimulatedRecord}
+                className="flex-1 bg-green-100 text-green-700 py-2 rounded-xl font-bold text-sm hover:bg-green-200 transition-all"
+              >
+                + محاكاة إجابة
+              </button>
             </div>
-
-            {stopper && stopper.playerId !== myId && !iStopped && (
-                <div className="bg-red-50 border-2 border-red-300 rounded-xl px-3 py-2 flex items-center gap-2">
-                    <Flag className="w-4 h-4 text-red-500 flex-shrink-0"/>
-                    <p className="text-xs font-black text-red-700">🏁 {stopper.playerName} أوقف الأتوبيس! جاري حفظ إجاباتك...</p>
-                </div>
-            )}
-
-            {iStopped ? (
-                <div className="text-center py-6 bg-white rounded-2xl border-2 border-green-200 shadow-sm">
-                    <CheckCircle className="w-10 h-10 text-green-500 mx-auto mb-2"/>
-                    <p className="font-black text-gray-700 text-sm">إجاباتك محفوظة!</p>
-                    <p className="text-xs text-gray-400 mt-1 mb-3">في انتظار باقي اللاعبين...</p>
-                    <div className="flex flex-wrap gap-2 justify-center">
-                        {players.map((p: any) => {
-                            const saved = !!records.find(r => r.playerId === p.id);
-                            return (
-                                <div key={p.id} className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${saved ? 'bg-green-100 border-green-300 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-400'}`}>
-                                    {saved ? '✓' : '⏳'} {p.name}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            ) : (
-                <>
-                    <AnswerForm letter={letter} answers={answers}
-                        onChange={(k, v) => setAnswers(prev => ({ ...prev, [k]: v }))}
-                        disabled={false}/>
-                    <button onClick={handleStop} disabled={submitting}
-                        className="w-full bg-gradient-to-r from-violet-500 to-purple-700 text-white py-4 rounded-2xl font-black text-base shadow-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2 mt-1">
-                        {submitting ? <Loader2 className="w-5 h-5 animate-spin"/> : <><Flag className="w-5 h-5"/>🛑 خلصت! أوقف الأتوبيس</>}
-                    </button>
-                </>
-            )}
-
-            <button onClick={onExit} className="text-xs font-bold text-gray-400 hover:text-gray-600 py-1 text-center">
-                ← العودة إلى الصالة
-            </button>
-        </div>
+          </div>
+        )}
+      </div>
     );
+  }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // FINISHED
-    // ─────────────────────────────────────────────────────────────────────────
-    if (status === 'finished') return (
-        <div className="flex flex-col gap-3 py-2 px-3 animate-in fade-in duration-400" dir="rtl">
+  // ── Playing ─────────────────────────────────────────────────────────────────
+  if (gameState === 'playing') {
+    const filledCount = validCount(answers, letter);
+    const myRecord = records.find(r => r.playerId === myId);
 
-            <div className="bg-gradient-to-br from-violet-500 to-purple-700 text-white rounded-2xl p-4 text-center">
-                <div className="text-3xl mb-1">🚌</div>
-                <h3 className="font-black text-lg">انتهت الجولة!</h3>
-                <p className="text-purple-100 text-xs mt-0.5">
-                    حرف الجولة: <span className="text-2xl font-black text-white mx-1">{letter}</span>
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-violet-100 via-purple-50 to-indigo-100 p-4">
+        <div className="max-w-lg mx-auto">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-purple-700 rounded-2xl flex items-center justify-center shadow-lg">
+                <span className="text-3xl font-black text-white">{letter}</span>
+              </div>
+              <div>
+                <p className="text-sm font-black text-gray-700">حرف الجولة</p>
+                <p className="text-xs text-gray-400">
+                  {stopped ? '✅ انتهيت' : `${filledCount}/${CATEGORIES.length} صحيحة`}
                 </p>
-                {stopper && (
-                    <div className="mt-2 bg-white/20 rounded-xl px-3 py-1 inline-block">
-                        <p className="text-xs font-black">🏁 {stopper.playerName} أنهى أولاً!</p>
-                    </div>
-                )}
+              </div>
             </div>
+            <TimerRing seconds={timeLeft} total={TIMER_SECS}/>
+          </div>
 
-            <AnswersTable records={records} letter={letter} myId={myId}/>
+          {/* Players status */}
+          <div className="bg-white rounded-xl p-3 mb-4 shadow-sm">
+            <p className="text-xs font-bold text-gray-500 mb-2">
+              <Users className="w-3 h-3 inline ml-1"/>
+              اللاعبون ({records.length}/{players.length} أتموا)
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {players.map((p, i) => {
+                const done = !!records.find(r => r.playerId === p.id);
+                return (
+                  <div key={p.id} className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${
+                    done ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                  }`}>
+                    {done ? '✓' : '⏳'} {p.name}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
-            {/* Voting section */}
-            {showVotingPanel ? (
-                <VotingPanel
-                    records={records}
-                    myId={myId}
-                    onVote={handleVote}
-                    currentRound={currentVoteRound}
-                    maxRounds={MAX_VOTE_ROUNDS}
-                />
-            ) : (
-                <div className="space-y-3">
-                    {outcome?.result === 'draw' && (
-                        <div className="bg-blue-50 border-2 border-blue-400 rounded-2xl p-4 text-center">
-                            <div className="text-3xl mb-1">🤝</div>
-                            <p className="font-black text-blue-800">تعادل! حصل الجميع على 5 نقاط</p>
-                        </div>
-                    )}
-                    {(outcome?.result === 'conflict' && currentVoteRound >= MAX_VOTE_ROUNDS) && (
-                        <div className="bg-gray-50 border-2 border-gray-300 rounded-2xl p-4 text-center">
-                            <div className="text-3xl mb-1">🤝</div>
-                            <p className="font-black text-gray-700">تعادل إجباري — انتهت الفرص</p>
-                            <p className="text-xs text-gray-400 mt-1">حصل الجميع على 5 نقاط</p>
-                        </div>
-                    )}
-                    {outcome?.result === 'valid' && (
-                        <div className={`rounded-2xl p-4 text-center border-2 ${outcome.winnerId === myId ? 'bg-emerald-50 border-emerald-400' : 'bg-gray-50 border-gray-300'}`}>
-                            {outcome.winnerId === myId ? (
-                                <><div className="text-3xl mb-1">🏆</div><p className="font-black text-emerald-800">أنت الفائز!</p></>
-                            ) : (
-                                <><div className="text-3xl mb-1">🎖️</div><p className="font-black text-gray-700">{records.find(r => r.playerId === outcome.winnerId)?.playerName} هو الفائز</p></>
-                            )}
-                        </div>
-                    )}
+          {stopped ? (
+            <div className="bg-white rounded-2xl p-6 shadow-lg text-center">
+              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-3"/>
+              <p className="font-black text-xl text-gray-800 mb-2">تم حفظ إجاباتك! ✓</p>
+              <p className="text-sm text-gray-400 mb-4">في انتظار اللاعبين الآخرين...</p>
 
-                    {outcome?.result === 'valid' && outcome.winnerId === myId && (
-                        qLoading ? (
-                            <div className="text-center py-4">
-                                <Loader2 className="w-8 h-8 animate-spin text-indigo-400 mx-auto mb-2"/>
-                                <p className="text-xs font-bold text-gray-400">جاري تحضير السؤال...</p>
-                            </div>
-                        ) : question && !qAnswered ? (
-                            <QuestionScreen
-                                question={question} onAnswer={handleQAnswer}
-                                timeLeft={qTime} answered={qAnswered}
-                                isCorrect={qCorrect} loading={false}/>
-                        ) : qAnswered && (
-                            <div className={`rounded-xl p-3 text-center font-black text-sm ${qCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'}`}>
-                                {qCorrect ? '✅ أجبت صح! تمت إضافة 15 نقطة 🎉' : '❌ إجابة خاطئة — حظ أوفر'}
-                            </div>
-                        )
-                    )}
-                </div>
-            )}
+              <div className="space-y-2">
+                {players.map(p => {
+                  const done = !!records.find(r => r.playerId === p.id);
+                  return (
+                    <div key={p.id} className={`flex items-center justify-between px-4 py-2 rounded-xl ${
+                      done ? 'bg-green-50' : 'bg-gray-50'
+                    }`}>
+                      <span className="font-bold text-sm">{p.name}</span>
+                      <span className={`text-xs font-bold ${done ? 'text-green-600' : 'text-gray-400'}`}>
+                        {done ? '✓ أتم' : '⏳ ينتظر'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <>
+              <AnswerForm
+                letter={letter}
+                answers={answers}
+                onChange={(key, val) => setAnswers(prev => ({ ...prev, [key]: val }))}
+                disabled={stopped}
+              />
 
-            <button onClick={onExit}
-                className="w-full bg-gradient-to-r from-indigo-600 to-violet-700 text-white py-3.5 rounded-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2">
-                <Users className="w-5 h-5"/> العودة إلى الصالة
-            </button>
+              <button
+                onClick={handleStop}
+                className="w-full mt-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Flag className="w-5 h-5"/>
+                🛑 خلصت! أوقف الأتوبيس
+              </button>
+            </>
+          )}
         </div>
+      </div>
     );
+  }
 
-    return null;
+  // ── Finished ─────────────────────────────────────────────────────────────────
+  if (gameState === 'finished') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-violet-100 via-purple-50 to-indigo-100 p-4">
+        <div className="max-w-4xl mx-auto space-y-4">
+          {/* Header */}
+          <div className="bg-gradient-to-br from-violet-500 to-purple-700 text-white rounded-2xl p-4 text-center">
+            <div className="text-4xl mb-2">🚌</div>
+            <h3 className="font-black text-2xl mb-1">انتهت الجولة!</h3>
+            <p className="text-purple-100">
+              حرف الجولة: <span className="text-3xl font-black text-white mx-1">{letter}</span>
+            </p>
+          </div>
+
+          {/* Results Table */}
+          <ResultsTable
+            records={records}
+            letter={letter}
+            evaluations={evaluations}
+            isHost={isHost}
+            onEvaluate={handleEvaluate}
+            onStartEvaluation={handleCompleteEvaluation}
+            isEvaluated={isEvaluated}
+          />
+
+          {/* Complete Evaluation Button */}
+          {isHost && !isEvaluated && (
+            <button
+              onClick={handleCompleteEvaluation}
+              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl hover:scale-105 active:scale-95 transition-all"
+            >
+              ✓ إنهاء التقييم وعرض النتائج
+            </button>
+          )}
+
+          {/* Back to Menu */}
+          <button
+            onClick={() => {
+              setGameState('menu');
+              setPlayers([]);
+              setRecords([]);
+              setEvaluations({});
+              setIsEvaluated(false);
+              setStopped(false);
+              setAnswers(emptyAnswers());
+              setTimeLeft(TIMER_SECS);
+              setSimulatedPlayers([]);
+            }}
+            className="w-full bg-white text-gray-700 py-3 rounded-2xl font-bold shadow-lg hover:bg-gray-50 transition-all"
+          >
+            ← العودة للقائمة الرئيسية
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
