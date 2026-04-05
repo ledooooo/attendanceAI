@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../supabaseClient';
 import { Employee } from '../../../../types';
-import { Search, Syringe, Printer, Save, Loader2, ArrowUpDown, PieChart as PieIcon, AlertCircle, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Search, Syringe, Printer, Save, Loader2, ArrowUpDown, PieChart as PieIcon, AlertCircle, CheckCircle2, XCircle, Clock, UserPlus, FilterX } from 'lucide-react'; // تم إضافة FilterX و UserPlus
 import toast from 'react-hot-toast';
 import { useReactToPrint } from 'react-to-print';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -19,6 +19,7 @@ export default function StaffVaccineManager() {
     const [search, setSearch] = useState('');
     const [filterSpecialty, setFilterSpecialty] = useState('all');
     const [filterStatus, setFilterStatus] = useState('active_only'); 
+    const [showOnlyDue, setShowOnlyDue] = useState(false); // ✅ حالة جديدة للتحكم في عرض المستحقين فقط
     const [sortConfig, setSortConfig] = useState<{ key: 'name' | 'specialty'; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
     const [editingId, setEditingId] = useState<string | null>(null);
     const [tempData, setTempData] = useState<any>({});
@@ -33,6 +34,38 @@ export default function StaffVaccineManager() {
         staleTime: 1000 * 60 * 10
     });
 
+    // ✅ دالة مساعدة لتحديد الاستحقاق (نفس منطق البروتوكول)
+    const isDue = (emp: Employee) => {
+        const today = new Date();
+        const notes = emp.hep_b_notes ? emp.hep_b_notes.toLowerCase() : '';
+        const isExempt = notes.includes('غير مستحق') || notes.includes('مناعة') || notes.includes('أجسام مضادة');
+        
+        if (isExempt || emp.status !== 'نشط') return false;
+
+        let doses = 0;
+        if (emp.hep_b_dose1) doses++;
+        if (emp.hep_b_dose2) doses++;
+        if (emp.hep_b_dose3) doses++;
+
+        if (doses === 3) return false;
+        if (doses === 0) return true;
+        
+        if (doses === 1 && emp.hep_b_dose1) {
+            const d1Date = new Date(emp.hep_b_dose1);
+            const diffDays = Math.ceil(Math.abs(today.getTime() - d1Date.getTime()) / (1000 * 60 * 60 * 24));
+            return diffDays >= 30;
+        }
+        
+        if (doses === 2 && emp.hep_b_dose1 && emp.hep_b_dose2) {
+            const d1Date = new Date(emp.hep_b_dose1);
+            const d2Date = new Date(emp.hep_b_dose2);
+            const diffFromD1 = Math.ceil(Math.abs(today.getTime() - d1Date.getTime()) / (1000 * 60 * 60 * 24));
+            const diffFromD2 = Math.ceil(Math.abs(today.getTime() - d2Date.getTime()) / (1000 * 60 * 60 * 24));
+            return diffFromD1 >= 180 && diffFromD2 >= 60;
+        }
+        return false;
+    };
+
     // --- Processing ---
     const filteredData = useMemo(() => {
         let data = employees.filter(item => {
@@ -44,7 +77,10 @@ export default function StaffVaccineManager() {
             if (filterStatus === 'active_only') matchesStatus = item.status === 'نشط';
             else if (filterStatus !== 'all') matchesStatus = item.status === filterStatus;
 
-            return matchesSearch && matchesSpec && matchesStatus;
+            // ✅ إضافة شرط فلترة المستحقين
+            const matchesDue = !showOnlyDue || isDue(item);
+
+            return matchesSearch && matchesSpec && matchesStatus && matchesDue;
         });
 
         data.sort((a, b) => {
@@ -56,7 +92,7 @@ export default function StaffVaccineManager() {
         });
 
         return data;
-    }, [employees, search, filterSpecialty, filterStatus, sortConfig]);
+    }, [employees, search, filterSpecialty, filterStatus, sortConfig, showOnlyDue]); // ✅ أضفنا showOnlyDue للمراقب
 
     // --- Statistics & Corrected Protocol Logic ---
     const stats = useMemo(() => {
@@ -67,7 +103,8 @@ export default function StaffVaccineManager() {
         let dueForVaccineCount = 0; 
         let dueList: Employee[] = [];
 
-        filteredData.forEach(emp => {
+        // الحساب يتم دائماً على كل الموظفين لضمان دقة الإحصائيات العلوية
+        employees.forEach(emp => {
             const notes = emp.hep_b_notes ? emp.hep_b_notes.toLowerCase() : '';
             const isExempt = notes.includes('غير مستحق') || notes.includes('مناعة') || notes.includes('أجسام مضادة');
 
@@ -84,31 +121,9 @@ export default function StaffVaccineManager() {
                 else if (doses === 1) d1++;
                 else d0++;
 
-                // الحساب حسب البروتوكول المعدل (0 - 1 - 6)
-                if (emp.status === 'نشط') {
-                    let isDue = false;
-                    
-                    if (doses === 0) {
-                        isDue = true; // مستحق للبدء فوراً
-                    } else if (doses === 1 && emp.hep_b_dose1) {
-                        // الجرعة الثانية: شهر (30 يوم) من الأولى
-                        const d1Date = new Date(emp.hep_b_dose1);
-                        const diffDays = Math.ceil(Math.abs(today.getTime() - d1Date.getTime()) / (1000 * 60 * 60 * 24));
-                        if (diffDays >= 30) isDue = true;
-                    } else if (doses === 2 && emp.hep_b_dose1 && emp.hep_b_dose2) {
-                        // الجرعة الثالثة (تعديل): 6 شهور من الأولى (180 يوم) و شهرين من الثانية (60 يوم)
-                        const d1Date = new Date(emp.hep_b_dose1);
-                        const d2Date = new Date(emp.hep_b_dose2);
-                        const diffFromD1 = Math.ceil(Math.abs(today.getTime() - d1Date.getTime()) / (1000 * 60 * 60 * 24));
-                        const diffFromD2 = Math.ceil(Math.abs(today.getTime() - d2Date.getTime()) / (1000 * 60 * 60 * 24));
-                        
-                        if (diffFromD1 >= 180 && diffFromD2 >= 60) isDue = true;
-                    }
-
-                    if (isDue) {
-                        dueForVaccineCount++;
-                        dueList.push(emp);
-                    }
+                if (emp.status === 'نشط' && isDue(emp)) {
+                    dueForVaccineCount++;
+                    dueList.push(emp);
                 }
             }
         });
@@ -122,7 +137,7 @@ export default function StaffVaccineManager() {
         ].filter(item => item.value > 0);
 
         return { d3, d2, d1, d0, notEligible, dueForVaccineCount, dueList, chartData };
-    }, [filteredData]);
+    }, [employees]);
 
     // --- Mutation ---
     const updateMutation = useMutation({
@@ -172,17 +187,17 @@ export default function StaffVaccineManager() {
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 no-print">
                 <div className="flex flex-col lg:flex-row gap-8">
                     <div className="flex-1 grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <StatCard title="القوة المختارة" value={filteredData.length} icon={<Syringe className="w-5 h-5"/>} color="bg-gray-100 text-gray-700" />
+                        <StatCard title="إجمالي المسجلين" value={employees.length} icon={<Syringe className="w-5 h-5"/>} color="bg-gray-100 text-gray-700" />
                         <StatCard title="مكتمل (3 جرعات)" value={stats.d3} icon={<CheckCircle2 className="w-5 h-5"/>} color="bg-emerald-50 text-emerald-700" />
                         <StatCard title="جرعتين" value={stats.d2} icon={<Clock className="w-5 h-5"/>} color="bg-blue-50 text-blue-700" />
                         <StatCard title="جرعة واحدة" value={stats.d1} icon={<Clock className="w-5 h-5"/>} color="bg-amber-50 text-amber-700" />
                         <StatCard title="لم يبدأ" value={stats.d0} icon={<XCircle className="w-5 h-5"/>} color="bg-red-50 text-red-700" />
                         <StatCard title="غير مستحق (مناعة)" value={stats.notEligible} icon={<AlertCircle className="w-5 h-5"/>} color="bg-gray-200 text-gray-600" />
                         
-                        <div className="col-span-2 md:col-span-3 bg-red-500 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg shadow-red-200">
+                        <div className="col-span-2 md:col-span-3 bg-red-500 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg shadow-red-200 transition-all hover:bg-red-600 cursor-pointer" onClick={() => setShowOnlyDue(!showOnlyDue)}>
                             <div>
                                 <h4 className="font-bold text-sm opacity-90">المستحقين للتطعيم اليوم (حسب البروتوكول)</h4>
-                                <p className="text-xs opacity-75 mt-1">يتم الحساب بناءً على مواعيد الجرعات المسجلة وحالة الموظف</p>
+                                <p className="text-xs opacity-75 mt-1">اضغط لعرض القائمة بالجدول أدناه</p>
                             </div>
                             <div className="text-4xl font-black">{stats.dueForVaccineCount}</div>
                         </div>
@@ -233,6 +248,19 @@ export default function StaffVaccineManager() {
                     <div className="flex gap-2">
                         <button onClick={() => toggleSort('name')} className="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-gray-50 flex items-center gap-1">الاسم <ArrowUpDown className="w-3 h-3"/></button>
                         <button onClick={() => toggleSort('specialty')} className="px-3 py-1.5 rounded-lg border text-xs font-bold hover:bg-gray-50 flex items-center gap-1">التخصص <ArrowUpDown className="w-3 h-3"/></button>
+                        
+                        {/* ✅ الزر الجديد لعرض المستحقين فقط */}
+                        <button 
+                            onClick={() => setShowOnlyDue(!showOnlyDue)} 
+                            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border-2 
+                                ${showOnlyDue 
+                                    ? 'bg-red-500 text-white border-red-600 shadow-md ring-2 ring-red-200' 
+                                    : 'bg-white text-red-600 border-red-100 hover:bg-red-50'
+                                }`}
+                        >
+                            {showOnlyDue ? <FilterX className="w-4 h-4"/> : <UserPlus className="w-4 h-4"/>}
+                            {showOnlyDue ? 'إلغاء فلتر المستحقين' : 'عرض المستحقين حالياً'}
+                        </button>
                     </div>
                     <div className="flex gap-2">
                         <button onClick={handlePrintStats} className="bg-orange-50 text-orange-600 border border-orange-200 px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-orange-100">
@@ -269,10 +297,14 @@ export default function StaffVaccineManager() {
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                             {isLoading ? <tr><td colSpan={8} className="p-10 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></td></tr> :
+                             filteredData.length === 0 ? <tr><td colSpan={8} className="p-10 text-center text-gray-400 font-bold">لا توجد بيانات مطابقة للبحث أو الفلتر حالياً</td></tr> :
                              filteredData.map((emp, idx) => (
-                                <tr key={emp.id} className={`border-b border-gray-300 ${editingId === emp.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                                <tr key={emp.id} className={`border-b border-gray-300 ${editingId === emp.id ? 'bg-blue-50' : 'hover:bg-gray-50'} ${isDue(emp) && !showOnlyDue ? 'bg-red-50/30' : ''}`}>
                                     <td className="p-2 border border-gray-300 text-center">{idx + 1}</td>
-                                    <td className="p-2 border border-gray-300 font-bold">{emp.name}</td>
+                                    <td className="p-2 border border-gray-300 font-bold flex items-center gap-2">
+                                        {emp.name}
+                                        {isDue(emp) && <span className="w-2 h-2 bg-red-500 rounded-full no-print shadow-sm shadow-red-200" title="مستحق للتطعيم"></span>}
+                                    </td>
                                     <td className="p-2 border border-gray-300 text-xs">{emp.specialty}</td>
                                     
                                     {editingId === emp.id ? (
